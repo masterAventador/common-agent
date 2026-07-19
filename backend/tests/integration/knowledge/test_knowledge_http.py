@@ -8,11 +8,10 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
 from typing import Any, cast
-from uuid import UUID
 
 import httpx
 
-from tests.support.http import available_port, running_api
+from tests.support.http import assert_error_response, available_port, running_api
 from tests.support.settings import TEST_DATABASE_URL
 
 _MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024
@@ -169,14 +168,6 @@ def _ragflow_env(base_url: str, *, api_key: str = "layered-test-key") -> dict[st
     }
 
 
-def _assert_error(response: httpx.Response, *, status: int, code: str) -> None:
-    assert response.status_code == status
-    UUID(response.headers["X-Request-ID"])
-    body = response.json()
-    assert body["code"] == code
-    assert set(body) == {"code", "message", "request_id", "retryable"}
-
-
 def test_knowledge_routes_use_formal_uvicorn_and_ragflow_adapter() -> None:
     with (
         _fake_ragflow() as (ragflow_url, probe),
@@ -249,10 +240,10 @@ def test_upload_limits_fail_before_calling_ragflow() -> None:
         )
         missing_file = client.post("/api/v1/knowledge-bases/kb-1/documents", data={})
 
-    _assert_error(empty, status=422, code="empty_document")
-    _assert_error(unsupported, status=415, code="unsupported_document_type")
-    _assert_error(oversized, status=413, code="document_too_large")
-    _assert_error(missing_file, status=422, code="validation_error")
+    assert_error_response(empty, status=422, code="empty_document")
+    assert_error_response(unsupported, status=415, code="unsupported_document_type")
+    assert_error_response(oversized, status=413, code="document_too_large")
+    assert_error_response(missing_file, status=422, code="validation_error")
     assert probe.upload_bodies == []
 
 
@@ -268,8 +259,8 @@ def test_create_validation_and_missing_knowledge_base_use_safe_errors() -> None:
         )
         missing = client.get("/api/v1/knowledge-bases/missing/documents")
 
-    _assert_error(blank_name, status=422, code="validation_error")
-    _assert_error(missing, status=404, code="knowledge_base_not_found")
+    assert_error_response(blank_name, status=422, code="validation_error")
+    assert_error_response(missing, status=404, code="knowledge_base_not_found")
     assert "private upstream detail" not in missing.text
 
 
@@ -280,7 +271,7 @@ def test_knowledge_service_unavailable_is_retryable_and_safe() -> None:
     ) as api_url:
         response = httpx.get(f"{api_url}/api/v1/knowledge-bases", timeout=5)
 
-    _assert_error(response, status=503, code="knowledge_service_unavailable")
+    assert_error_response(response, status=503, code="knowledge_service_unavailable")
     assert response.json()["retryable"] is True
 
 
@@ -294,7 +285,7 @@ def test_knowledge_service_missing_configuration_is_permanent_and_safe() -> None
     ):
         response = httpx.get(f"{api_url}/api/v1/knowledge-bases", timeout=5)
 
-    _assert_error(response, status=503, code="configuration_missing")
+    assert_error_response(response, status=503, code="configuration_missing")
     assert response.json()["retryable"] is False
 
 
@@ -306,5 +297,5 @@ def test_ragflow_version_mismatch_fails_closed_before_business_request() -> None
         probe.version = "v0.26.0"
         response = httpx.get(f"{api_url}/api/v1/knowledge-bases", timeout=5)
 
-    _assert_error(response, status=503, code="knowledge_service_version_mismatch")
+    assert_error_response(response, status=503, code="knowledge_service_version_mismatch")
     assert response.json()["retryable"] is False

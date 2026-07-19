@@ -9,7 +9,9 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
+from uuid import UUID
 
+import httpx
 import pytest
 
 
@@ -17,6 +19,14 @@ def available_port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         return int(listener.getsockname()[1])
+
+
+def assert_error_response(response: httpx.Response, *, status: int, code: str) -> None:
+    assert response.status_code == status
+    UUID(response.headers["X-Request-ID"])
+    body = response.json()
+    assert body["code"] == code
+    assert set(body) == {"code", "message", "request_id", "retryable"}
 
 
 @contextmanager

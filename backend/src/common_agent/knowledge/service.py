@@ -62,6 +62,10 @@ class KnowledgeBaseService:
         await self._ensure_available()
         return await self._knowledge.list_knowledge_bases()
 
+    async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
+        await self._ensure_available()
+        return await self._knowledge.get_knowledge_base(knowledge_base_id)
+
     async def create_knowledge_base(
         self, request: CreateKnowledgeBaseRequest
     ) -> KnowledgeBaseSummary:

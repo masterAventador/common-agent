@@ -14,6 +14,7 @@ from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeRepository
 from common_agent.domain.employee import Employee
 from common_agent.ports.employees import EmployeeAlreadyExists
+from tests.support.employees import delete_employees
 from tests.support.settings import TEST_DATABASE_URL
 
 
@@ -29,16 +30,6 @@ async def _database() -> AsyncIterator[Database]:
         yield database
     finally:
         await database.stop()
-
-
-async def _delete_employees(database: Database, *employee_ids: object) -> None:
-    async with database.session() as session:
-        for employee_id in employee_ids:
-            await session.execute(
-                text("DELETE FROM employees WHERE id = :employee_id"),
-                {"employee_id": str(employee_id)},
-            )
-        await session.commit()
 
 
 def test_employee_repository_round_trip_survives_database_restart() -> None:
@@ -62,7 +53,7 @@ def test_employee_repository_round_trip_survives_database_restart() -> None:
                 return await repository.get(employee.id)
         finally:
             async with _database() as cleanup_database:
-                await _delete_employees(cleanup_database, employee.id)
+                await delete_employees(cleanup_database, employee.id)
 
     assert asyncio.run(exercise()) == employee
 
@@ -98,7 +89,7 @@ def test_employee_repository_lists_and_updates_without_owning_transactions() -> 
                     missing = await repository.get(uuid4())
                     return employees, missing
             finally:
-                await _delete_employees(database, first.id, second.id)
+                await delete_employees(database, first.id, second.id)
 
     employees, missing = asyncio.run(exercise())
     assert first in employees
@@ -141,7 +132,7 @@ def test_employee_repository_maps_duplicate_identity_without_committing() -> Non
                 async with database.session() as session:
                     return await SqlAlchemyEmployeeRepository(session).get(employee.id)
             finally:
-                await _delete_employees(database, employee.id)
+                await delete_employees(database, employee.id)
 
     assert asyncio.run(exercise()) == employee
 

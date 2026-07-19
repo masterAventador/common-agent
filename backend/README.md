@@ -49,4 +49,10 @@ JSON 数组和 UTC 时间顺序同时受领域模型与 MySQL CHECK 约束；`DA
 知识库 ID 是外围服务的不透明引用，不对 RAGFlow 内库建外键，绑定有效性必须由应用层通过
 正式 `KnowledgeService` 校验。
 
+数字员工公开入口为 `/api/v1/employees`：集合支持 GET/POST，`/{employee_id}` 支持 GET/PUT。
+创建和更新请求只接受上述通用会话配置，不接受业务字段，也暂不允许客户端写入工作流
+allowlist。非空知识库 ID 会先经 `KnowledgeBaseService` 和 RAGFlow 官方数据集详情 API 校验，
+只有验证成功后才进入 Employee Unit of Work 并提交 MySQL；失效引用、RAGFlow 不可用或未配置
+都会关闭失败且不写入。员工不存在时优先返回 `employee_not_found`，不发起无意义的外围校验。
+
 `ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。

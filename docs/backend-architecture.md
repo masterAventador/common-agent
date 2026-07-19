@@ -111,6 +111,11 @@ application --------------+
 - `WorkflowService`：校验、保存和运行工作流；
 - `SystemService`：报告后端、百炼和 RAGFlow 真实状态。
 
+`EmployeeService` 通过 `EmployeeUnitOfWorkFactory` 管理平台 MySQL 事务。创建绑定先在事务外经
+`KnowledgeBaseService` 调用 RAGFlow 官方数据集详情入口，验证成功后才提交员工；更新先确认
+员工存在，再校验新绑定，最后在新事务内重新读取并原子更新，避免把外部网络等待放进数据库
+事务，也避免无效知识库覆盖已有配置。
+
 ### 3.3 Domain 层
 
 只定义平台模型和协议，不导入第三方框架。

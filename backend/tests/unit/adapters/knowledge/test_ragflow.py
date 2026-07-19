@@ -55,6 +55,19 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
                     ],
                 },
             )
+        if path == "/api/v1/datasets/kb-1" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "id": "kb-1",
+                        "name": "制度库",
+                        "description": "内部制度",
+                        "document_count": 1,
+                    },
+                },
+            )
         if path == "/api/v1/datasets" and request.method == "POST":
             assert json.loads(request.content) == {
                 "name": "制度库",
@@ -157,6 +170,7 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
             contract: KnowledgeService = service
             status = await contract.status()
             listed = await contract.list_knowledge_bases()
+            detailed = await contract.get_knowledge_base("kb-1")
             created = await contract.create_knowledge_base(
                 CreateKnowledgeBaseRequest(name="制度库", description="内部制度")
             )
@@ -176,6 +190,7 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
         assert status.availability is KnowledgeServiceAvailability.AVAILABLE
         assert status.error_code is None
         assert listed[0].id == "kb-1"
+        assert detailed.id == "kb-1"
         assert uploaded.parsing_status is DocumentParsingStatus.PARSING
         assert documents[0].parsing_status is DocumentParsingStatus.COMPLETED
         assert retrieved.chunks[0].document_name == "policy.md"

@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` 知识库纵向闭环及通用 Employee 领域/MySQL 迁移已完成；进入数字员工正式 API 与知识库绑定 |
+| 产品代码 | `🚧` 知识库闭环、通用 Employee 领域及正式 CRUD/知识库绑定 API 已完成；进入预置知识助理 Seed |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -163,7 +163,7 @@
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
 | E3-01 | Employee 领域与迁移 | 模型、字段限制、正式持久化模型和知识库引用完整性策略 | B1-03,K2-02 | ✅ 已完成 |
-| E3-02 | 数字员工 API | 列表、详情、创建、编辑和知识库绑定；失效绑定明确拒绝 | E3-01,K2-03,C1-01 | ⬜ 未开始 |
+| E3-02 | 数字员工 API | 列表、详情、创建、编辑和知识库绑定；失效绑定明确拒绝 | E3-01,K2-03,C1-01 | ✅ 已完成 |
 | E3-03 | 预置知识助理 Seed | 幂等创建、可编辑、不制造重复记录 | E3-02 | ⬜ 未开始 |
 | E3-04 | 数字员工页面 | 列表、创建/编辑表单、知识库选择和“开始对话” | E3-02,F1-03 | ⬜ 未开始 |
 | E3-05 | 数字员工 Playwright | 创建员工→绑定知识库→刷新后仍存在→进入对话 | E3-04 | ⬜ 未开始 |
@@ -570,10 +570,27 @@
 - 文档：后端 README、后端架构、Employee 领域/仓储/ORM/Alembic/测试和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
 - 遗留：E3-02 通过正式 API 串起 `EmployeeService -> EmployeeRepository -> MySQL`，并经真实 `KnowledgeService -> RAGFlow` 验证有效/失效知识库绑定；本任务不提前实现路由或页面
 
+### E3-02 数字员工 API
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：EmployeeService/契约测试先因 `EmployeeConfiguration` 不存在而收集失败；独立启动真实 Uvicorn/MySQL 后 POST `/api/v1/employees` 得到 404，证明正式入口缺失；实现中新增“缺失员工优先于知识库校验”用例，先真实得到 `KnowledgeBaseNotFound` 而不是预期的 `EmployeeNotFound`，随后调整为先确认员工、事务外校验外围引用、再在新事务内重读更新
+- GREEN：Employee/知识适配/正式 HTTP/OpenAPI 定向测试 50 passed；启用官方 RAGFlow 后后端全量 138 passed；Ruff、格式、Mypy、uv lock、真实 MySQL Alembic 漂移、前端 18 项 Vitest/Lint/类型/Build/peer、OpenAPI/生成 DTO 逐字节漂移、平台/RAGFlow 管理规则、ShellCheck 和补丁格式全部通过
+- 真实用户/API 路径：正式 Uvicorn、`EmployeeService`、`EmployeeUnitOfWorkFactory`、SQLAlchemy Repository 和隔离 MySQL 完成 POST 创建、GET 列表/详情、PUT 更新，并在 Uvicorn 进程重启后由同一 GET 恢复；随后通过官方 RAGFlow v0.25.6 创建唯一真实数据集，正式员工 POST 先经 Health 与官方 GET dataset detail 校验再提交 MySQL，真实列表/详情返回绑定，第二个 Uvicorn 进程仍恢复同一绑定
+- 真实失效绑定：对不存在的 RAGFlow 数据集分别执行员工 POST 和已有员工 PUT，正式 API 都返回 404 `knowledge_base_not_found`；失败更新后再次 GET 证明知识库 ID、说明和系统指令均未被覆盖，失败创建未出现在正式列表。无 Key 返回 503 `configuration_missing`，loopback 连接拒绝返回可重试 503 `knowledge_service_unavailable`，两者均经列表确认未写库
+- API 与事务：公开 `/api/v1/employees` GET/POST 和 `/{employee_id}` GET/PUT；Pydantic/OpenAPI 复用领域长度常量且拒绝额外字段，工作流 allowlist 只读返回空数组并在 Wave 5 前不允许客户端写入；创建在外围校验成功后才开启事务，更新先确认员工存在、事务外校验引用、再在新 Unit of Work 内重读并原子提交，外部网络等待不占用数据库事务
+- 通用性与隔离：请求/响应只含名称、说明、系统指令、知识库引用、能力 allowlist 和平台时间，不含行业、任务中心或 automation-tool 业务字段；平台只调用 RAGFlow 官方 API，不接触其内部 MySQL/Redis/MinIO/Elasticsearch；测试 Fake 只用于 EmployeeService 分层定位，不计入完成验收
+- 失败矩阵：覆盖空白/超长/额外字段、客户端越权写工作流 allowlist、非法 UUID、员工不存在 GET/PUT、缺失员工不触发外围调用、知识库缺配置/不可达/不存在、失效更新不覆盖、RAGFlow 版本/上游错误公共映射、事务回滚和 Uvicorn/MySQL 重启恢复；模型配置与工作流越权不属于 CRUD，在 A4-02/W5-07 真实入口验收
+- 契约：FastAPI/Pydantic 仍为唯一来源，新增 Employee 请求/响应和四个 operation 后重新生成 `contracts/openapi/openapi.json` 与前端 `schema.d.ts`，隔离重建逐字节一致；原知识库错误转换被提升为共享 API 映射，知识库 HTTP 回归保持通过
+- 清理：所有员工 ID 在 `finally` 通过隔离测试支持精确删除，唯一 RAGFlow 数据集通过官方 DELETE 清理；最终正式/测试 `employees` 均为 0、`common-agent-e3-02-*` 数据集列表为空，18200/18280 无监听，删除 dist/tsbuildinfo，无悬空镜像；健康 MySQL 与 RAGFlow 稳定栈继续保留复用
+- 文档：后端 README、后端架构、正式 Employee API/应用服务/UoW、KnowledgeService detail 契约、OpenAPI/前端生成 DTO、测试支持和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
+- 遗留：E3-03 通过同一 `EmployeeService`/Repository 幂等写入可编辑的预置知识助理；E3-04 再从正式 React 页面消费本 API，E3-05 负责浏览器纵向验收
+
 ## 16. 当前下一步
 
 严格按顺序：
 
-1. 完成 `E3-02`：提供数字员工正式 API 与知识库绑定边界；
-2. 完成 `E3-03`：幂等创建可编辑的预置知识助理；
-3. 完成 `E3-04`：提供数字员工列表、创建/编辑与知识库选择页面。
+1. 完成 `E3-03`：幂等创建可编辑的预置知识助理；
+2. 完成 `E3-04`：提供数字员工列表、创建/编辑与知识库选择页面；
+3. 完成 `E3-05`：浏览器创建员工、绑定知识库、刷新恢复并进入对话。

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
+from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
 
@@ -9,9 +11,10 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.models import EmployeeRow
 from common_agent.domain.employee import Employee
-from common_agent.ports.employees import EmployeeAlreadyExists
+from common_agent.ports.employees import EmployeeAlreadyExists, EmployeeRepository
 
 
 class SqlAlchemyEmployeeRepository:
@@ -45,6 +48,58 @@ class SqlAlchemyEmployeeRepository:
             ),
         )
         return bool(result.rowcount)
+
+
+class SqlAlchemyEmployeeUnitOfWork:
+    def __init__(self, database: Database) -> None:
+        self._database = database
+        self._context: AbstractAsyncContextManager[AsyncSession] | None = None
+        self._session: AsyncSession | None = None
+        self._employees: EmployeeRepository | None = None
+
+    @property
+    def employees(self) -> EmployeeRepository:
+        if self._employees is None:
+            raise RuntimeError("数字员工事务尚未开始")
+        return self._employees
+
+    async def __aenter__(self) -> SqlAlchemyEmployeeUnitOfWork:
+        if self._context is not None:
+            raise RuntimeError("数字员工事务不能重复进入")
+        context = cast(AbstractAsyncContextManager[AsyncSession], self._database.session())
+        session = await context.__aenter__()
+        self._context = context
+        self._session = session
+        self._employees = SqlAlchemyEmployeeRepository(session)
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        context = self._context
+        self._context = None
+        self._session = None
+        self._employees = None
+        if context is None:
+            raise RuntimeError("数字员工事务尚未开始")
+        await context.__aexit__(exc_type, exc_value, traceback)
+
+    async def commit(self) -> None:
+        session = self._session
+        if session is None:
+            raise RuntimeError("数字员工事务尚未开始")
+        await session.commit()
+
+
+class SqlAlchemyEmployeeUnitOfWorkFactory:
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def __call__(self) -> SqlAlchemyEmployeeUnitOfWork:
+        return SqlAlchemyEmployeeUnitOfWork(self._database)
 
 
 def _to_values(employee: Employee) -> dict[str, object]:

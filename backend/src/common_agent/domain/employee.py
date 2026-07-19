@@ -19,6 +19,14 @@ class EmployeeValidationError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class EmployeeConfiguration:
+    name: str
+    description: str
+    system_prompt: str
+    knowledge_base_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Employee:
     id: UUID
     name: str

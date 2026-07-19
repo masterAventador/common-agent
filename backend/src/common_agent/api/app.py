@@ -11,9 +11,11 @@ from starlette.middleware.base import RequestResponseEndpoint
 from common_agent import __version__
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.persistence import Database
+from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeUnitOfWorkFactory
 from common_agent.api.errors import error_handlers
-from common_agent.api.routers import knowledge_router, system_router
+from common_agent.api.routers import employee_router, knowledge_router, system_router
 from common_agent.bootstrap import CorsSettings, DatabaseSettings, RagFlowSettings
+from common_agent.employees import EmployeeService
 from common_agent.knowledge.service import KnowledgeBaseService
 
 
@@ -28,12 +30,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         expected_version=ragflow_settings.expected_version,
         timeout_seconds=ragflow_settings.timeout_seconds,
     )
-    app.state.knowledge_bases = KnowledgeBaseService(knowledge_adapter)
+    knowledge_bases = KnowledgeBaseService(knowledge_adapter)
+    app.state.knowledge_bases = knowledge_bases
+    app.state.employees = EmployeeService(
+        SqlAlchemyEmployeeUnitOfWorkFactory(database),
+        knowledge_bases,
+    )
     app.state.ready = True
     try:
         yield
     finally:
         app.state.ready = False
+        app.state.employees = None
         app.state.knowledge_bases = None
         await knowledge_adapter.aclose()
         await database.stop()
@@ -69,4 +77,5 @@ def create_app() -> FastAPI:
 
     app.include_router(system_router)
     app.include_router(knowledge_router)
+    app.include_router(employee_router)
     return app

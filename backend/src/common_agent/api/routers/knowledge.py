@@ -79,7 +79,7 @@ def _application(request: Request) -> KnowledgeBaseService:
     return application
 
 
-def _to_app_error(error: KnowledgeServiceError | KnowledgeInputError) -> AppError:
+def knowledge_error_to_app_error(error: KnowledgeServiceError | KnowledgeInputError) -> AppError:
     if isinstance(error, KnowledgeInputError):
         return AppError(
             code=error.code,
@@ -149,7 +149,7 @@ async def list_knowledge_bases(request: Request) -> list[KnowledgeBaseResponse]:
     try:
         items = await _application(request).list_knowledge_bases()
     except KnowledgeServiceError as error:
-        raise _to_app_error(error) from error
+        raise knowledge_error_to_app_error(error) from error
     return [_knowledge_base_response(item) for item in items]
 
 
@@ -172,7 +172,7 @@ async def create_knowledge_base(
             CreateKnowledgeBaseRequest(name=body.name, description=body.description)
         )
     except KnowledgeServiceError as error:
-        raise _to_app_error(error) from error
+        raise knowledge_error_to_app_error(error) from error
     return _knowledge_base_response(created)
 
 
@@ -193,7 +193,7 @@ async def list_documents(
     try:
         documents = await _application(request).list_documents(knowledge_base_id)
     except KnowledgeServiceError as error:
-        raise _to_app_error(error) from error
+        raise knowledge_error_to_app_error(error) from error
     return [_document_response(document) for document in documents]
 
 
@@ -223,5 +223,5 @@ async def upload_document(
     try:
         document = await _application(request).upload_document(knowledge_base_id, upload)
     except (KnowledgeServiceError, KnowledgeInputError) as error:
-        raise _to_app_error(error) from error
+        raise knowledge_error_to_app_error(error) from error
     return _document_response(document)

@@ -168,6 +168,14 @@ class RagFlowKnowledgeService:
         payload = _validate(_DATASET_LIST_ADAPTER, data)
         return tuple(self._knowledge_base(item) for item in payload)
 
+    async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
+        data = await self._request(
+            "GET",
+            f"/api/v1/datasets/{knowledge_base_id}",
+            dataset_scoped=True,
+        )
+        return self._knowledge_base(_validate(_DATASET_ADAPTER, data))
+
     async def create_knowledge_base(
         self, request: CreateKnowledgeBaseRequest
     ) -> KnowledgeBaseSummary:

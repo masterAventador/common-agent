@@ -54,3 +54,27 @@ def test_openapi_exposes_knowledge_contract_and_stable_validation_errors() -> No
         "completed",
         "failed",
     ]
+
+
+def test_openapi_exposes_generic_employee_crud_contract() -> None:
+    schema = _schema()
+    collection = schema["paths"]["/api/v1/employees"]
+    detail = schema["paths"]["/api/v1/employees/{employee_id}"]
+
+    assert set(collection) == {"get", "post"}
+    assert set(detail) == {"get", "put"}
+    assert collection["post"]["responses"]["201"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/EmployeeResponse"
+    }
+    for operation in (collection["post"], detail["get"], detail["put"]):
+        assert operation["responses"]["422"]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorEnvelope"
+        }
+
+    configuration = schema["components"]["schemas"]["EmployeeConfigurationBody"]
+    properties = configuration["properties"]
+    assert properties["name"]["maxLength"] == 128
+    assert properties["description"]["maxLength"] == 1000
+    assert properties["system_prompt"]["maxLength"] == 12000
+    assert properties["knowledge_base_id"]["anyOf"][0]["maxLength"] == 128
+    assert "allowed_workflow_ids" not in properties

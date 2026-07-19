@@ -40,6 +40,10 @@ class _ContractShape:
     async def list_knowledge_bases(self) -> tuple[KnowledgeBaseSummary, ...]:
         raise NotImplementedError
 
+    async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
+        del knowledge_base_id
+        raise NotImplementedError
+
     async def create_knowledge_base(
         self, request: CreateKnowledgeBaseRequest
     ) -> KnowledgeBaseSummary:
