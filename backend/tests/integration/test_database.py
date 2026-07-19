@@ -42,7 +42,7 @@ def test_empty_mysql_database_is_migrated_and_can_restart() -> None:
             await second.stop()
         return first_revision, second_revision
 
-    assert asyncio.run(exercise()) == ("20260719_0002", "20260719_0002")
+    assert asyncio.run(exercise()) == ("20260719_0003", "20260719_0003")
 
 
 def test_mysql_session_rolls_back_failed_transaction() -> None:
@@ -157,7 +157,7 @@ def test_mysql_migration_failure_is_closed_and_recovers_after_repair() -> None:
 
             async with keeper.session() as session:
                 await session.execute(
-                    text("UPDATE alembic_version SET version_num = '20260719_0002'")
+                    text("UPDATE alembic_version SET version_num = '20260719_0003'")
                 )
                 await session.commit()
             revision_is_broken = False
@@ -168,10 +168,10 @@ def test_mysql_migration_failure_is_closed_and_recovers_after_repair() -> None:
             if revision_is_broken:
                 async with keeper.session() as session:
                     await session.execute(
-                        text("UPDATE alembic_version SET version_num = '20260719_0002'")
+                        text("UPDATE alembic_version SET version_num = '20260719_0003'")
                     )
                     await session.commit()
             await candidate.stop()
             await keeper.stop()
 
-    assert asyncio.run(exercise()) == "20260719_0002"
+    assert asyncio.run(exercise()) == "20260719_0003"

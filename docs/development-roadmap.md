@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` 知识库及数字员工正式闭环（含无头浏览器自动化）已完成；进入会话/消息领域与持久化 |
+| 产品代码 | `🚧` 知识库、数字员工正式闭环和会话/消息/Citation 领域持久化已完成；进入阿里百炼模型适配器 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -175,7 +175,7 @@
 
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
-| A4-01 | 会话/消息领域与迁移 | Conversation/Message/Citation、终态和正式持久化重启恢复 | B1-03,E3-01 | ⬜ 未开始 |
+| A4-01 | 会话/消息领域与迁移 | Conversation/Message/Citation、终态和正式持久化重启恢复 | B1-03,E3-01 | ✅ 已完成 |
 | A4-02 | 百炼模型适配器 | `ChatOpenAI`、流式输出、超时/有限重试和脱敏错误 | B1-04 | ⬜ 未开始 |
 | A4-03 | EmployeeRuntime 契约 | 历史、系统指令、知识上下文、流式事件和停止语义 | A4-01,K2-02 | ⬜ 未开始 |
 | A4-04 | Deep Agents 适配器 | 官方 `create_deep_agent`、受控工具、无 Shell/本机文件权限 | A4-02,A4-03 | ⬜ 未开始 |
@@ -623,10 +623,26 @@
 - 文档：项目浏览器/清理规则、Playwright 配置与 Employee 规范、通用平台 E2E/清理支持、frontend/scripts README 和 `docs/development-roadmap.md`
 - 遗留：无；Wave 3 完成，下一任务按 Roadmap 进入 A4-01 会话/消息/Citation 领域与正式持久化
 
+### A4-01 会话/消息领域与迁移
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增 Conversation/Message/Citation 领域、正式 Repository 和迁移恢复测试，定向 pytest 因 `common_agent.domain.conversation` 与 `common_agent.adapters.persistence.conversations` 不存在出现 2 个收集错误；最小持久化首次进入真实 MySQL 后又以 2 failed 捕获 ORM 在无关系映射时先 flush 引用、触发 `fk_message_citations_message_id`，随后保持外键开启并在同一事务中显式先 flush 消息行
+- GREEN：会话领域/仓储/数据库定向 38 passed，最终启用官方 RAGFlow 的后端全量 175 passed；Ruff、格式、Mypy、uv lock、正式/测试 MySQL Alembic 漂移、前端 27 项 Vitest/ESLint/TypeScript/Build/peer/冻结锁文件、OpenAPI/DTO、平台/RAGFlow 管理脚本和 ShellCheck 全部通过；前端构建仍如实保留既有 622.12 KiB 共享 chunk 提示
+- 正式持久化路径：在专属 18200 端口两次运行正式 `uv run --frozen python -m common_agent`；第一次经 FastAPI lifespan、Database、Alembic、SQLAlchemy async 与 asyncmy 把正式 `common_agent` 从 `20260719_0002` 升级到 `20260719_0003`，真实 loopback Health 返回 200，第二次从已迁移状态无损重启并再次返回 200。实际 `SHOW CREATE TABLE messages` 确认外键、会话内唯一序号、角色/终态/CHECK 与 `MEDIUMTEXT` 已落入 MySQL
+- 重启恢复：正式 Repository 在隔离 MySQL 中原子写入员工、会话、用户消息及带引用的完成助手消息，关闭首个 Database engine 后由全新 engine 读取，Conversation、按序 Message 与 Citation 逐字段一致；A4-01 没有公开会话接口，该 Repository/真实 MySQL 证据只证明内部持久化任务，用户生产入口仍由 A4-06 通过正式 HTTP/SSE 补齐，不用下层测试冒充跨端完成
+- 领域状态：用户消息创建即为 `completed`；助手消息从 `pending` 开始，首个 delta 进入 `streaming`，只允许进入 `completed/failed/stopped` 终态，终态拒绝晚到 delta。完成内容非空，失败必须有安全错误码，停止不伪造失败；引用只属于完成助手消息，位置必须从 1 连续递增，知识库/切片/文档引用、片段和 0-1 有限分数均有长度/类型边界
+- 持久化结构：`conversations` 以正式外键引用 `employees`；`messages` 以 `(conversation_id, sequence_number)` 唯一约束形成权威历史顺序；`message_citations` 用 `(message_id, position)` 复合主键。消息/引用随会话子记录级联，员工删除被会话外键拒绝；Repository 更新只覆盖标题或消息运行态，不允许迁移员工/会话归属、序号、角色与创建时间；复核实际 DDL 后移除被唯一约束完全覆盖的重复普通索引
+- 失败矩阵：覆盖空白/超长/错误类型、非 UUID、非 UTC/逆序时间、非法角色与角色/状态组合、空完成内容、错误码语义、非法/不连续引用、终态晚到内容、重复会话 ID、重复消息 ID、同会话重复序号、事务回滚、直接非法 MySQL 状态/分数、缺失员工/会话/消息外键、Repository/Unit of Work 生命周期、迁移损坏恢复和正式/测试库元数据漂移
+- 清理：所有仓储测试在 `finally` 按会话→员工顺序精确清理；新增仅作用于 `_test` 数据库的集成测试 session finalizer，修复既有正式启动测试反复留下固定 Seed 的问题。最终正式/测试库 revision 均为 `0003`，`common_agent_test` 的员工/会话/消息/引用均为 0，正式库三张会话表为 0 且仅保留固定预置知识助理；18200/18280 空闲，无 Playwright/headless-shell/Vite/Uvicorn 或悬空镜像，稳定 MySQL/RAGFlow 栈继续复用
+- 文档：后端 README、后端架构、Conversation/Message/Citation 领域、正式端口/UoW/Repository、MySQL 迁移、领域/集成/清理测试和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
+- 遗留：A4-02 接入阿里百炼流式模型端口；A4-03 定义 EmployeeRuntime 与平台事件；公开会话 CRUD/发送/停止/重试和 SSE 统一留在 A4-06，未提前扩大本任务
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `A4-01`：建立会话、消息和引用领域与正式持久化模型；
-2. 完成 `A4-02`：接入阿里百炼流式模型适配器并覆盖真实失败边界；
-3. 完成 `A4-03`：建立 EmployeeRuntime 历史、上下文、流式事件与停止语义契约。
+1. 完成 `A4-02`：接入阿里百炼流式模型适配器并覆盖真实失败边界；
+2. 完成 `A4-03`：建立 EmployeeRuntime 历史、上下文、流式事件与停止语义契约；
+3. 完成 `A4-04`：通过官方 `create_deep_agent` 接入受控数字员工运行时。

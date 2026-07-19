@@ -60,4 +60,11 @@ allowlist。非空知识库 ID 会先经 `KnowledgeBaseService` 和 RAGFlow 官�
 通过正式 API 修改的名称、说明、系统指令或绑定。多进程同时启动时由二次读取、主键唯一约束
 和冲突后重读收敛到同一记录。
 
+会话持久化由 `20260719_0003` 迁移建立 `conversations`、`messages` 和
+`message_citations`。会话以正式外键引用数字员工；消息在同一会话内使用唯一正整数序号，
+用户消息直接为 `completed`，助手消息只允许从 `pending/streaming` 进入
+`completed/failed/stopped` 终态。引用按连续位置单独保存并随消息读取，只有已完成助手消息
+可由领域模型携带引用。Conversation Unit of Work 让后续发送用例原子提交用户消息、助手占位
+与状态更新；当前 A4-01 只交付领域与正式持久化，公开会话 HTTP/SSE 入口在 A4-06 接入。
+
 `ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。

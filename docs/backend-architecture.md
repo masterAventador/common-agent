@@ -160,15 +160,35 @@ Conversation
 Message
 ├── id: UUID
 ├── conversation_id: UUID
+├── sequence_number: integer
 ├── role: user | assistant
 ├── content: string
 ├── status: pending | streaming | completed | failed | stopped
 ├── citations: list[Citation]
 ├── error_code: string | null
-└── created_at
+├── created_at
+└── updated_at
+
+Citation
+├── position: integer
+├── knowledge_base_id: string
+├── chunk_id: string
+├── document_id: string
+├── document_name: string
+├── content: string
+└── score: float
 ```
 
-用户消息必须先持久化。助手占位消息随后创建并通过事件更新，终态再写回平台 MySQL。失败和停止也要保留，便于用户重试。
+用户消息必须先以 `completed` 持久化。助手占位消息从 `pending` 开始，收到首个增量后进入
+`streaming`，只能进入 `completed`、`failed` 或 `stopped` 终态；终态后的晚到增量不得改写
+权威快照。`sequence_number` 在同一会话内唯一并作为历史顺序，不能用时间或 UUID 猜测顺序。
+引用只属于已完成的助手消息，按从 1 连续递增的 `position` 保存；失败和停止也要保留，便于
+用户重试和刷新恢复。
+
+平台 MySQL 使用 `conversations`、`messages`、`message_citations` 三张表。会话通过正式外键
+引用平台员工，消息和引用使用级联子记录；角色/状态组合、错误码、长度、时间顺序、会话内
+消息序号及引用分数同时由领域模型和数据库约束。Repository 只更新标题或消息运行态等可变
+字段，不允许借更新操作迁移员工、会话归属、序号、角色或创建时间。
 
 ### 4.3 知识库引用
 
