@@ -16,6 +16,7 @@ from common_agent.api.errors import error_handlers
 from common_agent.api.routers import employee_router, knowledge_router, system_router
 from common_agent.bootstrap import CorsSettings, DatabaseSettings, RagFlowSettings
 from common_agent.employees import EmployeeService
+from common_agent.employees.seeds import seed_default_employee
 from common_agent.knowledge.service import KnowledgeBaseService
 
 
@@ -23,27 +24,31 @@ from common_agent.knowledge.service import KnowledgeBaseService
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     database: Database = app.state.database
     await database.start()
-    ragflow_settings: RagFlowSettings = app.state.ragflow_settings
-    knowledge_adapter = RagFlowKnowledgeService(
-        base_url=ragflow_settings.base_url,
-        api_key=ragflow_settings.api_key.get_secret_value(),
-        expected_version=ragflow_settings.expected_version,
-        timeout_seconds=ragflow_settings.timeout_seconds,
-    )
-    knowledge_bases = KnowledgeBaseService(knowledge_adapter)
-    app.state.knowledge_bases = knowledge_bases
-    app.state.employees = EmployeeService(
-        SqlAlchemyEmployeeUnitOfWorkFactory(database),
-        knowledge_bases,
-    )
-    app.state.ready = True
+    knowledge_adapter: RagFlowKnowledgeService | None = None
     try:
+        ragflow_settings: RagFlowSettings = app.state.ragflow_settings
+        knowledge_adapter = RagFlowKnowledgeService(
+            base_url=ragflow_settings.base_url,
+            api_key=ragflow_settings.api_key.get_secret_value(),
+            expected_version=ragflow_settings.expected_version,
+            timeout_seconds=ragflow_settings.timeout_seconds,
+        )
+        knowledge_bases = KnowledgeBaseService(knowledge_adapter)
+        app.state.knowledge_bases = knowledge_bases
+        employees = EmployeeService(
+            SqlAlchemyEmployeeUnitOfWorkFactory(database),
+            knowledge_bases,
+        )
+        app.state.employees = employees
+        await seed_default_employee(employees)
+        app.state.ready = True
         yield
     finally:
         app.state.ready = False
         app.state.employees = None
         app.state.knowledge_bases = None
-        await knowledge_adapter.aclose()
+        if knowledge_adapter is not None:
+            await knowledge_adapter.aclose()
         await database.stop()
 
 

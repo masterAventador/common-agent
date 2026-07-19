@@ -55,4 +55,9 @@ allowlist。非空知识库 ID 会先经 `KnowledgeBaseService` 和 RAGFlow 官�
 只有验证成功后才进入 Employee Unit of Work 并提交 MySQL；失效引用、RAGFlow 不可用或未配置
 都会关闭失败且不写入。员工不存在时优先返回 `employee_not_found`，不发起无意义的外围校验。
 
+正式 App 每次启动都会幂等确保固定 UUID `6f3d43e0-6f6d-5a67-9f25-756a0b9ed2ab` 的通用
+“知识助理”存在。它默认不绑定知识库或工作流；若记录已存在，启动过程只读取，不覆盖用户
+通过正式 API 修改的名称、说明、系统指令或绑定。多进程同时启动时由二次读取、主键唯一约束
+和冲突后重读收敛到同一记录。
+
 `ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。

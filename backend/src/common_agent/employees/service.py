@@ -4,7 +4,7 @@ from uuid import UUID
 
 from common_agent.domain.employee import Employee, EmployeeConfiguration
 from common_agent.knowledge.service import KnowledgeBaseService
-from common_agent.ports.employees import EmployeeUnitOfWorkFactory
+from common_agent.ports.employees import EmployeeAlreadyExists, EmployeeUnitOfWorkFactory
 
 
 class EmployeeServiceError(Exception):
@@ -53,6 +53,35 @@ class EmployeeService:
             await unit_of_work.employees.add(employee)
             await unit_of_work.commit()
         return employee
+
+    async def ensure(
+        self,
+        employee_id: UUID,
+        configuration: EmployeeConfiguration,
+    ) -> Employee:
+        async with self._unit_of_work_factory() as unit_of_work:
+            existing = await unit_of_work.employees.get(employee_id)
+        if existing is not None:
+            return existing
+
+        await self._validate_knowledge_base(configuration.knowledge_base_id)
+        candidate = Employee.create(
+            employee_id=employee_id,
+            name=configuration.name,
+            description=configuration.description,
+            system_prompt=configuration.system_prompt,
+            knowledge_base_id=configuration.knowledge_base_id,
+        )
+        try:
+            async with self._unit_of_work_factory() as unit_of_work:
+                existing = await unit_of_work.employees.get(employee_id)
+                if existing is not None:
+                    return existing
+                await unit_of_work.employees.add(candidate)
+                await unit_of_work.commit()
+        except EmployeeAlreadyExists:
+            return await self.get(employee_id)
+        return candidate
 
     async def update(
         self,

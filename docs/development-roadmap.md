@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` 知识库闭环、通用 Employee 领域及正式 CRUD/知识库绑定 API 已完成；进入预置知识助理 Seed |
+| 产品代码 | `🚧` 知识库闭环、Employee 正式 API/绑定及幂等预置知识助理已完成；进入数字员工页面 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -164,7 +164,7 @@
 | --- | --- | --- | --- | --- |
 | E3-01 | Employee 领域与迁移 | 模型、字段限制、正式持久化模型和知识库引用完整性策略 | B1-03,K2-02 | ✅ 已完成 |
 | E3-02 | 数字员工 API | 列表、详情、创建、编辑和知识库绑定；失效绑定明确拒绝 | E3-01,K2-03,C1-01 | ✅ 已完成 |
-| E3-03 | 预置知识助理 Seed | 幂等创建、可编辑、不制造重复记录 | E3-02 | ⬜ 未开始 |
+| E3-03 | 预置知识助理 Seed | 幂等创建、可编辑、不制造重复记录 | E3-02 | ✅ 已完成 |
 | E3-04 | 数字员工页面 | 列表、创建/编辑表单、知识库选择和“开始对话” | E3-02,F1-03 | ⬜ 未开始 |
 | E3-05 | 数字员工 Playwright | 创建员工→绑定知识库→刷新后仍存在→进入对话 | E3-04 | ⬜ 未开始 |
 
@@ -587,10 +587,25 @@
 - 文档：后端 README、后端架构、正式 Employee API/应用服务/UoW、KnowledgeService detail 契约、OpenAPI/前端生成 DTO、测试支持和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
 - 遗留：E3-03 通过同一 `EmployeeService`/Repository 幂等写入可编辑的预置知识助理；E3-04 再从正式 React 页面消费本 API，E3-05 负责浏览器纵向验收
 
+### E3-03 预置知识助理 Seed
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：Seed 单元和正式启动测试先因 `common_agent.employees.seeds` 不存在出现 2 个收集错误；顺序路径转绿后再新增双 Uvicorn 并发启动测试，先因正式测试支持缺少 `running_apis` 再次收集失败，随后扩展同一 Uvicorn 启停/就绪工具而未复制进程编排代码
+- GREEN：Seed 定向 4 passed；启用官方 RAGFlow 后后端全量 142 passed；Ruff、格式、Mypy、uv lock、真实 MySQL Alembic 漂移、前端 18 项 Vitest/Lint/类型/Build/peer、OpenAPI/DTO 漂移、平台/RAGFlow 管理规则、ShellCheck 和补丁格式全部通过
+- 真实用户路径：隔离测试库中第一次正式 Uvicorn 启动自动创建固定 UUID 知识助理，经正式 GET 验证；用户再经正式 PUT 修改名称、说明和系统指令，第二个 Uvicorn 进程启动后同一 GET 返回全部用户修改且 `created_at` 不变，列表中固定 ID 恰好一次。另同时启动两个正式 Uvicorn 指向同一 MySQL，两个进程均成功就绪且都只看到同一固定 ID
+- 正式开发数据：在项目固定 `127.0.0.1:18200` 两次运行 `uv run python -m common_agent` 并访问真实 `/api/v1/employees`；两次响应都只有 UUID `6f3d43e0-6f6d-5a67-9f25-756a0b9ed2ab` 的“知识助理”，字段和微秒级创建时间完全一致；MySQL 直接只读核对 count=1/min=max=固定 ID。该记录是后续页面与会话使用的正式 Demo 数据，按规则保留而非当测试残留删除
+- 幂等与可编辑性：默认配置不绑定知识库或工作流，只包含通用名称、说明和安全系统指令；`EmployeeService.ensure` 先读取已存在记录并原样返回，不覆盖用户修改。缺失时在校验后进入新 Unit of Work 二次读取再创建，固定主键阻止重复；并发冲突经正式 `EmployeeAlreadyExists` 边界回滚后重读胜出记录
+- 资源与故障：lifespan 在数据库启动后把知识适配器、EmployeeService、Seed 和 ready 状态纳入同一 `try/finally`，Seed 失败时仍关闭 RAGFlow 客户端和数据库连接；覆盖顺序重复启动、用户编辑保留、固定 ID 唯一和双进程竞争。Seed 默认无外围引用，因此 RAGFlow 未配置不会阻断 App 启动，也不会伪造绑定
+- 清理：并发/编辑测试均在 `finally` 精确删除固定测试 ID；最终 `common_agent_test.employees=0`，正式 `common_agent.employees=1` 且仅为保留 Demo Seed；全量回归知识库前缀列表为空，18200/18280 无监听，删除 dist/tsbuildinfo，无悬空镜像；稳定 MySQL 与 RAGFlow 栈继续运行复用
+- 文档：后端 README、后端架构、通用 Seed/ensure/lifespan、并发 Uvicorn 测试支持和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
+- 遗留：E3-04 在数字员工页面展示这条预置记录并允许继续编辑/绑定真实知识库；E3-05 由 Playwright 验证刷新恢复和进入对话
+
 ## 16. 当前下一步
 
 严格按顺序：
 
-1. 完成 `E3-03`：幂等创建可编辑的预置知识助理；
-2. 完成 `E3-04`：提供数字员工列表、创建/编辑与知识库选择页面；
-3. 完成 `E3-05`：浏览器创建员工、绑定知识库、刷新恢复并进入对话。
+1. 完成 `E3-04`：提供数字员工列表、创建/编辑与知识库选择页面；
+2. 完成 `E3-05`：浏览器创建员工、绑定知识库、刷新恢复并进入对话；
+3. 完成 `A4-01`：建立会话、消息和引用领域与正式持久化模型。
