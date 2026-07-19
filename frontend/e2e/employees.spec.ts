@@ -120,7 +120,7 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
   await expect(page.getByRole("heading", { name: "新会话" })).toBeVisible();
 
   const prompt =
-    "根据已绑定知识库回答 Common Agent 是什么，然后从 1 数到 200，每个数字用逗号分隔。";
+    "根据已绑定知识库回答 Common Agent 是什么，明确写出真实两轮验收标记，然后从 1 数到 200，每个数字用逗号分隔。";
   await page.getByRole("textbox", { name: "消息输入" }).fill(prompt);
   const sentResponse = page.waitForResponse(
     (response) =>
@@ -147,14 +147,31 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
   await expect(page.getByText("正在生成")).toHaveCount(0, { timeout: 180_000 });
   const completedAnswer = page.locator(".chat-message.is-assistant .chat-message-content");
   await expect(completedAnswer).not.toBeEmpty();
+  await expect(completedAnswer).toContainText("COMMON_AGENT_REAL_TWO_TURN_OK");
   await expect(page.getByText("引用资料 1")).toBeVisible();
   await expect(page.getByText("generic-knowledge.txt")).toBeVisible();
-  const persistedAnswer = (await completedAnswer.textContent())?.trim();
+
+  await page
+    .getByRole("textbox", { name: "消息输入" })
+    .fill("第二轮：根据上一轮上下文和知识库，只输出你上一轮回答过的真实两轮验收标记。");
+  const secondTurnResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/messages") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "发送消息" }).click();
+  expect((await secondTurnResponse).status()).toBe(202);
+  const assistantAnswers = page.locator(".chat-message.is-assistant .chat-message-content");
+  await expect(assistantAnswers).toHaveCount(2);
+  await expect(assistantAnswers.last()).toContainText("COMMON_AGENT_REAL_TWO_TURN_OK", {
+    timeout: 180_000,
+  });
+  await expect(page.getByText("generic-knowledge.txt").last()).toBeVisible();
+  const persistedAnswer = (await assistantAnswers.last().textContent())?.trim();
   expect(persistedAnswer).toBeTruthy();
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "新会话" })).toBeVisible();
-  await expect(completedAnswer).toContainText(persistedAnswer!);
-  await expect(page.getByText("generic-knowledge.txt")).toBeVisible();
+  await expect(assistantAnswers.last()).toContainText(persistedAnswer!);
+  await expect(page.getByText("generic-knowledge.txt").last()).toBeVisible();
   expect(directRagFlowRequests).toEqual([]);
 });

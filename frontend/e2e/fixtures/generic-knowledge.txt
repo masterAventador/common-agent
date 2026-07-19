@@ -1,2 +1,3 @@
 Common Agent 是与具体业务无耦合的通用 Agent 中台。
 知识库由平台正式 API 管理，可供不同数字员工按配置关联和检索。
+真实两轮验收标记是 COMMON_AGENT_REAL_TWO_TURN_OK。
