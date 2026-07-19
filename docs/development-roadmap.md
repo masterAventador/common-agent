@@ -51,6 +51,7 @@
 | 项目规则/架构 | `✅` 主规则、产品边界、工程架构和任务级路线图已建立并校验 |
 | 工程骨架 | `✅` frontend/backend/contracts/infra/scripts 已按目标边界建立，未混入临时 Sites 或空业务模块 |
 | 后端入口 | `✅` FastAPI app factory、lifespan、请求 ID、统一错误和真实 loopback Health 已跑通 |
+| 平台持久化 | `✅` SQLite 正式适配器、Alembic、async session、空库迁移、回滚和进程重启恢复已跑通 |
 | 产品代码 | `⬜` 尚未开始；等待后端、前端基础工具链完成后按纵向功能任务进入 |
 | 本地服务 | `✅` 临时前端初始化预览已停止；后端/RAGFlow 未启动 |
 
@@ -124,8 +125,8 @@
 | F1-01 | 建立目标工程骨架 | 建立 frontend/backend/contracts/infra/scripts；无业务代码混放和空功能目录 | R0-08 | ✅ 已完成 |
 | B1-01 | 初始化 Backend 包 | Python 3.12、uv、src layout、pytest/Ruff/Mypy 和冻结锁文件 | F1-01 | ✅ 已完成 |
 | B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | ✅ 已完成 |
-| B1-03 | 平台持久化基线 | 仓储端口、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | 🚧 实现中 |
-| B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | ⬜ 未开始 |
+| B1-03 | 平台持久化基线 | 持久化适配边界、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | ✅ 已完成 |
+| B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | 🚧 实现中 |
 | F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | ⬜ 未开始 |
 | C1-01 | OpenAPI 契约闭环 | 后端导出、前端生成、漂移检查和公共错误 DTO | B1-02,F1-02 | ⬜ 未开始 |
 | F1-03 | 前端 API 基线 | Axios、Query Client、Zod 和后端真实状态提示 | C1-01 | ⬜ 未开始 |
@@ -376,10 +377,23 @@
 - 文档：`backend/README.md`、`backend/pyproject.toml`、`backend/uv.lock`、`docs/development-roadmap.md`
 - 遗留：Health 当前只证明 API 自身就绪；数据库、RAGFlow 和百炼状态在各自正式适配任务接入
 
+### B1-03 平台持久化基线
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：数据库集成测试先因 `No module named sqlalchemy` 收集失败；数据库配置测试因 `DatabaseSettings` 不存在收集失败；首次真实 Alembic 执行还暴露缺少 SQLAlchemy async `greenlet` 依赖并正确失败
+- GREEN：全量 `uv run --frozen pytest -q` 18 passed；Ruff、格式、Mypy（含 migrations）和锁文件检查通过；正式 Alembic CLI 升级隔离空库后读取 revision `20260719_0001`
+- 真实边界：FastAPI lifespan 使用正式 `Database` 适配器自动迁移并探测连接；真实 SQLite、aiosqlite、SQLAlchemy async 与 Alembic 链路在两个独立 Uvicorn 进程间复用同一数据库并恢复成功
+- 失败矩阵：覆盖缺失 SQLAlchemy/greenlet、缺少 CLI 数据库配置、父目录不存在、不可写父路径脱敏失败、事务异常回滚、空库升级、重复升级和进程重启；PostgreSQL 只验证 URL 可配置，未安装驱动或冒充真实适配完成
+- 清理：pytest 临时数据库自动清理；手工验收的 `.local/acceptance/b1-03.db` 和误建空目录已精确删除；无 18200 监听或数据库进程残留
+- 文档：`.env.example`、`backend/README.md`、Alembic 配置/迁移、正式 Database 适配器、`docs/development-roadmap.md`
+- 遗留：领域专属 Repository 随 Employee/Conversation/Workflow 任务定义，避免当前提前创建无调用方的通用仓储；PostgreSQL 等其他正式适配器按真实需求单独 TDD 和验收
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `B1-03`：建立平台持久化仓储与迁移基线；
-2. 完成 `B1-04`：安全迁移阿里百炼 Demo 配置；
-3. 按依赖继续前端和跨端契约闭环。
+1. 完成 `B1-04`：安全迁移阿里百炼 Demo 配置；
+2. 完成 `F1-02`：初始化 React/TypeScript/Vite/Ant Design 前端；
+3. 建立 OpenAPI 生成和统一前端 API 基线。

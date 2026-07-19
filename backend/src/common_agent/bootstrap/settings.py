@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 
 class ConfigurationError(ValueError):
@@ -34,3 +35,35 @@ class ApiSettings:
             raise ConfigurationError("COMMON_AGENT_API_PORT must be between 1 and 65535")
 
         return cls(host=host, port=port)
+
+
+@dataclass(frozen=True, slots=True)
+class DatabaseSettings:
+    url: str
+
+    @classmethod
+    def from_env(cls) -> DatabaseSettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(
+        cls,
+        values: Mapping[str, str],
+        *,
+        project_root: Path | None = None,
+    ) -> DatabaseSettings:
+        configured = values.get("COMMON_AGENT_DATABASE_URL")
+        if configured:
+            return cls(url=configured)
+
+        root = project_root or _find_project_root()
+        database_path = root / ".local" / "common-agent.db"
+        return cls(url=f"sqlite+aiosqlite:///{database_path}")
+
+
+def _find_project_root() -> Path:
+    candidates = [Path.cwd(), *Path.cwd().parents, *Path(__file__).resolve().parents]
+    for candidate in candidates:
+        if (candidate / "CLAUDE.md").is_file():
+            return candidate
+    return Path.cwd()

@@ -1,6 +1,8 @@
+from pathlib import Path
+
 import pytest
 
-from common_agent.bootstrap.settings import ApiSettings, ConfigurationError
+from common_agent.bootstrap.settings import ApiSettings, ConfigurationError, DatabaseSettings
 
 
 def test_api_settings_use_project_loopback_defaults() -> None:
@@ -31,3 +33,19 @@ def test_api_settings_reject_invalid_port(port: str) -> None:
 def test_api_settings_reject_public_bind_address() -> None:
     with pytest.raises(ConfigurationError, match="loopback"):
         ApiSettings.from_mapping({"COMMON_AGENT_API_HOST": "0.0.0.0"})
+
+
+def test_database_settings_default_to_project_local_sqlite(tmp_path: Path) -> None:
+    settings = DatabaseSettings.from_mapping({}, project_root=tmp_path)
+
+    assert settings.url == f"sqlite+aiosqlite:///{tmp_path / '.local' / 'common-agent.db'}"
+
+
+def test_database_settings_allow_formal_adapter_override(tmp_path: Path) -> None:
+    url = "postgresql+asyncpg://common-agent:secret@127.0.0.1:19432/common_agent"
+
+    settings = DatabaseSettings.from_mapping(
+        {"COMMON_AGENT_DATABASE_URL": url}, project_root=tmp_path
+    )
+
+    assert settings.url == url

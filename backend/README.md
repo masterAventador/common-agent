@@ -26,3 +26,12 @@ uv run python -m common_agent
 ```
 
 默认只监听 `127.0.0.1:18200`，可通过根目录 `.env.example` 中的同名环境变量覆盖；非 loopback 地址会被拒绝。
+
+启动时会通过 Alembic 把当前正式数据库升级到 `head` 并执行连接探测。默认数据库位于仓库根目录 `.local/common-agent.db`；可使用 `COMMON_AGENT_DATABASE_URL` 指向其他正式 SQLAlchemy async 适配器。
+
+单独运行迁移时必须显式指定目标，避免误建占位数据库：
+
+```bash
+COMMON_AGENT_DATABASE_URL=sqlite+aiosqlite:////absolute/path/to/database.db \
+  uv run alembic upgrade head
+```
