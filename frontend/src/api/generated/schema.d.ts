@@ -364,6 +364,11 @@ export interface components {
         /** HealthResponse */
         HealthResponse: {
             /**
+             * Integration Mode
+             * @enum {string}
+             */
+            integration_mode: "real" | "demo";
+            /**
              * Service
              * @constant
              */

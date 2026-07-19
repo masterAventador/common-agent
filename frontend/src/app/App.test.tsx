@@ -10,6 +10,7 @@ vi.mock("../api/system", () => ({
     status: "ok",
     service: "common-agent-api",
     version: "0.1.0",
+    integration_mode: "real",
   }),
 }));
 

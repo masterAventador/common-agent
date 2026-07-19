@@ -29,6 +29,16 @@ export function SystemStatus() {
     );
   }
 
+  if (health.data.integration_mode === "demo") {
+    return (
+      <Tooltip title={`API ${health.data.version} · 固定适配器，不代表真实外部服务`}>
+        <Tag icon={<CheckCircleOutlined />} color="warning">
+          演示模式
+        </Tag>
+      </Tooltip>
+    );
+  }
+
   return (
     <Tooltip title={`API ${health.data.version}`}>
       <Tag icon={<CheckCircleOutlined />} color="success">

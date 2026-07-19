@@ -182,8 +182,8 @@
 | A4-05 | 自动知识检索 | 每条消息按员工绑定检索、空结果语义、引用映射和检索失败 fail closed | A4-03,K2-03,E3-02 | ✅ 已完成 |
 | A4-06 | 会话 API 与 SSE | 新建/列表/历史/发送/停止/重试；事件单调、持久化后推送 | A4-04,A4-05,C1-01 | ✅ 已完成 |
 | A4-07 | 聊天工作台 | 三栏会话、流式回复、引用、停止、重试和刷新恢复 | A4-06,F1-03 | ✅ 已完成 |
-| A4-08 | Demo 核心 E2E | 固定适配器完成两轮会话、检索引用、断流和重试 | A4-07 | ⬜ 未开始 |
-| A4-09 | 真实会话验收 | 本机 RAGFlow + Deep Agents + 阿里百炼完成两轮知识问答并验证引用 | A4-08 | ⬜ 未开始 |
+| A4-08 | Demo 核心 E2E | 固定适配器完成两轮会话、检索引用、断流和重试 | A4-07 | ✅ 已完成 |
+| A4-09 | 真实会话验收 | 本机 RAGFlow + Deep Agents + 阿里百炼完成两轮知识问答并验证引用 | A4-08 | 🚧 实现中 |
 
 ## 11. Wave 5：最小可视化工作流
 
@@ -738,10 +738,24 @@
 - 文档：同步聊天页使用与正式无头验收入口到前端 README，进度只写入唯一事实源 `docs/development-roadmap.md`；`docs/product-scope.md` 未作进度性修改，既有产品/前后端架构边界无变化
 - 遗留：A4-08 用固定正式适配器补充可重复的两轮会话、检索引用、断流和重试核心 E2E；A4-09 再用真实 RAGFlow、Deep Agents 与阿里百炼完成两轮连续知识问答并验证上下文和引用
 
+### A4-08 Demo 核心 E2E
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：模式配置测试先因缺少 `IntegrationModeSettings` 收集失败，固定知识/运行时测试先因 `common_agent.adapters.demo` 不存在收集失败；健康响应加入模式字段后，前端严格 Zod 因额外 `integration_mode` 真实失败，系统状态组件也因仍显示“后端正常”而找不到“演示模式”。实现后核对 Vitest 发现数，发现新增徽标用例一度覆盖既有真实健康/不可用两项测试，随即恢复并合并为 real/demo/unavailable 三分支
+- GREEN：固定知识适配器与运行时、模式配置及正式 Uvicorn 定向 43 passed；最终后端 Ruff、格式、严格 Mypy 102 个源文件、uv lock 与全量 286 passed/7 个显式真实外部验收 skip 通过。前端最终 10 个文件 36 passed，TypeScript、ESLint、生产 Build、冻结 pnpm 锁文件与 OpenAPI 生成漂移通过，构建如实保留既有 601.45 KiB 共享 chunk 提示；ShellCheck 通过。Demo 无头 Playwright 首次正式执行 1 passed in 5.7s，默认 real 平台回归 2 passed in 34.5s
+- 正式 Demo 用户链路：`COMMON_AGENT_INTEGRATION_MODE=demo` 仍从正式 React 页面进入同一 FastAPI、MySQL、Employee/Conversation Service、REST/SSE 和持久化后事件链，只把 `KnowledgeService` 与 `EmployeeRuntime` 切换到正式代码内的确定性固定适配器；页面全程显示“演示模式”。用户从页面创建进程内 Demo 知识库并上传 TXT、创建绑定员工、新建 MySQL 会话，连续发送两轮消息并在每轮看到引用；第三轮固定运行时先发 delta 后断流，正式会话服务收敛为 `failed/runtime_stream_interrupted`，页面保留部分内容并允许重试，同一助手消息重试后 completed，刷新仍恢复三轮消息与引用
+- 固定适配器语义：Demo 知识适配器实现与 RAGFlow 端口相同的状态、列表、详情、创建、上传、文档列表和检索协议，上传立即进入真实 `completed` Demo 状态，缺失知识库/重复名称使用既有平台错误；Demo 运行时消费正式历史/知识上下文、发出单调 `RuntimeEvent`、按用户消息数证明第二轮历史存在、对同一助手消息只在第一次触发断流，并保持停止与幂等关闭语义。Demo 模式即使收到非法 RAGFlow/百炼地址仍可经正式 Uvicorn 启动，证明没有偷偷构造外部客户端
+- 显式隔离：健康契约新增生成字段 `integration_mode: real|demo`，前端严格解析；Demo 使用 warning 徽标和“固定适配器，不代表真实外部服务”提示，默认及未配置值始终为 `real`。浏览器不直连 19380 或百炼域名；Demo 知识数据只存在当前后端进程，员工/会话/消息/引用仍写隔离 MySQL，不建立第二套 API、状态或错误协议
+- E2E 复用与清理：单一 `test-platform-e2e.sh` 通过显式 suite 分流；`platform` 只发现真实知识库/员工用例，`demo-chat` 只发现 Demo 聊天用例并不启动 RAGFlow，两者固定 `chromium-headless-shell`、端口预检、PID 关闭和精确数据清理。Demo 清理按引用→消息→会话→员工→固定 Seed 执行；最终正式库为 Seed 1、会话/消息/引用 0，测试库四类记录全 0，18200/18280 无监听，无浏览器/Vite/Uvicorn、E2E 产物、dist/tsbuildinfo 或悬空镜像，稳定 MySQL/RAGFlow 栈继续复用
+- 真实门禁解除：本任务交付的是可重复 Demo 回归，不能以固定知识、固定文本或 Demo 运行时冒充真实 AI 能力，因此最初如实记为 `🔍 待验收` 且未提前提交。随后 A4-09 从正式页面以本机 RAGFlow、官方 Deep Agents 和阿里百炼完成两轮连续知识问答，第二轮原样返回上一轮真实知识标记、两轮均显示引用并刷新恢复，最终 real 套件 2 passed in 31.3s，解除本任务真实依赖门禁后才升级为 `✅ 已完成`
+- 文档：根环境样例、后端/前端/scripts README、生成 OpenAPI/TypeScript 健康契约与唯一进度源；`docs/product-scope.md` 已经定义 Demo 边界，本任务未作进度性修改
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `A4-08`：以无头 Playwright 跑通 Demo 两轮会话、检索引用、断流和重试；
-2. 完成 `A4-09`：以本机 RAGFlow、Deep Agents 和阿里百炼完成两轮真实知识问答与引用验收；
-3. 完成 `W5-01`：建立工作流定义与运行领域模型及正式迁移。
+1. 完成 `A4-09`：以本机 RAGFlow、Deep Agents 和阿里百炼完成两轮真实知识问答与引用验收，并解除 `A4-08` 的真实依赖门禁；
+2. 完成 `W5-01`：建立工作流定义与运行领域模型及正式迁移；
+3. 完成 `W5-02`：实现工作流服务端图校验器。

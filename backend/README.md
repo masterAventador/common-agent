@@ -28,6 +28,12 @@ uv run python -m common_agent
 
 默认只监听 `127.0.0.1:18200`，可通过根目录 `.env.example` 中的同名环境变量覆盖；非 loopback 地址会被拒绝。
 
+`COMMON_AGENT_INTEGRATION_MODE` 默认且正式取值为 `real`，会接入 RAGFlow、Deep Agents 与阿里
+百炼。设为 `demo` 时仍使用同一 FastAPI、MySQL、领域服务、REST/SSE 和 React 页面，只把知识
+服务与员工运行时切换为确定性固定适配器；健康接口返回 `integration_mode=demo`，前端必须显示
+“演示模式”，不得把固定回答冒充真实外部服务。Demo 知识数据仅保存在当前后端进程内，员工、
+会话、消息和引用仍写入正式配置的 MySQL。
+
 启动时会通过 Alembic 把平台正式 MySQL 升级到 `head` 并执行连接探测。默认连接为 `127.0.0.1:19506/common_agent`，使用 SQLAlchemy async、`asyncmy` 和 MySQL 8.4 LTS；该实例、端口和 Volume 与 RAGFlow 内部 MySQL 完全隔离。配置只接受带用户名、密码、端口和数据库名的 loopback `mysql+asyncmy` URL。
 
 单独运行迁移时必须显式指定目标，避免误建占位数据库：

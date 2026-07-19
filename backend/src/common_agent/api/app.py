@@ -10,6 +10,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 
 from common_agent import __version__
 from common_agent.adapters.agent.deep_agents import DeepAgentsEmployeeRuntime
+from common_agent.adapters.demo import DemoEmployeeRuntime, DemoKnowledgeService
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.adapters.persistence import Database
@@ -24,7 +25,13 @@ from common_agent.api.routers import (
     knowledge_router,
     system_router,
 )
-from common_agent.bootstrap import CorsSettings, DatabaseSettings, ModelSettings, RagFlowSettings
+from common_agent.bootstrap import (
+    CorsSettings,
+    DatabaseSettings,
+    IntegrationModeSettings,
+    ModelSettings,
+    RagFlowSettings,
+)
 from common_agent.conversations import ConversationEventBroker, ConversationService
 from common_agent.employees import EmployeeService
 from common_agent.employees.seeds import seed_default_employee
@@ -36,17 +43,24 @@ from common_agent.knowledge.service import KnowledgeBaseService
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     database: Database = app.state.database
     await database.start()
-    knowledge_adapter: RagFlowKnowledgeService | None = None
-    runtime: DeepAgentsEmployeeRuntime | None = None
+    knowledge_adapter: RagFlowKnowledgeService | DemoKnowledgeService | None = None
+    runtime: DeepAgentsEmployeeRuntime | DemoEmployeeRuntime | None = None
     conversations: ConversationService | None = None
     try:
-        ragflow_settings: RagFlowSettings = app.state.ragflow_settings
-        knowledge_adapter = RagFlowKnowledgeService(
-            base_url=ragflow_settings.base_url,
-            api_key=ragflow_settings.api_key.get_secret_value(),
-            expected_version=ragflow_settings.expected_version,
-            timeout_seconds=ragflow_settings.timeout_seconds,
-        )
+        integration_mode: IntegrationModeSettings = app.state.integration_mode
+        if integration_mode.mode == "demo":
+            knowledge_adapter = DemoKnowledgeService()
+            runtime = DemoEmployeeRuntime()
+        else:
+            ragflow_settings: RagFlowSettings = app.state.ragflow_settings
+            knowledge_adapter = RagFlowKnowledgeService(
+                base_url=ragflow_settings.base_url,
+                api_key=ragflow_settings.api_key.get_secret_value(),
+                expected_version=ragflow_settings.expected_version,
+                timeout_seconds=ragflow_settings.timeout_seconds,
+            )
+            model = BailianChatModelAdapter(ModelSettings.from_env())
+            runtime = DeepAgentsEmployeeRuntime(model)
         knowledge_bases = KnowledgeBaseService(knowledge_adapter)
         app.state.knowledge_bases = knowledge_bases
         employees = EmployeeService(
@@ -55,8 +69,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.employees = employees
         await seed_default_employee(employees)
-        model = BailianChatModelAdapter(ModelSettings.from_env())
-        runtime = DeepAgentsEmployeeRuntime(model)
         conversation_events = ConversationEventBroker()
         conversations = ConversationService(
             SqlAlchemyConversationUnitOfWorkFactory(database),
@@ -88,7 +100,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     database = Database(DatabaseSettings.from_env().url)
     cors = CorsSettings.from_env()
-    ragflow_settings = RagFlowSettings.from_env()
+    integration_mode = IntegrationModeSettings.from_env()
     app = FastAPI(
         title="common-agent API",
         version=__version__,
@@ -96,7 +108,10 @@ def create_app() -> FastAPI:
         exception_handlers=error_handlers(),
     )
     app.state.database = database
-    app.state.ragflow_settings = ragflow_settings
+    app.state.integration_mode = integration_mode
+    app.state.ragflow_settings = (
+        RagFlowSettings.from_env() if integration_mode.mode == "real" else None
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(cors.origins),

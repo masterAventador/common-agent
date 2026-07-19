@@ -109,6 +109,24 @@ class CorsSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class IntegrationModeSettings:
+    mode: Literal["real", "demo"]
+
+    @classmethod
+    def from_env(cls) -> IntegrationModeSettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> IntegrationModeSettings:
+        mode = values.get("COMMON_AGENT_INTEGRATION_MODE", "real").strip().lower()
+        if mode == "real":
+            return cls(mode="real")
+        if mode == "demo":
+            return cls(mode="demo")
+        raise ConfigurationError("COMMON_AGENT_INTEGRATION_MODE must be real or demo")
+
+
+@dataclass(frozen=True, slots=True)
 class RagFlowSettings:
     base_url: str
     api_key: SecretStr

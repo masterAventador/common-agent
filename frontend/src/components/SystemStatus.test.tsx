@@ -30,11 +30,26 @@ describe("SystemStatus", () => {
       status: "ok",
       service: "common-agent-api",
       version: "0.1.0",
+      integration_mode: "real",
     });
 
     renderStatus();
 
     expect(await screen.findByText("后端正常")).toBeInTheDocument();
+  });
+
+  it("shows an explicit demo badge instead of presenting demo dependencies as real", async () => {
+    vi.mocked(fetchHealth).mockResolvedValue({
+      status: "ok",
+      service: "common-agent-api",
+      version: "0.1.0",
+      integration_mode: "demo",
+    });
+
+    renderStatus();
+
+    expect(await screen.findByText("演示模式")).toBeInTheDocument();
+    expect(screen.queryByText("后端正常")).not.toBeInTheDocument();
   });
 
   it("shows an actionable unavailable state", async () => {

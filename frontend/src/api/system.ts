@@ -10,6 +10,7 @@ const healthResponseSchema = z.strictObject({
   status: z.literal("ok"),
   service: z.literal("common-agent-api"),
   version: z.string().min(1),
+  integration_mode: z.enum(["real", "demo"]),
 });
 
 export function parseHealthResponse(data: unknown): HealthResponse {

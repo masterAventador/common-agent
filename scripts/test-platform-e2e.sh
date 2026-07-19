@@ -8,11 +8,14 @@ FRONTEND_ROOT="${REPOSITORY_ROOT}/frontend"
 API_PORT=18200
 FRONTEND_PORT=18280
 RAGFLOW_BASE_URL="http://127.0.0.1:19380"
+E2E_SUITE="${COMMON_AGENT_E2E_SUITE:-platform}"
 RUN_ID="$(date -u +%Y%m%d%H%M%S)-$$"
 COMMON_AGENT_E2E_KNOWLEDGE_NAME="common-agent-k2-06-${RUN_ID}"
 COMMON_AGENT_E2E_EMPLOYEE_NAME="common-agent-e3-05-employee-${RUN_ID}"
 COMMON_AGENT_E2E_EMPLOYEE_KNOWLEDGE_NAME="common-agent-e3-05-knowledge-${RUN_ID}"
-ARTIFACT_ROOT="${REPOSITORY_ROOT}/.local/test-artifacts/platform-e2e/${RUN_ID}"
+COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="common-agent-a4-08-employee-${RUN_ID}"
+COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="common-agent-a4-08-knowledge-${RUN_ID}"
+ARTIFACT_ROOT="${REPOSITORY_ROOT}/.local/test-artifacts/platform-e2e/${E2E_SUITE}-${RUN_ID}"
 BACKEND_LOG="${ARTIFACT_ROOT}/backend.log"
 FRONTEND_LOG="${ARTIFACT_ROOT}/frontend.log"
 PLAYWRIGHT_PID=""
@@ -20,6 +23,11 @@ BACKEND_PID=""
 FRONTEND_PID=""
 RAGFLOW_API_KEY=""
 COMMON_AGENT_DATABASE_URL="mysql+asyncmy://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
+
+if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "demo-chat" ]]; then
+  echo "不支持的 E2E suite：${E2E_SUITE}" >&2
+  exit 2
+fi
 
 port_is_free() {
   ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
@@ -55,7 +63,17 @@ cleanup() {
   stop_process "${FRONTEND_PID}"
   stop_process "${BACKEND_PID}"
 
-  if [[ -n "${RAGFLOW_API_KEY}" ]]; then
+  if [[ "${E2E_SUITE}" == "demo-chat" ]]; then
+    if ! (
+      cd "${BACKEND_ROOT}"
+      COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
+      COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="${COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME}" \
+        uv run --frozen python -m tests.support.demo_chat_e2e_cleanup
+    ); then
+      echo "Demo 聊天 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
+      cleanup_status=1
+    fi
+  elif [[ -n "${RAGFLOW_API_KEY}" ]]; then
     if ! (
       cd "${BACKEND_ROOT}"
       RAGFLOW_BASE_URL="${RAGFLOW_BASE_URL}" \
@@ -111,21 +129,25 @@ if [[ "$(docker --context colima-common-agent-dev inspect \
   common-agent-platform-mysql 2>/dev/null || true)" != "running healthy" ]]; then
   "${REPOSITORY_ROOT}/infra/platform/manage.sh" up
 fi
-if ! curl --fail --silent --show-error \
-  "${RAGFLOW_BASE_URL}/api/v1/system/version" >/dev/null 2>&1; then
-  "${REPOSITORY_ROOT}/infra/ragflow/manage.sh" up
-fi
-
-RAGFLOW_API_KEY="$(
-  cd "${BACKEND_ROOT}"
-  uv run --frozen python -c \
-    'import asyncio; from tests.support.ragflow import provision_api_key; print(asyncio.run(provision_api_key("http://127.0.0.1:19380")))'
-)"
-export RAGFLOW_API_KEY
-export RAGFLOW_BASE_URL
-export RAGFLOW_EXPECTED_VERSION="v0.25.6"
-export RAGFLOW_TIMEOUT_SECONDS="120"
 export COMMON_AGENT_DATABASE_URL
+if [[ "${E2E_SUITE}" == "platform" ]]; then
+  export COMMON_AGENT_INTEGRATION_MODE="real"
+  if ! curl --fail --silent --show-error \
+    "${RAGFLOW_BASE_URL}/api/v1/system/version" >/dev/null 2>&1; then
+    "${REPOSITORY_ROOT}/infra/ragflow/manage.sh" up
+  fi
+  RAGFLOW_API_KEY="$(
+    cd "${BACKEND_ROOT}"
+    uv run --frozen python -c \
+      'import asyncio; from tests.support.ragflow import provision_api_key; print(asyncio.run(provision_api_key("http://127.0.0.1:19380")))'
+  )"
+  export RAGFLOW_API_KEY
+  export RAGFLOW_BASE_URL
+  export RAGFLOW_EXPECTED_VERSION="v0.25.6"
+  export RAGFLOW_TIMEOUT_SECONDS="120"
+else
+  export COMMON_AGENT_INTEGRATION_MODE="demo"
+fi
 
 (
   cd "${BACKEND_ROOT}"
@@ -144,12 +166,22 @@ wait_for_url "http://127.0.0.1:${FRONTEND_PORT}/knowledge-bases"
 
 (
   cd "${FRONTEND_ROOT}"
-  COMMON_AGENT_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_KNOWLEDGE_NAME}" \
-  COMMON_AGENT_E2E_EMPLOYEE_NAME="${COMMON_AGENT_E2E_EMPLOYEE_NAME}" \
-  COMMON_AGENT_E2E_EMPLOYEE_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_EMPLOYEE_KNOWLEDGE_NAME}" \
-  COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
-  COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
-    exec pnpm exec playwright test --config playwright.config.ts
+  if [[ "${E2E_SUITE}" == "platform" ]]; then
+    COMMON_AGENT_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_KNOWLEDGE_NAME}" \
+    COMMON_AGENT_E2E_EMPLOYEE_NAME="${COMMON_AGENT_E2E_EMPLOYEE_NAME}" \
+    COMMON_AGENT_E2E_EMPLOYEE_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_EMPLOYEE_KNOWLEDGE_NAME}" \
+    COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
+      exec pnpm exec playwright test \
+        e2e/employees.spec.ts e2e/knowledge-bases.spec.ts \
+        --config playwright.config.ts
+  else
+    COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="${COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME}" \
+    COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME}" \
+    COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
+      exec pnpm exec playwright test e2e/chat-demo.spec.ts --config playwright.config.ts
+  fi
 ) &
 PLAYWRIGHT_PID=$!
 wait "${PLAYWRIGHT_PID}"

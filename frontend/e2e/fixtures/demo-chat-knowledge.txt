@@ -1,0 +1,2 @@
+Common Agent 是与具体业务无耦合的通用 Agent 中台。
+演示知识标记是 COMMON_AGENT_DEMO_KNOWLEDGE_OK。

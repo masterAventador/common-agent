@@ -10,11 +10,13 @@ describe("system API boundary", () => {
         status: "ok",
         service: "common-agent-api",
         version: "0.1.0",
+        integration_mode: "demo",
       }),
     ).toEqual({
       status: "ok",
       service: "common-agent-api",
       version: "0.1.0",
+      integration_mode: "demo",
     });
   });
 

@@ -15,6 +15,7 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     service: Literal["common-agent-api"]
     version: str
+    integration_mode: Literal["real", "demo"]
 
 
 @router.get(
@@ -36,4 +37,10 @@ async def health(request: Request) -> HealthResponse:
             retryable=True,
         )
 
-    return HealthResponse(status="ok", service="common-agent-api", version=__version__)
+    integration_mode = request.app.state.integration_mode.mode
+    return HealthResponse(
+        status="ok",
+        service="common-agent-api",
+        version=__version__,
+        integration_mode=integration_mode,
+    )

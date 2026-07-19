@@ -14,5 +14,7 @@
 - `generate-contracts.sh`：从正式 FastAPI 应用导出 OpenAPI 并生成前端 TypeScript 类型；
 - `check-contracts.sh`：在隔离临时目录重建契约并检查已提交文件无漂移；
 - `test-platform-e2e.sh`：复用健康的稳定基础设施，以无窗口 `chromium-headless-shell` 编排正式
-  FastAPI/Vite 的知识库与数字员工关键路径，并负责唯一测试员工/知识库、预置测试 Seed、本轮
-  Playwright/前后端进程和成功产物清理。
+  FastAPI/Vite；默认 `platform` 套件验收真实 RAGFlow/Deep Agents/百炼路径，设置
+  `COMMON_AGENT_E2E_SUITE=demo-chat` 时只启用显式 Demo 固定适配器，验证两轮会话、引用、断流
+  和重试。两个套件都负责唯一测试数据、预置测试 Seed、本轮 Playwright/前后端进程和成功产物
+  清理。

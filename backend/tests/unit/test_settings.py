@@ -5,6 +5,7 @@ from common_agent.bootstrap.settings import (
     ConfigurationError,
     CorsSettings,
     DatabaseSettings,
+    IntegrationModeSettings,
     RagFlowSettings,
 )
 
@@ -114,6 +115,19 @@ def test_cors_settings_default_to_project_frontend_origin() -> None:
 def test_cors_settings_reject_public_or_remote_origin() -> None:
     with pytest.raises(ConfigurationError, match="loopback"):
         CorsSettings.from_mapping({"COMMON_AGENT_CORS_ORIGINS": "https://example.com"})
+
+
+def test_integration_mode_defaults_to_real_and_accepts_explicit_demo() -> None:
+    assert IntegrationModeSettings.from_mapping({}).mode == "real"
+    assert (
+        IntegrationModeSettings.from_mapping({"COMMON_AGENT_INTEGRATION_MODE": "demo"}).mode
+        == "demo"
+    )
+
+
+def test_integration_mode_rejects_unknown_values() -> None:
+    with pytest.raises(ConfigurationError, match="COMMON_AGENT_INTEGRATION_MODE"):
+        IntegrationModeSettings.from_mapping({"COMMON_AGENT_INTEGRATION_MODE": "mock"})
 
 
 def test_ragflow_settings_use_fixed_loopback_defaults() -> None:

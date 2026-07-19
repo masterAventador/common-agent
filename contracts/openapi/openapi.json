@@ -394,6 +394,14 @@
       "HealthResponse": {
         "additionalProperties": false,
         "properties": {
+          "integration_mode": {
+            "enum": [
+              "real",
+              "demo"
+            ],
+            "title": "Integration Mode",
+            "type": "string"
+          },
           "service": {
             "const": "common-agent-api",
             "title": "Service",
@@ -412,7 +420,8 @@
         "required": [
           "status",
           "service",
-          "version"
+          "version",
+          "integration_mode"
         ],
         "title": "HealthResponse",
         "type": "object"

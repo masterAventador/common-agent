@@ -3,6 +3,7 @@ from common_agent.bootstrap.settings import (
     ConfigurationError,
     CorsSettings,
     DatabaseSettings,
+    IntegrationModeSettings,
     ModelSettings,
     RagFlowSettings,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "ConfigurationError",
     "CorsSettings",
     "DatabaseSettings",
+    "IntegrationModeSettings",
     "ModelSettings",
     "RagFlowSettings",
 ]

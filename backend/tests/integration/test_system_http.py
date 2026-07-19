@@ -44,7 +44,26 @@ def test_health_uses_real_loopback_uvicorn() -> None:
         "status": "ok",
         "service": "common-agent-api",
         "version": "0.1.0",
+        "integration_mode": "real",
     }
+
+
+def test_health_exposes_explicit_demo_mode_over_formal_uvicorn() -> None:
+    with (
+        running_api(
+            _database_url(),
+            env_overrides={
+                "COMMON_AGENT_INTEGRATION_MODE": "demo",
+                "RAGFLOW_BASE_URL": "https://invalid.example.com",
+                "BAILIAN_BASE_URL": "http://invalid.example.com",
+            },
+        ) as base_url,
+        urlopen(f"{base_url}/api/v1/system/health", timeout=2) as response,
+    ):
+        body = _read_json(response)
+
+    assert response.status == 200
+    assert body["integration_mode"] == "demo"
 
 
 def test_unknown_route_uses_stable_error_envelope_over_real_http() -> None:
