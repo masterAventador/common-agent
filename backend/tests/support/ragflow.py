@@ -66,3 +66,38 @@ async def delete_dataset(base_url: str, api_key: str, dataset_id: str) -> None:
         response.raise_for_status()
         payload = response.json()
         assert payload["code"] == 0
+
+
+async def delete_datasets_named(base_url: str, api_key: str, name: str) -> int:
+    async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
+        response = await client.get(
+            "/api/v1/datasets",
+            headers={"Authorization": f"Bearer {api_key}"},
+            params={"page": 1, "page_size": 100, "orderby": "create_time", "desc": "true"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        assert payload["code"] == 0
+        dataset_ids = [str(item["id"]) for item in payload["data"] if item["name"] == name]
+
+    for dataset_id in dataset_ids:
+        await delete_dataset(base_url, api_key, dataset_id)
+    return len(dataset_ids)
+
+
+async def cancel_document_parsing(
+    base_url: str,
+    api_key: str,
+    dataset_id: str,
+    document_id: str,
+) -> None:
+    async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
+        response = await client.request(
+            "DELETE",
+            f"/api/v1/datasets/{dataset_id}/chunks",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"document_ids": [document_id]},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        assert payload["code"] == 0

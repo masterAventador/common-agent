@@ -2,7 +2,7 @@
 
 > 文档性质：项目开发进度唯一执行台账  
 > 建立日期：2026-07-19  
-> 当前阶段：Wave 2 RAGFlow 知识库闭环
+> 当前阶段：Wave 3 数字员工与知识库绑定
 > MVP 顺序：知识库 → 数字员工绑定 → AI 会话 → 可视化工作流
 
 本文件是任务进度、状态、完成定义和验证证据的唯一核对源。`product-scope.md` 只描述产品功能和边界，不承担进度同步；普通任务完成只更新本路线图。
@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` KnowledgeService、真实 RAGFlow 适配器、知识库正式 API 与页面已完成；Playwright 关键路径继续按 Wave 2 推进 |
+| 产品代码 | `🚧` RAGFlow 知识库创建、上传、真实完成/失败状态及 Playwright 闭环已完成；进入数字员工与知识库绑定 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -152,7 +152,7 @@
 | K2-03 | RAGFlow 适配器 | 官方 SDK/API 接入、超时、错误转换、版本健康和真实服务验收 | K2-01,K2-02 | ✅ 已完成 |
 | K2-04 | 知识库 API | 列表、创建、文档上传、解析状态；上传大小/类型限制 | K2-03,B1-05,C1-01 | ✅ 已完成 |
 | K2-05 | 知识库页面 | 创建、上传、真实状态、失败重试和空状态 | K2-04,F1-03 | ✅ 已完成 |
-| K2-06 | 知识库 Playwright | 浏览器完成创建→上传→解析完成/失败展示 | K2-05 | ⬜ 未开始 |
+| K2-06 | 知识库 Playwright | 浏览器完成创建→上传→解析完成/失败展示 | K2-05 | ✅ 已完成 |
 
 ## 9. Wave 3：数字员工与知识库绑定
 
@@ -541,10 +541,24 @@
 - 文档：前端 README、知识库 API/Feature/样式/测试和 `docs/development-roadmap.md`
 - 遗留：K2-06 增加可重复 Playwright 正式关键路径；共享依赖 chunk 的现有体积提示保留，后续页面增多后依据真实加载剖面细分稳定 vendor，而不是提前制造大量小 chunk
 
+### K2-06 知识库 Playwright
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：安装并锁定 `@playwright/test` 1.61.1 后先写正式浏览器规范，直接运行因尚无 Base URL/服务编排而以 `Cannot navigate to invalid URL` 失败，证明测试依赖真实入口；首轮真实运行进一步证明损坏 PDF 在 180 秒内保持 parsing，第二轮又捕获上传已落库但启动解析结果未知的正式幂等边界，没有把两种真实结果改写成假成功
+- GREEN：`pnpm test:e2e` 经唯一正式脚本运行 Playwright Chromium，最终 1 passed in 10.1s；最终全量回归先捕获 Vitest 误收集 `e2e/*.spec.ts` 并显式隔离执行器，之后前端 18 项 Vitest、Playwright TypeScript/ESLint、脚本 Bash/Shellcheck、Python 清理/故障注入助手 Ruff/Mypy 全部通过；项目依赖冻结于 pnpm lock，入口按锁定版本复用或一次性安装 Chromium，不依赖全局 Node 包
+- 真实边界：脚本复用健康的 `colima-common-agent-dev` MySQL/RAGFlow 稳定栈，不重新构建业务镜像；在隔离 `common_agent_test` 启动正式 FastAPI 与 Vite，Chromium 从 `/knowledge-bases` 创建唯一知识库，确认 POST 201，上传 156 B TXT 确认 202 并等待真实 completed，刷新页面后知识库和文档仍存在；随后上传约 2 MiB 合法 TXT，测试进程通过 RAGFlow v0.25.6 官方 DELETE chunks 入口做真实取消解析故障注入，页面经正式平台 GET 轮询显示“解析失败”和 `document_parsing_failed`
+- 失败矩阵：覆盖缺少 E2E Base URL、项目端口占用、服务 60 秒未就绪、上传结果未知、长时间 parsing、真实 CANCEL→failed 状态、前端直连 RAGFlow 检测、测试/清理失败非零退出；Playwright 禁止 `.only`、单 Worker、无重试，失败保留截图/Trace/前后端日志，成功删除本轮产物
+- 安全与通用性：RAGFlow Token 只存在于验收进程环境，不进入浏览器、前端变量、命令参数、日志、Trace 或仓库；知识库名称/描述/文档均为通用平台内容，无行业或 automation-tool 业务字段；故障注入只属于测试支持，不进入产品 API
+- 清理：三轮运行均按唯一名称删除各 1 个真实 RAGFlow 知识库并停止 FastAPI/Vite/Chromium；最终成功后清除本轮产物，并精确删除前两轮已失去用途的失败 Trace/截图；18200/18280 释放，无悬空任务镜像，平台 MySQL 与 RAGFlow 六服务稳定栈保留复用
+- 文档：Playwright 配置/规范与通用夹具、正式运行脚本、测试支持、frontend/scripts README、pnpm lock 和 `docs/development-roadmap.md`
+- 遗留：无；Wave 2 纵向闭环完成，下一任务按 Roadmap 进入 E3-01
+
 ## 16. 当前下一步
 
 严格按顺序：
 
-1. 完成 `K2-06`：以正式页面和真实 RAGFlow 验收知识库纵向闭环；
-2. 完成 `E3-01`：建立数字员工领域模型、MySQL 迁移和知识库引用完整性策略；
-3. 完成 `E3-02`：提供数字员工正式 API 与知识库绑定边界。
+1. 完成 `E3-01`：建立数字员工领域模型、MySQL 迁移和知识库引用完整性策略；
+2. 完成 `E3-02`：提供数字员工正式 API 与知识库绑定边界；
+3. 完成 `E3-03`：幂等创建可编辑的预置知识助理。
