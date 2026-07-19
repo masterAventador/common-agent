@@ -40,6 +40,12 @@ class KnowledgeBaseNotFound(KnowledgeServiceError):
     retryable = False
 
 
+class KnowledgeRequestRejected(KnowledgeServiceError):
+    code = "knowledge_request_rejected"
+    message = "知识库服务拒绝了请求"
+    retryable = False
+
+
 class KnowledgeDocumentUploadFailed(KnowledgeServiceError):
     code = "document_upload_failed"
     message = "文档上传失败"

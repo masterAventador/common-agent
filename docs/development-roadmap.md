@@ -88,6 +88,7 @@
 | --- | --- |
 | 配置 | 缺少、格式错误、端口冲突、错误环境和敏感值泄漏 |
 | SQLite | 文件不可写、迁移失败、唯一冲突、事务回滚和重启恢复 |
+| 平台 MySQL | 未启动、连接/认证失败、迁移失败、唯一冲突、事务回滚、重启恢复、端口/Volume 隔离和资源清理 |
 | PostgreSQL | 连接失败、迁移失败、连接池耗尽、事务回滚和 Schema 隔离 |
 | Redis/消息队列 | 不可用、超时、重复投递、乱序、积压、消费失败和恢复 |
 | 对象存储 | Bucket/权限错误、上传中断、重复对象、清理失败和容量上限 |
@@ -132,6 +133,7 @@
 | B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | ✅ 已完成 |
 | B1-03 | 平台持久化基线 | 持久化适配边界、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | ✅ 已完成 |
 | B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | ✅ 已完成 |
+| B1-05 | 平台 MySQL 正式切换 | 独立 MySQL 容器/端口/Volume、SQLAlchemy async 驱动、Alembic、事务/迁移/重启恢复；正式链路不再以 SQLite 验收 | B1-03,K2-01 | ⬜ 未开始 |
 | F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | ✅ 已完成 |
 | C1-01 | OpenAPI 契约闭环 | 后端导出、前端生成、漂移检查和公共错误 DTO | B1-02,F1-02 | ✅ 已完成 |
 | F1-03 | 前端 API 基线 | Axios、Query Client、Zod 和后端真实状态提示 | C1-01 | ✅ 已完成 |
@@ -146,8 +148,8 @@
 | --- | --- | --- | --- | --- |
 | K2-01 | 锁定 RAGFlow 版本与资源 | 确切稳定版本；固定 `common-agent-dev`、独立端口/Volume；评估 Docker 32GB 级资源和复用策略 | R0-06 | ✅ 已完成 |
 | K2-02 | KnowledgeService 契约 | list/create/upload/list-documents/retrieve/status 平台协议和失败测试 | B1-02 | ✅ 已完成 |
-| K2-03 | RAGFlow 适配器 | 官方 SDK/API 接入、超时、错误转换、版本健康和真实服务验收 | K2-01,K2-02 | ⬜ 未开始 |
-| K2-04 | 知识库 API | 列表、创建、文档上传、解析状态；上传大小/类型限制 | K2-03,C1-01 | ⬜ 未开始 |
+| K2-03 | RAGFlow 适配器 | 官方 SDK/API 接入、超时、错误转换、版本健康和真实服务验收 | K2-01,K2-02 | ✅ 已完成 |
+| K2-04 | 知识库 API | 列表、创建、文档上传、解析状态；上传大小/类型限制 | K2-03,B1-05,C1-01 | ⬜ 未开始 |
 | K2-05 | 知识库页面 | 创建、上传、真实状态、失败重试和空状态 | K2-04,F1-03 | ⬜ 未开始 |
 | K2-06 | 知识库 Playwright | 浏览器完成创建→上传→解析完成/失败展示 | K2-05 | ⬜ 未开始 |
 
@@ -205,7 +207,7 @@
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
 | Q6-01 | 完整失败矩阵 | 第 5 节所有适用分支有自动化或明确真实证据 | A4-09,W5-08 | ⬜ 未开始 |
-| Q6-02 | Docker 资源与清理验收 | 记录峰值/稳定内存、32GB 建议、端口隔离；证明稳定栈复用、按影响重建，并清理重复任务镜像和悬空层 | Q6-01 | ⬜ 未开始 |
+| Q6-02 | Docker 资源与清理验收 | 记录峰值/稳定内存、48GiB 独立 profile 建议、端口/context 隔离；证明稳定栈复用、按影响重建，并清理重复任务镜像和悬空层 | Q6-01 | ⬜ 未开始 |
 | Q6-03 | 全量自动化 | 后端、前端、契约、构建和 Playwright 全量通过 | Q6-02 | ⬜ 未开始 |
 | Q6-04 | 本机 MVP 验收 | 从空平台完成知识库→员工→两轮对话→工作流，全部走正式入口 | Q6-03 | ⬜ 未开始 |
 | Q6-05 | 规格与质量复审 | 核对范围、假绿、泄密、资源泄漏、残留进程和无用代码 | Q6-04 | ⬜ 未开始 |
@@ -473,10 +475,24 @@
 - 文档：`docs/development-roadmap.md`
 - 遗留：K2-03 实现 RAGFlow v0.25.6 正式适配器并证明真实服务；K2-04 再把平台模型转换为 FastAPI/OpenAPI 对外契约
 
+### K2-03 RAGFlow 适配器
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：适配器单元测试先因正式模块/HTTP 依赖不存在而收集失败；基础设施配置测试分别捕获共享 Docker context、非官方 TEI 镜像和缺少只读本地模型门禁；首次真实调用在注册、登录成功后因错误使用 `/v1/system/tokens` 得到 404，证明真实 RAGFlow 契约能发现 Mock 未覆盖的路径差异；稳定栈运行后管理脚本测试又捕获端口值校验会被已占用端口抢先短路
+- GREEN：适配器定向测试 26 passed；后端全量 `uv run --frozen pytest -q` 64 passed、1 个需显式真实环境的测试按设计 skipped；真实环境测试 1 passed in 7.51s；Ruff、格式、Mypy、锁文件、RAGFlow 管理脚本、ShellCheck 和 `git diff --check` 全部通过
+- 真实边界：官方 RAGFlow `v0.25.6` 运行在独立 `common-agent-dev` Colima profile / `colima-common-agent-dev` Docker context（12 CPU、48GiB、100GiB 容器磁盘），正式版本端点 `http://127.0.0.1:19380/api/v1/system/version` 返回 `v0.25.6`；测试经正式 HTTP 入口自动注册/登录 loopback 账号、生成 API Token，再由平台适配器完成知识库创建/列表、中文文档上传/解析、唯一暗号语义检索和知识库删除，Token 未写入项目文件、测试快照或日志
+- 资源：RAGFlow API、MySQL、MinIO、Valkey、Elasticsearch 和 Hugging Face 官方 TEI 六容器全部健康；采样占用分别约 3.80GiB、427MiB、122MiB、12MiB、1.71GiB、21.62GiB，证明原共享 32GiB 环境余量不足，48GiB 独立 profile 的选择合理；`BAAI/bge-m3` 约 4GB 权重通过宿主机只读挂载复用
+- 失败矩阵：覆盖未配置、版本漂移、网络/超时/5xx、401/403/请求拒绝、知识库不存在、非法/跨库响应、空检索、文档状态映射、明确上传失败和上传结果未知；基础设施覆盖官方版本/提交漂移、模型缺失、公开绑定、非法/冲突端口、独立 context 和资源上限；真实启动实际经历 Docker Hub EOF/TLS/令牌过期、共享 30GiB 内容分区不足和多架构清单缺层，均在不影响其他项目的前提下恢复
+- 清理：真实生命周期在 `finally` 删除唯一测试知识库；删除约 3GB 临时镜像层、临时下载脚本、空下载目录和早期探针遗留 Docker CLI；确认默认 context 无容器引用后删除本任务重复 RAGFlow 镜像与无效 Valkey 清单；保留专用 context 内六容器、正式镜像、Volume 和本地模型作为后续任务稳定开发栈，避免重复构建/拉取
+- 文档：`.env.example`、`CLAUDE.md`、`infra/ragflow/README.md`、正式 RAGFlow Compose/管理脚本、异步适配器及单元/真实集成测试、`docs/development-roadmap.md`
+- 遗留：按用户确认先完成 B1-05，把平台自有元数据从 SQLite 正式切到独立 MySQL；之后 K2-04 才把本适配器接入 FastAPI/OpenAPI 知识库接口
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `K2-03`：接入正式 RAGFlow 适配器并验收真实服务；
+1. 完成 `B1-05`：把平台元数据从 SQLite 正式切换到项目独立 MySQL；
 2. 完成 `K2-04`：通过平台 API 跑通知识库创建、上传和解析状态；
 3. 完成 `K2-05`：实现知识库正式页面和真实状态交互。

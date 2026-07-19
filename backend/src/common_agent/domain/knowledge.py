@@ -22,6 +22,7 @@ class KnowledgeServiceStatus:
     provider: str
     availability: KnowledgeServiceAvailability
     version: str | None
+    error_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

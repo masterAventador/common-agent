@@ -8,9 +8,15 @@ EXPECTED_COMMIT="$(tr -d '[:space:]' < "${SCRIPT_DIR}/UPSTREAM_COMMIT")"
 STACK_ROOT="${REPOSITORY_ROOT}/.local/dev/common-agent-dev/ragflow"
 RUNTIME_ROOT="${RAGFLOW_RUNTIME_ROOT:-${STACK_ROOT}/upstream/${VERSION}}"
 DATA_ROOT="${RAGFLOW_DATA_ROOT:-${STACK_ROOT}/data}"
+MODEL_ROOT="${RAGFLOW_MODEL_ROOT:-${STACK_ROOT}/models}"
 UPSTREAM_URL="https://github.com/infiniflow/ragflow.git"
 OFFICIAL_IMAGE="infiniflow/ragflow:${VERSION}"
 PROJECT_NAME="common-agent-dev"
+DOCKER_CONTEXT_NAME="${RAGFLOW_DOCKER_CONTEXT:-colima-common-agent-dev}"
+
+docker_cli() {
+  docker --context "${DOCKER_CONTEXT_NAME}" "$@"
+}
 
 port_value() {
   case "$1" in
@@ -44,6 +50,9 @@ check_ports() {
   for name in es redis api web web_https admin mcp go_admin go_http tei mysql minio minio_console; do
     port="$(port_value "${name}")"
     validate_port "${port}"
+  done
+  for name in es redis api web web_https admin mcp go_admin go_http tei mysql minio minio_console; do
+    port="$(port_value "${name}")"
     if lsof -nP -iTCP:"${port}" -sTCP:LISTEN > /dev/null 2>&1; then
       echo "RAGFlow 端口已被占用：127.0.0.1:${port}（${name}）" >&2
       return 1
@@ -58,6 +67,24 @@ ensure_data_directories() {
     "${DATA_ROOT}/minio" \
     "${DATA_ROOT}/redis" \
     "${DATA_ROOT}/logs"
+}
+
+check_model() {
+  local profiles model model_path
+  profiles="${RAGFLOW_COMPOSE_PROFILES:-elasticsearch,cpu,tei-cpu}"
+  if [[ ",${profiles}," != *",tei-cpu,"* ]]; then
+    return
+  fi
+  model="${RAGFLOW_TEI_MODEL:-BAAI/bge-m3}"
+  model_path="${MODEL_ROOT}/${model}"
+  [[ -f "${model_path}/config.json" ]] || {
+    echo "缺少 RAGFlow embedding 模型配置：${model_path}/config.json" >&2
+    exit 1
+  }
+  if [[ ! -f "${model_path}/model.safetensors" && ! -f "${model_path}/pytorch_model.bin" ]]; then
+    echo "缺少 RAGFlow embedding 模型权重：${model_path}" >&2
+    exit 1
+  fi
 }
 
 prepare() {
@@ -94,7 +121,9 @@ prepare() {
 compose() {
   prepare
   RAGFLOW_DATA_ROOT="${DATA_ROOT}" \
+  RAGFLOW_MODEL_ROOT="${MODEL_ROOT}" \
   RAGFLOW_IMAGE="${OFFICIAL_IMAGE}" \
+  TEI_IMAGE_CPU="ghcr.io/huggingface/text-embeddings-inference:cpu-1.8" \
   ES_PORT="127.0.0.1:$(port_value es)" \
   EXPOSE_MYSQL_PORT="127.0.0.1:$(port_value mysql)" \
   MINIO_PORT="127.0.0.1:$(port_value minio)" \
@@ -112,7 +141,7 @@ compose() {
   TEI_MODEL="${RAGFLOW_TEI_MODEL:-BAAI/bge-m3}" \
   MACOS=1 \
   DOCKER_DEFAULT_PLATFORM=linux/amd64 \
-    docker compose \
+    docker_cli compose \
       --project-name "${PROJECT_NAME}" \
       --project-directory "${RUNTIME_ROOT}/docker" \
       -f "${RUNTIME_ROOT}/docker/docker-compose.yml" \
@@ -126,22 +155,24 @@ stack_has_containers() {
 
 pull_image() {
   prepare
-  if docker image inspect "${OFFICIAL_IMAGE}" > /dev/null 2>&1; then
+  if docker_cli image inspect "${OFFICIAL_IMAGE}" > /dev/null 2>&1; then
     echo "复用本机 RAGFlow 镜像：${OFFICIAL_IMAGE}"
     return
   fi
   local source="${RAGFLOW_IMAGE_SOURCE:-${OFFICIAL_IMAGE}}"
-  docker pull --platform linux/amd64 "${source}"
+  docker_cli pull --platform linux/amd64 "${source}"
   if [[ "${source}" != "${OFFICIAL_IMAGE}" ]]; then
-    docker tag "${source}" "${OFFICIAL_IMAGE}"
+    docker_cli tag "${source}" "${OFFICIAL_IMAGE}"
   fi
 }
 
 case "${1:-}" in
   prepare) prepare ;;
+  check-model) check_model ;;
   pull-image) pull_image ;;
   check-ports) check_ports ;;
   up)
+    check_model
     if ! stack_has_containers; then
       check_ports
     fi
@@ -153,7 +184,7 @@ case "${1:-}" in
   config) compose config ;;
   logs) compose logs -f ragflow-cpu ;;
   *)
-    echo "用法: $0 {prepare|pull-image|check-ports|up|stop|down|status|config|logs}" >&2
+    echo "用法: $0 {prepare|pull-image|check-model|check-ports|up|stop|down|status|config|logs}" >&2
     exit 2
     ;;
 esac

@@ -29,7 +29,14 @@ services:
   tei-cpu:
     container_name: common-agent-ragflow-embedding
     platform: linux/amd64
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     mem_limit: 24g
+    command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
+    volumes:
+      - type: bind
+        source: ${RAGFLOW_MODEL_ROOT}
+        target: /data
+        read_only: true
 
 volumes:
   esdata01:

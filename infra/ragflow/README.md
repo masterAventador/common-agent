@@ -9,8 +9,11 @@
 ## 使用
 
 ```bash
+colima start common-agent-dev --cpus 12 --memory 48 --disk 100 --root-disk 20 \
+  --runtime docker --vm-type vz --vz-rosetta --activate=false
 infra/ragflow/manage.sh prepare
 infra/ragflow/manage.sh pull-image
+infra/ragflow/manage.sh check-model
 infra/ragflow/manage.sh check-ports
 infra/ragflow/manage.sh up
 infra/ragflow/manage.sh status
@@ -26,6 +29,11 @@ bash infra/ragflow/test-manage.sh
 网络但保留数据。数据、日志和官方 checkout 全部位于被 Git 忽略的
 `.local/dev/common-agent-dev/ragflow/`。只有改动 RAGFlow 版本、Compose 或存储时才重建
 整栈；任务镜像清理不得删除仍由稳定栈使用的官方镜像。
+
+管理脚本默认固定使用 Docker context `colima-common-agent-dev`。该 context 来自同名独立
+Colima profile，不会改变全局当前 context，也不会与其他项目共享 Docker 镜像存储、
+容器、网络或 Volume。`RAGFLOW_DOCKER_CONTEXT` 只用于配置契约等显式测试场景覆盖，
+正式开发栈不得指向其他项目正在使用的 context。
 
 ## 端口与隔离
 
@@ -51,17 +59,23 @@ bash infra/ragflow/test-manage.sh
 ## 资源策略
 
 官方最低要求是 4 核、16GB RAM 和 50GB 磁盘；`v0.25.6` 镜像不包含 embedding
-模型。当前开发机 Docker Desktop 可用约 31.28GiB，现有其他项目容器实测约占 2.2GiB，
-属于 32GB 级配置但运行多语言 `BAAI/bge-m3` 时余量较紧。为保证中文知识检索，稳定栈
+模型。真实首次启动发现共享 Colima 的 30GiB 内容分区已经被其他项目占满，因此本项目
+使用独立 profile：12 CPU、48GiB 内存、100GiB 容器磁盘。为保证中文知识检索，稳定栈
 默认启用官方 `tei-cpu` profile 和 `BAAI/bge-m3`，不静默降级到英文模型。
 
-容器上限为：embedding 24GiB、RAGFlow 5GiB、Elasticsearch 3GiB（JVM 1GiB）、
-MySQL 2GiB、MinIO 1GiB、Valkey 256MiB。上限不是预留量，可以超过虚拟机总量；
-K2-03 首次真实解析会记录启动峰值和稳定占用。当前 32GB 级配置用于首次验证；若出现
-OOM 或内存压力，Docker Desktop 应提高到 48GiB，而不是裁剪必需服务、降低验收范围或
-改用不适合中文的 embedding。宿主机有 128GB RAM，可为 Docker 提高资源后仍保留充足余量。
+TEI 运行时固定为 Hugging Face 官方
+`ghcr.io/huggingface/text-embeddings-inference:cpu-1.8`。模型以只读 bind mount 从
+`.local/dev/common-agent-dev/ragflow/models/BAAI/bge-m3` 挂载到容器 `/data/BAAI/bge-m3`，
+避免把 4GB 级权重重复塞进 Docker 内容分区。`check-model` 会在启动前验证模型配置和
+权重文件；模型缺失时必须从官方 Hugging Face 仓库准备，不得自动换成其他模型。
 
-Apple Silicon 使用官方 `linux/amd64` 镜像并由 Docker Desktop 仿真。镜像已存在时
+容器上限为：embedding 24GiB、RAGFlow 5GiB、Elasticsearch 3GiB（JVM 1GiB）、
+MySQL 2GiB、MinIO 1GiB、Valkey 256MiB。K2-03 首次真实解析记录启动峰值和稳定占用；
+若仍出现 OOM 或内存压力，应提高独立 profile 资源，而不是裁剪必需服务、降低验收范围
+或改用不适合中文的 embedding。宿主机有 128GB RAM，48GiB profile 不影响现有 32GiB
+默认 profile 并行运行。
+
+Apple Silicon 使用官方 `linux/amd64` 镜像并由独立 Colima VZ/Rosetta 环境运行。镜像已存在时
 `pull-image` 直接复用；下载 Docker Hub 不稳定时，可通过官方 tag 对应镜像源覆盖：
 
 ```bash
