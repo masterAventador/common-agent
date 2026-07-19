@@ -19,6 +19,10 @@ const EmployeesPage = lazy(async () => {
   const module = await import("../features/employees/EmployeesPage");
   return { default: module.EmployeesPage };
 });
+const ChatPage = lazy(async () => {
+  const module = await import("../features/chat/ChatPage");
+  return { default: module.ChatPage };
+});
 
 const entries = [
   {
@@ -105,7 +109,9 @@ export function App() {
               {entries
                 .filter(
                   (entry) =>
-                    entry.path !== "/knowledge-bases" && entry.path !== "/employees",
+                    entry.path !== "/chat" &&
+                    entry.path !== "/knowledge-bases" &&
+                    entry.path !== "/employees",
                 )
                 .map((entry) => (
                   <Route
@@ -114,6 +120,7 @@ export function App() {
                     element={<EntryShell title={entry.label} description={entry.description} />}
                   />
                 ))}
+              <Route path="/chat" element={<ChatPage />} />
               <Route path="/knowledge-bases" element={<KnowledgeBasesPage />} />
               <Route path="/employees" element={<EmployeesPage />} />
               <Route path="*" element={<Navigate to="/chat" replace />} />

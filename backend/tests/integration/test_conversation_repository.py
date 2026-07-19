@@ -187,20 +187,20 @@ def test_repositories_list_all_conversations_and_active_assistant_messages() -> 
             try:
                 async with database.session() as session:
                     await SqlAlchemyEmployeeRepository(session).add(employee)
-                    conversations = SqlAlchemyConversationRepository(session)
+                    conversation_repository = SqlAlchemyConversationRepository(session)
                     messages = SqlAlchemyMessageRepository(session)
-                    await conversations.add(older)
-                    await conversations.add(newer)
+                    await conversation_repository.add(older)
+                    await conversation_repository.add(newer)
                     await messages.add(pending)
                     await messages.add(streaming)
                     await session.commit()
 
                 async with database.session() as session:
-                    conversations = await SqlAlchemyConversationRepository(session).list()
+                    stored_conversations = await SqlAlchemyConversationRepository(session).list()
                     active = await SqlAlchemyMessageRepository(session).list_active()
                     own_ids = {older.id, newer.id}
                     return (
-                        tuple(item for item in conversations if item.id in own_ids),
+                        tuple(item for item in stored_conversations if item.id in own_ids),
                         tuple(item for item in active if item.conversation_id in own_ids),
                     )
             finally:

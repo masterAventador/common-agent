@@ -28,6 +28,7 @@ from common_agent.knowledge.base import (
 from common_agent.knowledge.retrieval import (
     ConversationKnowledgeRequestInvalid,
     ConversationKnowledgeResolver,
+    ResolvedKnowledgeContext,
 )
 
 EMPLOYEE_ID = UUID("ddbdad78-1128-4334-ad02-d28833357529")
@@ -126,7 +127,7 @@ def test_bound_employee_retrieves_every_message_and_maps_runtime_context_and_cit
     resolver = ConversationKnowledgeResolver(knowledge)  # type: ignore[arg-type]
     employee = _employee(knowledge_base_id="kb-bound")
 
-    async def exercise() -> tuple[object, object]:
+    async def exercise() -> tuple[ResolvedKnowledgeContext, ResolvedKnowledgeContext]:
         return (
             await resolver.resolve(employee, _user_message(content="第一问")),
             await resolver.resolve(employee, _user_message(content="第二问")),

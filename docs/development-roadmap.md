@@ -181,7 +181,7 @@
 | A4-04 | Deep Agents 适配器 | 官方 `create_deep_agent`、受控工具、无 Shell/本机文件权限 | A4-02,A4-03 | ✅ 已完成 |
 | A4-05 | 自动知识检索 | 每条消息按员工绑定检索、空结果语义、引用映射和检索失败 fail closed | A4-03,K2-03,E3-02 | ✅ 已完成 |
 | A4-06 | 会话 API 与 SSE | 新建/列表/历史/发送/停止/重试；事件单调、持久化后推送 | A4-04,A4-05,C1-01 | ✅ 已完成 |
-| A4-07 | 聊天工作台 | 三栏会话、流式回复、引用、停止、重试和刷新恢复 | A4-06,F1-03 | ⬜ 未开始 |
+| A4-07 | 聊天工作台 | 三栏会话、流式回复、引用、停止、重试和刷新恢复 | A4-06,F1-03 | ✅ 已完成 |
 | A4-08 | Demo 核心 E2E | 固定适配器完成两轮会话、检索引用、断流和重试 | A4-07 | ⬜ 未开始 |
 | A4-09 | 真实会话验收 | 本机 RAGFlow + Deep Agents + 阿里百炼完成两轮知识问答并验证引用 | A4-08 | ⬜ 未开始 |
 
@@ -723,10 +723,25 @@
 - 文档：后端 README、后端架构、正式会话应用服务/API/SSE、事件与 OpenAPI 生成契约、分层/真实验收和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
 - 遗留：A4-07 在聊天工作台消费本任务 API/SSE 并实现三栏会话、引用、停止、重试与刷新恢复；A4-08 用无头 Playwright 覆盖真实用户页面路径，A4-09 再完成绑定知识库的两轮 RAGFlow+Deep Agents+百炼验收
 
+### A4-07 聊天工作台
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增会话 REST/SSE 客户端测试，因 `api/conversations` 不存在发生模块收集失败；再新增聊天页组件测试，因 `features/chat/ChatPage` 不存在发生模块收集失败。实现后继续增加“SSE 增量先到、HTTP 202 接受快照后到”的竞态用例，修正前真实回退为 pending 并丢失已显示内容。正式页面首次跑通 2/2 后，清理器因新增会话的员工外键保护真实失败，暴露出旧 E3-05 清理顺序不再覆盖会话链路
+- GREEN：会话客户端 3 passed，聊天页 5 passed，前端最终全量 35 passed；TypeScript、ESLint、生产 Build、冻结 pnpm 锁文件、顶层依赖/peer、OpenAPI/SSE 生成漂移全部通过，构建如实保留既有 601.45 KiB 共享 chunk 提示。后端清理支持修正后 Ruff、格式、严格 Mypy 97 个源文件、uv lock 与全量 281 passed/7 个显式外部验收 skip 通过；最终无头 Playwright 2 passed in 33.3s，并在退出阶段成功删除 2 个唯一 RAGFlow 知识库及关联平台数据
+- 正式用户链路：`chromium-headless-shell` 从正式知识库页面创建唯一 RAGFlow 知识库、上传真实 TXT 并等待解析 completed，再从正式数字员工页面创建并绑定员工、刷新确认后点击“开始对话”；聊天页从正式入口创建 MySQL 会话，发送要求引用知识库且持续输出的消息，经 Axios/FastAPI、`ConversationKnowledgeResolver -> RAGFlow v0.25.6 -> DeepAgentsEmployeeRuntime -> deepagents 0.6.12 -> BailianChatModelAdapter -> 阿里百炼` 收到 SSE 流式内容，用户点击停止得到 stopped，再点击重试至 completed，页面显示真实 `generic-knowledge.txt` 引用，整页刷新后回答与引用仍从正式历史接口恢复
+- 页面与跨端边界：`/chat` 不再是任务式占位页，固定为会话列表、消息区和数字员工信息三栏；支持按员工过滤会话、新建/选择会话、Enter 发送与 Shift+Enter 换行、生成中状态、停止、失败/停止后重试、引用文档/片段/相关度、员工知识库绑定状态和系统指令。浏览器只调用平台 REST/SSE，不直接接触 RAGFlow、Deep Agents 或百炼；响应和事件以生成契约类型配合严格 Zod 做运行时拒绝，第三方凭据始终只在后端
+- 事件顺序与恢复：原生 EventSource 消费五类命名事件并显式 close；会话内只接受严格递增 sequence，晚到/重复事件不覆盖新快照。消息以服务端持久化快照为权威，`updated_at` 与状态进度共同阻止较旧 HTTP pending 响应覆盖先到 SSE streaming/completed；会话列表刷新不重建当前 SSE 订阅。事件格式错误或连接中断显示明确警告并重新读取正式消息历史，URL 保留员工/会话 ID，刷新恢复当前会话
+- 失败矩阵：分层覆盖未知事件版本/状态/额外敏感字段、格式错误 SSE、显式关闭、空会话、新建、发送、停止、重试、晚到和重复 sequence、SSE/HTTP 竞态及断线权威历史恢复；复用 A4-02 至 A4-06 对模型认证/超时/上游错误、RAGFlow 未配置/版本/空检索/失败、并发发送、重复提交、停止竞态和安全错误的正式与分层覆盖。正式页面额外验证浏览器未直连 RAGFlow、POST 201/202、真实解析终态、真实流式停止/重试/引用/刷新；后端不可用由统一系统状态和请求错误呈现，不静默回退到假回复
+- 清理与资源：补齐“按唯一员工名查询会话并按引用→消息→会话→员工顺序删除”的 E2E 清理，先精确清掉首次失败留下的数据，再复跑确认脚本自动清理成功。最终正式库为固定 Seed 1、会话/消息/引用 0，`common_agent_test` 四类记录全 0，RAGFlow 的 K2-06/E3-05 测试前缀为 0；18200/18280 无监听，无 Playwright/headless-shell/Vite/Uvicorn 残留，无前端 dist/tsbuildinfo/E2E 产物或专属 Docker context 悬空镜像，健康 MySQL/RAGFlow 稳定栈继续运行复用
+- 文档：同步聊天页使用与正式无头验收入口到前端 README，进度只写入唯一事实源 `docs/development-roadmap.md`；`docs/product-scope.md` 未作进度性修改，既有产品/前后端架构边界无变化
+- 遗留：A4-08 用固定正式适配器补充可重复的两轮会话、检索引用、断流和重试核心 E2E；A4-09 再用真实 RAGFlow、Deep Agents 与阿里百炼完成两轮连续知识问答并验证上下文和引用
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `A4-07`：在聊天工作台接入三栏会话、流式回复、引用、停止、重试和刷新恢复；
-2. 完成 `A4-08`：以无头 Playwright 跑通 Demo 两轮会话、检索引用、断流和重试；
-3. 完成 `A4-09`：以本机 RAGFlow、Deep Agents 和阿里百炼完成两轮真实知识问答与引用验收。
+1. 完成 `A4-08`：以无头 Playwright 跑通 Demo 两轮会话、检索引用、断流和重试；
+2. 完成 `A4-09`：以本机 RAGFlow、Deep Agents 和阿里百炼完成两轮真实知识问答与引用验收；
+3. 完成 `W5-01`：建立工作流定义与运行领域模型及正式迁移。

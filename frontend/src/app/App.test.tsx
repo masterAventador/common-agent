@@ -21,9 +21,30 @@ vi.mock("../api/knowledge", () => ({
 }));
 
 vi.mock("../api/employees", () => ({
-  fetchEmployees: vi.fn().mockResolvedValue([]),
+  fetchEmployees: vi.fn().mockResolvedValue([
+    {
+      id: "6f3d43e0-6f6d-5a67-9f25-756a0b9ed2ab",
+      name: "知识助理",
+      description: "通用知识问答",
+      system_prompt: "直接回答问题。",
+      knowledge_base_id: null,
+      allowed_workflow_ids: [],
+      created_at: "2026-07-20T02:00:00Z",
+      updated_at: "2026-07-20T02:00:00Z",
+    },
+  ]),
   createEmployee: vi.fn(),
   updateEmployee: vi.fn(),
+}));
+
+vi.mock("../api/conversations", () => ({
+  createConversation: vi.fn(),
+  fetchConversationMessages: vi.fn().mockResolvedValue([]),
+  fetchConversations: vi.fn().mockResolvedValue([]),
+  retryConversationMessage: vi.fn(),
+  sendConversationMessage: vi.fn(),
+  stopConversationGeneration: vi.fn(),
+  subscribeToConversationEvents: vi.fn(() => ({ close: vi.fn() })),
 }));
 
 const routes = [
@@ -49,7 +70,7 @@ describe("App shell", () => {
     }
   });
 
-  it("redirects the root entry to chat", () => {
+  it("redirects the root entry to chat", async () => {
     render(
       <AppProviders>
         <MemoryRouter initialEntries={["/"]}>
@@ -58,6 +79,6 @@ describe("App shell", () => {
       </AppProviders>,
     );
 
-    expect(screen.getByRole("heading", { name: "AI 会话" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "AI 会话" })).toBeInTheDocument();
   });
 });

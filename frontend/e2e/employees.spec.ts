@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -10,6 +12,7 @@ const employeeName = requiredEnvironment("COMMON_AGENT_E2E_EMPLOYEE_NAME");
 const knowledgeBaseName = requiredEnvironment(
   "COMMON_AGENT_E2E_EMPLOYEE_KNOWLEDGE_NAME",
 );
+const fixtureDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 
 test("creates a generic employee, keeps its knowledge binding, and enters chat", async ({ page }) => {
   test.setTimeout(240_000);
@@ -36,6 +39,18 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
   await knowledgeDialog.getByRole("button", { name: "确认创建" }).click();
   expect((await knowledgeResponse).status()).toBe(201);
   await expect(page.getByRole("button", { name: new RegExp(knowledgeBaseName) })).toBeVisible();
+
+  await page
+    .getByLabel("选择文档")
+    .setInputFiles(path.join(fixtureDirectory, "generic-knowledge.txt"));
+  const uploadedResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/documents") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "上传文档" }).click();
+  expect((await uploadedResponse).status()).toBe(202);
+  const documentRow = page.getByRole("row").filter({ hasText: "generic-knowledge.txt" });
+  await expect(documentRow.getByText("已完成")).toBeVisible({ timeout: 180_000 });
 
   await page.getByRole("link", { name: "数字员工" }).click();
   await expect(page.getByRole("heading", { name: "数字员工" })).toBeVisible();
@@ -89,5 +104,57 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
 
   await expect(page).toHaveURL(new RegExp(`/chat\\?employee_id=${createdEmployee.id}$`));
   await expect(page.getByRole("heading", { name: "AI 会话" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "会话列表" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "消息区域" })).toBeVisible();
+  const employeeRegion = page.getByRole("region", { name: "数字员工信息" });
+  await expect(employeeRegion).toContainText(employeeName);
+  await expect(employeeRegion).toContainText("已绑定知识库");
+
+  const createdConversationResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/conversations") &&
+      response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "新建会话" }).click();
+  expect((await createdConversationResponse).status()).toBe(201);
+  await expect(page.getByRole("heading", { name: "新会话" })).toBeVisible();
+
+  const prompt =
+    "根据已绑定知识库回答 Common Agent 是什么，然后从 1 数到 200，每个数字用逗号分隔。";
+  await page.getByRole("textbox", { name: "消息输入" }).fill(prompt);
+  const sentResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/messages") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "发送消息" }).click();
+  expect((await sentResponse).status()).toBe(202);
+  await expect(page.locator(".chat-message.is-assistant .chat-message-content")).not.toBeEmpty();
+
+  const stoppedResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/stop") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "停止生成" }).click();
+  expect((await stoppedResponse).status()).toBe(202);
+  await expect(page.getByText("已停止")).toBeVisible();
+
+  const retriedResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/retry") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "重试回答" }).click();
+  expect((await retriedResponse).status()).toBe(202);
+  await expect(page.getByText("正在生成")).toHaveCount(0, { timeout: 180_000 });
+  const completedAnswer = page.locator(".chat-message.is-assistant .chat-message-content");
+  await expect(completedAnswer).not.toBeEmpty();
+  await expect(page.getByText("引用资料 1")).toBeVisible();
+  await expect(page.getByText("generic-knowledge.txt")).toBeVisible();
+  const persistedAnswer = (await completedAnswer.textContent())?.trim();
+  expect(persistedAnswer).toBeTruthy();
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "新会话" })).toBeVisible();
+  await expect(completedAnswer).toContainText(persistedAnswer!);
+  await expect(page.getByText("generic-knowledge.txt")).toBeVisible();
   expect(directRagFlowRequests).toEqual([]);
 });

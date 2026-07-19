@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 
+from common_agent.api.routers.conversations import ConversationEventResponse
 from common_agent.employees.seeds import DEFAULT_KNOWLEDGE_ASSISTANT_ID
 from tests.support.conversations import delete_conversations
 from tests.support.http import assert_error_response, running_api
@@ -109,8 +109,8 @@ async def _exercise_real_chat(
             conversation_id,
             stop_after_first_delta=True,
         )
-        assert first_events[-1]["type"] == "assistant.stopped"
-        first_last_sequence = first_events[-1]["sequence"]
+        assert first_events[-1].type == "assistant.stopped"
+        first_last_sequence = first_events[-1].sequence
 
         retried = await client.post(f"/api/v1/messages/{assistant_message_id}/retry")
         assert retried.status_code == 202
@@ -122,10 +122,10 @@ async def _exercise_real_chat(
             conversation_id,
             after_sequence=first_last_sequence,
         )
-        assert retry_events[0]["retry"] is True
-        assert retry_events[-1]["type"] == "assistant.completed"
-        assert retry_events[-1]["message"]["content"].strip()
-        all_sequences = [event["sequence"] for event in (*first_events, *retry_events)]
+        assert retry_events[0].retry is True
+        assert retry_events[-1].type == "assistant.completed"
+        assert retry_events[-1].message.content.strip()
+        all_sequences = [event.sequence for event in (*first_events, *retry_events)]
         assert all_sequences == list(range(1, len(all_sequences) + 1))
 
         duplicate = await client.post(
@@ -146,8 +146,8 @@ async def _consume_until_terminal(
     *,
     after_sequence: int = 0,
     stop_after_first_delta: bool = False,
-) -> list[dict[str, object]]:
-    events: list[dict[str, object]] = []
+) -> list[ConversationEventResponse]:
+    events: list[ConversationEventResponse] = []
     stop_requested = False
     async with client.stream(
         "GET",
@@ -158,13 +158,13 @@ async def _consume_until_terminal(
         async for line in response.aiter_lines():
             if not line.startswith("data: "):
                 continue
-            event = json.loads(line.removeprefix("data: "))
+            event = ConversationEventResponse.model_validate_json(line.removeprefix("data: "))
             events.append(event)
-            if stop_after_first_delta and event["type"] == "assistant.delta" and not stop_requested:
+            if stop_after_first_delta and event.type == "assistant.delta" and not stop_requested:
                 stopped = await client.post(f"/api/v1/conversations/{conversation_id}/stop")
                 assert stopped.status_code == 202
                 stop_requested = True
-            if event["type"] in {
+            if event.type in {
                 "assistant.completed",
                 "assistant.failed",
                 "assistant.stopped",

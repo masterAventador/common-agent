@@ -5,6 +5,7 @@ import os
 
 from common_agent.adapters.persistence.database import Database
 from common_agent.employees.seeds import DEFAULT_KNOWLEDGE_ASSISTANT_ID
+from tests.support.conversations import delete_conversations_for_employee_names
 from tests.support.employees import delete_employees, delete_employees_named
 from tests.support.ragflow import delete_datasets_named
 
@@ -20,7 +21,9 @@ async def _cleanup() -> tuple[int, int]:
     database = Database(_required("COMMON_AGENT_DATABASE_URL"))
     await database.start()
     try:
-        await delete_employees_named(database, _required("COMMON_AGENT_E2E_EMPLOYEE_NAME"))
+        employee_name = _required("COMMON_AGENT_E2E_EMPLOYEE_NAME")
+        await delete_conversations_for_employee_names(database, employee_name)
+        await delete_employees_named(database, employee_name)
         await delete_employees(database, DEFAULT_KNOWLEDGE_ASSISTANT_ID)
     finally:
         await database.stop()
