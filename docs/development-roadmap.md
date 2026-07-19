@@ -121,8 +121,8 @@
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
 | F1-01 | 建立目标工程骨架 | 建立 frontend/backend/contracts/infra/scripts；无业务代码混放和空功能目录 | R0-08 | ✅ 已完成 |
-| B1-01 | 初始化 Backend 包 | Python 3.12、uv、src layout、pytest/Ruff/Mypy 和冻结锁文件 | F1-01 | 🚧 实现中 |
-| B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | ⬜ 未开始 |
+| B1-01 | 初始化 Backend 包 | Python 3.12、uv、src layout、pytest/Ruff/Mypy 和冻结锁文件 | F1-01 | ✅ 已完成 |
+| B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | 🚧 实现中 |
 | B1-03 | 平台持久化基线 | 仓储端口、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | ⬜ 未开始 |
 | B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | ⬜ 未开始 |
 | F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | ⬜ 未开始 |
@@ -349,10 +349,23 @@
 - 文档：`.env.example`、各目标目录 README、`docs/development-roadmap.md`
 - 遗留：具体 Python/React 结构分别由 B1-01、F1-02 建立
 
+### B1-01 初始化 Backend 包
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：先创建 `tests/test_package.py`，运行 `uvx --from pytest pytest -q tests/test_package.py`，因 `common_agent` 尚不存在以 `ModuleNotFoundError` 收集失败，证明测试能捕获缺失包
+- GREEN：`uv run --frozen pytest -q` 1 passed；`ruff check .`、`ruff format --check .`、`mypy src tests` 和 `uv lock --check` 全部通过
+- 真实边界：Homebrew CPython 3.12.13 创建 `.venv`；项目以 `src/common_agent` 可安装包运行；`uv.lock` 冻结 13 个包，实际门禁包含 pytest 9.1.1、Ruff 0.15.22、Mypy 1.20.2
+- 失败矩阵：验证包缺失会真实失败、Python 版本限制为 `>=3.12,<3.13`、锁文件可复现；服务/网络/数据库失败不适用于纯包基线
+- 清理：没有启动端口、进程或容器；`.venv` 作为后续任务复用的本机环境保留且被 Git 忽略
+- 文档：`backend/README.md`、`backend/pyproject.toml`、`backend/.python-version`、`backend/uv.lock`、`docs/development-roadmap.md`
+- 遗留：无；FastAPI 依赖和应用入口由 B1-02 以独立 RED/GREEN 引入
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `B1-01`：建立 Python 3.12/uv 后端包和测试工具链；
-2. 完成 `B1-02`：以真实 loopback Uvicorn 跑通 Health 和统一错误边界；
-3. 按依赖继续持久化、前端和契约闭环。
+1. 完成 `B1-02`：以真实 loopback Uvicorn 跑通 Health 和统一错误边界；
+2. 完成 `B1-03`：建立平台持久化仓储与迁移基线；
+3. 按依赖继续百炼配置、前端和契约闭环。
