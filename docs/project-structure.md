@@ -143,6 +143,10 @@ FastAPI / Pydantic
 ```text
 infra/ragflow/
 ├── VERSION                     # 确切版本，禁止 latest
+├── UPSTREAM_COMMIT             # 官方 tag 对应提交，防止上游引用漂移
+├── compose.override.yaml       # loopback、名称、数据目录和资源覆盖
+├── manage.sh                   # 准备、校验、启动和停止稳定栈
+├── test-manage.sh              # Compose 与端口失败门禁
 └── README.md                   # 独立服务、配置和验证说明
 
 infra/platform/                 # 当前路线图实际采用的平台基础设施
@@ -150,7 +154,7 @@ infra/platform/                 # 当前路线图实际采用的平台基础设�
 └── README.md                   # 端口、资源、持久化和清理边界
 ```
 
-不复制或修改 RAGFlow 源码，也不让平台代码直连 RAGFlow 的内部依赖。稳定开发栈可以跨任务复用；平台自有基础设施只有在路线图选用后才进入正式 Compose 和生产同路径验收。
+不复制或修改 RAGFlow 源码，也不让平台代码直连 RAGFlow 的内部依赖。管理脚本只把固定官方 checkout 和运行数据准备到 `.local/dev/common-agent-dev/ragflow/`；稳定开发栈可以跨任务复用。平台自有基础设施只有在路线图选用后才进入正式 Compose 和生产同路径验收。
 
 ## 6. 测试归属
 

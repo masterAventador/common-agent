@@ -312,12 +312,13 @@ workflow.run.failed
 | --- | --- |
 | FastAPI | `127.0.0.1:18200` |
 | React Vite | `127.0.0.1:18280` |
-| RAGFlow Web/API | `127.0.0.1:19380` |
+| RAGFlow REST API | `127.0.0.1:19380` |
+| RAGFlow Web | `127.0.0.1:19381` |
 | Playwright 测试 | 操作系统随机空闲端口 |
 
 Compose project name 固定为 `common-agent-dev`，其中 RAGFlow 相关服务使用 `common-agent-ragflow-*` 前缀，平台自有数据库、缓存、队列、对象存储和 Worker 使用 `common-agent-platform-*` 前缀。SQLite、上传临时文件、服务 Volume 映射和日志统一放在根目录 `.local/`。
 
-RAGFlow 是重型栈，Docker Desktop 可以按 32GB 级别配置。实际值在启动前结合当前容器占用与解析压测评估，并为其他项目和宿主机保留余量。
+RAGFlow 固定为官方 `v0.25.6` 及其 tag 提交 `8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4`，通过仓库 `infra/ragflow/manage.sh` 运行未修改的官方 Compose。默认启用多语言 `BAAI/bge-m3` embedding；Docker Desktop 32GB 级配置作为首次验证下限，若真实解析出现 OOM 或内存压力则提高到 48GiB，不静默降级模型或裁剪必需服务。实际峰值和稳定占用由 K2-03 与最终资源任务记录。
 
 ## 11. 官方能力依据
 

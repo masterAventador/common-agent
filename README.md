@@ -28,5 +28,6 @@
 - [后端架构](docs/backend-architecture.md)：领域、接口、数据和适配层；
 - [前端架构](docs/frontend-architecture.md)：路由、状态和交互约束；
 - [项目主规则](CLAUDE.md)：开发、测试、验收与本地资源规则。
+- [RAGFlow 本机栈](infra/ragflow/README.md)：固定版本、隔离端口、资源和复用方式。
 
-工程启动命令会在 Wave 1 工程骨架完成时补齐；当前进度以开发路线图为准。
+具体任务状态和当前下一步只以开发路线图为准。

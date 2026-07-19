@@ -1,0 +1,62 @@
+services:
+  ragflow-cpu:
+    container_name: common-agent-ragflow-api
+    platform: linux/amd64
+    mem_limit: 5g
+    environment:
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES}
+      MACOS: "1"
+    volumes:
+      - ${RAGFLOW_DATA_ROOT}/logs:/ragflow/logs
+  es01:
+    container_name: common-agent-ragflow-elasticsearch
+    platform: linux/amd64
+    mem_limit: 3g
+    environment:
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+  mysql:
+    container_name: common-agent-ragflow-mysql
+    platform: linux/amd64
+    mem_limit: 2g
+  minio:
+    container_name: common-agent-ragflow-minio
+    platform: linux/amd64
+    mem_limit: 1g
+  redis:
+    container_name: common-agent-ragflow-valkey
+    platform: linux/amd64
+    mem_limit: 256m
+  tei-cpu:
+    container_name: common-agent-ragflow-embedding
+    platform: linux/amd64
+    mem_limit: 24g
+
+volumes:
+  esdata01:
+    name: common-agent-ragflow-esdata
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${RAGFLOW_DATA_ROOT}/elasticsearch
+  mysql_data:
+    name: common-agent-ragflow-mysql-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${RAGFLOW_DATA_ROOT}/mysql
+  minio_data:
+    name: common-agent-ragflow-minio-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${RAGFLOW_DATA_ROOT}/minio
+  redis_data:
+    name: common-agent-ragflow-valkey-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${RAGFLOW_DATA_ROOT}/redis

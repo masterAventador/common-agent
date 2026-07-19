@@ -56,8 +56,9 @@
 | 前端入口 | `✅` React/Vite/Ant Design 四入口壳层已通过组件、构建和真实浏览器导航验收 |
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
+| RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
 | 产品代码 | `⬜` 尚未开始；等待后端、前端基础工具链完成后按纵向功能任务进入 |
-| 本地服务 | `✅` 临时前端初始化预览已停止；后端/RAGFlow 未启动 |
+| 本地服务 | `✅` 临时前后端与 RAGFlow 容器均未启动；保留被忽略的固定 RAGFlow 官方 checkout 供后续复用 |
 
 ## 4. 全局完成门禁
 
@@ -143,7 +144,7 @@
 
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
-| K2-01 | 锁定 RAGFlow 版本与资源 | 确切稳定版本；固定 `common-agent-dev`、独立端口/Volume；评估 Docker 32GB 级资源和复用策略 | R0-06 | 🚧 实现中 |
+| K2-01 | 锁定 RAGFlow 版本与资源 | 确切稳定版本；固定 `common-agent-dev`、独立端口/Volume；评估 Docker 32GB 级资源和复用策略 | R0-06 | ✅ 已完成 |
 | K2-02 | KnowledgeService 契约 | list/create/upload/list-documents/retrieve/status 平台协议和失败测试 | B1-02 | ⬜ 未开始 |
 | K2-03 | RAGFlow 适配器 | 官方 SDK/API 接入、超时、错误转换、版本健康和真实服务验收 | K2-01,K2-02 | ⬜ 未开始 |
 | K2-04 | 知识库 API | 列表、创建、文档上传、解析状态；上传大小/类型限制 | K2-03,C1-01 | ⬜ 未开始 |
@@ -446,10 +447,23 @@
 - 文档：根/前端环境示例、frontend README、Axios/Query/Zod/状态组件/CORS 配置与测试、`docs/development-roadmap.md`
 - 遗留：新增 Axios/Query/Zod 后单入口包约 709kB，仍保留真实构建提示；首个业务 Feature 开始时执行路由级懒加载和供应商分包，不调高阈值
 
+### K2-01 锁定 RAGFlow 版本与资源
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：首次执行 `bash infra/ragflow/test-manage.sh` 因正式 `manage.sh` 不存在以“缺少可执行的 RAGFlow 管理脚本”失败；TDD 自检发现非法端口校验缺独立 RED 后先撤销该实现，再以 `RAGFLOW_API_PORT=abc` 执行门禁，按预期因非法值仍被放行而失败
+- GREEN：`bash infra/ragflow/test-manage.sh` 通过固定版本/提交、活动 Compose、loopback、Volume、资源、非法值和占用端口门禁；`shellcheck infra/ragflow/manage.sh infra/ragflow/test-manage.sh`、`git diff --check` 通过；正式 `manage.sh config` 由 Docker Compose 成功渲染，`manage.sh pull-image` 复用本机 `infiniflow/ragflow:v0.25.6`
+- 真实边界：RAGFlow 官方 release `v0.25.6` 与 tag commit `8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4` 双固定；未修改 checkout 位于 `.local/dev/common-agent-dev/ragflow/upstream/v0.25.6`；Compose project 为 `common-agent-dev`，容器/Volume 使用 `common-agent-ragflow-*`，REST API/Web 分别为 `127.0.0.1:19380/19381`，所有内部端口也只绑定独立 loopback 端口
+- 失败矩阵：覆盖 `latest`/上游漂移防护、非法端口、真实监听冲突、公开绑定、其他项目名称/端口隔离；官方要求最低 16GB，而当前 Docker Desktop 为 31.28GiB、其他已运行项目实测约 2.2GiB，默认多语言 `BAAI/bge-m3` 设 24GiB 上限，首次解析若出现 OOM 则把 Docker Desktop 提高到 48GiB，不静默降级到英文 embedding
+- 清理：端口冲突测试的临时 Python 监听由 trap 停止并删除输出文件；`common-agent-dev` 容器、网络和 Volume 均未创建，无任务镜像或悬空层；保留约 133MB 被忽略的稳定官方 checkout 和空数据目录，避免后续重复下载
+- 文档：`.env.example`、`README.md`、`infra/README.md`、`infra/ragflow/*`、`docs/project-structure.md`、`docs/backend-architecture.md`、`docs/development-roadmap.md`
+- 遗留：TEI 镜像、真实容器启动、API 健康与启动/稳定内存测量由 K2-03 完成；完整解析和检索压测在知识库纵向链路及 Q6-02 继续记录
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `K2-01`：锁定 RAGFlow 版本、端口、Volume 和 32GB 级资源策略；
-2. 完成 `K2-02`：建立 KnowledgeService 平台契约与失败测试；
-3. 完成 `K2-03`：接入正式 RAGFlow 适配器并验收真实服务。
+1. 完成 `K2-02`：建立 KnowledgeService 平台契约与失败测试；
+2. 完成 `K2-03`：接入正式 RAGFlow 适配器并验收真实服务；
+3. 完成 `K2-04`：通过平台 API 跑通知识库创建、上传和解析状态。
