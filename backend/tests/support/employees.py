@@ -17,6 +17,16 @@ async def delete_employees(database: Database, *employee_ids: UUID | str) -> Non
         await session.commit()
 
 
+async def delete_employees_named(database: Database, *employee_names: str) -> None:
+    async with database.session() as session:
+        for employee_name in employee_names:
+            await session.execute(
+                text("DELETE FROM employees WHERE name = :employee_name"),
+                {"employee_name": employee_name},
+            )
+        await session.commit()
+
+
 async def delete_employees_from_database_url(
     database_url: str,
     *employee_ids: UUID | str,

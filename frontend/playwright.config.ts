@@ -14,6 +14,10 @@ export default defineConfig({
   },
   use: {
     baseURL: process.env.COMMON_AGENT_E2E_FRONTEND_URL ?? "http://127.0.0.1:18280",
+    headless: true,
+    launchOptions: {
+      channel: "chromium-headless-shell",
+    },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     video: "off",

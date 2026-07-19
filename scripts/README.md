@@ -13,5 +13,6 @@
 
 - `generate-contracts.sh`：从正式 FastAPI 应用导出 OpenAPI 并生成前端 TypeScript 类型；
 - `check-contracts.sh`：在隔离临时目录重建契约并检查已提交文件无漂移；
-- `test-knowledge-e2e.sh`：复用健康的稳定基础设施，编排正式 FastAPI/Vite/Chromium 知识库
-  关键路径，并负责唯一测试知识库、临时进程和成功产物清理。
+- `test-platform-e2e.sh`：复用健康的稳定基础设施，以无窗口 `chromium-headless-shell` 编排正式
+  FastAPI/Vite 的知识库与数字员工关键路径，并负责唯一测试员工/知识库、预置测试 Seed、本轮
+  Playwright/前后端进程和成功产物清理。

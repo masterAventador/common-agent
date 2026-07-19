@@ -2,7 +2,7 @@
 
 > 文档性质：项目开发进度唯一执行台账  
 > 建立日期：2026-07-19  
-> 当前阶段：Wave 3 数字员工与知识库绑定
+> 当前阶段：Wave 4 连续 AI 会话与自动检索
 > MVP 顺序：知识库 → 数字员工绑定 → AI 会话 → 可视化工作流
 
 本文件是任务进度、状态、完成定义和验证证据的唯一核对源。`product-scope.md` 只描述产品功能和边界，不承担进度同步；普通任务完成只更新本路线图。
@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` 知识库闭环、Employee 正式 API/绑定、幂等预置知识助理及数字员工页面已完成；进入数字员工浏览器自动化验收 |
+| 产品代码 | `🚧` 知识库及数字员工正式闭环（含无头浏览器自动化）已完成；进入会话/消息领域与持久化 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -165,7 +165,7 @@
 | E3-02 | 数字员工 API | 列表、详情、创建、编辑和知识库绑定；失效绑定明确拒绝 | E3-01,K2-03,C1-01 | ✅ 已完成 |
 | E3-03 | 预置知识助理 Seed | 幂等创建、可编辑、不制造重复记录 | E3-02 | ✅ 已完成 |
 | E3-04 | 数字员工页面 | 列表、创建/编辑表单、知识库选择和“开始对话” | E3-02,F1-03 | ✅ 已完成 |
-| E3-05 | 数字员工 Playwright | 创建员工→绑定知识库→刷新后仍存在→进入对话 | E3-04 | ⬜ 未开始 |
+| E3-05 | 数字员工 Playwright | 创建员工→绑定知识库→刷新后仍存在→进入对话 | E3-04 | ✅ 已完成 |
 
 ## 10. Wave 4：连续 AI 会话与自动检索
 
@@ -608,10 +608,25 @@
 - 文档：前端 README、Employee API/Feature/样式/测试和 `docs/development-roadmap.md`；按用户纠正的产品边界，从 `product-scope.md` 与本路线图移除尚未实现且不适用于当前 Web 中台的桌面 App 自动更新规划
 - 遗留：E3-05 把创建员工、绑定知识库、刷新恢复和进入对话固化为正式 Playwright 入口；聊天页面当前仍是 Wave 1 壳层，连续会话由 A4-01 至 A4-09 依次实现
 
+### E3-05 数字员工 Playwright
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：新增数字员工 Playwright 规范后，现有知识库专用 `pnpm test:e2e` 正式入口因缺少 `COMMON_AGENT_E2E_EMPLOYEE_NAME` 明确失败，证明进程/数据编排尚未覆盖 E3-05；泛化入口后真实 Chromium 又先后捕获 Ant Design 虚拟 option 的 ARIA 节点不可见、Select 的只读 input 不承载已选文字，两次都保留截图/Trace 定位，再改为点击与断言真实可见标题节点
+- GREEN：锁定无窗口 `chromium-headless-shell` 后，`pnpm test:e2e` 在单 Worker、零重试下 2 passed in 14.0s，同时保留 K2-06 知识库回归；前端 Vitest 27 passed，ESLint、TypeScript、Build、peer、冻结锁文件通过；启用官方 RAGFlow 后后端 142 passed，Ruff、格式、Mypy、uv lock、真实 MySQL Alembic、OpenAPI/DTO、平台/RAGFlow 管理与 ShellCheck 门禁全部通过；构建仍如实报告既有 622.12 KiB 共享 chunk 提示
+- 正式用户链路：在隔离 `common_agent_test` 启动正式 FastAPI/Vite，Playwright 从知识库页面经平台 API/RAGFlow v0.25.6 创建唯一知识库，再由侧栏进入数字员工页面，创建唯一员工并通过 POST 201 绑定；页面刷新后仍显示员工、真实知识库名与说明，打开编辑弹窗确认绑定，PUT 200 更新说明后再次刷新恢复，最后点击该员工“开始对话”进入 `/chat?employee_id=<真实 UUID>` 并显示 AI 会话入口
+- 请求与安全边界：浏览器监听全程确认无 19380 直连，RAGFlow Token 只存在于后端/E2E 编排进程环境；所有测试名称和文案均为平台通用内容，无行业或 automation-tool 业务字段。聊天页面当前仅验收正式入口与员工参数，消息发送、模型和检索不在 E3-05 冒充完成
+- 失败矩阵：入口覆盖 E2E 唯一变量缺失、18200/18280 占用、MySQL/RAGFlow 健康恢复、服务 60 秒未就绪、创建响应状态、刷新恢复、知识绑定保留、编辑持久化、错误聊天参数、浏览器直连 RAGFlow、清理失败非零退出和失败产物保留；员工/知识库服务不可用与分别恢复已由 E3-04 真实浏览器验收及组件回归覆盖
+- 无打扰浏览器：按用户要求在 `CLAUDE.md` 固化所有自动化浏览器只使用无窗口模式；Playwright 配置同时强制 `headless: true` 与 `channel: chromium-headless-shell`，安装入口也只检查 headless shell。最终运行后 OS 进程核对无 Playwright/headless-shell/Vite/Uvicorn 残留
+- 通用编排与清理：知识库专用脚本升级为 `test-platform-e2e.sh`，统一复用稳定 MySQL/RAGFlow，不构建业务镜像；脚本记录本轮 Playwright/Vite/FastAPI PID 并在成功、失败或中断时由 trap 回收，随后通过测试支持按唯一员工名称、固定 Seed UUID 和两个唯一知识库名称清理。最终测试库员工 0、E3-05/K2-06 RAGFlow 前缀 0、正式库仍只有固定预置知识助理、18200/18280 空闲、无浏览器或悬空镜像
+- 文档：项目浏览器/清理规则、Playwright 配置与 Employee 规范、通用平台 E2E/清理支持、frontend/scripts README 和 `docs/development-roadmap.md`
+- 遗留：无；Wave 3 完成，下一任务按 Roadmap 进入 A4-01 会话/消息/Citation 领域与正式持久化
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `E3-05`：浏览器创建员工、绑定知识库、刷新恢复并进入对话；
-2. 完成 `A4-01`：建立会话、消息和引用领域与正式持久化模型；
-3. 完成 `A4-02`：接入阿里百炼流式模型适配器并覆盖真实失败边界。
+1. 完成 `A4-01`：建立会话、消息和引用领域与正式持久化模型；
+2. 完成 `A4-02`：接入阿里百炼流式模型适配器并覆盖真实失败边界；
+3. 完成 `A4-03`：建立 EmployeeRuntime 历史、上下文、流式事件与停止语义契约。
