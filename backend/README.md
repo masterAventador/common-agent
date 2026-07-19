@@ -67,4 +67,6 @@ allowlist。非空知识库 ID 会先经 `KnowledgeBaseService` 和 RAGFlow 官�
 可由领域模型携带引用。Conversation Unit of Work 让后续发送用例原子提交用户消息、助手占位
 与状态更新；当前 A4-01 只交付领域与正式持久化，公开会话 HTTP/SSE 入口在 A4-06 接入。
 
-`ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。
+`ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。Base URL 只接受百炼官方 `compatible-mode/v1` HTTPS 地址，禁止 URL 凭据、查询参数和非官方主机。
+
+`BailianChatModelAdapter` 使用锁定的 `langchain-openai==1.3.5` 构造正式 `ChatOpenAI`，通过 `stream_text()` 暴露增量文本，并通过 `chat_model` 把同一个模型实例交给后续 Deep Agents 适配层。总请求超时、流式逐块超时与重试次数分别由 `BAILIAN_TIMEOUT_SECONDS`、`BAILIAN_STREAM_CHUNK_TIMEOUT_SECONDS` 和 `BAILIAN_MAX_RETRIES` 控制，默认 `60/60/2`，最大 `300/300/3`；认证、请求拒绝、限流、超时、5xx、流中断和空输出都会转换成不含上游响应体或凭据的稳定平台错误。持有适配器的 lifespan 必须调用幂等 `aclose()` 释放自有模型客户端。

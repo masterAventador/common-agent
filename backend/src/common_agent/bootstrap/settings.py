@@ -166,11 +166,21 @@ class ModelSettings(BaseModel):
     api_key: SecretStr
     base_url: str
     model: str
+    timeout_seconds: float = 60.0
+    stream_chunk_timeout_seconds: float = 60.0
+    max_retries: int = 2
 
     @classmethod
     def from_env(cls) -> ModelSettings:
         values = _demo_values(None)
-        for key in ("BAILIAN_API_KEY", "BAILIAN_BASE_URL", "BAILIAN_MODEL"):
+        for key in (
+            "BAILIAN_API_KEY",
+            "BAILIAN_BASE_URL",
+            "BAILIAN_MODEL",
+            "BAILIAN_TIMEOUT_SECONDS",
+            "BAILIAN_STREAM_CHUNK_TIMEOUT_SECONDS",
+            "BAILIAN_MAX_RETRIES",
+        ):
             configured = os.environ.get(key)
             if configured:
                 values[key] = configured
@@ -185,15 +195,53 @@ class ModelSettings(BaseModel):
         api_key = _required(values, "BAILIAN_API_KEY")
         base_url = _required(values, "BAILIAN_BASE_URL")
         model = _required(values, "BAILIAN_MODEL")
+        timeout_seconds = _bounded_float(
+            values,
+            "BAILIAN_TIMEOUT_SECONDS",
+            default=60.0,
+            maximum=300.0,
+        )
+        stream_chunk_timeout_seconds = _bounded_float(
+            values,
+            "BAILIAN_STREAM_CHUNK_TIMEOUT_SECONDS",
+            default=60.0,
+            maximum=300.0,
+        )
+        max_retries = _bounded_int(
+            values,
+            "BAILIAN_MAX_RETRIES",
+            default=2,
+            maximum=3,
+        )
 
         parsed = urlparse(base_url)
-        if parsed.scheme != "https" or not parsed.netloc:
-            raise ConfigurationError("BAILIAN_BASE_URL must be a valid HTTPS URL")
+        try:
+            port = parsed.port
+        except ValueError as error:
+            raise ConfigurationError(
+                "BAILIAN_BASE_URL must be an official HTTPS endpoint"
+            ) from error
+        host = parsed.hostname or ""
+        if (
+            parsed.scheme != "https"
+            or not _is_bailian_host(host)
+            or port not in {None, 443}
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path.rstrip("/") != "/compatible-mode/v1"
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ConfigurationError("BAILIAN_BASE_URL must be an official HTTPS endpoint")
 
         return cls(
             api_key=SecretStr(api_key),
             base_url=base_url.rstrip("/"),
             model=model,
+            timeout_seconds=timeout_seconds,
+            stream_chunk_timeout_seconds=stream_chunk_timeout_seconds,
+            max_retries=max_retries,
         )
 
 
@@ -208,3 +256,49 @@ def _required(values: Mapping[str, str], key: str) -> str:
     if not value:
         raise ConfigurationError(f"{key} is required")
     return value
+
+
+def _bounded_float(
+    values: Mapping[str, str],
+    key: str,
+    *,
+    default: float,
+    maximum: float,
+) -> float:
+    raw_value = values.get(key, str(default))
+    try:
+        value = float(raw_value)
+    except ValueError as error:
+        raise ConfigurationError(f"{key} must be a number") from error
+    if not isfinite(value) or not 0 < value <= maximum:
+        raise ConfigurationError(f"{key} must be between 0 and {maximum:g}")
+    return value
+
+
+def _bounded_int(
+    values: Mapping[str, str],
+    key: str,
+    *,
+    default: int,
+    maximum: int,
+) -> int:
+    raw_value = values.get(key, str(default))
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ConfigurationError(f"{key} must be an integer") from error
+    if not 0 <= value <= maximum:
+        raise ConfigurationError(f"{key} must be between 0 and {maximum}")
+    return value
+
+
+def _is_bailian_host(host: str) -> bool:
+    if host in {"dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com"}:
+        return True
+    return any(
+        host.endswith(suffix) and host != suffix.removeprefix(".")
+        for suffix in (
+            ".cn-beijing.maas.aliyuncs.com",
+            ".ap-southeast-1.maas.aliyuncs.com",
+        )
+    )

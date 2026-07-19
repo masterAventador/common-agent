@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Sequence
+
+import httpx
+import openai
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import BaseMessage
+from langchain_openai import ChatOpenAI
+
+from common_agent.bootstrap.settings import ModelSettings
+from common_agent.models.base import (
+    ModelConfigurationInvalid,
+    ModelProviderResponseInvalid,
+    ModelRequestRejected,
+    ModelServiceError,
+    ModelServiceUnavailable,
+    ModelStreamInterrupted,
+)
+
+
+class BailianChatModelAdapter:
+    provider_name = "bailian"
+
+    def __init__(
+        self,
+        settings: ModelSettings,
+        *,
+        http_async_client: httpx.AsyncClient | None = None,
+    ) -> None:
+        self._owns_async_client = http_async_client is None
+        self._closed = False
+        if http_async_client is None:
+            self._chat_model = _create_chat_model(settings)
+        else:
+            self._chat_model = _create_chat_model(settings, http_async_client=http_async_client)
+
+    @property
+    def chat_model(self) -> BaseChatModel:
+        return self._chat_model
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._chat_model.root_client is not None:
+            self._chat_model.root_client.close()
+        if self._owns_async_client and self._chat_model.root_async_client is not None:
+            await self._chat_model.root_async_client.close()
+
+    async def stream_text(self, messages: Sequence[BaseMessage]) -> AsyncIterator[str]:
+        emitted: list[str] = []
+        try:
+            async for chunk in self._chat_model.astream(messages):
+                text = _text_content(chunk.content)
+                if text:
+                    emitted.append(text)
+                    yield text
+        except ModelServiceError:
+            raise
+        except Exception as error:
+            if emitted:
+                raise ModelStreamInterrupted() from None
+            raise _translate_error(error) from None
+
+        if not "".join(emitted).strip():
+            raise ModelProviderResponseInvalid()
+
+
+def _text_content(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+
+    text_parts: list[str] = []
+    for block in content:
+        if isinstance(block, str):
+            text_parts.append(block)
+        elif isinstance(block, dict) and block.get("type") in {"text", "text_delta"}:
+            text = block.get("text")
+            if isinstance(text, str):
+                text_parts.append(text)
+    return "".join(text_parts)
+
+
+def _create_chat_model(
+    settings: ModelSettings,
+    *,
+    http_async_client: httpx.AsyncClient | None = None,
+) -> ChatOpenAI:
+    if http_async_client is None:
+        return ChatOpenAI(
+            model=settings.model,
+            base_url=settings.base_url,
+            api_key=settings.api_key,
+            timeout=settings.timeout_seconds,
+            stream_chunk_timeout=settings.stream_chunk_timeout_seconds,
+            max_retries=settings.max_retries,
+            streaming=True,
+            stream_usage=False,
+            use_responses_api=False,
+        )
+    return ChatOpenAI(
+        model=settings.model,
+        base_url=settings.base_url,
+        api_key=settings.api_key,
+        timeout=settings.timeout_seconds,
+        stream_chunk_timeout=settings.stream_chunk_timeout_seconds,
+        max_retries=settings.max_retries,
+        streaming=True,
+        stream_usage=False,
+        use_responses_api=False,
+        http_async_client=http_async_client,
+    )
+
+
+def _translate_error(error: Exception) -> ModelServiceError:
+    if isinstance(error, (openai.AuthenticationError, openai.PermissionDeniedError)):
+        return ModelConfigurationInvalid()
+    if isinstance(
+        error,
+        (
+            openai.BadRequestError,
+            openai.ConflictError,
+            openai.NotFoundError,
+            openai.UnprocessableEntityError,
+        ),
+    ):
+        return ModelRequestRejected()
+    if isinstance(
+        error,
+        (
+            openai.APIConnectionError,
+            openai.APITimeoutError,
+            openai.InternalServerError,
+            openai.RateLimitError,
+        ),
+    ):
+        return ModelServiceUnavailable()
+    if isinstance(error, openai.APIStatusError):
+        if error.status_code == 429 or error.status_code >= 500:
+            return ModelServiceUnavailable()
+        return ModelRequestRejected()
+    return ModelServiceUnavailable()
