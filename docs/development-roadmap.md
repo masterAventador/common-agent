@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` RAGFlow 知识库创建、上传、真实完成/失败状态及 Playwright 闭环已完成；进入数字员工与知识库绑定 |
+| 产品代码 | `🚧` 知识库纵向闭环及通用 Employee 领域/MySQL 迁移已完成；进入数字员工正式 API 与知识库绑定 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -162,7 +162,7 @@
 
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
-| E3-01 | Employee 领域与迁移 | 模型、字段限制、正式持久化模型和知识库引用完整性策略 | B1-03,K2-02 | ⬜ 未开始 |
+| E3-01 | Employee 领域与迁移 | 模型、字段限制、正式持久化模型和知识库引用完整性策略 | B1-03,K2-02 | ✅ 已完成 |
 | E3-02 | 数字员工 API | 列表、详情、创建、编辑和知识库绑定；失效绑定明确拒绝 | E3-01,K2-03,C1-01 | ⬜ 未开始 |
 | E3-03 | 预置知识助理 Seed | 幂等创建、可编辑、不制造重复记录 | E3-02 | ⬜ 未开始 |
 | E3-04 | 数字员工页面 | 列表、创建/编辑表单、知识库选择和“开始对话” | E3-02,F1-03 | ⬜ 未开始 |
@@ -555,10 +555,25 @@
 - 文档：Playwright 配置/规范与通用夹具、正式运行脚本、测试支持、frontend/scripts README、pnpm lock 和 `docs/development-roadmap.md`
 - 遗留：无；Wave 2 纵向闭环完成，下一任务按 Roadmap 进入 E3-01
 
+### E3-01 Employee 领域与迁移
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：先建立 Employee 领域和正式仓储集成测试，定向 pytest 因 `common_agent.domain.employee` 与 `common_agent.adapters.persistence.employees` 不存在出现 2 个收集错误；最小实现首次进入真实 MySQL 后又捕获普通 `DATETIME` 丢失微秒，以及 MySQL 8.4 CHECK 失败由 asyncmy 映射为 `OperationalError` 的真实驱动差异，随后改用 `DATETIME(6)` 和共同数据库错误边界
+- GREEN：Employee/数据库定向测试 27 passed；启用真实 RAGFlow 后后端全量 127 passed；Ruff、格式、Mypy、uv lock、真实 MySQL `alembic check`、前端 18 项 Vitest/Lint/类型/Build/peer、OpenAPI/DTO 漂移、平台/RAGFlow 管理规则和 ShellCheck 全部通过
+- 真实使用路径：在专属 18200 端口两次运行正式 `uv run python -m common_agent`；第一次经 FastAPI lifespan、`Database`、Alembic、SQLAlchemy async 与 asyncmy 把正式 `common_agent` 从 `20260719_0001` 升级到 `20260719_0002`，第二次从已迁移状态无损重启，两次均由独立 curl 经真实 loopback Health 得到 200；实际 `SHOW CREATE TABLE employees` 确认 JSON、`DATETIME(6)` 及七项 CHECK 已落在 MySQL。E3-01 没有对外员工接口，仓储直测仅作分层定位；其用户/API 正式调用链由紧接的 E3-02 通过真实 Uvicorn 入口验收
+- 模型与通用性：不可变 `Employee` 只包含 UUID、名称、说明、系统指令、可选知识库 ID、独立工作流 allowlist 和 UTC 时间，不包含行业、业务任务、automation-tool 或第三方 SDK 类型；名称 128、说明 1000、系统指令 12000、知识库 ID 128 的单一领域常量被 ORM 复用，迁移作为不可变历史快照固化相同约束
+- 引用完整性：MySQL 只保存 RAGFlow 数据集的不透明 ID，不直连 RAGFlow 内部数据库也不建跨服务外键；E3-02 的 `EmployeeService` 必须通过正式 `KnowledgeService` fail closed 校验创建/修改绑定，已绑定知识库后来失效时不得静默退化为无知识回答；工作流定义保持独立，allowlist 在 Wave 5 前保持空数组
+- 失败矩阵：覆盖空白/超长/错误类型字段、非 UUID/重复工作流引用、非 UTC/逆序时间、重复主键、事务异常回滚、不存在记录、MySQL 直接非法写入、迁移 revision 损坏后关闭失败与修复恢复、迁移/应用重启；RAGFlow 失效绑定、模型配置和工作流越权分别由 E3-02、A4-02 与 W5-07 的正式入口完成
+- 清理：精确删除首次失败留下的 4 条隔离测试记录并给所有仓储用例增加 `finally` 清理；最终 `common_agent_test.employees=0`、正式 `common_agent.employees=0`，RAGFlow 的 K2-03/K2-04/K2-06 测试知识库列表为空；两次 Uvicorn 均已停止，18200/18280 无监听，删除前端 dist/tsbuildinfo，无悬空镜像；保留健康的项目 MySQL 和 RAGFlow 稳定栈复用
+- 文档：后端 README、后端架构、Employee 领域/仓储/ORM/Alembic/测试和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
+- 遗留：E3-02 通过正式 API 串起 `EmployeeService -> EmployeeRepository -> MySQL`，并经真实 `KnowledgeService -> RAGFlow` 验证有效/失效知识库绑定；本任务不提前实现路由或页面
+
 ## 16. 当前下一步
 
 严格按顺序：
 
-1. 完成 `E3-01`：建立数字员工领域模型、MySQL 迁移和知识库引用完整性策略；
-2. 完成 `E3-02`：提供数字员工正式 API 与知识库绑定边界；
-3. 完成 `E3-03`：幂等创建可编辑的预置知识助理。
+1. 完成 `E3-02`：提供数字员工正式 API 与知识库绑定边界；
+2. 完成 `E3-03`：幂等创建可编辑的预置知识助理；
+3. 完成 `E3-04`：提供数字员工列表、创建/编辑与知识库选择页面。

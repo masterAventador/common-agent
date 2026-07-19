@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
+
+import pytest
+
+from common_agent.domain.employee import (
+    EMPLOYEE_DESCRIPTION_MAX_LENGTH,
+    EMPLOYEE_KNOWLEDGE_BASE_ID_MAX_LENGTH,
+    EMPLOYEE_NAME_MAX_LENGTH,
+    EMPLOYEE_SYSTEM_PROMPT_MAX_LENGTH,
+    Employee,
+    EmployeeValidationError,
+)
+
+
+def test_employee_create_normalizes_generic_configuration() -> None:
+    workflow_id = uuid4()
+    before = datetime.now(UTC)
+
+    employee = Employee.create(
+        name="  通用知识助理  ",
+        description="  面向任意领域的会话角色  ",
+        system_prompt="  根据可用上下文回答问题。  ",
+        knowledge_base_id="  ragflow-dataset-id  ",
+        allowed_workflow_ids=[workflow_id],
+    )
+
+    assert isinstance(employee.id, UUID)
+    assert employee.name == "通用知识助理"
+    assert employee.description == "面向任意领域的会话角色"
+    assert employee.system_prompt == "根据可用上下文回答问题。"
+    assert employee.knowledge_base_id == "ragflow-dataset-id"
+    assert employee.allowed_workflow_ids == (workflow_id,)
+    assert before <= employee.created_at <= datetime.now(UTC)
+    assert employee.updated_at == employee.created_at
+
+
+def test_employee_reconfigure_preserves_identity_and_creation_time() -> None:
+    employee = Employee.create(name="助理", system_prompt="原始指令")
+    changed_at = employee.updated_at + timedelta(microseconds=1)
+
+    changed = employee.reconfigure(
+        name="新助理",
+        description="新说明",
+        system_prompt="新指令",
+        knowledge_base_id=None,
+        allowed_workflow_ids=(),
+        updated_at=changed_at,
+    )
+
+    assert changed.id == employee.id
+    assert changed.created_at == employee.created_at
+    assert changed.updated_at == changed_at
+    assert changed.name == "新助理"
+    assert changed.description == "新说明"
+    assert changed.knowledge_base_id is None
+
+
+@pytest.mark.parametrize(
+    ("overrides", "field"),
+    [
+        ({"employee_id": "not-a-uuid"}, "id"),
+        ({"name": "   "}, "name"),
+        ({"name": "x" * (EMPLOYEE_NAME_MAX_LENGTH + 1)}, "name"),
+        ({"description": "x" * (EMPLOYEE_DESCRIPTION_MAX_LENGTH + 1)}, "description"),
+        ({"system_prompt": "\n\t"}, "system_prompt"),
+        (
+            {"system_prompt": "x" * (EMPLOYEE_SYSTEM_PROMPT_MAX_LENGTH + 1)},
+            "system_prompt",
+        ),
+        ({"knowledge_base_id": "   "}, "knowledge_base_id"),
+        (
+            {"knowledge_base_id": "x" * (EMPLOYEE_KNOWLEDGE_BASE_ID_MAX_LENGTH + 1)},
+            "knowledge_base_id",
+        ),
+        ({"allowed_workflow_ids": [uuid4(), uuid4(), "not-a-uuid"]}, "allowed_workflow_ids"),
+    ],
+)
+def test_employee_rejects_invalid_fields(overrides: dict[str, object], field: str) -> None:
+    values: dict[str, object] = {"name": "助理", "system_prompt": "通用系统指令"}
+    values.update(overrides)
+
+    with pytest.raises(EmployeeValidationError) as captured:
+        Employee.create(**values)  # type: ignore[arg-type]
+
+    assert captured.value.field == field
+
+
+def test_employee_rejects_duplicate_workflow_allowlist_entries() -> None:
+    workflow_id = uuid4()
+
+    with pytest.raises(EmployeeValidationError) as captured:
+        Employee.create(
+            name="助理",
+            system_prompt="通用系统指令",
+            allowed_workflow_ids=[workflow_id, workflow_id],
+        )
+
+    assert captured.value.field == "allowed_workflow_ids"
+
+
+def test_employee_rejects_non_utc_or_reversed_timestamps() -> None:
+    employee_id = uuid4()
+    created_at = datetime.now(UTC)
+
+    with pytest.raises(EmployeeValidationError) as naive_error:
+        Employee(
+            id=employee_id,
+            name="助理",
+            description="",
+            system_prompt="通用系统指令",
+            knowledge_base_id=None,
+            allowed_workflow_ids=(),
+            created_at=created_at.replace(tzinfo=None),
+            updated_at=created_at,
+        )
+    assert naive_error.value.field == "created_at"
+
+    with pytest.raises(EmployeeValidationError) as ordering_error:
+        Employee(
+            id=employee_id,
+            name="助理",
+            description="",
+            system_prompt="通用系统指令",
+            knowledge_base_id=None,
+            allowed_workflow_ids=(),
+            created_at=created_at,
+            updated_at=created_at - timedelta(microseconds=1),
+        )
+    assert ordering_error.value.field == "updated_at"

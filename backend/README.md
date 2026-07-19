@@ -43,4 +43,10 @@ COMMON_AGENT_DATABASE_URL='mysql+asyncmy://common_agent:common_agent_dev@127.0.0
 正式入口只读取 loopback `RAGFLOW_*` 配置，并在 FastAPI lifespan 中创建和释放 RAGFlow
 客户端。
 
+数字员工使用平台自有 `employees` 表保存通用会话角色配置：名称、说明、系统指令、可选的
+RAGFlow 知识库 ID 和独立工作流 allowlist。表由 `20260719_0002` 迁移建立，字段长度、空白、
+JSON 数组和 UTC 时间顺序同时受领域模型与 MySQL CHECK 约束；`DATETIME(6)` 保留更新时间精度。
+知识库 ID 是外围服务的不透明引用，不对 RAGFlow 内库建外键，绑定有效性必须由应用层通过
+正式 `KnowledgeService` 校验。
+
 `ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。

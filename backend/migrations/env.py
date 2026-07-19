@@ -6,16 +6,18 @@ from logging.config import fileConfig
 from typing import Any
 
 from alembic import context
-from sqlalchemy import MetaData, pool
+from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+from common_agent.adapters.persistence.models import PersistenceBase
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = MetaData()
+target_metadata = PersistenceBase.metadata
 
 
 def _database_url() -> str:
