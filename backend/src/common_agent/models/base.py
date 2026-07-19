@@ -56,4 +56,11 @@ class StreamingChatModel(Protocol):
 
     def stream_text(self, messages: Sequence[BaseMessage]) -> AsyncIterator[str]: ...
 
+    def translate_error(
+        self,
+        error: Exception,
+        *,
+        stream_started: bool,
+    ) -> ModelServiceError | None: ...
+
     async def aclose(self) -> None: ...

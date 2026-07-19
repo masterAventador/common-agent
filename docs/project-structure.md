@@ -49,8 +49,7 @@ backend/
 │       │   ├── workflows.py
 │       │   └── knowledge.py
 │       ├── runtimes/            # EmployeeRuntime 协议
-│       │   ├── base.py
-│       │   └── deep_agents.py
+│       │   └── base.py
 │       ├── workflows/           # 独立工作流校验与 LangGraph 运行时
 │       │   ├── validator.py
 │       │   ├── compiler.py
@@ -60,6 +59,10 @@ backend/
 │       │   └── ragflow.py
 │       ├── ports/               # 仓储、缓存、事件、对象存储与任务端口
 │       └── adapters/            # 数据库、模型及第三方外围适配
+│           ├── agent/           # Deep Agents 正式适配器
+│           ├── knowledge/       # RAGFlow 正式适配器
+│           ├── model/           # 阿里百炼模型适配器
+│           └── persistence/     # MySQL 持久化适配器
 ├── migrations/                  # 当前正式数据库迁移
 ├── tests/
 │   ├── unit/

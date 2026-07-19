@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` 知识库、数字员工正式闭环、会话持久化、百炼适配器和 EmployeeRuntime 契约已完成；进入 Deep Agents 适配器 |
+| 产品代码 | `🚧` 知识库、数字员工正式闭环、会话持久化、百炼适配器、EmployeeRuntime 契约和 Deep Agents 适配器已完成；进入每条消息自动知识检索 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -178,7 +178,7 @@
 | A4-01 | 会话/消息领域与迁移 | Conversation/Message/Citation、终态和正式持久化重启恢复 | B1-03,E3-01 | ✅ 已完成 |
 | A4-02 | 百炼模型适配器 | `ChatOpenAI`、流式输出、超时/有限重试和脱敏错误 | B1-04 | ✅ 已完成 |
 | A4-03 | EmployeeRuntime 契约 | 历史、系统指令、知识上下文、流式事件和停止语义 | A4-01,K2-02 | ✅ 已完成 |
-| A4-04 | Deep Agents 适配器 | 官方 `create_deep_agent`、受控工具、无 Shell/本机文件权限 | A4-02,A4-03 | ⬜ 未开始 |
+| A4-04 | Deep Agents 适配器 | 官方 `create_deep_agent`、受控工具、无 Shell/本机文件权限 | A4-02,A4-03 | ✅ 已完成 |
 | A4-05 | 自动知识检索 | 每条消息按员工绑定检索、空结果语义、引用映射和检索失败 fail closed | A4-03,K2-03,E3-02 | ⬜ 未开始 |
 | A4-06 | 会话 API 与 SSE | 新建/列表/历史/发送/停止/重试；事件单调、持久化后推送 | A4-04,A4-05,C1-01 | ⬜ 未开始 |
 | A4-07 | 聊天工作台 | 三栏会话、流式回复、引用、停止、重试和刷新恢复 | A4-06,F1-03 | ⬜ 未开始 |
@@ -671,6 +671,24 @@
 - 清理：本任务不创建数据库或远端持久资源；全量测试 finalizer 后测试库员工/会话/消息/引用为 0，RAGFlow K2/E3 测试知识库为 0。未启动浏览器、Vite 或 Uvicorn，18200/18280 空闲；前端 dist/tsbuildinfo 在提交前精确删除，无悬空镜像，健康 MySQL/RAGFlow 稳定栈继续复用
 - 文档：后端 README、后端架构、框架无关 Runtime 请求/事件/停止协议、契约测试和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
 - 遗留：A4-04 使用官方 `create_deep_agent` 实现该协议并验证真实百炼流式/停止/受控工具边界；A4-05 把正式 RAGFlow 检索结果映射为 RuntimeKnowledgeChunk 与最终 Citation
+
+### A4-04 Deep Agents 适配器
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增工具白名单、官方 `create_deep_agent` 装配、平台事件投影、停止/取消、失败收敛和真实 Deep Agents + 百炼验收测试；初次定向 pytest 因 `common_agent.runtimes.deep_agents` 与正式 `deepagents` 依赖均不存在出现 3 个收集错误。复核“第三方类型不得越过适配层”后把正式入口归位到 `common_agent.adapters.agent.deep_agents`，再次因该适配层不存在得到 3 个收集错误；真实连续运行还稳定暴露两个百炼适配器共享 OpenAI 默认底层 HTTP client，关闭第一实例会令第二实例 `is_closed=True` 的独立失败测试
+- GREEN：Deep Agents 工具/运行时分层 22 passed，连同百炼适配器失败矩阵共 34 passed；启用正式 MySQL、官方 RAGFlow、真实百炼和真实 Deep Agents 后后端全量 250 passed。Ruff、格式、Mypy、uv lock、正式/测试 MySQL Alembic 漂移、前端 27 项 Vitest/ESLint/TypeScript/Build/peer/冻结锁文件、OpenAPI/DTO、平台/RAGFlow 管理脚本与 ShellCheck 全部通过；前端构建继续如实保留既有 622.12 KiB 共享 chunk 提示
+- 正式 Deep Agents 路径：`EmployeeRuntime.stream -> DeepAgentsEmployeeRuntime -> deepagents 0.6.12 create_deep_agent -> A4-02 同一 ChatOpenAI -> openai 2.46.0 -> 阿里百炼`。真实知识上下文携带唯一标记 `COMMON_AGENT_A4_04_OK` 并经 Deep Agents 增量事件返回；第二个独立正式运行时在首个真实模型 delta 后收到停止意图，最终只产生 `stopped` 而无 completed/failed；无效 Key 经同一路径只产生安全 `configuration_missing`，真实/无效 Key 与上游响应体均未输出
+- 工具与权限：`DeepAgentToolRegistry` 只按本轮 `allowed_workflow_ids` 顺序解析已注册 `BaseTool`，空白名单不暴露平台工具，未知能力 ID fail closed；重复工具名以及 `write_todos/ls/read_file/write_file/edit_file/glob/grep/execute/task` 保留名在启动时拒绝。由于 0.6.12 即使 `subagents=[]` 也会默认加入通用子代理，适配器使用其公开 Harness Profile 显式禁用默认子代理并排除全部内置工具；官方 `create_deep_agent` + 正式 Tool Binding 测试确认模型最终只绑定允许的 `allowed_workflow`，没有 Shell、文件、Todo 或 task
+- 后端与提示词安全：使用非 `SandboxBackendProtocol` 的临时 `StateBackend`，同时传入 `FilesystemPermission(read/write, /**, deny)`，能力边界由工具/后端强制执行而非依赖提示词。员工系统指令、平台安全约束和知识上下文分区构造，明确把知识片段视为不可信外部数据；原始 Deep Agents/LangGraph 消息、工具状态和异常不进入平台 RuntimeEvent
+- 流式与生命周期：平台历史转换为 LangChain human/ai 消息，只有 AI 文本块投影为单调 delta；独立空白块缓存并合并到下一个有效文本，纯空输出收敛为 `model_response_invalid`。每次上游 `anext` 与 `RuntimeStopSignal.wait` 竞速；预停止不创建 Agent，首字前/首字后停止均取消读取、关闭异步迭代并只发一个 stopped，父协程取消原样上抛且仍释放上游。模型已出字后的异常统一为 `model_stream_interrupted`，认证/请求/服务错误由模型适配器翻译，未知构建/执行错误只返回 `deep_agent_execution_failed`
+- 多会话修复：真实第二轮 Deep Agents 首字前连续复现 `APIConnectionError`，脱敏探针确认两个独立 `ChatOpenAI` 包装器共享同一个 OpenAI 默认 HTTP client；新增隔离 RED 后让每个 `BailianChatModelAdapter` 显式创建独立同步/异步 httpx client。关闭第一实例后第二实例保持 open，真实“正常回复→停止→无效 Key”三段验收随即通过；注入的异步测试 client 仍由注入方管理
+- 失败矩阵：覆盖空/单个/多个 allowlist、未知能力、保留名/重复名、官方内置工具排除、非 Sandbox 后端和全路径文件 deny、历史/知识提示投影、未知事件忽略、独立空白块、空输出、模型安全错误、未知执行异常、首个 delta 后断流、预停止、首字前/首字后停止、父取消、上游关闭、客户端幂等关闭与跨实例隔离；工作流工具真实副作用尚未存在，留给 W5-07 经公开 WorkflowService 验收
+- 生产同路径边界：A4-04 的交付对象是内部 `EmployeeRuntime` 正式适配器，因此真实验收从该稳定协议进入官方 Deep Agents、正式百炼适配器和真实百炼，而不是直接调用模型 SDK；A4-06 尚未提供公开消息 HTTP/SSE，A4-07 尚无聊天页面，本任务不启动 Playwright，也不把内部适配器证据冒充最终用户会话完成。知识片段由测试输入进入运行时只证明运行时投影，正式 RAGFlow 每消息检索与 Citation 映射由 A4-05 补齐
+- 清理：真实模型调用不创建远端持久资源，所有运行时和自有模型 HTTP client 显式关闭。全量测试后正式库为固定预置员工 1/会话 0/消息 0/引用 0，测试库四类记录全为 0，RAGFlow `common-agent-k2/e3/a4` 测试知识库为 0；18200/18280 无监听，无 Playwright/headless-shell/Vite/Uvicorn 遗留，前端 dist/tsbuildinfo 已精确删除，无悬空镜像；健康平台 MySQL 与 RAGFlow 六服务按稳定栈规则继续复用
+- 文档：后端 README、后端架构、工程结构、Deep Agents/百炼正式适配层、运行时/模型端口、依赖锁、分层/真实测试和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
+- 遗留：A4-05 通过正式 `KnowledgeService` 在每条消息前检索员工绑定知识库并映射 RuntimeKnowledgeChunk/Citation；A4-06 再把运行时接入会话持久化、发送/停止/重试和持久化后 SSE，W5-07 才注册真实工作流工具
 
 ## 15. 当前下一步
 

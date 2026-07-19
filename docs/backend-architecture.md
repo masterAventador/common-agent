@@ -41,7 +41,8 @@ React
 - 用户已批准测试 API Key 写入私有仓库的 `backend/.env.demo`，这是唯一凭据例外；
 - API Key 永远不进入前端响应、日志、异常、OpenAPI 样例或测试快照；
 - 模型适配器固定使用锁文件中的 `langchain-openai==1.3.5`，只接受百炼官方
-  `compatible-mode/v1` HTTPS 地址，并显式关闭自有同步/异步客户端；
+  `compatible-mode/v1` HTTPS 地址；每个适配器显式创建独立同步/异步 HTTP 客户端，关闭一轮
+  会话不得关闭其他适配器的共享默认客户端；
 - `ChatOpenAI` 总请求超时和异步流逐块超时默认均为 60 秒、最大 300 秒；SDK 重试默认
   2 次、最大 3 次，429/5xx/连接失败最多只重放到该上限，已输出文本后的异常不重新生成；
 - 平台只投影增量文本；认证/权限、请求拒绝、限流、超时、5xx、空输出和已开始流的中断
@@ -49,11 +50,16 @@ React
 
 ### 2.3 Deep Agents 负责数字员工
 
-- 使用官方 `create_deep_agent` 公共 API；
+- 固定使用官方 `deepagents==0.6.12` 和公开 `create_deep_agent` API；
 - 向 Deep Agents 传入配置好的 `ChatOpenAI` 模型实例、系统指令和受控工具；
-- 第一版使用无本机 Shell 能力的状态后端，不给数字员工任意文件系统或命令执行权限；
+- 第一版使用非 Sandbox 的 `StateBackend`；通过公开 Harness Profile 禁用默认通用子代理，
+  从模型工具面排除 Todo、文件、Shell 和 `task` 全部内置工具，同时用 deny 规则拒绝所有
+  文件读写，不能只依赖提示词声明安全边界；
+- 工具注册表只按本轮 `allowed_workflow_ids` 解析已注册能力；未知 ID、重复工具名或与 Deep
+  Agents 内置工具重名时 fail closed；
 - 知识检索与工作流触发通过显式工具进入平台应用服务；
-- 平台业务只依赖 `EmployeeRuntime`，Deep Agents 的消息、状态和事件在适配层转换。
+- 平台业务只依赖 `EmployeeRuntime`，Deep Agents 的消息、状态和事件在适配层转换；停止信号与
+  上游下一事件竞速，停止或调用方取消时关闭上游异步流。
 
 ### 2.4 LangGraph 负责独立工作流
 

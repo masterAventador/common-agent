@@ -346,3 +346,28 @@ def test_adapter_explicitly_closes_owned_sync_and_async_clients() -> None:
         assert model.root_async_client.is_closed() is True
 
     asyncio.run(exercise())
+
+
+def test_owned_clients_are_isolated_between_adapter_instances() -> None:
+    async def exercise() -> None:
+        first = BailianChatModelAdapter(_settings())
+        second = BailianChatModelAdapter(_settings())
+        first_model = first.chat_model
+        second_model = second.chat_model
+        assert isinstance(first_model, ChatOpenAI)
+        assert isinstance(second_model, ChatOpenAI)
+        assert first_model.root_client is not None
+        assert first_model.root_async_client is not None
+        assert second_model.root_client is not None
+        assert second_model.root_async_client is not None
+
+        await first.aclose()
+
+        assert first_model.root_client.is_closed() is True
+        assert first_model.root_async_client.is_closed() is True
+        assert second_model.root_client.is_closed() is False
+        assert second_model.root_async_client.is_closed() is False
+
+        await second.aclose()
+
+    asyncio.run(exercise())

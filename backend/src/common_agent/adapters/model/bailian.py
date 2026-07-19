@@ -30,10 +30,13 @@ class BailianChatModelAdapter:
     ) -> None:
         self._owns_async_client = http_async_client is None
         self._closed = False
-        if http_async_client is None:
-            self._chat_model = _create_chat_model(settings)
-        else:
-            self._chat_model = _create_chat_model(settings, http_async_client=http_async_client)
+        active_async_client = (
+            http_async_client if http_async_client is not None else httpx.AsyncClient()
+        )
+        self._chat_model = _create_chat_model(
+            settings,
+            http_async_client=active_async_client,
+        )
 
     @property
     def chat_model(self) -> BaseChatModel:
@@ -59,12 +62,23 @@ class BailianChatModelAdapter:
         except ModelServiceError:
             raise
         except Exception as error:
-            if emitted:
-                raise ModelStreamInterrupted() from None
-            raise _translate_error(error) from None
+            translated = self.translate_error(error, stream_started=bool(emitted))
+            raise (translated or ModelServiceUnavailable()) from None
 
         if not "".join(emitted).strip():
             raise ModelProviderResponseInvalid()
+
+    @staticmethod
+    def translate_error(
+        error: Exception,
+        *,
+        stream_started: bool,
+    ) -> ModelServiceError | None:
+        if isinstance(error, ModelServiceError):
+            return error
+        if stream_started:
+            return ModelStreamInterrupted()
+        return _known_model_error(error)
 
 
 def _text_content(content: object) -> str:
@@ -87,20 +101,8 @@ def _text_content(content: object) -> str:
 def _create_chat_model(
     settings: ModelSettings,
     *,
-    http_async_client: httpx.AsyncClient | None = None,
+    http_async_client: httpx.AsyncClient,
 ) -> ChatOpenAI:
-    if http_async_client is None:
-        return ChatOpenAI(
-            model=settings.model,
-            base_url=settings.base_url,
-            api_key=settings.api_key,
-            timeout=settings.timeout_seconds,
-            stream_chunk_timeout=settings.stream_chunk_timeout_seconds,
-            max_retries=settings.max_retries,
-            streaming=True,
-            stream_usage=False,
-            use_responses_api=False,
-        )
     return ChatOpenAI(
         model=settings.model,
         base_url=settings.base_url,
@@ -111,11 +113,12 @@ def _create_chat_model(
         streaming=True,
         stream_usage=False,
         use_responses_api=False,
+        http_client=httpx.Client(),
         http_async_client=http_async_client,
     )
 
 
-def _translate_error(error: Exception) -> ModelServiceError:
+def _known_model_error(error: Exception) -> ModelServiceError | None:
     if isinstance(error, (openai.AuthenticationError, openai.PermissionDeniedError)):
         return ModelConfigurationInvalid()
     if isinstance(
@@ -142,4 +145,4 @@ def _translate_error(error: Exception) -> ModelServiceError:
         if error.status_code == 429 or error.status_code >= 500:
             return ModelServiceUnavailable()
         return ModelRequestRejected()
-    return ModelServiceUnavailable()
+    return None
