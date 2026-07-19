@@ -49,7 +49,8 @@
 | 开发环境 | `✅` 全部本机联调，不部署服务器；端口和 Docker 资源与其他项目隔离 |
 | GitHub | `✅` `masterAventador/common-agent` 已创建为 PRIVATE，`main` 跟踪 `origin/main` |
 | 项目规则/架构 | `✅` 主规则、产品边界、工程架构和任务级路线图已建立并校验 |
-| 产品代码 | `⬜` 尚未开始；临时 Sites 初始化骨架已清理，等待 Wave 1 按目标结构建立 |
+| 工程骨架 | `✅` frontend/backend/contracts/infra/scripts 已按目标边界建立，未混入临时 Sites 或空业务模块 |
+| 产品代码 | `⬜` 尚未开始；等待后端、前端基础工具链完成后按纵向功能任务进入 |
 | 本地服务 | `✅` 临时前端初始化预览已停止；后端/RAGFlow 未启动 |
 
 ## 4. 全局完成门禁
@@ -119,8 +120,8 @@
 
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
-| F1-01 | 建立目标工程骨架 | 建立 frontend/backend/contracts/infra/scripts；无业务代码混放和空功能目录 | R0-08 | 🚧 实现中 |
-| B1-01 | 初始化 Backend 包 | Python 3.12、uv、src layout、pytest/Ruff/Mypy 和冻结锁文件 | F1-01 | ⬜ 未开始 |
+| F1-01 | 建立目标工程骨架 | 建立 frontend/backend/contracts/infra/scripts；无业务代码混放和空功能目录 | R0-08 | ✅ 已完成 |
+| B1-01 | 初始化 Backend 包 | Python 3.12、uv、src layout、pytest/Ruff/Mypy 和冻结锁文件 | F1-01 | 🚧 实现中 |
 | B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | ⬜ 未开始 |
 | B1-03 | 平台持久化基线 | 仓储端口、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | ⬜ 未开始 |
 | B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | ⬜ 未开始 |
@@ -335,10 +336,23 @@
 - 文档：`CLAUDE.md` 增加项目范围内沙箱外执行持续授权；`docs/development-roadmap.md` 更新唯一任务状态和证据
 - 遗留：无；后续每个完成任务按项目规则自动提交并推送
 
+### F1-01 建立目标工程骨架
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：不适用；目录边界和共享配置入口任务，没有生产代码
+- GREEN：`git diff --check` 通过；backend/frontend/contracts/infra/scripts 均存在且无空目录；根 `.env.example` 可被 Git 跟踪；旧 Sites `app/`、`worker/` 不存在
+- 真实边界：每个顶层目录只有职责、依赖方向和后续初始化任务说明，没有提前创建空业务 Feature 或伪实现
+- 失败矩阵：共享配置只包含 loopback 地址、项目专属端口和空 RAGFlow Key；本机数据与真实凭据仍由 `.gitignore` 排除
+- 清理：未安装依赖、启动进程、创建容器或生成缓存
+- 文档：`.env.example`、各目标目录 README、`docs/development-roadmap.md`
+- 遗留：具体 Python/React 结构分别由 B1-01、F1-02 建立
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `F1-01`：按目标结构建立前后端工程骨架；
-2. 完成 `B1-01`：建立 Python 3.12/uv 后端包和测试工具链；
-3. 继续 Wave 1 的 FastAPI、持久化、前端和契约闭环。
+1. 完成 `B1-01`：建立 Python 3.12/uv 后端包和测试工具链；
+2. 完成 `B1-02`：以真实 loopback Uvicorn 跑通 Health 和统一错误边界；
+3. 按依赖继续持久化、前端和契约闭环。
