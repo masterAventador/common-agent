@@ -2,7 +2,7 @@
 
 > 文档性质：项目开发进度唯一执行台账  
 > 建立日期：2026-07-19  
-> 当前阶段：Wave 0 规则与架构基线  
+> 当前阶段：Wave 1 工程骨架与本地开发闭环
 > MVP 顺序：知识库 → 数字员工绑定 → AI 会话 → 可视化工作流
 
 本文件是任务进度、状态、完成定义和验证证据的唯一核对源。`product-scope.md` 只描述产品功能和边界，不承担进度同步；普通任务完成只更新本路线图。
@@ -47,6 +47,7 @@
 | 模型 | `✅` 只直接接阿里百炼，复用旧私有仓库的 Demo Key，不引入模型网关 |
 | 技术架构 | `✅` 技术方案不设白名单；SQLite 是初始持久化基线，任何技术组件都可按当前真实需要进入正式链路 |
 | 开发环境 | `✅` 全部本机联调，不部署服务器；端口和 Docker 资源与其他项目隔离 |
+| GitHub | `✅` `masterAventador/common-agent` 已创建为 PRIVATE，`main` 跟踪 `origin/main` |
 | 项目规则/架构 | `✅` 主规则、产品边界、工程架构和任务级路线图已建立并校验 |
 | 产品代码 | `⬜` 尚未开始；临时 Sites 初始化骨架已清理，等待 Wave 1 按目标结构建立 |
 | 本地服务 | `✅` 临时前端初始化预览已停止；后端/RAGFlow 未启动 |
@@ -108,7 +109,7 @@
 | R0-05 | 建立仓库入口和忽略规则 | 清理临时 Sites 骨架；README、`.gitignore`、`.editorconfig`；本机数据和除百炼 Demo Key 外的凭据不入 Git | R0-04 | ✅ 已完成 |
 | R0-06 | 校正技术边界并体检环境 | 技术方案不设白名单；记录 Python/uv/Node/pnpm/Docker/gh/浏览器版本、端口、Docker 内存和可用磁盘 | R0-05 | ✅ 已完成 |
 | R0-07 | 建立本地 Git 基线 | `main` 分支、首个规则/文档提交、工作树干净且无临时 Sites 文件 | R0-06 | ✅ 已完成 |
-| R0-08 | 创建 GitHub 私有仓库 | 创建同名 `common-agent` PRIVATE 仓库、remote 正确并推送 `main` | R0-07 | 🚧 实现中 |
+| R0-08 | 创建 GitHub 私有仓库 | 创建同名 `common-agent` PRIVATE 仓库、remote 正确并推送 `main` | R0-07 | ✅ 已完成 |
 
 ## 7. Wave 1：工程骨架与本地开发闭环
 
@@ -118,7 +119,7 @@
 
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
-| F1-01 | 建立目标工程骨架 | 建立 frontend/backend/contracts/infra/scripts；无业务代码混放和空功能目录 | R0-08 | ⬜ 未开始 |
+| F1-01 | 建立目标工程骨架 | 建立 frontend/backend/contracts/infra/scripts；无业务代码混放和空功能目录 | R0-08 | 🚧 实现中 |
 | B1-01 | 初始化 Backend 包 | Python 3.12、uv、src layout、pytest/Ruff/Mypy 和冻结锁文件 | F1-01 | ⬜ 未开始 |
 | B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | ⬜ 未开始 |
 | B1-03 | 平台持久化基线 | 仓储端口、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | ⬜ 未开始 |
@@ -321,10 +322,23 @@
 - 文档：`docs/development-roadmap.md`
 - 遗留：当前任务完成时尚无远端，R0-08 创建私有仓库后立即推送本提交
 
+### R0-08 创建 GitHub 私有仓库
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：不适用；远端仓库创建与规则配置任务，没有生产代码
+- GREEN：`gh repo create common-agent --private --source=. --remote=origin --push` 成功；`gh repo view` 返回 `nameWithOwner=masterAventador/common-agent`、`visibility=PRIVATE`、默认分支 `main`
+- 真实边界：`origin` 的 fetch/push URL 均指向 `https://github.com/masterAventador/common-agent.git`，本地 `main` 跟踪 `origin/main`，首个基线提交 `9d69a91` 已推送
+- 失败矩阵：创建前确认同名仓库不存在；创建后没有以网页外观或命令成功文本代替可见性校验，直接读取 GitHub 仓库元数据证明为 PRIVATE
+- 清理：未创建多余 remote、分支、仓库或临时凭据；没有启动本地服务或容器
+- 文档：`CLAUDE.md` 增加项目范围内沙箱外执行持续授权；`docs/development-roadmap.md` 更新唯一任务状态和证据
+- 遗留：无；后续每个完成任务按项目规则自动提交并推送
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `R0-08`：创建并验证同名私有 GitHub 仓库；
-2. 启动 `F1-01`：按目标结构建立前后端工程骨架；
-3. 按 Wave 1 依赖顺序建立后端、前端和契约基线。
+1. 完成 `F1-01`：按目标结构建立前后端工程骨架；
+2. 完成 `B1-01`：建立 Python 3.12/uv 后端包和测试工具链；
+3. 继续 Wave 1 的 FastAPI、持久化、前端和契约闭环。
