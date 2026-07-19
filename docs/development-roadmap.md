@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` 知识库、数字员工正式闭环、会话持久化和阿里百炼流式适配器已完成；进入 EmployeeRuntime 契约 |
+| 产品代码 | `🚧` 知识库、数字员工正式闭环、会话持久化、百炼适配器和 EmployeeRuntime 契约已完成；进入 Deep Agents 适配器 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -177,7 +177,7 @@
 | --- | --- | --- | --- | --- |
 | A4-01 | 会话/消息领域与迁移 | Conversation/Message/Citation、终态和正式持久化重启恢复 | B1-03,E3-01 | ✅ 已完成 |
 | A4-02 | 百炼模型适配器 | `ChatOpenAI`、流式输出、超时/有限重试和脱敏错误 | B1-04 | ✅ 已完成 |
-| A4-03 | EmployeeRuntime 契约 | 历史、系统指令、知识上下文、流式事件和停止语义 | A4-01,K2-02 | ⬜ 未开始 |
+| A4-03 | EmployeeRuntime 契约 | 历史、系统指令、知识上下文、流式事件和停止语义 | A4-01,K2-02 | ✅ 已完成 |
 | A4-04 | Deep Agents 适配器 | 官方 `create_deep_agent`、受控工具、无 Shell/本机文件权限 | A4-02,A4-03 | ⬜ 未开始 |
 | A4-05 | 自动知识检索 | 每条消息按员工绑定检索、空结果语义、引用映射和检索失败 fail closed | A4-03,K2-03,E3-02 | ⬜ 未开始 |
 | A4-06 | 会话 API 与 SSE | 新建/列表/历史/发送/停止/重试；事件单调、持久化后推送 | A4-04,A4-05,C1-01 | ⬜ 未开始 |
@@ -655,10 +655,27 @@
 - 文档：`.env.example`、后端 README、后端架构、ModelSettings、模型稳定契约、百炼正式适配器、分层/真实集成测试、依赖锁和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
 - 遗留：A4-03 建立 EmployeeRuntime 输入/事件/停止契约；A4-04 把本任务的 `chat_model` 注入官方 Deep Agents 并走真实数字员工模型路径；公开聊天入口仍由 A4-06/A4-07 验收
 
+### A4-03 EmployeeRuntime 契约
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增聊天历史、系统指令、知识上下文、流式事件、EventEmitter、StopToken 与 `EmployeeRuntime` 协议测试，定向 pytest 因 `common_agent.runtimes` 不存在出现 1 个收集错误；最小实现后再增加敏感上下文 repr 安全测试，先真实看到系统指令/历史/知识正文和模型增量被完整打印的失败，再逐字段关闭 repr
+- GREEN：A4-03 契约 26 passed；启用正式 MySQL、官方 RAGFlow 与真实百炼的后端全量 226 passed；Ruff、格式、Mypy、uv lock、前端 27 项 Vitest/ESLint/TypeScript/Build/peer/冻结锁文件、OpenAPI/DTO、平台/RAGFlow 管理脚本和 ShellCheck 全部通过。前端构建继续如实报告既有 622.12 KiB 共享 chunk 提示
+- 聊天式接口：一次 `EmployeeRuntime.stream(request, stop=...)` 只负责在已有会话中回复当前用户消息；契约没有 `start/approve/reject/resume/get_artifacts` 等旧任务 API。请求分别携带会话/员工/助手占位消息身份、按权威序号严格递增且最后一条为当前用户的历史、员工系统指令、知识绑定/上下文和工作流 allowlist；助手序号必须紧跟当前用户消息，消息 ID、片段引用和工作流 ID 均不可重复
+- 知识语义：`knowledge_base_id=None + 空上下文` 表示员工未绑定知识库；`knowledge_base_id=真实 ID + 空上下文` 表示已检索但零命中，两者不会混淆。非空片段必须全部来自当前绑定知识库；历史上限 100 条/400,000 字符，知识上限 20 段/120,000 字符，单条内容继续复用 Conversation/Citation/Employee 的领域长度常量
+- 流式与停止：`RuntimeEventEmitter` 从 sequence 1 递增发出非空 delta，并只允许一个 `completed/failed/stopped` 终态；错误码只属于 failed，stopped 明确不是失败，终态后晚到 delta 或第二终态均拒绝。`RuntimeStopToken.request_stop()` 第一次返回 true、后续返回 false，并唤醒所有等待者；A4-04 必须把它与真实 Deep Agents 上游读取竞速，当前契约不假装已经停止第三方调用
+- 安全与框架隔离：`common_agent.runtimes.base` 只导入标准库和平台领域，不导入 LangChain、Deep Agents、HTTP 或数据库；系统指令、历史正文、知识原文和模型增量均从 dataclass repr 排除。稳定 RuntimeEvent 不透出 Deep Agents/LangGraph 原始事件，A4-06 才映射为持久化后推送的 SSE 事件序列
+- 失败矩阵：覆盖非 UUID/非正序号、空白/超长系统指令、空历史、最后一条非用户、历史倒序/重复序号/重复消息 ID、助手序号错位、历史数量/总字符上限、未绑定却带知识、跨库/重复/超量片段、重复/非法工作流 ID、各事件 payload 非法组合、空 delta、失败缺错误码、终态晚到事件、停止幂等与 waiter 唤醒，以及协议运行时确实不具备任务式方法
+- 生产同路径边界：A4-03 的交付物是纯平台协议和不变量，没有外部服务或公开用户入口可旁路验收；测试通过运行时公开构造器、Emitter、StopToken 和 runtime-checkable Protocol。真实 Deep Agents + 百炼由 A4-04 走该协议验收，知识检索编排由 A4-05 补齐，用户 HTTP/SSE 正式路径仍由 A4-06/A4-07 验收，当前不把 Fake 协议实现冒充跨端完成
+- 清理：本任务不创建数据库或远端持久资源；全量测试 finalizer 后测试库员工/会话/消息/引用为 0，RAGFlow K2/E3 测试知识库为 0。未启动浏览器、Vite 或 Uvicorn，18200/18280 空闲；前端 dist/tsbuildinfo 在提交前精确删除，无悬空镜像，健康 MySQL/RAGFlow 稳定栈继续复用
+- 文档：后端 README、后端架构、框架无关 Runtime 请求/事件/停止协议、契约测试和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
+- 遗留：A4-04 使用官方 `create_deep_agent` 实现该协议并验证真实百炼流式/停止/受控工具边界；A4-05 把正式 RAGFlow 检索结果映射为 RuntimeKnowledgeChunk 与最终 Citation
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `A4-03`：建立 EmployeeRuntime 历史、上下文、流式事件与停止语义契约；
-2. 完成 `A4-04`：通过官方 `create_deep_agent` 接入受控数字员工运行时；
-3. 完成 `A4-05`：把员工知识库绑定接入每条消息的自动检索与引用映射。
+1. 完成 `A4-04`：通过官方 `create_deep_agent` 接入受控数字员工运行时；
+2. 完成 `A4-05`：把员工知识库绑定接入每条消息的自动检索与引用映射；
+3. 完成 `A4-06`：串起会话 CRUD、发送/停止/重试和持久化后推送的 SSE。

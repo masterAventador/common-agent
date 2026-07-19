@@ -70,3 +70,5 @@ allowlist。非空知识库 ID 会先经 `KnowledgeBaseService` 和 RAGFlow 官�
 `ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。Base URL 只接受百炼官方 `compatible-mode/v1` HTTPS 地址，禁止 URL 凭据、查询参数和非官方主机。
 
 `BailianChatModelAdapter` 使用锁定的 `langchain-openai==1.3.5` 构造正式 `ChatOpenAI`，通过 `stream_text()` 暴露增量文本，并通过 `chat_model` 把同一个模型实例交给后续 Deep Agents 适配层。总请求超时、流式逐块超时与重试次数分别由 `BAILIAN_TIMEOUT_SECONDS`、`BAILIAN_STREAM_CHUNK_TIMEOUT_SECONDS` 和 `BAILIAN_MAX_RETRIES` 控制，默认 `60/60/2`，最大 `300/300/3`；认证、请求拒绝、限流、超时、5xx、流中断和空输出都会转换成不含上游响应体或凭据的稳定平台错误。持有适配器的 lifespan 必须调用幂等 `aclose()` 释放自有模型客户端。
+
+`EmployeeRuntime` 是一次会话回复的框架无关协议：`stream(request, stop=...)` 接收 Conversation/Employee/助手消息 ID、有序聊天历史、员工系统指令、显式知识库绑定与检索片段，以及允许调用的工作流 ID；它不包含旧任务模型的启动、审批、恢复或产物接口。运行时只返回单调递增的 `delta` 和一个 `completed/failed/stopped` 终态，终态后的事件由 `RuntimeEventEmitter` 拒绝。`RuntimeStopToken` 可重复请求但只在第一次改变状态；具体 Deep Agents 适配器必须在 A4-04 把该意图落实为停止上游读取。系统指令、历史正文、知识片段和模型增量均从对象 repr 排除。
