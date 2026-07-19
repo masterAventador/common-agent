@@ -25,6 +25,7 @@ from common_agent.knowledge.base import (
     KnowledgeService,
     KnowledgeServiceError,
     KnowledgeServiceUnavailable,
+    KnowledgeServiceVersionMismatch,
 )
 
 
@@ -135,6 +136,12 @@ def test_status_document_and_retrieval_models_use_stable_platform_semantics() ->
             "knowledge_service_unavailable",
             "知识库服务暂时不可用",
             True,
+        ),
+        (
+            KnowledgeServiceVersionMismatch,
+            "knowledge_service_version_mismatch",
+            "知识库服务版本与平台要求不一致",
+            False,
         ),
         (
             KnowledgeBaseNotFound,

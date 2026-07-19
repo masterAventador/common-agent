@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` KnowledgeService 平台契约和真实 RAGFlow 适配器已完成；知识库正式 API 与页面继续按 Wave 2 推进 |
+| 产品代码 | `🚧` KnowledgeService、真实 RAGFlow 适配器及知识库正式 API 已完成；知识库页面与浏览器闭环继续按 Wave 2 推进 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -150,7 +150,7 @@
 | K2-01 | 锁定 RAGFlow 版本与资源 | 确切稳定版本；固定 `common-agent-dev`、独立端口/Volume；评估 Docker 32GB 级资源和复用策略 | R0-06 | ✅ 已完成 |
 | K2-02 | KnowledgeService 契约 | list/create/upload/list-documents/retrieve/status 平台协议和失败测试 | B1-02 | ✅ 已完成 |
 | K2-03 | RAGFlow 适配器 | 官方 SDK/API 接入、超时、错误转换、版本健康和真实服务验收 | K2-01,K2-02 | ✅ 已完成 |
-| K2-04 | 知识库 API | 列表、创建、文档上传、解析状态；上传大小/类型限制 | K2-03,B1-05,C1-01 | ⬜ 未开始 |
+| K2-04 | 知识库 API | 列表、创建、文档上传、解析状态；上传大小/类型限制 | K2-03,B1-05,C1-01 | ✅ 已完成 |
 | K2-05 | 知识库页面 | 创建、上传、真实状态、失败重试和空状态 | K2-04,F1-03 | ⬜ 未开始 |
 | K2-06 | 知识库 Playwright | 浏览器完成创建→上传→解析完成/失败展示 | K2-05 | ⬜ 未开始 |
 
@@ -513,10 +513,24 @@
 - 文档：`.env.example`、根/后端 README、`CLAUDE.md`、后端/工程架构、平台基础设施说明和 `docs/development-roadmap.md`
 - 遗留：B1-03 记录保留当时 SQLite 基线的历史事实；从本任务起平台正式运行和后续 Repository 只以 MySQL 验收，下一步 K2-04 接入知识库 FastAPI/OpenAPI
 
+### K2-04 知识库 API
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：正式 Uvicorn 分层测试先从 `/api/v1/knowledge-bases` 得到 404，证明公开路由不存在；版本漂移用例先错误得到 200，证明业务请求未阻断不匹配 RAGFlow；OpenAPI 测试捕获创建/文档接口的 422 仍声明 FastAPI 默认 `HTTPValidationError`；RAGFlow 配置测试进一步以 3 failed、4 passed 捕获缺端口、非法端口和 URL 内嵌凭据被放行
+- GREEN：知识库正式 HTTP 分层测试 6 passed，配置/知识契约/上传应用服务定向测试 44 passed，UploadFile 关闭测试 1 passed；启用真实 RAGFlow 后后端全量 `uv run --frozen pytest -q` 106 passed；Ruff、格式、Mypy、uv 锁文件、OpenAPI/前端 DTO 漂移、前端 11 项测试/Lint/类型/Build/peer、平台/RAGFlow 基础设施和 Shellcheck 门禁全部通过
+- 真实边界：正式 Uvicorn 随机 loopback 端口经 FastAPI 路由、`KnowledgeBaseService`、`RagFlowKnowledgeService` 和官方 RAGFlow `v0.25.6` 完成真实知识库创建、列表、TXT multipart 上传、触发解析及轮询到 `completed`；MySQL 使用隔离 `common_agent_test`，真实 RAGFlow API Token 只存在于验收进程环境且未写入仓库/输出；与 K2-03 适配器生命周期合并执行 2 passed in 8.92s
+- 失败矩阵：覆盖知识库名空白/长度、multipart 缺文件、空文件、扩展名/MIME 不匹配、20 MiB 超限、知识库不存在、RAGFlow 未配置/不可达/版本漂移、上游详情脱敏、固定错误信封与 Request ID；RAGFlow Base URL 强制 loopback、显式有效端口、无 URL 凭据/路径/查询，超时限制为 0-300 秒
+- 资源与契约：上传按 1 MiB 分块读取到上限后一字节，所有终态在 `finally` 关闭 FastAPI `UploadFile`；只允许 TXT、Markdown、PDF、DOCX；Pydantic 是 OpenAPI 唯一来源，知识库/文档/解析枚举和 multipart DTO 已生成到前端，422 与运行时一致使用 `ErrorEnvelope`
+- 清理：两个真实生命周期均在 `finally` 删除唯一测试知识库；所有分层假 RAGFlow 服务器、Uvicorn 和 HTTP 客户端由上下文关闭；18200/18280 无监听，前端 dist 与 tsbuildinfo 已删除；保留平台 MySQL 与 RAGFlow 六服务稳定栈供 K2-05/K2-06 复用
+- 文档：后端 README、后端架构、OpenAPI 快照、前端生成 DTO、依赖锁文件和 `docs/development-roadmap.md`
+- 遗留：K2-04 只交付 API，不提前实现页面；K2-05 通过正式 Axios/Query/Zod 接入这些接口，K2-06 再用 Playwright 完成浏览器生产同路径验收
+
 ## 16. 当前下一步
 
 严格按顺序：
 
-1. 完成 `K2-04`：通过平台 API 跑通知识库创建、上传和解析状态；
-2. 完成 `K2-05`：实现知识库正式页面和真实状态交互；
-3. 完成 `K2-06`：以正式页面和真实 RAGFlow 验收知识库纵向闭环。
+1. 完成 `K2-05`：实现知识库正式页面和真实状态交互；
+2. 完成 `K2-06`：以正式页面和真实 RAGFlow 验收知识库纵向闭环；
+3. 完成 `E3-01`：建立数字员工领域模型、MySQL 迁移和知识库引用完整性策略。

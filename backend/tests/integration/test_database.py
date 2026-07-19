@@ -9,13 +9,13 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from common_agent.adapters.persistence.database import Database, DatabaseStartupError
+from tests.support.settings import TEST_DATABASE_URL
 
 
 def _database_url() -> str:
     return os.environ.get(
         "TEST_PLATFORM_DATABASE_URL",
-        "mysql+asyncmy://common_agent:common_agent_dev@127.0.0.1:19506/"
-        "common_agent_test?charset=utf8mb4",
+        TEST_DATABASE_URL,
     )
 
 

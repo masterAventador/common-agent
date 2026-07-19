@@ -25,3 +25,32 @@ def test_committed_openapi_snapshot_matches_formal_app() -> None:
     committed = json.loads(OPENAPI_SNAPSHOT.read_text(encoding="utf-8"))
 
     assert committed == _schema()
+
+
+def test_openapi_exposes_knowledge_contract_and_stable_validation_errors() -> None:
+    schema = _schema()
+    paths = schema["paths"]
+    knowledge = paths["/api/v1/knowledge-bases"]
+    documents = paths["/api/v1/knowledge-bases/{knowledge_base_id}/documents"]
+
+    assert set(knowledge) == {"get", "post"}
+    assert set(documents) == {"get", "post"}
+    assert knowledge["post"]["responses"]["201"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/KnowledgeBaseResponse"
+    }
+    assert documents["post"]["requestBody"]["content"]["multipart/form-data"]["schema"]
+    for operation in (knowledge["post"], documents["get"], documents["post"]):
+        assert operation["responses"]["422"]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorEnvelope"
+        }
+
+    create_schema = schema["components"]["schemas"]["CreateKnowledgeBaseBody"]
+    assert create_schema["properties"]["name"]["minLength"] == 1
+    assert create_schema["properties"]["name"]["maxLength"] == 128
+    assert create_schema["properties"]["description"]["maxLength"] == 1024
+    assert schema["components"]["schemas"]["DocumentParsingStatus"]["enum"] == [
+        "uploaded",
+        "parsing",
+        "completed",
+        "failed",
+    ]

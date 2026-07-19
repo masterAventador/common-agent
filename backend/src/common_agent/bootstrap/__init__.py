@@ -4,6 +4,7 @@ from common_agent.bootstrap.settings import (
     CorsSettings,
     DatabaseSettings,
     ModelSettings,
+    RagFlowSettings,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "CorsSettings",
     "DatabaseSettings",
     "ModelSettings",
+    "RagFlowSettings",
 ]

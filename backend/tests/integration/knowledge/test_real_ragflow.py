@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from time import monotonic
+from time import monotonic, sleep
 from uuid import uuid4
 
 import httpx
@@ -16,71 +16,9 @@ from common_agent.domain.knowledge import (
     KnowledgeRetrievalRequest,
     KnowledgeServiceAvailability,
 )
-
-_TEST_EMAIL = "common-agent@local.test"
-# RAGFlow 官方 SDK 测试夹具提供的 RSA 密文, 对应仅限 loopback 测试账号的密码 123。
-_TEST_PASSWORD = (
-    "ctAseGvejiaSWWZ88T/m4FQVOpQyUvP+x7sXtdv3feqZACiQleuewkUi35E16wSd5C5QcnkkcV9cYc8T"
-    "KPTRZlxappDuirxghxoOvFcJxFU4ixLsDfN33jCHRoDUW81IH9zjij/vaw8IbVyb6vuwg6MX6inOEBRRzVbRYxXO"
-    "u1wkWY6SsI8X70oF9aeLFp/PzQpjoe/YbSqpTq8qqrmHzn9vO+yvyYyvmDsphXeX8f7fp9c7vUsfOCkM+gHY3Pad"
-    "G+QHa7KI7mzTKgUTZImK6BZtfRBATDTthEUbbaTewY4H0MnWiCeeDhcbeQao6cFy1To8pE3RpmxnGnS8BsBn8w=="
-)
-
-
-async def _provision_api_key(base_url: str) -> str:
-    async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
-        registration = await client.post(
-            "/api/v1/users",
-            json={
-                "email": _TEST_EMAIL,
-                "nickname": "common-agent",
-                "password": _TEST_PASSWORD,
-            },
-        )
-        registration.raise_for_status()
-        registration_payload = registration.json()
-        if registration_payload["code"] != 0:
-            assert "already registered" in registration_payload["message"]
-
-        login = await client.post(
-            "/api/v1/auth/login",
-            json={"email": _TEST_EMAIL, "password": _TEST_PASSWORD},
-        )
-        login.raise_for_status()
-        assert login.json()["code"] == 0
-        authorization = login.headers["Authorization"]
-
-        tokens = await client.get(
-            "/api/v1/system/tokens",
-            headers={"Authorization": authorization},
-        )
-        tokens.raise_for_status()
-        tokens_payload = tokens.json()
-        assert tokens_payload["code"] == 0
-        if tokens_payload["data"]:
-            return str(tokens_payload["data"][0]["token"])
-
-        created = await client.post(
-            "/api/v1/system/tokens",
-            headers={"Authorization": authorization},
-        )
-        created.raise_for_status()
-        created_payload = created.json()
-        assert created_payload["code"] == 0
-        return str(created_payload["data"]["token"])
-
-
-async def _delete_dataset(base_url: str, api_key: str, dataset_id: str) -> None:
-    async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
-        response = await client.request(
-            "DELETE",
-            "/api/v1/datasets",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={"ids": [dataset_id]},
-        )
-        response.raise_for_status()
-        payload = response.json()
-        assert payload["code"] == 0
+from tests.support.http import running_api
+from tests.support.ragflow import delete_dataset, provision_api_key
+from tests.support.settings import TEST_DATABASE_URL
 
 
 def test_real_ragflow_adapter_lifecycle() -> None:
@@ -90,7 +28,7 @@ def test_real_ragflow_adapter_lifecycle() -> None:
     if not base_url or not expected_version:
         pytest.skip("真实 RAGFlow 地址或期望版本未配置")
     if not api_key:
-        api_key = asyncio.run(_provision_api_key(base_url))
+        api_key = asyncio.run(provision_api_key(base_url))
 
     asyncio.run(_real_lifecycle(base_url, api_key, expected_version))
 
@@ -153,4 +91,73 @@ async def _real_lifecycle(base_url: str, api_key: str, expected_version: str) ->
     finally:
         await service.aclose()
         if dataset_id is not None:
-            await _delete_dataset(base_url, api_key, dataset_id)
+            await delete_dataset(base_url, api_key, dataset_id)
+
+
+def test_real_knowledge_http_lifecycle() -> None:
+    base_url = os.environ.get("TEST_RAGFLOW_BASE_URL")
+    api_key = os.environ.get("TEST_RAGFLOW_API_KEY")
+    expected_version = os.environ.get("TEST_RAGFLOW_EXPECTED_VERSION")
+    if not base_url or not expected_version:
+        pytest.skip("真实 RAGFlow 地址或期望版本未配置")
+    if not api_key:
+        api_key = asyncio.run(provision_api_key(base_url))
+
+    dataset_id: str | None = None
+    try:
+        with (
+            running_api(
+                TEST_DATABASE_URL,
+                env_overrides={
+                    "RAGFLOW_BASE_URL": base_url,
+                    "RAGFLOW_API_KEY": api_key,
+                    "RAGFLOW_EXPECTED_VERSION": expected_version,
+                    "RAGFLOW_TIMEOUT_SECONDS": "120",
+                },
+            ) as api_url,
+            httpx.Client(base_url=api_url, timeout=120) as client,
+        ):
+            name = f"common-agent-k2-04-{uuid4().hex}"
+            created_response = client.post(
+                "/api/v1/knowledge-bases",
+                json={"name": name, "description": "K2-04 正式 API 真实验收"},
+            )
+            assert created_response.status_code == 201
+            created = created_response.json()
+            dataset_id = str(created["id"])
+
+            listed_response = client.get("/api/v1/knowledge-bases")
+            assert listed_response.status_code == 200
+            assert dataset_id in {item["id"] for item in listed_response.json()}
+
+            uploaded_response = client.post(
+                f"/api/v1/knowledge-bases/{dataset_id}/documents",
+                files={
+                    "file": (
+                        "k2-04-acceptance.txt",
+                        "common-agent K2-04 正式 API 解析验收。".encode(),
+                        "text/plain",
+                    )
+                },
+            )
+            assert uploaded_response.status_code == 202
+            uploaded = uploaded_response.json()
+            assert uploaded["parsing_status"] == "parsing"
+
+            deadline = monotonic() + 900
+            while monotonic() < deadline:
+                documents_response = client.get(f"/api/v1/knowledge-bases/{dataset_id}/documents")
+                assert documents_response.status_code == 200
+                current = next(
+                    item for item in documents_response.json() if item["id"] == uploaded["id"]
+                )
+                if current["parsing_status"] == "completed":
+                    break
+                if current["parsing_status"] == "failed":
+                    pytest.fail(f"真实知识库 API 文档解析失败: {current['error_code']}")
+                sleep(2)
+            else:
+                pytest.fail("真实知识库 API 文档解析超时")
+    finally:
+        if dataset_id is not None:
+            asyncio.run(delete_dataset(base_url, api_key, dataset_id))

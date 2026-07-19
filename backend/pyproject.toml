@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.139.2",
     "httpx>=0.28,<1",
     "python-dotenv>=1.2.2",
+    "python-multipart>=0.0.32,<0.1",
     "sqlalchemy[asyncio]>=2.0.51",
     "uvicorn>=0.51.0",
 ]
@@ -31,6 +32,7 @@ packages = ["src/common_agent"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
+pythonpath = [".", "src"]
 testpaths = ["tests"]
 
 [tool.ruff]

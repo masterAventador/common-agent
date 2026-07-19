@@ -95,6 +95,10 @@ application --------------+
 - 应用错误到稳定错误信封的转换；
 - 请求 ID、超时和资源释放。
 
+知识库上传入口只接收 TXT、Markdown、PDF、DOCX，单文件上限 20 MiB；API 分块读取到
+上限后一字节并在所有终态关闭 `UploadFile`，应用服务统一校验扩展名、MIME、空文件和大小，
+通过后才调用正式 RAGFlow 适配器。
+
 禁止在路由中拼提示词、直接调用 RAGFlow SDK、编译 LangGraph 或写 SQL。
 
 ### 3.2 Application 层

@@ -34,6 +34,12 @@ class KnowledgeServiceUnavailable(KnowledgeServiceError):
     retryable = True
 
 
+class KnowledgeServiceVersionMismatch(KnowledgeServiceError):
+    code = "knowledge_service_version_mismatch"
+    message = "知识库服务版本与平台要求不一致"
+    retryable = False
+
+
 class KnowledgeBaseNotFound(KnowledgeServiceError):
     code = "knowledge_base_not_found"
     message = "知识库不存在或已失效"

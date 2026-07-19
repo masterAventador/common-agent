@@ -5,6 +5,7 @@ from common_agent.bootstrap.settings import (
     ConfigurationError,
     CorsSettings,
     DatabaseSettings,
+    RagFlowSettings,
 )
 
 
@@ -113,3 +114,50 @@ def test_cors_settings_default_to_project_frontend_origin() -> None:
 def test_cors_settings_reject_public_or_remote_origin() -> None:
     with pytest.raises(ConfigurationError, match="loopback"):
         CorsSettings.from_mapping({"COMMON_AGENT_CORS_ORIGINS": "https://example.com"})
+
+
+def test_ragflow_settings_use_fixed_loopback_defaults() -> None:
+    settings = RagFlowSettings.from_mapping({})
+
+    assert settings.base_url == "http://127.0.0.1:19380"
+    assert settings.expected_version == "v0.25.6"
+    assert settings.timeout_seconds == 60
+    assert settings.api_key.get_secret_value() == ""
+
+
+def test_ragflow_settings_accept_safe_override_without_leaking_key() -> None:
+    settings = RagFlowSettings.from_mapping(
+        {
+            "RAGFLOW_BASE_URL": "http://localhost:29380/",
+            "RAGFLOW_API_KEY": "do-not-leak",
+            "RAGFLOW_EXPECTED_VERSION": "v0.25.6",
+            "RAGFLOW_TIMEOUT_SECONDS": "120",
+        }
+    )
+
+    assert settings.base_url == "http://localhost:29380"
+    assert settings.timeout_seconds == 120
+    assert "do-not-leak" not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://ragflow.example.com",
+        "ftp://127.0.0.1:19380",
+        "http://127.0.0.1",
+        "http://127.0.0.1:invalid",
+        "http://127.0.0.1:19380/private/path",
+        "http://127.0.0.1:19380?token=secret",
+        "http://user:password@127.0.0.1:19380",
+    ],
+)
+def test_ragflow_settings_reject_unsafe_base_url(base_url: str) -> None:
+    with pytest.raises(ConfigurationError, match="loopback"):
+        RagFlowSettings.from_mapping({"RAGFLOW_BASE_URL": base_url})
+
+
+@pytest.mark.parametrize("timeout", ["invalid", "0", "301", "nan", "inf"])
+def test_ragflow_settings_reject_invalid_timeout(timeout: str) -> None:
+    with pytest.raises(ConfigurationError, match="RAGFLOW_TIMEOUT_SECONDS"):
+        RagFlowSettings.from_mapping({"RAGFLOW_TIMEOUT_SECONDS": timeout})

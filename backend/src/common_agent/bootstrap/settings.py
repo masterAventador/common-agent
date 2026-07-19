@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from math import isfinite
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -105,6 +106,57 @@ class CorsSettings:
                 raise ConfigurationError("COMMON_AGENT_CORS_ORIGINS must contain loopback origins")
 
         return cls(origins=origins)
+
+
+@dataclass(frozen=True, slots=True)
+class RagFlowSettings:
+    base_url: str
+    api_key: SecretStr
+    expected_version: str
+    timeout_seconds: float
+
+    @classmethod
+    def from_env(cls) -> RagFlowSettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> RagFlowSettings:
+        base_url = values.get("RAGFLOW_BASE_URL", "http://127.0.0.1:19380").strip().rstrip("/")
+        parsed = urlparse(base_url)
+        try:
+            port = parsed.port
+        except ValueError as error:
+            raise ConfigurationError("RAGFLOW_BASE_URL must be a loopback HTTP(S) URL") from error
+        if (
+            parsed.scheme not in {"http", "https"}
+            or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
+            or port is None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ConfigurationError("RAGFLOW_BASE_URL must be a loopback HTTP(S) URL")
+
+        expected_version = values.get("RAGFLOW_EXPECTED_VERSION", "v0.25.6").strip()
+        if not expected_version:
+            raise ConfigurationError("RAGFLOW_EXPECTED_VERSION is required")
+
+        raw_timeout = values.get("RAGFLOW_TIMEOUT_SECONDS", "60")
+        try:
+            timeout_seconds = float(raw_timeout)
+        except ValueError as error:
+            raise ConfigurationError("RAGFLOW_TIMEOUT_SECONDS must be a number") from error
+        if not isfinite(timeout_seconds) or not 0 < timeout_seconds <= 300:
+            raise ConfigurationError("RAGFLOW_TIMEOUT_SECONDS must be between 0 and 300")
+
+        return cls(
+            base_url=base_url,
+            api_key=SecretStr(values.get("RAGFLOW_API_KEY", "").strip()),
+            expected_version=expected_version,
+            timeout_seconds=timeout_seconds,
+        )
 
 
 class ModelSettings(BaseModel):
