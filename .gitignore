@@ -1,0 +1,52 @@
+# macOS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# 本机运行数据与日志
+.local/
+*.log
+logs/
+tmp/
+
+# 环境变量。唯一允许跟踪的真实凭据是私有仓库中的百炼 Demo 配置。
+.env
+.env.*
+!**/.env.example
+!/backend/.env.demo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+*.tsbuildinfo
+.pnpm-debug.log*
+npm-debug.log*
+
+# RAGFlow / Docker 本机数据
+infra/ragflow/data/
+infra/ragflow/logs/
+infra/ragflow/.env.local
+
+# 临时 Sites 初始化产物不得回流
+.openai/
+.vinext/
+.wrangler/
+outputs/
+work/
