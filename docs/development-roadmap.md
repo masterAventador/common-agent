@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `⬜` 尚未开始；等待后端、前端基础工具链完成后按纵向功能任务进入 |
+| 产品代码 | `🚧` KnowledgeService 平台契约已完成；真实 RAGFlow 适配器与用户功能继续按 Wave 2 推进 |
 | 本地服务 | `✅` 临时前后端与 RAGFlow 容器均未启动；保留被忽略的固定 RAGFlow 官方 checkout 供后续复用 |
 
 ## 4. 全局完成门禁
@@ -145,7 +145,7 @@
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
 | K2-01 | 锁定 RAGFlow 版本与资源 | 确切稳定版本；固定 `common-agent-dev`、独立端口/Volume；评估 Docker 32GB 级资源和复用策略 | R0-06 | ✅ 已完成 |
-| K2-02 | KnowledgeService 契约 | list/create/upload/list-documents/retrieve/status 平台协议和失败测试 | B1-02 | ⬜ 未开始 |
+| K2-02 | KnowledgeService 契约 | list/create/upload/list-documents/retrieve/status 平台协议和失败测试 | B1-02 | ✅ 已完成 |
 | K2-03 | RAGFlow 适配器 | 官方 SDK/API 接入、超时、错误转换、版本健康和真实服务验收 | K2-01,K2-02 | ⬜ 未开始 |
 | K2-04 | 知识库 API | 列表、创建、文档上传、解析状态；上传大小/类型限制 | K2-03,C1-01 | ⬜ 未开始 |
 | K2-05 | 知识库页面 | 创建、上传、真实状态、失败重试和空状态 | K2-04,F1-03 | ⬜ 未开始 |
@@ -460,10 +460,23 @@
 - 文档：`.env.example`、`README.md`、`infra/README.md`、`infra/ragflow/*`、`docs/project-structure.md`、`docs/backend-architecture.md`、`docs/development-roadmap.md`
 - 遗留：TEI 镜像、真实容器启动、API 健康与启动/稳定内存测量由 K2-03 完成；完整解析和检索压测在知识库纵向链路及 Q6-02 继续记录
 
+### K2-02 KnowledgeService 契约
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：先建立 `tests/unit/knowledge/test_contract.py`，执行 `uv run --frozen pytest -q tests/unit/knowledge/test_contract.py` 因 `common_agent.domain` 尚不存在以 `ModuleNotFoundError` 收集失败，证明测试能捕获平台知识契约缺失
+- GREEN：契约定向测试 9 passed；后端全量 `uv run --frozen pytest -q` 38 passed；`ruff check .`、`ruff format --check .` 和 `mypy src tests` 全部通过
+- 真实边界：新增 framework-independent 领域模型与 `KnowledgeService` Protocol，稳定覆盖 status、list/create knowledge base、upload/list documents 和 retrieve；协议不导入或泄露 RAGFlow SDK/API 类型，本任务是内部平台边界，不以 Fake 或直接下层调用冒充真实 RAGFlow 功能验收
+- 失败矩阵：稳定建模未配置、服务不可用、知识库失效、明确上传失败、上传结果未知和上游响应非法；空检索由空 chunks 正常表达；文档二进制内容从 repr 排除，所有返回模型不可变；网络超时、HTTP/业务错误分类和真实版本漂移由 K2-03 适配器测试覆盖
+- 清理：没有启动端口、进程、浏览器或容器；pytest 缓存被 Git 忽略，无上传文件、知识库数据、任务镜像或临时资源遗留
+- 文档：`docs/development-roadmap.md`
+- 遗留：K2-03 实现 RAGFlow v0.25.6 正式适配器并证明真实服务；K2-04 再把平台模型转换为 FastAPI/OpenAPI 对外契约
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `K2-02`：建立 KnowledgeService 平台契约与失败测试；
-2. 完成 `K2-03`：接入正式 RAGFlow 适配器并验收真实服务；
-3. 完成 `K2-04`：通过平台 API 跑通知识库创建、上传和解析状态。
+1. 完成 `K2-03`：接入正式 RAGFlow 适配器并验收真实服务；
+2. 完成 `K2-04`：通过平台 API 跑通知识库创建、上传和解析状态；
+3. 完成 `K2-05`：实现知识库正式页面和真实状态交互。
