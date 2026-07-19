@@ -1,0 +1,216 @@
+{
+  "$defs": {
+    "CitationResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "document_name": {
+          "title": "Document Name",
+          "type": "string"
+        },
+        "knowledge_base_id": {
+          "title": "Knowledge Base Id",
+          "type": "string"
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "position",
+        "knowledge_base_id",
+        "chunk_id",
+        "document_id",
+        "document_name",
+        "content",
+        "score"
+      ],
+      "title": "CitationResponse",
+      "type": "object"
+    },
+    "ConversationEventKind": {
+      "enum": [
+        "assistant.started",
+        "assistant.delta",
+        "assistant.completed",
+        "assistant.failed",
+        "assistant.stopped"
+      ],
+      "title": "ConversationEventKind",
+      "type": "string"
+    },
+    "MessageResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/CitationResponse"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "conversation_id": {
+          "format": "uuid",
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error Code"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/MessageRole"
+        },
+        "sequence_number": {
+          "title": "Sequence Number",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/MessageStatus"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "conversation_id",
+        "sequence_number",
+        "role",
+        "content",
+        "status",
+        "citations",
+        "error_code",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "MessageResponse",
+      "type": "object"
+    },
+    "MessageRole": {
+      "enum": [
+        "user",
+        "assistant"
+      ],
+      "title": "MessageRole",
+      "type": "string"
+    },
+    "MessageStatus": {
+      "enum": [
+        "pending",
+        "streaming",
+        "completed",
+        "failed",
+        "stopped"
+      ],
+      "title": "MessageStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "conversation_id": {
+      "format": "uuid",
+      "title": "Conversation Id",
+      "type": "string"
+    },
+    "delta": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Delta"
+    },
+    "message": {
+      "$ref": "#/$defs/MessageResponse"
+    },
+    "message_id": {
+      "format": "uuid",
+      "title": "Message Id",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "retry": {
+      "title": "Retry",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "turn_id": {
+      "format": "uuid",
+      "title": "Turn Id",
+      "type": "string"
+    },
+    "type": {
+      "$ref": "#/$defs/ConversationEventKind"
+    }
+  },
+  "required": [
+    "sequence",
+    "conversation_id",
+    "turn_id",
+    "message_id",
+    "type",
+    "delta",
+    "retry",
+    "message",
+    "occurred_at"
+  ],
+  "title": "ConversationEventResponse",
+  "type": "object"
+}

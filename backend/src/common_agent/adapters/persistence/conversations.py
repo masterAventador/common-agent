@@ -38,6 +38,15 @@ class SqlAlchemyConversationRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def list(self) -> tuple[Conversation, ...]:
+        result = await self._session.scalars(
+            select(ConversationRow).order_by(
+                ConversationRow.updated_at.desc(),
+                ConversationRow.id,
+            )
+        )
+        return tuple(_to_conversation(row) for row in result)
+
     async def list_for_employee(self, employee_id: UUID) -> tuple[Conversation, ...]:
         result = await self._session.scalars(
             select(ConversationRow)
@@ -84,6 +93,22 @@ class SqlAlchemyMessageRepository:
                 select(MessageRow)
                 .where(MessageRow.conversation_id == str(conversation_id))
                 .order_by(MessageRow.sequence_number, MessageRow.id)
+            )
+        )
+        citations = await self._citations_for(rows)
+        return tuple(_to_message(row, citations.get(row.id, ())) for row in rows)
+
+    async def list_active(self) -> tuple[Message, ...]:
+        rows = tuple(
+            await self._session.scalars(
+                select(MessageRow)
+                .where(
+                    MessageRow.role == MessageRole.ASSISTANT.value,
+                    MessageRow.status.in_(
+                        (MessageStatus.PENDING.value, MessageStatus.STREAMING.value)
+                    ),
+                )
+                .order_by(MessageRow.created_at, MessageRow.id)
             )
         )
         citations = await self._citations_for(rows)

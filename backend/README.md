@@ -64,8 +64,19 @@ allowlist。非空知识库 ID 会先经 `KnowledgeBaseService` 和 RAGFlow 官�
 `message_citations`。会话以正式外键引用数字员工；消息在同一会话内使用唯一正整数序号，
 用户消息直接为 `completed`，助手消息只允许从 `pending/streaming` 进入
 `completed/failed/stopped` 终态。引用按连续位置单独保存并随消息读取，只有已完成助手消息
-可由领域模型携带引用。Conversation Unit of Work 让后续发送用例原子提交用户消息、助手占位
-与状态更新；当前 A4-01 只交付领域与正式持久化，公开会话 HTTP/SSE 入口在 A4-06 接入。
+可由领域模型携带引用。Conversation Unit of Work 让发送用例原子提交用户消息、助手占位与状态更新。
+
+会话公开入口位于 `/api/v1/conversations`：支持创建/列表、消息历史、发送、停止、失败或已停止
+消息重试，以及 `/{conversation_id}/events` SSE。发送请求必须携带客户端生成的 `message_id`；
+平台先原子提交用户消息和助手占位消息，再启动知识检索与 Deep Agents。每个 delta/终态也先更新
+MySQL 并提交，之后才发布带 `schema_version/conversation_id/message_id/turn_id/sequence` 的
+平台事件。SSE 可通过 `after_sequence` 或 `Last-Event-ID` 续传；历史已淘汰或进程重启后不能续传
+时返回 `event_history_unavailable`，调用方应重新加载权威消息历史。
+
+同一会话同时只允许一个活跃回复；重复 `message_id`、并发发送、无活跃生成时停止和非法重试均
+返回稳定冲突码。停止后重试复用原助手消息身份和序号，清空上次不完整内容，不重复写用户消息。
+应用关闭时先请求所有活跃运行停止再释放模型客户端；启动时把上次进程遗留的
+`pending/streaming` 助手消息恢复为 `failed/generation_interrupted`，避免页面永久显示生成中。
 
 `ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。Base URL 只接受百炼官方 `compatible-mode/v1` HTTPS 地址，禁止 URL 凭据、查询参数和非官方主机。
 

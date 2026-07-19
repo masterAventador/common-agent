@@ -160,6 +160,58 @@ def test_repositories_list_and_update_without_owning_transactions() -> None:
     assert missing is None
 
 
+def test_repositories_list_all_conversations_and_active_assistant_messages() -> None:
+    employee = Employee.create(name=f"conversation-list-{uuid4().hex}", system_prompt="通用指令")
+    older = Conversation.create(employee_id=employee.id, title="较早会话")
+    newer = Conversation.create(
+        employee_id=employee.id,
+        title="较新会话",
+        now=older.created_at + timedelta(microseconds=1),
+    )
+    pending = Message.create_assistant(
+        conversation_id=older.id,
+        sequence_number=2,
+        now=newer.created_at + timedelta(microseconds=1),
+    )
+    streaming = Message.create_assistant(
+        conversation_id=newer.id,
+        sequence_number=2,
+        now=pending.created_at + timedelta(microseconds=1),
+    ).append_delta(
+        "生成中",
+        updated_at=pending.created_at + timedelta(microseconds=2),
+    )
+
+    async def exercise() -> tuple[tuple[Conversation, ...], tuple[Message, ...]]:
+        async with _database() as database:
+            try:
+                async with database.session() as session:
+                    await SqlAlchemyEmployeeRepository(session).add(employee)
+                    conversations = SqlAlchemyConversationRepository(session)
+                    messages = SqlAlchemyMessageRepository(session)
+                    await conversations.add(older)
+                    await conversations.add(newer)
+                    await messages.add(pending)
+                    await messages.add(streaming)
+                    await session.commit()
+
+                async with database.session() as session:
+                    conversations = await SqlAlchemyConversationRepository(session).list()
+                    active = await SqlAlchemyMessageRepository(session).list_active()
+                    own_ids = {older.id, newer.id}
+                    return (
+                        tuple(item for item in conversations if item.id in own_ids),
+                        tuple(item for item in active if item.conversation_id in own_ids),
+                    )
+            finally:
+                await delete_conversations(database, older.id, newer.id)
+                await delete_employees(database, employee.id)
+
+    conversations, active = asyncio.run(exercise())
+    assert conversations == (newer, older)
+    assert active == (pending, streaming)
+
+
 def test_conversation_transaction_rollback_leaves_no_partial_graph() -> None:
     employee, conversation, user, _ = _records()
 

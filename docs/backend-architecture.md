@@ -281,8 +281,8 @@ WorkflowRun
   -> KnowledgeService.retrieve(question)
   -> 把历史消息、系统指令、知识片段和引用交给 EmployeeRuntime
   -> Deep Agents 调用阿里百炼
-  -> 转换为 message.delta / message.completed 等会话事件
-  -> 写回助手消息和引用
+  -> 每个 Runtime delta/终态先写回助手消息和引用并提交 MySQL
+  -> 再转换并发布 assistant.delta / assistant.completed 等平台 SSE 事件
 ```
 
 检索为空不是错误：数字员工应明确说明未找到相关知识，并基于通用能力回答或说明无法确定。RAGFlow 请求失败则本轮回复失败，不静默跳过知识库后假装是知识回答。
@@ -348,16 +348,14 @@ GET    /api/v1/workflow-runs/{run_id}/events
 
 ## 8. 会话与工作流事件
 
-事件统一使用 SSE，至少包含：
+会话和工作流流式事件统一使用 SSE。当前会话事件为：
 
 ```text
-conversation.message.accepted
-conversation.retrieval.started
-conversation.retrieval.completed
-conversation.message.delta
-conversation.message.completed
-conversation.message.failed
-conversation.message.stopped
+assistant.started
+assistant.delta
+assistant.completed
+assistant.failed
+assistant.stopped
 
 workflow.run.started
 workflow.node.started
@@ -367,7 +365,18 @@ workflow.run.completed
 workflow.run.failed
 ```
 
-每个事件包含 `version`、资源 ID、单调 `sequence`、时间和安全 payload。前端只消费平台事件，不解析 LangGraph 或 Deep Agents 原始事件。
+每个会话事件包含固定 `schema_version=1`、`conversation_id`、`message_id`、`turn_id`、会话内
+单调 `sequence`、时间和已持久化的消息快照；delta 事件额外包含本次文本增量，重试开始事件
+带 `retry=true`。SSE 的 `id` 与 payload sequence 一致，支持 `after_sequence` 和
+`Last-Event-ID` 回放进程内保留历史。无法续传时前端必须重新读取 MySQL 权威消息历史，不能猜测
+丢失内容。前端只消费平台事件，不解析 LangGraph 或 Deep Agents 原始事件。
+
+发送接口先在一个 Conversation Unit of Work 中提交用户消息、助手占位和会话更新时间，再
+发布 started 并启动后台生成；后续每个事件也严格“提交后发布”。客户端生成的用户
+`message_id` 是重复提交边界，同一会话有活跃助手消息时拒绝第二次发送。停止只发出停止意图，
+最终 stopped 仍由正式运行时收敛并持久化；重试只允许最后一条 failed/stopped 助手消息，复用
+原消息 ID/序号并清空不完整内容。应用重启时把遗留 pending/streaming 恢复为
+`failed/generation_interrupted`。
 
 ## 9. 错误语义
 

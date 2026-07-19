@@ -3,8 +3,12 @@ from pathlib import Path
 from typing import Any
 
 from common_agent.api import create_app
+from common_agent.api.routers.conversations import ConversationEventResponse
 
 OPENAPI_SNAPSHOT = Path(__file__).resolve().parents[3] / "contracts" / "openapi" / "openapi.json"
+CONVERSATION_EVENT_SNAPSHOT = (
+    Path(__file__).resolve().parents[3] / "contracts" / "events" / "conversation-event.schema.json"
+)
 
 
 def _schema() -> dict[str, Any]:
@@ -78,3 +82,55 @@ def test_openapi_exposes_generic_employee_crud_contract() -> None:
     assert properties["system_prompt"]["maxLength"] == 12000
     assert properties["knowledge_base_id"]["anyOf"][0]["maxLength"] == 128
     assert "allowed_workflow_ids" not in properties
+
+
+def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> None:
+    schema = _schema()
+    paths = schema["paths"]
+
+    assert set(paths["/api/v1/conversations"]) == {"get", "post"}
+    assert set(paths["/api/v1/conversations/{conversation_id}/messages"]) == {
+        "get",
+        "post",
+    }
+    assert set(paths["/api/v1/conversations/{conversation_id}/events"]) == {"get"}
+    assert set(paths["/api/v1/conversations/{conversation_id}/stop"]) == {"post"}
+    assert set(paths["/api/v1/messages/{message_id}/retry"]) == {"post"}
+
+    create = paths["/api/v1/conversations"]["post"]
+    send = paths["/api/v1/conversations/{conversation_id}/messages"]["post"]
+    stop = paths["/api/v1/conversations/{conversation_id}/stop"]["post"]
+    retry = paths["/api/v1/messages/{message_id}/retry"]["post"]
+    events = paths["/api/v1/conversations/{conversation_id}/events"]["get"]
+
+    assert create["responses"]["201"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ConversationResponse"
+    }
+    for operation in (send, retry):
+        assert operation["responses"]["202"]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/TurnAcceptedResponse"
+        }
+    assert stop["responses"]["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/StopAcceptedResponse"
+    }
+    assert events["responses"]["200"]["content"]["text/event-stream"]["schema"] == {
+        "$ref": "#/components/schemas/ConversationEventResponse"
+    }
+    assert (
+        schema["components"]["schemas"]["ConversationEventResponse"]["properties"][
+            "schema_version"
+        ]["const"]
+        == "1"
+    )
+
+    create_body = schema["components"]["schemas"]["CreateConversationBody"]
+    send_body = schema["components"]["schemas"]["SendMessageBody"]
+    assert create_body["properties"]["title"]["maxLength"] == 200
+    assert send_body["properties"]["content"]["maxLength"] == 200000
+    assert set(send_body["required"]) == {"message_id", "content"}
+
+
+def test_committed_conversation_event_schema_matches_sse_payload_model() -> None:
+    committed = json.loads(CONVERSATION_EVENT_SNAPSHOT.read_text(encoding="utf-8"))
+
+    assert committed == ConversationEventResponse.model_json_schema()

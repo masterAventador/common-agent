@@ -54,6 +54,23 @@ def test_conversation_rename_preserves_identity_and_rejects_time_reversal() -> N
     assert captured.value.field == "updated_at"
 
 
+def test_conversation_touch_only_advances_updated_at() -> None:
+    conversation = Conversation.create(employee_id=uuid4(), title="通用会话")
+    changed_at = conversation.updated_at + timedelta(microseconds=1)
+
+    touched = conversation.touch(updated_at=changed_at)
+
+    assert touched.id == conversation.id
+    assert touched.employee_id == conversation.employee_id
+    assert touched.title == conversation.title
+    assert touched.created_at == conversation.created_at
+    assert touched.updated_at == changed_at
+
+    with pytest.raises(ConversationValidationError) as captured:
+        touched.touch(updated_at=conversation.updated_at)
+    assert captured.value.field == "updated_at"
+
+
 @pytest.mark.parametrize(
     ("overrides", "field"),
     [
@@ -146,6 +163,41 @@ def test_assistant_message_records_failed_and_stopped_terminal_states() -> None:
     for terminal in (failed, stopped):
         with pytest.raises(MessageTransitionError):
             terminal.append_delta("晚到内容", updated_at=changed_at + timedelta(microseconds=1))
+
+
+@pytest.mark.parametrize("terminal_status", [MessageStatus.FAILED, MessageStatus.STOPPED])
+def test_failed_or_stopped_assistant_can_retry_without_changing_identity_or_sequence(
+    terminal_status: MessageStatus,
+) -> None:
+    pending = Message.create_assistant(conversation_id=uuid4(), sequence_number=2)
+    streaming = pending.append_delta(
+        "上次生成的残留内容",
+        updated_at=pending.updated_at + timedelta(microseconds=1),
+    )
+    terminal = (
+        streaming.fail(
+            error_code="model_service_unavailable",
+            updated_at=streaming.updated_at + timedelta(microseconds=1),
+        )
+        if terminal_status is MessageStatus.FAILED
+        else streaming.stop(updated_at=streaming.updated_at + timedelta(microseconds=1))
+    )
+    retried_at = terminal.updated_at + timedelta(microseconds=1)
+
+    retried = terminal.retry(updated_at=retried_at)
+
+    assert retried.id == terminal.id
+    assert retried.conversation_id == terminal.conversation_id
+    assert retried.sequence_number == terminal.sequence_number
+    assert retried.role is MessageRole.ASSISTANT
+    assert retried.status is MessageStatus.PENDING
+    assert retried.content == ""
+    assert retried.citations == ()
+    assert retried.error_code is None
+    assert retried.updated_at == retried_at
+
+    with pytest.raises(MessageTransitionError):
+        pending.retry()
 
 
 def test_message_rejects_invalid_state_combinations_and_transitions() -> None:

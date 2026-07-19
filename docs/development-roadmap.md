@@ -180,7 +180,7 @@
 | A4-03 | EmployeeRuntime 契约 | 历史、系统指令、知识上下文、流式事件和停止语义 | A4-01,K2-02 | ✅ 已完成 |
 | A4-04 | Deep Agents 适配器 | 官方 `create_deep_agent`、受控工具、无 Shell/本机文件权限 | A4-02,A4-03 | ✅ 已完成 |
 | A4-05 | 自动知识检索 | 每条消息按员工绑定检索、空结果语义、引用映射和检索失败 fail closed | A4-03,K2-03,E3-02 | ✅ 已完成 |
-| A4-06 | 会话 API 与 SSE | 新建/列表/历史/发送/停止/重试；事件单调、持久化后推送 | A4-04,A4-05,C1-01 | ⬜ 未开始 |
+| A4-06 | 会话 API 与 SSE | 新建/列表/历史/发送/停止/重试；事件单调、持久化后推送 | A4-04,A4-05,C1-01 | ✅ 已完成 |
 | A4-07 | 聊天工作台 | 三栏会话、流式回复、引用、停止、重试和刷新恢复 | A4-06,F1-03 | ⬜ 未开始 |
 | A4-08 | Demo 核心 E2E | 固定适配器完成两轮会话、检索引用、断流和重试 | A4-07 | ⬜ 未开始 |
 | A4-09 | 真实会话验收 | 本机 RAGFlow + Deep Agents + 阿里百炼完成两轮知识问答并验证引用 | A4-08 | ⬜ 未开始 |
@@ -707,10 +707,26 @@
 - 文档：后端 README、后端架构、工程结构、会话知识解析器、KnowledgeBaseService 检索入口、Citation repr 安全、分层/真实测试和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
 - 遗留：A4-06 把 Resolver、EmployeeRuntime、Conversation/Message Repository 接入公开会话 CRUD、发送/停止/重试与持久化后 SSE；A4-07 再通过正式聊天页面验收用户可见自动检索和引用
 
+### A4-06 会话 API 与 SSE
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：领域测试先以缺少 `Conversation.touch`/`Message.retry` 得到 3 failed；真实 MySQL 仓储测试以缺少全量会话和活跃消息查询得到 1 failed；事件总线与会话服务测试分别因 `common_agent.conversations.events/service` 不存在发生收集错误；OpenAPI 契约先因正式会话路径缺失失败，独立 SSE Schema 又以文件不存在失败，最后继续用 RED 捕获 OpenAPI 仍把事件载荷声明成无类型 string，逐层进入最小实现
+- GREEN：Conversation 领域 24 passed，事件总线 3 passed，会话服务持久化/停止/重试/恢复/断流/乱序/晚到事件 6 passed，正式 HTTP CRUD/错误路径和真实 HTTP/SSE+百炼各 1 passed；最终后端全量 281 passed、7 个显式外部验收 skip，真实百炼适配器/Deep Agents/会话 API 串行 3 passed。Ruff、格式、Mypy、uv lock、OpenAPI/SSE/前端类型漂移、契约脚本 ShellCheck 全部通过；前端 27 项 Vitest、ESLint、TypeScript、Build、peer 与冻结锁文件通过，构建继续如实报告既有 622.12 KiB 共享 chunk 提示
+- 正式用户链路：正式 Uvicorn 经 `/api/v1/conversations` 创建会话，POST 消息先写入真实 MySQL，再进入 `ConversationKnowledgeResolver -> DeepAgentsEmployeeRuntime -> deepagents 0.6.12 -> BailianChatModelAdapter -> 阿里百炼`；测试从正式 SSE 收到首个真实 delta 后调用正式 stop 得到 stopped，再调用正式 retry 复用同一助手消息并重新进入真实百炼直至 completed，最后从正式历史接口确认仍只有用户/助手两条消息。该员工未绑定知识库，因此本任务链路真实执行“未绑定零检索”分支；绑定知识库的 RAGFlow 生产链路由已完成 A4-05 和后续 A4-08/A4-09 覆盖，不伪造本任务证据
+- 提交后发布：发送在同一 Conversation Unit of Work 中原子提交用户消息、助手占位和会话更新时间，提交完成后才发布 `assistant.started` 并创建后台运行；每个 delta/completed/failed/stopped 都重新读取当前消息、完成 MySQL 提交后再进入 EventBroker。终态立即停止消费上游，晚到事件不落库；断流和乱序分别收敛为安全 `runtime_stream_interrupted`/`runtime_response_invalid`
+- 停止、重试与恢复：同会话只有一个活跃运行，第二次发送返回 `conversation_busy`；停止通过同一 `RuntimeStopToken` 传到 Deep Agents，最终 stopped 由运行时事件持久化。只有最后一条 failed/stopped 助手消息可重试，复用消息 ID/序号并清空残留内容和错误，不重复用户消息；lifespan 关闭先停止活跃运行并释放模型客户端，启动把遗留 pending/streaming 恢复成 `failed/generation_interrupted`
+- API 与跨端契约：正式入口覆盖创建/列表/历史/发送/停止/重试和 SSE；客户端生成的用户 `message_id` 是重复提交边界。SSE 使用 `schema_version=1`、会话/消息/turn ID、会话内单调 sequence、持久化消息快照和安全 delta，`id` 与 sequence 一致；支持 `after_sequence`/`Last-Event-ID`，历史淘汰或进程重启后返回 `event_history_unavailable` 并要求重载权威消息历史。Pydantic 同时生成 OpenAPI、`contracts/events/conversation-event.schema.json` 和前端 TypeScript 类型，隔离重建逐字节一致
+- 失败矩阵：覆盖重复会话/用户消息、同会话并发、无活跃生成停止、非法重试、消息/会话不存在、空白/超长输入、事件回放断档、慢消费者关闭、运行时断流/乱序/错误终态、终态后晚到内容、停止后重试、停止与生成竞态和进程中断恢复；模型/RAGFlow 的认证、超时、版本和非法返回继续复用 A4-02/A4-04/A4-05 分层与真实验收
+- 清理与资源：所有 HTTP/服务测试经 `finally` 和正式 lifespan 关闭 Uvicorn、Deep Agents、模型/RAGFlow HTTP 客户端并精确删除会话/员工；最终正式库为固定 Seed 1、会话/消息/引用 0，测试库四类记录全 0。18200/18280 无监听，未发现 Playwright/headless-shell/Uvicorn/Vite 残留；本任务未启动浏览器，前端 dist/tsbuildinfo 已精确删除，专属 Docker context 无悬空镜像，健康 MySQL/RAGFlow 稳定栈继续复用
+- 文档：后端 README、后端架构、正式会话应用服务/API/SSE、事件与 OpenAPI 生成契约、分层/真实验收和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
+- 遗留：A4-07 在聊天工作台消费本任务 API/SSE 并实现三栏会话、引用、停止、重试与刷新恢复；A4-08 用无头 Playwright 覆盖真实用户页面路径，A4-09 再完成绑定知识库的两轮 RAGFlow+Deep Agents+百炼验收
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `A4-06`：串起会话 CRUD、发送/停止/重试和持久化后推送的 SSE；
-2. 完成 `A4-07`：在聊天工作台接入三栏会话、流式回复、引用、停止、重试和刷新恢复；
-3. 完成 `A4-08`：以无头 Playwright 跑通 Demo 两轮会话、检索引用、断流和重试。
+1. 完成 `A4-07`：在聊天工作台接入三栏会话、流式回复、引用、停止、重试和刷新恢复；
+2. 完成 `A4-08`：以无头 Playwright 跑通 Demo 两轮会话、检索引用、断流和重试；
+3. 完成 `A4-09`：以本机 RAGFlow、Deep Agents 和阿里百炼完成两轮真实知识问答与引用验收。

@@ -134,6 +134,13 @@ class Conversation:
             raise ConversationValidationError("updated_at", "不能早于当前更新时间")
         return replace(self, title=title, updated_at=changed_at)
 
+    def touch(self, *, updated_at: datetime | None = None) -> Conversation:
+        changed_at = updated_at or datetime.now(UTC)
+        _utc_timestamp("updated_at", changed_at)
+        if changed_at < self.updated_at:
+            raise ConversationValidationError("updated_at", "不能早于当前更新时间")
+        return replace(self, updated_at=changed_at)
+
 
 @dataclass(frozen=True, slots=True)
 class Message:
@@ -292,6 +299,22 @@ class Message:
         return replace(
             self,
             status=MessageStatus.STOPPED,
+            citations=(),
+            error_code=None,
+            updated_at=changed_at,
+        )
+
+    def retry(self, *, updated_at: datetime | None = None) -> Message:
+        if self.role is not MessageRole.ASSISTANT or self.status not in {
+            MessageStatus.FAILED,
+            MessageStatus.STOPPED,
+        }:
+            raise MessageTransitionError(self.status, "重试")
+        changed_at = _transition_timestamp(updated_at, self.updated_at, self.status)
+        return replace(
+            self,
+            content="",
+            status=MessageStatus.PENDING,
             citations=(),
             error_code=None,
             updated_at=changed_at,
