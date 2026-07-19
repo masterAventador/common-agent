@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
-from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
@@ -13,6 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.models import EmployeeRow
+from common_agent.adapters.persistence.timestamps import (
+    from_database_datetime,
+    to_database_datetime,
+)
 from common_agent.domain.employee import Employee
 from common_agent.ports.employees import EmployeeAlreadyExists, EmployeeRepository
 
@@ -110,8 +113,8 @@ def _to_values(employee: Employee) -> dict[str, object]:
         "system_prompt": employee.system_prompt,
         "knowledge_base_id": employee.knowledge_base_id,
         "allowed_workflow_ids": [str(workflow_id) for workflow_id in employee.allowed_workflow_ids],
-        "created_at": _without_timezone(employee.created_at),
-        "updated_at": _without_timezone(employee.updated_at),
+        "created_at": to_database_datetime(employee.created_at),
+        "updated_at": to_database_datetime(employee.updated_at),
     }
 
 
@@ -123,14 +126,6 @@ def _to_domain(row: EmployeeRow) -> Employee:
         system_prompt=row.system_prompt,
         knowledge_base_id=row.knowledge_base_id,
         allowed_workflow_ids=tuple(UUID(value) for value in row.allowed_workflow_ids),
-        created_at=_with_utc(row.created_at),
-        updated_at=_with_utc(row.updated_at),
+        created_at=from_database_datetime(row.created_at),
+        updated_at=from_database_datetime(row.updated_at),
     )
-
-
-def _without_timezone(value: datetime) -> datetime:
-    return value.astimezone(UTC).replace(tzinfo=None)
-
-
-def _with_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC)

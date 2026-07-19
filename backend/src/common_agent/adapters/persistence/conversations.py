@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from contextlib import AbstractAsyncContextManager
-from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
@@ -17,6 +16,10 @@ from common_agent.adapters.persistence.models import (
     ConversationRow,
     MessageCitationRow,
     MessageRow,
+)
+from common_agent.adapters.persistence.timestamps import (
+    from_database_datetime,
+    to_database_datetime,
 )
 from common_agent.domain.conversation import (
     Citation,
@@ -76,7 +79,7 @@ class SqlAlchemyConversationRepository:
                 .where(ConversationRow.id == str(conversation.id))
                 .values(
                     title=conversation.title,
-                    updated_at=_without_timezone(conversation.updated_at),
+                    updated_at=to_database_datetime(conversation.updated_at),
                 )
             ),
         )
@@ -146,7 +149,7 @@ class SqlAlchemyMessageRepository:
                     content=message.content,
                     status=message.status.value,
                     error_code=message.error_code,
-                    updated_at=_without_timezone(message.updated_at),
+                    updated_at=to_database_datetime(message.updated_at),
                 )
             ),
         )
@@ -240,8 +243,8 @@ def _conversation_values(conversation: Conversation) -> dict[str, object]:
         "id": str(conversation.id),
         "employee_id": str(conversation.employee_id),
         "title": conversation.title,
-        "created_at": _without_timezone(conversation.created_at),
-        "updated_at": _without_timezone(conversation.updated_at),
+        "created_at": to_database_datetime(conversation.created_at),
+        "updated_at": to_database_datetime(conversation.updated_at),
     }
 
 
@@ -254,8 +257,8 @@ def _message_values(message: Message) -> dict[str, object]:
         "content": message.content,
         "status": message.status.value,
         "error_code": message.error_code,
-        "created_at": _without_timezone(message.created_at),
-        "updated_at": _without_timezone(message.updated_at),
+        "created_at": to_database_datetime(message.created_at),
+        "updated_at": to_database_datetime(message.updated_at),
     }
 
 
@@ -280,8 +283,8 @@ def _to_conversation(row: ConversationRow) -> Conversation:
         id=UUID(row.id),
         employee_id=UUID(row.employee_id),
         title=row.title,
-        created_at=_with_utc(row.created_at),
-        updated_at=_with_utc(row.updated_at),
+        created_at=from_database_datetime(row.created_at),
+        updated_at=from_database_datetime(row.updated_at),
     )
 
 
@@ -295,8 +298,8 @@ def _to_message(row: MessageRow, citations: tuple[Citation, ...]) -> Message:
         status=MessageStatus(row.status),
         citations=citations,
         error_code=row.error_code,
-        created_at=_with_utc(row.created_at),
-        updated_at=_with_utc(row.updated_at),
+        created_at=from_database_datetime(row.created_at),
+        updated_at=from_database_datetime(row.updated_at),
     )
 
 
@@ -310,14 +313,6 @@ def _to_citation(row: MessageCitationRow) -> Citation:
         content=row.content,
         score=row.score,
     )
-
-
-def _without_timezone(value: datetime) -> datetime:
-    return value.astimezone(UTC).replace(tzinfo=None)
-
-
-def _with_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC)
 
 
 def _is_primary_conflict(error: IntegrityError) -> bool:

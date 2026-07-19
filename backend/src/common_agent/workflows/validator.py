@@ -30,6 +30,7 @@ class WorkflowValidationCode(StrEnum):
     UNREACHABLE_FROM_START = "unreachable_from_start"
     CANNOT_REACH_END = "cannot_reach_end"
     CYCLE_DETECTED = "cycle_detected"
+    KNOWLEDGE_BASE_NOT_FOUND = "knowledge_base_not_found"
 
 
 @dataclass(frozen=True, slots=True)

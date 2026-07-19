@@ -194,7 +194,7 @@
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
 | W5-01 | 工作流 Schema 与校验 | 四类节点、边、配置、图不变量和完整非法矩阵 | B1-03,K2-02,A4-02 | ✅ 已完成 |
-| W5-02 | 工作流持久化与 API | 正式仓储、列表/详情/创建/编辑/校验，位置与业务配置分离 | W5-01,C1-01 | ⬜ 未开始 |
+| W5-02 | 工作流持久化与 API | 正式仓储、列表/详情/创建/编辑/校验，位置与业务配置分离 | W5-01,C1-01 | ✅ 已完成 |
 | W5-03 | LangGraph 编译器 | 注册节点转换、StateGraph 编译、步数上限和错误映射 | W5-01,K2-03,A4-02 | ⬜ 未开始 |
 | W5-04 | 工作流运行与事件 | 手动运行、节点事件、结果、失败和停止摘要 | W5-02,W5-03 | ⬜ 未开始 |
 | W5-05 | 工作流设计器 | React Flow 拖拽/连线/配置/保存/服务端校验 | W5-02,F1-03 | ⬜ 未开始 |
@@ -782,10 +782,26 @@
 - 文档：只更新唯一进度源中的任务状态、RED/GREEN、边界、失败矩阵和下一步；产品范围与架构决策未变化，未修改 `docs/product-scope.md`
 - 遗留：无；真实外层能力按依赖进入 W5-02
 
+### W5-02 工作流持久化与 API
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先建立应用服务、正式 MySQL 仓储、随机端口 Uvicorn API、OpenAPI 和真实 RAGFlow 验收测试，测试收集因 `common_agent.workflows.service` 与 `common_agent.adapters.persistence.workflows` 不存在而失败；最小实现后真实 MySQL 往返继续以 `mysql.DOUBLE` 解码为 `Decimal`、领域只接受有限 int/float 的正确边界失败，正式映射改为 `asdecimal=False` 后通过。全量测试还发现两个无关业务的测试基础问题并直接收正：工作流与知识模块同名 `test_service.py` 缺少包隔离，以及旧迁移 revision 断言仍停在 `20260719_0003`；OpenAPI 定向测试最初误以为判别联合内联在数组项，检查正式生成结果确认它被抽为 `WorkflowNodeBody` 组件后修正测试，未改变生产协议
+- GREEN：工作流应用服务与受影响员工服务 23 passed，正式 MySQL 迁移/仓储 14 passed，随机端口正式 Uvicorn 工作流 API 4 passed，应用层移动后的服务/API/OpenAPI 19 passed；最终后端全量 342 passed/8 个显式外部验收 skip，Ruff、125 个文件格式、严格 Mypy 61 个源文件和 uv lock 通过。前端 10 个文件 36 passed，TypeScript、ESLint、Build、冻结锁文件通过；OpenAPI/会话事件/生成 TypeScript 漂移检查通过
+- 正式持久化：新增不可变 Alembic `20260720_0004` 和正式 `workflows`、`workflow_nodes`、`workflow_edges` 三表；节点顺序、类型与画布 `position_x/position_y` 是独立列，按节点类型判别的业务配置只存在单独 JSON 对象，边以同一 `workflow_id` 下的复合外键引用真实节点。定义/节点/边在同一个 Workflow Unit of Work 原子新增或整体替换，列表用三次查询批量装配图，不用 N+1；公共 UTC/MySQL 时间转换从员工/会话重复私有函数收敛成唯一适配器工具并通过原仓储回归
+- API 与事务：公开 `/api/v1/workflows` GET/POST、`/{workflow_id}` GET/PUT 和 `/validate` POST；Pydantic/OpenAPI 用 `type` 判别四类节点并拒绝额外字段，校验入口返回完整稳定问题码且不写库。创建先校验后开启事务；更新先确认定义存在、事务外完成图与知识引用校验，再在新事务重读并原子替换，RAGFlow 网络等待不占 MySQL 事务。`WorkflowService` 按基线位于 `application/`，`workflows/` 只保留图校验并供下一步编译器复用
+- 生产同路径边界：专属真实用例从随机 loopback 端口访问运行中的正式 Uvicorn/FastAPI，经正式 `WorkflowService`、SQLAlchemy 仓储和 `common_agent_test` MySQL，创建真实 RAGFlow v0.25.6 数据集后用知识检索节点调用 `/validate` 与创建接口；有效引用通过并落库，随机失效引用返回 `knowledge_base_not_found` 图问题，API 重启后从 MySQL 恢复相同知识库 ID 和节点配置。全程没有 TestClient、ASGI 进程内客户端、Mock/Fake、直接仓储调用或日志断言参与完成证据；当前尚无工作流正式页面，设计器用户入口属于 W5-05，不能用未来页面作为本 API 任务的前置门禁
+- 失败矩阵：覆盖未知节点、类型/配置错配、开始/结束空配置额外字段、非法 UUID、定义不存在、逻辑非法图不落库、知识服务未配置/不可用、真实知识库存在/失效、校验不写库、重复身份、事务异常回滚、更新整体替换、MySQL 重启恢复、迁移损坏后关闭失败与修复恢复，以及数据库直接写入空白字段、未知节点类型和缺失边端外键；W5-01 的缺开始/结束、孤立、自环、重复边、环、不可达、超限和禁分支矩阵全部经同一正式应用服务复用。LangGraph 编译、运行输入/步数、节点失败、停止和运行摘要不属于持久化/API，分别进入 W5-03/W5-04
+- 契约：FastAPI/Pydantic 仍是唯一来源，生成 OpenAPI 新增工作流 CRUD、校验响应、四类节点判别联合及配置上限，前端 `schema.d.ts` 由脚本生成，没有手写第二套 DTO；后端 README 同步正式表、API、事务和知识引用边界，产品范围未变化
+- 清理：真实验收及所有失败路径均在 `finally` 删除唯一工作流和 RAGFlow 数据集；最终 `common_agent_test` revision 为 `20260720_0004`，工作流/节点/边均 0 条，RAGFlow `common-agent-w5-02-*` 数据集 0 个。18200/18280 无监听且无 Uvicorn、Vite、Playwright、浏览器残留；删除 dist、tsbuildinfo、pytest/Ruff/Python 缓存。本任务未构建镜像，连续运行约 9 小时的健康 MySQL/RAGFlow 稳定栈按规则继续复用，未重建、停止或误删
+- 文档：更新后端运行说明、生成 OpenAPI/TypeScript 契约和唯一进度源；`docs/product-scope.md` 未作进度性修改，架构基线无变化
+- 遗留：无；下一任务 W5-03 直接消费已验证并持久化的 `WorkflowDefinition`，不重复实现 API 或仓储
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `W5-02`：实现工作流正式持久化、列表/详情/创建/编辑/校验 API；
-2. 完成 `W5-03`：实现 LangGraph 节点注册、StateGraph 编译、步数上限和错误映射；
-3. 完成 `W5-04`：实现手动运行、节点事件、结果、失败和停止摘要。
+1. 完成 `W5-03`：实现 LangGraph 节点注册、StateGraph 编译、步数上限和错误映射；
+2. 完成 `W5-04`：实现手动运行、节点事件、结果、失败和停止摘要；
+3. 完成 `W5-05`：实现 React Flow 拖拽、连线、配置、保存和服务端校验设计器。

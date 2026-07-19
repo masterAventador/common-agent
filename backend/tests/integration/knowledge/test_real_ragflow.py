@@ -21,6 +21,7 @@ from tests.support.employees import delete_employees
 from tests.support.http import running_api
 from tests.support.ragflow import delete_dataset, provision_api_key
 from tests.support.settings import TEST_DATABASE_URL
+from tests.support.workflows import delete_workflows_from_database_url
 
 
 def test_real_ragflow_adapter_lifecycle() -> None:
@@ -248,6 +249,68 @@ def test_real_employee_http_binding_lifecycle() -> None:
             asyncio.run(delete_dataset(base_url, api_key, dataset_id))
 
 
+def test_real_workflow_http_validates_and_persists_knowledge_reference() -> None:
+    base_url = os.environ.get("TEST_RAGFLOW_BASE_URL")
+    api_key = os.environ.get("TEST_RAGFLOW_API_KEY")
+    expected_version = os.environ.get("TEST_RAGFLOW_EXPECTED_VERSION")
+    if not base_url or not expected_version:
+        pytest.skip("真实 RAGFlow 地址或期望版本未配置")
+    if not api_key:
+        api_key = asyncio.run(provision_api_key(base_url))
+
+    dataset_id: str | None = None
+    workflow_id: str | None = None
+    try:
+        dataset_id = asyncio.run(
+            _create_workflow_knowledge_dataset(base_url, api_key, expected_version)
+        )
+        environment = {
+            "RAGFLOW_BASE_URL": base_url,
+            "RAGFLOW_API_KEY": api_key,
+            "RAGFLOW_EXPECTED_VERSION": expected_version,
+            "RAGFLOW_TIMEOUT_SECONDS": "120",
+        }
+        graph = _workflow_body(dataset_id)
+        with (
+            running_api(TEST_DATABASE_URL, env_overrides=environment) as api_url,
+            httpx.Client(base_url=api_url, timeout=120) as client,
+        ):
+            validated = client.post("/api/v1/workflows/validate", json=graph)
+            assert validated.status_code == 200
+            assert validated.json() == {"valid": True, "issues": []}
+
+            created = client.post("/api/v1/workflows", json=graph)
+            assert created.status_code == 201
+            workflow_id = str(created.json()["id"])
+            assert created.json()["nodes"][1]["config"]["knowledge_base_id"] == dataset_id
+
+            missing_graph = _workflow_body(f"missing-{uuid4().hex}")
+            rejected = client.post("/api/v1/workflows/validate", json=missing_graph)
+            assert rejected.status_code == 200
+            assert rejected.json()["valid"] is False
+            assert rejected.json()["issues"] == [
+                {
+                    "code": "knowledge_base_not_found",
+                    "message": "知识检索节点引用的知识库不存在或已失效",
+                    "node_id": "retrieve",
+                    "edge_id": None,
+                }
+            ]
+
+        with (
+            running_api(TEST_DATABASE_URL, env_overrides=environment) as restarted_url,
+            httpx.Client(base_url=restarted_url, timeout=120) as restarted_client,
+        ):
+            restored = restarted_client.get(f"/api/v1/workflows/{workflow_id}")
+            assert restored.status_code == 200
+            assert restored.json()["nodes"][1]["config"]["knowledge_base_id"] == dataset_id
+    finally:
+        if workflow_id is not None:
+            asyncio.run(delete_workflows_from_database_url(TEST_DATABASE_URL, workflow_id))
+        if dataset_id is not None:
+            asyncio.run(delete_dataset(base_url, api_key, dataset_id))
+
+
 async def _create_employee_binding_dataset(
     base_url: str,
     api_key: str,
@@ -269,6 +332,60 @@ async def _create_employee_binding_dataset(
         return created.id
     finally:
         await service.aclose()
+
+
+async def _create_workflow_knowledge_dataset(
+    base_url: str,
+    api_key: str,
+    expected_version: str,
+) -> str:
+    service = RagFlowKnowledgeService(
+        base_url=base_url,
+        api_key=api_key,
+        expected_version=expected_version,
+        timeout_seconds=120,
+    )
+    try:
+        created = await service.create_knowledge_base(
+            CreateKnowledgeBaseRequest(
+                name=f"common-agent-w5-02-{uuid4().hex}",
+                description="W5-02 工作流知识引用正式验收",
+            )
+        )
+        return created.id
+    finally:
+        await service.aclose()
+
+
+def _workflow_body(knowledge_base_id: str) -> dict[str, object]:
+    return {
+        "name": f"common-agent-w5-02-{uuid4().hex}",
+        "description": "W5-02 正式 API 与真实 RAGFlow 验收",
+        "nodes": [
+            {
+                "id": "start",
+                "type": "start",
+                "position": {"x": 0, "y": 0},
+                "config": {},
+            },
+            {
+                "id": "retrieve",
+                "type": "knowledge_retrieval",
+                "position": {"x": 240, "y": 0},
+                "config": {"knowledge_base_id": knowledge_base_id},
+            },
+            {
+                "id": "end",
+                "type": "end",
+                "position": {"x": 480, "y": 0},
+                "config": {},
+            },
+        ],
+        "edges": [
+            {"id": "edge-1", "source": "start", "target": "retrieve"},
+            {"id": "edge-2", "source": "retrieve", "target": "end"},
+        ],
+    }
 
 
 async def _delete_real_employee(employee_id: str) -> None:

@@ -130,6 +130,38 @@ def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> Non
     assert set(send_body["required"]) == {"message_id", "content"}
 
 
+def test_openapi_exposes_discriminated_workflow_crud_and_validation_contracts() -> None:
+    schema = _schema()
+    paths = schema["paths"]
+
+    assert set(paths["/api/v1/workflows"]) == {"get", "post"}
+    assert set(paths["/api/v1/workflows/validate"]) == {"post"}
+    assert set(paths["/api/v1/workflows/{workflow_id}"]) == {"get", "put"}
+    assert paths["/api/v1/workflows"]["post"]["responses"]["201"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/WorkflowResponse"}
+    assert paths["/api/v1/workflows/validate"]["post"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/WorkflowValidationResponse"}
+
+    configuration = schema["components"]["schemas"]["WorkflowConfigurationBody"]
+    assert configuration["properties"]["name"]["maxLength"] == 128
+    node_items = configuration["properties"]["nodes"]["items"]
+    assert node_items == {"$ref": "#/components/schemas/WorkflowNodeBody"}
+    node_union = schema["components"]["schemas"]["WorkflowNodeBody"]
+    assert set(node_union["discriminator"]["mapping"]) == {
+        "start",
+        "ai_chat",
+        "knowledge_retrieval",
+        "end",
+    }
+    assert schema["components"]["schemas"]["AiChatNodeConfigBody"]["additionalProperties"] is False
+    assert (
+        schema["components"]["schemas"]["AiChatNodeConfigBody"]["properties"]["prompt"]["maxLength"]
+        == 12000
+    )
+
+
 def test_committed_conversation_event_schema_matches_sse_payload_model() -> None:
     committed = json.loads(CONVERSATION_EVENT_SNAPSHOT.read_text(encoding="utf-8"))
 

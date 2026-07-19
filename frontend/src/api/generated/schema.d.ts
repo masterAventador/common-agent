@@ -180,10 +180,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workflows */
+        get: operations["list_workflows_api_v1_workflows_get"];
+        put?: never;
+        /** Create Workflow */
+        post: operations["create_workflow_api_v1_workflows_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Workflow */
+        post: operations["validate_workflow_api_v1_workflows_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{workflow_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow */
+        get: operations["get_workflow_api_v1_workflows__workflow_id__get"];
+        /** Update Workflow */
+        put: operations["update_workflow_api_v1_workflows__workflow_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AiChatNodeConfigBody */
+        AiChatNodeConfigBody: {
+            /** Prompt */
+            prompt: string;
+        };
+        /** AiChatWorkflowNodeBody */
+        AiChatWorkflowNodeBody: {
+            config: components["schemas"]["AiChatNodeConfigBody"];
+            /** Id */
+            id: string;
+            position: components["schemas"]["WorkflowNodePositionBody"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "ai_chat";
+        };
         /** Body_upload_document_api_v1_knowledge_bases__knowledge_base_id__documents_post */
         Body_upload_document_api_v1_knowledge_bases__knowledge_base_id__documents_post: {
             /**
@@ -345,6 +415,20 @@ export interface components {
              */
             updated_at: string;
         };
+        /** EndNodeConfigBody */
+        EndNodeConfigBody: Record<string, never>;
+        /** EndWorkflowNodeBody */
+        EndWorkflowNodeBody: {
+            config: components["schemas"]["EndNodeConfigBody"];
+            /** Id */
+            id: string;
+            position: components["schemas"]["WorkflowNodePositionBody"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "end";
+        };
         /** ErrorEnvelope */
         ErrorEnvelope: {
             /** Code */
@@ -408,6 +492,23 @@ export interface components {
             /** Size Bytes */
             size_bytes: number;
         };
+        /** KnowledgeRetrievalNodeConfigBody */
+        KnowledgeRetrievalNodeConfigBody: {
+            /** Knowledge Base Id */
+            knowledge_base_id: string;
+        };
+        /** KnowledgeRetrievalWorkflowNodeBody */
+        KnowledgeRetrievalWorkflowNodeBody: {
+            config: components["schemas"]["KnowledgeRetrievalNodeConfigBody"];
+            /** Id */
+            id: string;
+            position: components["schemas"]["WorkflowNodePositionBody"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "knowledge_retrieval";
+        };
         /** MessageResponse */
         MessageResponse: {
             /** Citations */
@@ -461,6 +562,20 @@ export interface components {
              */
             message_id: string;
         };
+        /** StartNodeConfigBody */
+        StartNodeConfigBody: Record<string, never>;
+        /** StartWorkflowNodeBody */
+        StartWorkflowNodeBody: {
+            config: components["schemas"]["StartNodeConfigBody"];
+            /** Id */
+            id: string;
+            position: components["schemas"]["WorkflowNodePositionBody"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "start";
+        };
         /** StopAcceptedResponse */
         StopAcceptedResponse: {
             /**
@@ -498,6 +613,85 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** WorkflowConfigurationBody */
+        WorkflowConfigurationBody: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Edges */
+            edges: components["schemas"]["WorkflowEdgeBody"][];
+            /** Name */
+            name: string;
+            /** Nodes */
+            nodes: components["schemas"]["WorkflowNodeBody"][];
+        };
+        /** WorkflowEdgeBody */
+        WorkflowEdgeBody: {
+            /** Id */
+            id: string;
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+        };
+        WorkflowNodeBody: components["schemas"]["StartWorkflowNodeBody"] | components["schemas"]["AiChatWorkflowNodeBody"] | components["schemas"]["KnowledgeRetrievalWorkflowNodeBody"] | components["schemas"]["EndWorkflowNodeBody"];
+        /** WorkflowNodePositionBody */
+        WorkflowNodePositionBody: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** WorkflowResponse */
+        WorkflowResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Edges */
+            edges: components["schemas"]["WorkflowEdgeBody"][];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Nodes */
+            nodes: components["schemas"]["WorkflowNodeBody"][];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * WorkflowValidationCode
+         * @enum {string}
+         */
+        WorkflowValidationCode: "node_limit_exceeded" | "edge_limit_exceeded" | "duplicate_node_id" | "duplicate_edge_id" | "missing_start" | "multiple_starts" | "missing_end" | "edge_source_missing" | "edge_target_missing" | "self_loop" | "duplicate_connection" | "start_has_incoming_edge" | "end_has_outgoing_edge" | "multiple_outgoing_edges" | "isolated_node" | "unreachable_from_start" | "cannot_reach_end" | "cycle_detected" | "knowledge_base_not_found";
+        /** WorkflowValidationIssueResponse */
+        WorkflowValidationIssueResponse: {
+            code: components["schemas"]["WorkflowValidationCode"];
+            /** Edge Id */
+            edge_id: string | null;
+            /** Message */
+            message: string;
+            /** Node Id */
+            node_id: string | null;
+        };
+        /** WorkflowValidationResponse */
+        WorkflowValidationResponse: {
+            /** Issues */
+            issues: components["schemas"]["WorkflowValidationIssueResponse"][];
+            /** Valid */
+            valid: boolean;
         };
     };
     responses: never;
@@ -1343,6 +1537,257 @@ export interface operations {
                 };
             };
             /** @description API 或正式依赖尚未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_workflows_api_v1_workflows_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowResponse"][];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_workflow_api_v1_workflows_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowConfigurationBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    validate_workflow_api_v1_workflows_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowConfigurationBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowValidationResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workflow_api_v1_workflows__workflow_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_workflow_api_v1_workflows__workflow_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowConfigurationBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

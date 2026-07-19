@@ -84,6 +84,19 @@ MySQL 并提交，之后才发布带 `schema_version/conversation_id/message_id/
 应用关闭时先请求所有活跃运行停止再释放模型客户端；启动时把上次进程遗留的
 `pending/streaming` 助手消息恢复为 `failed/generation_interrupted`，避免页面永久显示生成中。
 
+工作流定义由 `20260720_0004` 迁移建立 `workflows`、`workflow_nodes` 和 `workflow_edges`。
+节点画布坐标使用独立数值列，按节点类型判别的业务配置单独保存为 JSON 对象；节点和边保留
+提交顺序，边的起点与终点通过 `(workflow_id, node_id)` 复合外键引用同一工作流节点。领域与
+MySQL 同时约束名称、标识、节点类型、JSON 类型、序号、时间和引用完整性，定义、节点与边在
+同一个 Workflow Unit of Work 中原子新增或整体替换。
+
+工作流公开入口位于 `/api/v1/workflows`：集合支持 GET/POST，`/{workflow_id}` 支持 GET/PUT，
+`/validate` 在不写入的前提下返回完整图问题列表。请求 Schema 使用 `type` 判别开始、AI 对话、
+知识检索和结束四类节点，拒绝未知节点、错配配置与额外字段。创建和编辑在开启 MySQL 事务前先
+完成图校验；知识检索节点还会经同一个正式 `KnowledgeBaseService` 验证 RAGFlow 数据集存在，
+结构非法、引用失效或 RAGFlow 不可用均关闭失败且不写入。LangGraph 编译和运行不属于本层，
+由后续执行任务直接消费已验证的 `WorkflowDefinition`。
+
 `ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。Base URL 只接受百炼官方 `compatible-mode/v1` HTTPS 地址，禁止 URL 凭据、查询参数和非官方主机。
 
 `BailianChatModelAdapter` 使用锁定的 `langchain-openai==1.3.5` 构造正式 `ChatOpenAI`，通过 `stream_text()` 暴露增量文本，并通过 `chat_model` 把同一个模型实例交给 Deep Agents 适配层。每个适配器显式创建独立同步/异步 HTTP 客户端，关闭当前实例不会关闭其他会话使用的客户端。总请求超时、流式逐块超时与重试次数分别由 `BAILIAN_TIMEOUT_SECONDS`、`BAILIAN_STREAM_CHUNK_TIMEOUT_SECONDS` 和 `BAILIAN_MAX_RETRIES` 控制，默认 `60/60/2`，最大 `300/300/3`；认证、请求拒绝、限流、超时、5xx、流中断和空输出都会转换成不含上游响应体或凭据的稳定平台错误。持有适配器的 lifespan 必须调用幂等 `aclose()` 释放自有模型客户端。

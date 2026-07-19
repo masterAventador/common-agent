@@ -18,13 +18,16 @@ from common_agent.adapters.persistence.conversations import (
     SqlAlchemyConversationUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeUnitOfWorkFactory
+from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
 from common_agent.api.errors import error_handlers
 from common_agent.api.routers import (
     conversation_router,
     employee_router,
     knowledge_router,
     system_router,
+    workflow_router,
 )
+from common_agent.application.workflow_service import WorkflowService
 from common_agent.bootstrap import (
     CorsSettings,
     DatabaseSettings,
@@ -63,6 +66,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             runtime = DeepAgentsEmployeeRuntime(model)
         knowledge_bases = KnowledgeBaseService(knowledge_adapter)
         app.state.knowledge_bases = knowledge_bases
+        app.state.workflows = WorkflowService(
+            SqlAlchemyWorkflowUnitOfWorkFactory(database),
+            knowledge_bases,
+        )
         employees = EmployeeService(
             SqlAlchemyEmployeeUnitOfWorkFactory(database),
             knowledge_bases,
@@ -87,6 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.conversations = None
         app.state.conversation_events = None
         app.state.employees = None
+        app.state.workflows = None
         app.state.knowledge_bases = None
         if conversations is not None:
             await conversations.aclose()
@@ -132,4 +140,5 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router)
     app.include_router(employee_router)
     app.include_router(conversation_router)
+    app.include_router(workflow_router)
     return app

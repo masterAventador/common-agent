@@ -132,6 +132,32 @@ class WorkflowEdge:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowConfiguration:
+    name: str
+    description: str
+    nodes: tuple[WorkflowNode, ...]
+    edges: tuple[WorkflowEdge, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "name",
+            _required_text("name", self.name, WORKFLOW_NAME_MAX_LENGTH),
+        )
+        object.__setattr__(
+            self,
+            "description",
+            _optional_text(
+                "description",
+                self.description,
+                WORKFLOW_DESCRIPTION_MAX_LENGTH,
+            ),
+        )
+        object.__setattr__(self, "nodes", _nodes(self.nodes))
+        object.__setattr__(self, "edges", _edges(self.edges))
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowDefinition:
     id: UUID
     name: str

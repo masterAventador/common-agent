@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -29,6 +30,12 @@ from common_agent.domain.employee import (
     EMPLOYEE_KNOWLEDGE_BASE_ID_MAX_LENGTH,
     EMPLOYEE_NAME_MAX_LENGTH,
     EMPLOYEE_SYSTEM_PROMPT_MAX_LENGTH,
+)
+from common_agent.domain.workflow import (
+    WORKFLOW_DESCRIPTION_MAX_LENGTH,
+    WORKFLOW_EDGE_ID_MAX_LENGTH,
+    WORKFLOW_NAME_MAX_LENGTH,
+    WORKFLOW_NODE_ID_MAX_LENGTH,
 )
 
 
@@ -217,3 +224,103 @@ class MessageCitationRow(PersistenceBase):
     )
     content: Mapped[str] = mapped_column(mysql.MEDIUMTEXT(), nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class WorkflowRow(PersistenceBase):
+    __tablename__ = "workflows"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(id) = 36 AND id = TRIM(id)", name="ck_workflows_id"),
+        CheckConstraint(
+            f"CHAR_LENGTH(name) BETWEEN 1 AND {WORKFLOW_NAME_MAX_LENGTH} AND name = TRIM(name)",
+            name="ck_workflows_name",
+        ),
+        CheckConstraint(
+            f"CHAR_LENGTH(description) <= {WORKFLOW_DESCRIPTION_MAX_LENGTH} "
+            "AND description = TRIM(description)",
+            name="ck_workflows_description",
+        ),
+        CheckConstraint("updated_at >= created_at", name="ck_workflows_timestamps"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(WORKFLOW_NAME_MAX_LENGTH), nullable=False)
+    description: Mapped[str] = mapped_column(
+        String(WORKFLOW_DESCRIPTION_MAX_LENGTH), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class WorkflowNodeRow(PersistenceBase):
+    __tablename__ = "workflow_nodes"
+    __table_args__ = (
+        CheckConstraint(
+            f"CHAR_LENGTH(id) BETWEEN 1 AND {WORKFLOW_NODE_ID_MAX_LENGTH} AND id = TRIM(id)",
+            name="ck_workflow_nodes_id",
+        ),
+        CheckConstraint("ordinal >= 0", name="ck_workflow_nodes_ordinal"),
+        CheckConstraint(
+            "type IN ('start', 'ai_chat', 'knowledge_retrieval', 'end')",
+            name="ck_workflow_nodes_type",
+        ),
+        CheckConstraint("JSON_TYPE(config) = 'OBJECT'", name="ck_workflow_nodes_config"),
+        UniqueConstraint("workflow_id", "ordinal", name="uq_workflow_nodes_ordinal"),
+    )
+
+    workflow_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workflows.id", ondelete="CASCADE", name="fk_workflow_nodes_workflow_id"),
+        primary_key=True,
+    )
+    id: Mapped[str] = mapped_column(String(WORKFLOW_NODE_ID_MAX_LENGTH), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    position_x: Mapped[float] = mapped_column(mysql.DOUBLE(asdecimal=False), nullable=False)
+    position_y: Mapped[float] = mapped_column(mysql.DOUBLE(asdecimal=False), nullable=False)
+    config: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+
+class WorkflowEdgeRow(PersistenceBase):
+    __tablename__ = "workflow_edges"
+    __table_args__ = (
+        CheckConstraint(
+            f"CHAR_LENGTH(id) BETWEEN 1 AND {WORKFLOW_EDGE_ID_MAX_LENGTH} AND id = TRIM(id)",
+            name="ck_workflow_edges_id",
+        ),
+        CheckConstraint("ordinal >= 0", name="ck_workflow_edges_ordinal"),
+        CheckConstraint(
+            f"CHAR_LENGTH(source) BETWEEN 1 AND {WORKFLOW_NODE_ID_MAX_LENGTH} "
+            "AND source = TRIM(source)",
+            name="ck_workflow_edges_source",
+        ),
+        CheckConstraint(
+            f"CHAR_LENGTH(target) BETWEEN 1 AND {WORKFLOW_NODE_ID_MAX_LENGTH} "
+            "AND target = TRIM(target)",
+            name="ck_workflow_edges_target",
+        ),
+        ForeignKeyConstraint(
+            ["workflow_id", "source"],
+            ["workflow_nodes.workflow_id", "workflow_nodes.id"],
+            name="fk_workflow_edges_source",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["workflow_id", "target"],
+            ["workflow_nodes.workflow_id", "workflow_nodes.id"],
+            name="fk_workflow_edges_target",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("workflow_id", "ordinal", name="uq_workflow_edges_ordinal"),
+        UniqueConstraint(
+            "workflow_id",
+            "source",
+            "target",
+            name="uq_workflow_edges_connection",
+        ),
+    )
+
+    workflow_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(String(WORKFLOW_EDGE_ID_MAX_LENGTH), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(WORKFLOW_NODE_ID_MAX_LENGTH), nullable=False)
+    target: Mapped[str] = mapped_column(String(WORKFLOW_NODE_ID_MAX_LENGTH), nullable=False)
