@@ -53,6 +53,7 @@
 | 后端入口 | `✅` FastAPI app factory、lifespan、请求 ID、统一错误和真实 loopback Health 已跑通 |
 | 平台持久化 | `✅` SQLite 正式适配器、Alembic、async session、空库迁移、回滚和进程重启恢复已跑通 |
 | 百炼配置 | `✅` 已从 agent-platform 的 Git 跟踪配置迁移 Demo 模型/Base URL/Key，Key 仅存在于获准的私有配置文件 |
+| 前端入口 | `✅` React/Vite/Ant Design 四入口壳层已通过组件、构建和真实浏览器导航验收 |
 | 产品代码 | `⬜` 尚未开始；等待后端、前端基础工具链完成后按纵向功能任务进入 |
 | 本地服务 | `✅` 临时前端初始化预览已停止；后端/RAGFlow 未启动 |
 
@@ -128,8 +129,8 @@
 | B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | ✅ 已完成 |
 | B1-03 | 平台持久化基线 | 持久化适配边界、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | ✅ 已完成 |
 | B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | ✅ 已完成 |
-| F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | 🚧 实现中 |
-| C1-01 | OpenAPI 契约闭环 | 后端导出、前端生成、漂移检查和公共错误 DTO | B1-02,F1-02 | ⬜ 未开始 |
+| F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | ✅ 已完成 |
+| C1-01 | OpenAPI 契约闭环 | 后端导出、前端生成、漂移检查和公共错误 DTO | B1-02,F1-02 | 🚧 实现中 |
 | F1-03 | 前端 API 基线 | Axios、Query Client、Zod 和后端真实状态提示 | C1-01 | ⬜ 未开始 |
 
 ## 8. Wave 2：RAGFlow 知识库闭环
@@ -404,10 +405,23 @@
 - 文档：`.env.example`、`backend/.env.demo`、`backend/README.md`、ModelSettings 与配置测试、`docs/development-roadmap.md`
 - 遗留：本任务只证明安全配置边界；`ChatOpenAI` 真实百炼请求、超时/重试和回复脱敏由 A4-02 验收
 
+### F1-02 初始化 Frontend
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：先建立路由壳层测试，`pnpm exec vitest run src/app/App.test.tsx` 因 `./App` 不存在按预期失败；实现后测试还发现跨用例 DOM 未清理并修正为显式 `afterEach(cleanup)`
+- GREEN：Vitest 5 passed；ESLint、TypeScript typecheck、`pnpm build`、`pnpm peers check`、`pnpm install --frozen-lockfile` 全部通过
+- 真实边界：正式 `pnpm dev` 在 `127.0.0.1:18280` strict port 启动；agent-browser 真实点击 AI 会话、数字员工、知识库、工作流四个链接并逐页确认 URL/标题，根路径真实重定向到 `/chat`；全页截图人工检查布局无重叠或缺失
+- 失败矩阵：覆盖 App 缺失、测试隔离、根路由、四入口、未知路由回退、专属端口和依赖 peer 冲突；发现 TypeScript 7 不满足 typescript-eslint `<6.1`，锁定兼容的 TypeScript 6.0.3 后复验无 peer 问题
+- 清理：关闭 agent-browser 会话和本轮 Vite；确认 18280 无监听；删除 `dist`、tsbuildinfo 和临时验收截图，保留被 Git 忽略且后续复用的 `node_modules`
+- 文档：`frontend/README.md`、前端 package/lock/config、正式入口/样式/测试、`docs/development-roadmap.md`
+- 遗留：Ant Design 当前单入口构建包约 564kB 并产生 chunk 提示；等真实 Feature 页面进入后按路由拆分，当前不调高阈值掩盖提示
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `F1-02`：初始化 React/TypeScript/Vite/Ant Design 前端；
-2. 完成 `C1-01`：建立 OpenAPI 生成和漂移检查；
-3. 完成 `F1-03`：建立统一前端 API、运行时校验和后端状态提示。
+1. 完成 `C1-01`：建立 OpenAPI 生成、前端 DTO 和漂移检查；
+2. 完成 `F1-03`：建立统一前端 API、运行时校验和后端状态提示；
+3. 进入 Wave 2 的 RAGFlow 知识库纵向闭环。
