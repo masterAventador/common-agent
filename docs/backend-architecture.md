@@ -24,7 +24,7 @@
 ```text
 React
   -> FastAPI
-       -> Repository（初始 SQLite，可增加 PostgreSQL 适配器）
+       -> Repository（平台独立 MySQL）
        -> Cache / Message Queue / Object Storage / Worker（按实际需要）
        -> RAGFlow（知识文档、解析和检索）
        -> Deep Agents + 阿里百炼（数字员工回复）
@@ -67,7 +67,7 @@ React
 - 工作流定义和运行摘要；
 - RAGFlow 知识库的稳定引用和展示缓存。
 
-初始正式持久化可以使用 SQLite，文件位于 `.local/common-agent.db` 且不进入 Git；领域与应用层只依赖仓储端口。采用 PostgreSQL 后必须使用独立数据库/Schema、迁移和真实连接完成同路径验收，不能继续用 SQLite 结果代替。
+平台正式持久化使用独立 MySQL 8.4 LTS，通过 SQLAlchemy async、`asyncmy` 与 Alembic 接入，固定开发入口为 `127.0.0.1:19506/common_agent`。领域与应用层只依赖仓储端口；平台 MySQL 使用专属容器、端口、Volume 和资源限制，与 RAGFlow 内部 MySQL 完全隔离。SQLite 和其他数据库不能替代当前正式 MySQL 的完成验收。
 
 任何外围技术依赖都按当前用例需要通过职责清晰的端口接入；`Cache`、`EventBus`、`ObjectStore`、`JobQueue` 以及 Redis、消息队列、对象存储和 Worker 只是示例。只要被正式调用链采用，就必须补齐适用于该技术的健康、失败、恢复、隔离、安全、资源和清理门禁。知识文档、切片、向量和解析产物仍由 RAGFlow 管理。
 
@@ -83,7 +83,7 @@ application --------------+
  +-> runtimes ------------>+ adapters/deep_agents
  +-> knowledge ----------->+ adapters/ragflow
  +-> workflows ----------->+ langgraph
- +-> ports ---------------->+ adapters/sqlite|postgres|redis|queue|object_store
+ +-> ports ---------------->+ adapters/mysql|redis|queue|object_store
 ```
 
 ### 3.1 API 层
@@ -150,7 +150,7 @@ Message
 └── created_at
 ```
 
-用户消息必须先持久化。助手占位消息随后创建并通过事件更新，终态再写回 SQLite。失败和停止也要保留，便于用户重试。
+用户消息必须先持久化。助手占位消息随后创建并通过事件更新，终态再写回平台 MySQL。失败和停止也要保留，便于用户重试。
 
 ### 4.3 知识库引用
 
@@ -164,7 +164,7 @@ KnowledgeBaseRef
 └── synced_at
 ```
 
-RAGFlow 是知识库状态的权威来源，SQLite 只缓存展示字段和绑定 ID。
+RAGFlow 是知识库状态的权威来源，平台 MySQL 只缓存展示字段和绑定 ID。
 
 ### 4.4 工作流
 
@@ -312,11 +312,12 @@ workflow.run.failed
 | --- | --- |
 | FastAPI | `127.0.0.1:18200` |
 | React Vite | `127.0.0.1:18280` |
+| 平台 MySQL | `127.0.0.1:19506` |
 | RAGFlow REST API | `127.0.0.1:19380` |
 | RAGFlow Web | `127.0.0.1:19381` |
 | Playwright 测试 | 操作系统随机空闲端口 |
 
-Compose project name 固定为 `common-agent-dev`，其中 RAGFlow 相关服务使用 `common-agent-ragflow-*` 前缀，平台自有数据库、缓存、队列、对象存储和 Worker 使用 `common-agent-platform-*` 前缀。SQLite、上传临时文件、服务 Volume 映射和日志统一放在根目录 `.local/`。
+稳定开发栈使用 `common-agent-dev` 命名空间，其中 RAGFlow 相关服务使用 `common-agent-ragflow-*` 前缀，平台自有数据库、缓存、队列、对象存储和 Worker 使用 `common-agent-platform-*` 前缀。平台 MySQL 数据、上传临时文件、服务 Volume 映射和日志统一放在根目录 `.local/`；平台 MySQL 与 RAGFlow 使用不同的 Compose project、容器、网络和 Volume。
 
 RAGFlow 固定为官方 `v0.25.6` 及其 tag 提交 `8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4`，通过仓库 `infra/ragflow/manage.sh` 运行未修改的官方 Compose。默认启用多语言 `BAAI/bge-m3` embedding；稳定栈固定使用独立 `common-agent-dev` Colima profile（12 CPU、48GiB 内存、100GiB 容器磁盘）和 `colima-common-agent-dev` Docker context，不静默降级模型、裁剪必需服务或占用其他项目的默认 context。
 

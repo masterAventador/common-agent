@@ -88,7 +88,7 @@ api -> application -> domain
 - `domain/` 不导入 FastAPI、Deep Agents、LangGraph 或 RAGFlow；
 - `workflows/` 只接收平台节点/边定义，先验证再编译为 LangGraph；数字员工通过 `WorkflowService` 调用工作流，禁止直接导入工作流图；
 - 第三方 SDK 类型不得越过适配层；
-- 员工、会话、消息、工作流和知识库绑定必须经过仓储端口；初始正式实现可以使用本机 SQLite，需要 PostgreSQL 时新增适配器和迁移任务，不改变领域模型依赖方向；
+- 员工、会话、消息、工作流和知识库绑定必须经过仓储端口；正式实现使用平台独立 MySQL、SQLAlchemy async 和 Alembic，不改变领域模型依赖方向；
 - 任何第三方技术依赖都通过与其职责相符的应用端口和外围适配器接入；Redis、消息队列、对象存储和 Worker 只是示例，不构成白名单；只实现当前用例实际调用的端口，不创建没有调用方的空实现；
 - RAGFlow 保存知识文档和索引，平台不直连其内部数据库、缓存、检索引擎或对象存储。
 
@@ -150,7 +150,8 @@ infra/ragflow/
 └── README.md                   # 独立服务、配置和验证说明
 
 infra/platform/                 # 当前路线图实际采用的平台基础设施
-├── compose.yaml                # PostgreSQL/Redis/队列/对象存储等（按需）
+├── compose.yaml                # 平台独立 MySQL；其他组件按真实需要增加
+├── manage.sh                   # 固定 context、端口、启动、停止和状态检查
 └── README.md                   # 端口、资源、持久化和清理边界
 ```
 

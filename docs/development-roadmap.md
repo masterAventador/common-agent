@@ -45,20 +45,20 @@
 | 产品交互 | `✅` 普通数字员工采用连续会话，不把每条消息变成任务 |
 | 第一版范围 | `✅` AI 会话、数字员工、知识库、最小可视化工作流；无登录鉴权和 Skill |
 | 模型 | `✅` 只直接接阿里百炼，复用旧私有仓库的 Demo Key，不引入模型网关 |
-| 技术架构 | `✅` 技术方案不设白名单；SQLite 是初始持久化基线，任何技术组件都可按当前真实需要进入正式链路 |
+| 技术架构 | `✅` 技术方案不设白名单；平台正式持久化已切换为独立 MySQL 8.4 LTS，其他技术组件可按当前真实需要进入正式链路 |
 | 开发环境 | `✅` 全部本机联调，不部署服务器；端口和 Docker 资源与其他项目隔离 |
 | GitHub | `✅` `masterAventador/common-agent` 已创建为 PRIVATE，`main` 跟踪 `origin/main` |
 | 项目规则/架构 | `✅` 主规则、产品边界、工程架构和任务级路线图已建立并校验 |
 | 工程骨架 | `✅` frontend/backend/contracts/infra/scripts 已按目标边界建立，未混入临时 Sites 或空业务模块 |
 | 后端入口 | `✅` FastAPI app factory、lifespan、请求 ID、统一错误和真实 loopback Health 已跑通 |
-| 平台持久化 | `✅` SQLite 正式适配器、Alembic、async session、空库迁移、回滚和进程重启恢复已跑通 |
+| 平台持久化 | `✅` 独立 MySQL 8.4.10、asyncmy、SQLAlchemy async、Alembic、隔离测试库、事务回滚和容器/进程重启恢复已跑通；SQLite 不再是正式验收依赖 |
 | 百炼配置 | `✅` 已从 agent-platform 的 Git 跟踪配置迁移 Demo 模型/Base URL/Key，Key 仅存在于获准的私有配置文件 |
 | 前端入口 | `✅` React/Vite/Ant Design 四入口壳层已通过组件、构建和真实浏览器导航验收 |
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` KnowledgeService 平台契约已完成；真实 RAGFlow 适配器与用户功能继续按 Wave 2 推进 |
-| 本地服务 | `✅` 临时前后端与 RAGFlow 容器均未启动；保留被忽略的固定 RAGFlow 官方 checkout 供后续复用 |
+| 产品代码 | `🚧` KnowledgeService 平台契约和真实 RAGFlow 适配器已完成；知识库正式 API 与页面继续按 Wave 2 推进 |
+| 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
 
@@ -104,6 +104,7 @@
 | 工作流运行 | 节点失败、停止、输出不匹配、知识库失效和模型失败 |
 | 前端 | 后端不可用、Schema 漂移、刷新恢复、重复事件和安全错误展示 |
 | Docker | 端口/名称冲突、内存不足、健康失败、其他项目隔离和镜像清理 |
+| App 自动更新 | 清单不可用/非法、版本回退、签名或哈希错误、下载中断/磁盘不足、安装包替换失败、并发轮询/重复下载、立即/暂缓/跳过状态错误、强更未阻断主 App、安装失败、重启循环、SDK/桌面壳版本不兼容和自建更新服务异常 |
 
 表内技术是当前已识别边界，不构成白名单。任务采用其他数据库、中间件、存储、运行时、协议、调度、观测或工程工具时，必须在进入实现前把该技术的正式依赖、失败模式和清理证据补入本矩阵及任务完成定义。
 
@@ -133,7 +134,7 @@
 | B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | ✅ 已完成 |
 | B1-03 | 平台持久化基线 | 持久化适配边界、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | ✅ 已完成 |
 | B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | ✅ 已完成 |
-| B1-05 | 平台 MySQL 正式切换 | 独立 MySQL 容器/端口/Volume、SQLAlchemy async 驱动、Alembic、事务/迁移/重启恢复；正式链路不再以 SQLite 验收 | B1-03,K2-01 | ⬜ 未开始 |
+| B1-05 | 平台 MySQL 正式切换 | 独立 MySQL 容器/端口/Volume、SQLAlchemy async 驱动、Alembic、事务/迁移/重启恢复；正式链路不再以 SQLite 验收 | B1-03,K2-01 | ✅ 已完成 |
 | F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | ✅ 已完成 |
 | C1-01 | OpenAPI 契约闭环 | 后端导出、前端生成、漂移检查和公共错误 DTO | B1-02,F1-02 | ✅ 已完成 |
 | F1-03 | 前端 API 基线 | Axios、Query Client、Zod 和后端真实状态提示 | C1-01 | ✅ 已完成 |
@@ -212,7 +213,15 @@
 | Q6-04 | 本机 MVP 验收 | 从空平台完成知识库→员工→两轮对话→工作流，全部走正式入口 | Q6-03 | ⬜ 未开始 |
 | Q6-05 | 规格与质量复审 | 核对范围、假绿、泄密、资源泄漏、残留进程和无用代码 | Q6-04 | ⬜ 未开始 |
 
-## 13. 高冲突与唯一写入区域
+## 13. Wave 7：桌面交付与自动更新（MVP 后）
+
+该 Wave 不进入当前 Web MVP；只有 Q6-05 完成后才启动，避免再次扩大第一版范围。
+
+| ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
+| --- | --- | --- | --- | --- |
+| U7-01 | 桌面 App 自动更新 | 先按最终桌面壳评估成熟、活跃且广泛使用的官方/社区更新 SDK，并用真实自建 HTTPS 服务器验证版本清单、安装包和签名格式；优先复用成熟 SDK，只有其不能满足四种策略或维护性门禁时才自研底层更新器。更新核心必须是与 common-agent 业务零耦合的独立模块，只通过配置/端口接收应用标识、当前版本、更新地址、签名公钥、轮询间隔、状态存储、提示 UI 和 App 生命周期能力，可直接复用于 automation-tool。建立桌面 App 正式发布壳与自建服务器版本清单/接口；App 启动及可配置周期轮询新版本，先在后台下载并以原子替换覆盖旧安装包；可选更新支持“立即安装”（主 App 退出后走正式安装器）、“暂不安装”（本次继续运行，后续启动或轮询继续提示）和“跳过此版本”（持久化跳过，仅出现更高版本后恢复提示）；强制更新下载后在下次启动、进入主 App 前无选择安装；覆盖签名/哈希、版本比较、并发轮询/重复下载、断点/失败清理、磁盘不足、安装失败恢复、重启循环、SDK 兼容和服务异常，最终以真实打包 App、正式更新入口、自建更新服务器和真实安装器完成跨版本验收 | Q6-05 | ⬜ 未开始 |
+
+## 14. 高冲突与唯一写入区域
 
 - 根目录规则、路线图、依赖锁文件和忽略规则；
 - 当前正式数据库 migration revision；
@@ -220,11 +229,12 @@
 - FastAPI app 装配、前端 Query Client 和全局导航；
 - RAGFlow Compose、端口、Volume 和版本；
 - 百炼 Demo 配置；
-- 工作流节点 Schema 和注册表。
+- 工作流节点 Schema 和注册表；
+- 桌面 App 更新清单、版本比较状态和安装器交接入口。
 
 当前不使用子代理；只有用户明确要求后才允许并行，并为这些区域指定唯一写入者。
 
-## 14. 每项任务的完成记录格式
+## 15. 每项任务的完成记录格式
 
 ```text
 ### <任务 ID> <任务名>
@@ -489,10 +499,24 @@
 - 文档：`.env.example`、`CLAUDE.md`、`infra/ragflow/README.md`、正式 RAGFlow Compose/管理脚本、异步适配器及单元/真实集成测试、`docs/development-roadmap.md`
 - 遗留：按用户确认先完成 B1-05，把平台自有元数据从 SQLite 正式切到独立 MySQL；之后 K2-04 才把本适配器接入 FastAPI/OpenAPI 知识库接口
 
-## 15. 当前下一步
+### B1-05 平台 MySQL 正式切换
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：数据库配置测试先出现 5 failed、9 passed，证明默认 SQLite、非 MySQL URL 放行和密码 repr 泄漏；平台基础设施门禁先因正式管理脚本缺失失败；真实数据库测试在 asyncmy/MySQL 尚未接入时出现 3 failed、1 passed；容器停止/恢复验收进一步真实复现 macOS bind mount 下 `binlog.index` 权限错误与 Compose 假性健康，新增门禁分别因缺少稳定健康等待、关闭本机 binlog 和隔离测试库而失败
+- GREEN：数据库/正式 Uvicorn 定向测试 11 passed，MySQL 配置定向测试 19 passed；后端全量 `uv run --frozen pytest -q` 77 passed、1 个需显式真实 RAGFlow 环境的测试按设计 skipped；`ruff check .`、`ruff format --check .`、`mypy src tests`、`uv lock --check`、OpenAPI/前端 DTO 漂移检查、平台/RAGFlow 管理脚本门禁、Shellcheck 和 `git diff --check` 全部通过
+- 真实边界：官方 `mysql:8.4.10` 运行在独立 `colima-common-agent-dev` context、`common-agent-platform-dev` Compose project、`common-agent-platform-mysql` 容器、`127.0.0.1:19506` 和专属 Volume；正式 `uv run --frozen python -m common_agent` 经 FastAPI lifespan、Database、Alembic、SQLAlchemy async、asyncmy 连接 `common_agent`，MySQL 正常时真实 HTTP Health 成功，容器停止时 Uvicorn 以非零状态拒绝启动，恢复稳定健康后同一入口再次成功
+- 失败矩阵：覆盖非 `mysql+asyncmy`、远程 host、缺少连接字段、配置/运行时密码脱敏、端口未监听、认证失败、非法 migration revision 闭合失败与修复恢复、唯一冲突、事务异常回滚、非法/占用端口、loopback/名称/Volume/2GiB 资源隔离、macOS bind mount 重启抖动和健康状态稳定等待；本机无复制/时间点恢复需求，关闭 binary log 规避 `binlog.index` 权限同步，InnoDB redo/undo 保留
+- 数据隔离：平台管理入口幂等准备 `common_agent_test`；pytest 和测试 Uvicorn 只写该测试库，临时表均以唯一名称创建并在 `finally` 删除，不污染 `common_agent` 开发/演示数据；正式手工验收仍使用默认 `common_agent`
+- 清理：两轮正式 Uvicorn 均已停止并释放 18200；未创建自建/任务镜像或重复 MySQL 镜像；确认无容器引用后删除独立 context 内约 3.69GB 悬空镜像；保留单一官方 MySQL 容器、数据 Volume 和 RAGFlow 稳定栈供后续任务复用
+- 文档：`.env.example`、根/后端 README、`CLAUDE.md`、后端/工程架构、平台基础设施说明和 `docs/development-roadmap.md`
+- 遗留：B1-03 记录保留当时 SQLite 基线的历史事实；从本任务起平台正式运行和后续 Repository 只以 MySQL 验收，下一步 K2-04 接入知识库 FastAPI/OpenAPI
+
+## 16. 当前下一步
 
 严格按顺序：
 
-1. 完成 `B1-05`：把平台元数据从 SQLite 正式切换到项目独立 MySQL；
-2. 完成 `K2-04`：通过平台 API 跑通知识库创建、上传和解析状态；
-3. 完成 `K2-05`：实现知识库正式页面和真实状态交互。
+1. 完成 `K2-04`：通过平台 API 跑通知识库创建、上传和解析状态；
+2. 完成 `K2-05`：实现知识库正式页面和真实状态交互；
+3. 完成 `K2-06`：以正式页面和真实 RAGFlow 验收知识库纵向闭环。

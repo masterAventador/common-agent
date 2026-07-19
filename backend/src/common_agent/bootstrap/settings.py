@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -44,26 +44,38 @@ class ApiSettings:
 
 @dataclass(frozen=True, slots=True)
 class DatabaseSettings:
-    url: str
+    url: str = field(repr=False)
 
     @classmethod
     def from_env(cls) -> DatabaseSettings:
         return cls.from_mapping(os.environ)
 
     @classmethod
-    def from_mapping(
-        cls,
-        values: Mapping[str, str],
-        *,
-        project_root: Path | None = None,
-    ) -> DatabaseSettings:
-        configured = values.get("COMMON_AGENT_DATABASE_URL")
-        if configured:
-            return cls(url=configured)
-
-        root = project_root or _find_project_root()
-        database_path = root / ".local" / "common-agent.db"
-        return cls(url=f"sqlite+aiosqlite:///{database_path}")
+    def from_mapping(cls, values: Mapping[str, str]) -> DatabaseSettings:
+        configured = values.get(
+            "COMMON_AGENT_DATABASE_URL",
+            "mysql+asyncmy://common_agent:common_agent_dev@127.0.0.1:19506/"
+            "common_agent?charset=utf8mb4",
+        ).strip()
+        parsed = urlparse(configured)
+        if parsed.scheme != "mysql+asyncmy":
+            raise ConfigurationError("COMMON_AGENT_DATABASE_URL must use mysql+asyncmy")
+        if parsed.hostname not in {"127.0.0.1", "::1", "localhost"}:
+            raise ConfigurationError("COMMON_AGENT_DATABASE_URL must use a loopback host")
+        try:
+            port = parsed.port
+        except ValueError as error:
+            raise ConfigurationError("COMMON_AGENT_DATABASE_URL has an invalid port") from error
+        if (
+            port is None
+            or not parsed.username
+            or not parsed.password
+            or not parsed.path.lstrip("/")
+        ):
+            raise ConfigurationError(
+                "COMMON_AGENT_DATABASE_URL must include user, password, port and database"
+            )
+        return cls(url=configured)
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,14 +143,6 @@ class ModelSettings(BaseModel):
             base_url=base_url.rstrip("/"),
             model=model,
         )
-
-
-def _find_project_root() -> Path:
-    candidates = [Path.cwd(), *Path.cwd().parents, *Path(__file__).resolve().parents]
-    for candidate in candidates:
-        if (candidate / "CLAUDE.md").is_file():
-            return candidate
-    return Path.cwd()
 
 
 def _demo_values(path: Path | None) -> dict[str, str]:

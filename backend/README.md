@@ -19,20 +19,21 @@ uv run ruff format --check .
 uv run mypy src tests
 ```
 
-启动本机 API：
+先启动平台正式 MySQL，再启动本机 API：
 
 ```bash
+../infra/platform/manage.sh up
 uv run python -m common_agent
 ```
 
 默认只监听 `127.0.0.1:18200`，可通过根目录 `.env.example` 中的同名环境变量覆盖；非 loopback 地址会被拒绝。
 
-启动时会通过 Alembic 把当前正式数据库升级到 `head` 并执行连接探测。默认数据库位于仓库根目录 `.local/common-agent.db`；可使用 `COMMON_AGENT_DATABASE_URL` 指向其他正式 SQLAlchemy async 适配器。
+启动时会通过 Alembic 把平台正式 MySQL 升级到 `head` 并执行连接探测。默认连接为 `127.0.0.1:19506/common_agent`，使用 SQLAlchemy async、`asyncmy` 和 MySQL 8.4 LTS；该实例、端口和 Volume 与 RAGFlow 内部 MySQL 完全隔离。配置只接受带用户名、密码、端口和数据库名的 loopback `mysql+asyncmy` URL。
 
 单独运行迁移时必须显式指定目标，避免误建占位数据库：
 
 ```bash
-COMMON_AGENT_DATABASE_URL=sqlite+aiosqlite:////absolute/path/to/database.db \
+COMMON_AGENT_DATABASE_URL='mysql+asyncmy://common_agent:common_agent_dev@127.0.0.1:19506/common_agent?charset=utf8mb4' \
   uv run alembic upgrade head
 ```
 

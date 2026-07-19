@@ -1,0 +1,40 @@
+name: common-agent-platform-dev
+
+services:
+  mysql:
+    image: mysql:${PLATFORM_MYSQL_VERSION}
+    container_name: common-agent-platform-mysql
+    restart: unless-stopped
+    mem_limit: 2g
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PLATFORM_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${PLATFORM_MYSQL_DATABASE}
+      MYSQL_USER: ${PLATFORM_MYSQL_USER}
+      MYSQL_PASSWORD: ${PLATFORM_MYSQL_PASSWORD}
+    command:
+      - --disable-log-bin
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --max-connections=300
+    ports:
+      - "127.0.0.1:${PLATFORM_MYSQL_PORT}:3306"
+    volumes:
+      - platform_mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    stop_grace_period: 30s
+
+volumes:
+  platform_mysql_data:
+    name: common-agent-platform-mysql-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PLATFORM_MYSQL_DATA_ROOT}

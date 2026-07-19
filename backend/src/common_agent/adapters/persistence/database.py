@@ -3,10 +3,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -37,9 +35,12 @@ class Database:
 
         engine: AsyncEngine | None = None
         try:
-            self._ensure_sqlite_parent()
             await asyncio.to_thread(upgrade_database, self._database_url)
-            engine = create_async_engine(self._database_url, pool_pre_ping=True)
+            engine = create_async_engine(
+                self._database_url,
+                pool_pre_ping=True,
+                pool_recycle=1800,
+            )
             async with engine.connect() as connection:
                 await connection.execute(text("SELECT 1"))
             self._engine = engine
@@ -68,13 +69,3 @@ class Database:
             except Exception:
                 await session.rollback()
                 raise
-
-    def _ensure_sqlite_parent(self) -> None:
-        url = make_url(self._database_url)
-        if (
-            not url.drivername.startswith("sqlite")
-            or not url.database
-            or url.database == ":memory:"
-        ):
-            return
-        Path(url.database).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)

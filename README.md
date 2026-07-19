@@ -12,7 +12,7 @@
 ## 技术栈
 
 - 前端：React、TypeScript、Vite、Ant Design、React Flow；
-- 后端：Python、FastAPI；平台持久化以 SQLite 为初始基线，技术方案不设白名单，可按真实需要引入 PostgreSQL、Redis、消息队列、对象存储、Worker 等其他组件；
+- 后端：Python、FastAPI、SQLAlchemy async、Alembic；平台正式持久化使用独立 MySQL 8.4 LTS，技术方案不设白名单，可按真实需要引入 Redis、消息队列、对象存储、Worker 等其他组件；
 - Agent：Deep Agents；
 - 工作流：LangGraph / LangChain；
 - 知识库：RAGFlow；
@@ -28,6 +28,7 @@
 - [后端架构](docs/backend-architecture.md)：领域、接口、数据和适配层；
 - [前端架构](docs/frontend-architecture.md)：路由、状态和交互约束；
 - [项目主规则](CLAUDE.md)：开发、测试、验收与本地资源规则。
+- [平台 MySQL 本机栈](infra/platform/README.md)：固定版本、隔离端口、Volume 和复用方式。
 - [RAGFlow 本机栈](infra/ragflow/README.md)：固定版本、隔离端口、资源和复用方式。
 
 具体任务状态和当前下一步只以开发路线图为准。
