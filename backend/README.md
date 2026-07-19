@@ -18,3 +18,11 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy src tests
 ```
+
+启动本机 API：
+
+```bash
+uv run python -m common_agent
+```
+
+默认只监听 `127.0.0.1:18200`，可通过根目录 `.env.example` 中的同名环境变量覆盖；非 loopback 地址会被拒绝。

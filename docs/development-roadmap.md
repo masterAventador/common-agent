@@ -50,6 +50,7 @@
 | GitHub | `✅` `masterAventador/common-agent` 已创建为 PRIVATE，`main` 跟踪 `origin/main` |
 | 项目规则/架构 | `✅` 主规则、产品边界、工程架构和任务级路线图已建立并校验 |
 | 工程骨架 | `✅` frontend/backend/contracts/infra/scripts 已按目标边界建立，未混入临时 Sites 或空业务模块 |
+| 后端入口 | `✅` FastAPI app factory、lifespan、请求 ID、统一错误和真实 loopback Health 已跑通 |
 | 产品代码 | `⬜` 尚未开始；等待后端、前端基础工具链完成后按纵向功能任务进入 |
 | 本地服务 | `✅` 临时前端初始化预览已停止；后端/RAGFlow 未启动 |
 
@@ -122,8 +123,8 @@
 | --- | --- | --- | --- | --- |
 | F1-01 | 建立目标工程骨架 | 建立 frontend/backend/contracts/infra/scripts；无业务代码混放和空功能目录 | R0-08 | ✅ 已完成 |
 | B1-01 | 初始化 Backend 包 | Python 3.12、uv、src layout、pytest/Ruff/Mypy 和冻结锁文件 | F1-01 | ✅ 已完成 |
-| B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | 🚧 实现中 |
-| B1-03 | 平台持久化基线 | 仓储端口、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | ⬜ 未开始 |
+| B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | ✅ 已完成 |
+| B1-03 | 平台持久化基线 | 仓储端口、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | 🚧 实现中 |
 | B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | ⬜ 未开始 |
 | F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | ⬜ 未开始 |
 | C1-01 | OpenAPI 契约闭环 | 后端导出、前端生成、漂移检查和公共错误 DTO | B1-02,F1-02 | ⬜ 未开始 |
@@ -362,10 +363,23 @@
 - 文档：`backend/README.md`、`backend/pyproject.toml`、`backend/.python-version`、`backend/uv.lock`、`docs/development-roadmap.md`
 - 遗留：无；FastAPI 依赖和应用入口由 B1-02 以独立 RED/GREEN 引入
 
+### B1-02 FastAPI 与错误边界
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：真实 loopback 测试先启动 `python -m uvicorn`，两个用例均因 `No module named uvicorn` 失败；配置单元测试因 `common_agent.bootstrap` 不存在收集失败
+- GREEN：全量 `uv run --frozen pytest -q` 12 passed；`ruff check .`、`ruff format --check .`、`mypy src tests`、`uv lock --check` 全部通过
+- 真实边界：通过正式 `uv run --frozen python -m common_agent` 启动 `127.0.0.1:18200`；独立 curl 请求正式 Health 得到 200/版本 0.1.0，请求未知 API 得到 404 和含同一 `X-Request-ID` 的稳定错误信封
+- 失败矩阵：覆盖非整数/越界端口、公开绑定地址拒绝、Uvicorn 未就绪、未知路由、应用错误、请求校验脱敏和内部异常脱敏；数据库与外部服务尚未进入本任务
+- 清理：正式验收后向 Uvicorn 发送 SIGINT，lifespan 完整关闭并确认 18200 无监听；测试子进程均在 fixture `finally` 中终止
+- 文档：`backend/README.md`、`backend/pyproject.toml`、`backend/uv.lock`、`docs/development-roadmap.md`
+- 遗留：Health 当前只证明 API 自身就绪；数据库、RAGFlow 和百炼状态在各自正式适配任务接入
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `B1-02`：以真实 loopback Uvicorn 跑通 Health 和统一错误边界；
-2. 完成 `B1-03`：建立平台持久化仓储与迁移基线；
-3. 按依赖继续百炼配置、前端和契约闭环。
+1. 完成 `B1-03`：建立平台持久化仓储与迁移基线；
+2. 完成 `B1-04`：安全迁移阿里百炼 Demo 配置；
+3. 按依赖继续前端和跨端契约闭环。

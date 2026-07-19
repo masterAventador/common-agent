@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "通用 Agent 中台后端"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "fastapi>=0.139.2",
+    "uvicorn>=0.51.0",
+]
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]
