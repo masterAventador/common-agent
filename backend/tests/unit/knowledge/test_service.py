@@ -33,6 +33,8 @@ class _KnowledgeProbe:
             version="v0.25.6",
         )
         self.uploads: list[DocumentUpload] = []
+        self.retrieval_requests: list[KnowledgeRetrievalRequest] = []
+        self.retrieval_result = KnowledgeRetrievalResult(chunks=())
 
     async def status(self) -> KnowledgeServiceStatus:
         return self.status_result
@@ -62,8 +64,8 @@ class _KnowledgeProbe:
         raise NotImplementedError
 
     async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult:
-        del request
-        raise NotImplementedError
+        self.retrieval_requests.append(request)
+        return self.retrieval_result
 
 
 @pytest.mark.parametrize(
@@ -101,3 +103,14 @@ def test_invalid_upload_is_rejected_before_calling_provider(
 
     asyncio.run(exercise())
     assert probe.uploads == []
+
+
+def test_retrieve_checks_service_availability_before_calling_provider() -> None:
+    probe = _KnowledgeProbe()
+    service = KnowledgeBaseService(probe)
+    request = KnowledgeRetrievalRequest(knowledge_base_id="kb-1", query="年假有几天")
+
+    result = asyncio.run(service.retrieve(request))
+
+    assert result is probe.retrieval_result
+    assert probe.retrieval_requests == [request]

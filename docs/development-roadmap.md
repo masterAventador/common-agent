@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` 知识库、数字员工正式闭环、会话持久化、百炼适配器、EmployeeRuntime 契约和 Deep Agents 适配器已完成；进入每条消息自动知识检索 |
+| 产品代码 | `🚧` 知识库、数字员工正式闭环、会话持久化、百炼/Deep Agents 运行时和每条消息自动知识检索已完成；进入会话 API 与 SSE |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -179,7 +179,7 @@
 | A4-02 | 百炼模型适配器 | `ChatOpenAI`、流式输出、超时/有限重试和脱敏错误 | B1-04 | ✅ 已完成 |
 | A4-03 | EmployeeRuntime 契约 | 历史、系统指令、知识上下文、流式事件和停止语义 | A4-01,K2-02 | ✅ 已完成 |
 | A4-04 | Deep Agents 适配器 | 官方 `create_deep_agent`、受控工具、无 Shell/本机文件权限 | A4-02,A4-03 | ✅ 已完成 |
-| A4-05 | 自动知识检索 | 每条消息按员工绑定检索、空结果语义、引用映射和检索失败 fail closed | A4-03,K2-03,E3-02 | ⬜ 未开始 |
+| A4-05 | 自动知识检索 | 每条消息按员工绑定检索、空结果语义、引用映射和检索失败 fail closed | A4-03,K2-03,E3-02 | ✅ 已完成 |
 | A4-06 | 会话 API 与 SSE | 新建/列表/历史/发送/停止/重试；事件单调、持久化后推送 | A4-04,A4-05,C1-01 | ⬜ 未开始 |
 | A4-07 | 聊天工作台 | 三栏会话、流式回复、引用、停止、重试和刷新恢复 | A4-06,F1-03 | ⬜ 未开始 |
 | A4-08 | Demo 核心 E2E | 固定适配器完成两轮会话、检索引用、断流和重试 | A4-07 | ⬜ 未开始 |
@@ -690,10 +690,27 @@
 - 文档：后端 README、后端架构、工程结构、Deep Agents/百炼正式适配层、运行时/模型端口、依赖锁、分层/真实测试和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
 - 遗留：A4-05 通过正式 `KnowledgeService` 在每条消息前检索员工绑定知识库并映射 RuntimeKnowledgeChunk/Citation；A4-06 再把运行时接入会话持久化、发送/停止/重试和持久化后 SSE，W5-07 才注册真实工作流工具
 
+### A4-05 自动知识检索
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增未绑定跳过、已绑定每条消息检索、空命中语义、运行时片段/Citation 同源映射、已知/未知失败 fail closed、非法上游片段、调用方取消和正式 RAGFlow 文档检索验收测试；定向 pytest 因 `common_agent.knowledge.retrieval` 不存在出现 2 个收集错误。最小实现后复核真实适配器发现 `RagFlowKnowledgeService.retrieve` 不会自行校验版本，新增 `KnowledgeBaseService.retrieve` 和会话前置健康/版本门禁测试，分别以方法不存在及 3 个状态未被检查得到 4 failed，避免用 Fake 直接抛版本错误掩盖正式旁路
+- GREEN：知识服务/会话检索定向 24 passed，知识/Runtime 相关回归 61 passed，正式 RAGFlow 解析检索 1 passed；启用正式 MySQL、官方 RAGFlow、真实百炼和 Deep Agents 后后端全量 271 passed。Ruff、格式、Mypy、uv lock、正式/测试 MySQL Alembic 漂移、前端 27 项 Vitest/ESLint/TypeScript/Build/peer/冻结锁文件、OpenAPI/DTO、平台/RAGFlow 管理脚本与 ShellCheck 全部通过；前端构建继续如实保留既有 622.12 KiB 共享 chunk 提示
+- 正式检索路径：测试通过正式 `ConversationKnowledgeResolver -> KnowledgeBaseService -> KnowledgeService -> RagFlowKnowledgeService -> RAGFlow v0.25.6` 创建唯一 `common-agent-a4-05-*` 知识库、上传真实 TXT、等待官方解析完成，再以当前用户消息检索唯一动态标记 `COMMON_AGENT_A4_05_*`；返回片段经正式 Resolver 映射后仍命中标记，RuntimeKnowledgeChunk 与 Citation 数量、片段 ID 和顺序逐项一致，finally 删除该知识库
+- 每消息与空语义：Resolver 只接受领域层已完成用户消息。员工 `knowledge_base_id=None` 时直接返回 `None + 空片段/空引用`，不会调用 status 或 retrieve；已绑定时每次 resolve 都重新执行 status/version 与 retrieve，不缓存或复用上一问。零命中返回 `真实 knowledge_base_id + 空片段/空引用`，与未绑定明确区分，供 Deep Agents 提示“已检索但无结果”
+- 健康与版本：在现有 `KnowledgeBaseService` 增加正式 retrieve 用例，复用同一个 `_ensure_available`；每条已绑定消息先核对 RAGFlow 的真实可用性和固定版本，再以 `top_k=5`、`similarity_threshold=0.2` 检索。未配置、服务不可用和 `knowledge_service_version_mismatch` 均在检索前失败，失效知识库、请求拒绝和供应商非法响应保持原稳定错误，不静默改成无知识上下文继续调用模型
+- 引用映射：供应商顺序是唯一顺序；每个 RetrievedChunk 同源构造 RuntimeKnowledgeChunk 与从 1 连续编号的 Citation，知识库/片段/文档/正文/分数完全一致。重复片段 ID、超过 top_k 的返回、非法分数、超长正文或非平台结果统一转换为 `knowledge_service_invalid_response`；Citation 正文从 repr 排除，ResolvedKnowledgeContext 的片段/引用字段也整体不参与 repr
+- 失败矩阵：覆盖未绑定零调用、连续两条消息各自检索、绑定零命中、未配置、版本不匹配、不可用、知识库不存在、请求拒绝、已知错误原样传播、未知异常安全收敛且不泄漏 detail、重复/超量/非法分数/超长片段、非用户消息前置拒绝和父协程取消原样上抛；RAGFlow 检索成功但随后模型失败由 A4-06 负责把助手消息写入 failed，当前 Resolver 不制造模型或持久化状态
+- 生产同路径边界：A4-05 的交付对象是内部会话知识解析器，因此真实验收从该正式入口经过应用服务和正式 RAGFlow 适配器，不直接调用下层 HTTP 作为完成证据；公开发送消息 HTTP/SSE 与持久化编排尚在 A4-06，聊天页面在 A4-07，本任务不启动 Playwright，也不把内部解析器验收冒充最终用户自动检索闭环
+- 清理：真实验收创建的唯一 A4-05 知识库和文档在 finally 精确删除；全量测试后正式库保持固定预置员工 1/会话 0/消息 0/引用 0，测试库四类记录全为 0，RAGFlow `common-agent-k2/e3/a4` 测试知识库为 0。18200/18280 无监听，无 Playwright/headless-shell/Vite/Uvicorn 遗留，前端 dist/tsbuildinfo 已精确删除，无悬空镜像；健康平台 MySQL 与 RAGFlow 六服务按稳定栈规则继续复用
+- 文档：后端 README、后端架构、工程结构、会话知识解析器、KnowledgeBaseService 检索入口、Citation repr 安全、分层/真实测试和 `docs/development-roadmap.md`；`product-scope.md` 未作进度性修改
+- 遗留：A4-06 把 Resolver、EmployeeRuntime、Conversation/Message Repository 接入公开会话 CRUD、发送/停止/重试与持久化后 SSE；A4-07 再通过正式聊天页面验收用户可见自动检索和引用
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `A4-04`：通过官方 `create_deep_agent` 接入受控数字员工运行时；
-2. 完成 `A4-05`：把员工知识库绑定接入每条消息的自动检索与引用映射；
-3. 完成 `A4-06`：串起会话 CRUD、发送/停止/重试和持久化后推送的 SSE。
+1. 完成 `A4-06`：串起会话 CRUD、发送/停止/重试和持久化后推送的 SSE；
+2. 完成 `A4-07`：在聊天工作台接入三栏会话、流式回复、引用、停止、重试和刷新恢复；
+3. 完成 `A4-08`：以无头 Playwright 跑通 Demo 两轮会话、检索引用、断流和重试。

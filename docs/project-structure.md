@@ -56,7 +56,8 @@ backend/
 │       │   └── nodes/
 │       ├── knowledge/           # KnowledgeService 协议
 │       │   ├── base.py
-│       │   └── ragflow.py
+│       │   ├── service.py
+│       │   └── retrieval.py
 │       ├── ports/               # 仓储、缓存、事件、对象存储与任务端口
 │       └── adapters/            # 数据库、模型及第三方外围适配
 │           ├── agent/           # Deep Agents 正式适配器

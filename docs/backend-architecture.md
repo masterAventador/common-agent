@@ -276,7 +276,9 @@ WorkflowRun
 用户发送消息
   -> 校验会话和数字员工
   -> 持久化用户消息与助手占位消息
-  -> 如果员工绑定知识库：KnowledgeService.retrieve(question)
+  -> ConversationKnowledgeResolver 检查员工知识库绑定
+  -> 已绑定时经 KnowledgeBaseService 校验 RAGFlow 可用性/版本
+  -> KnowledgeService.retrieve(question)
   -> 把历史消息、系统指令、知识片段和引用交给 EmployeeRuntime
   -> Deep Agents 调用阿里百炼
   -> 转换为 message.delta / message.completed 等会话事件
@@ -284,6 +286,14 @@ WorkflowRun
 ```
 
 检索为空不是错误：数字员工应明确说明未找到相关知识，并基于通用能力回答或说明无法确定。RAGFlow 请求失败则本轮回复失败，不静默跳过知识库后假装是知识回答。
+
+`ConversationKnowledgeResolver` 只接受已完成用户消息。员工未绑定知识库时不访问 RAGFlow，
+并返回 `knowledge_base_id=None`；员工已绑定时，每条消息都先通过 `KnowledgeBaseService`
+检查真实可用性与锁定版本，再用固定首版参数 `top_k=5`、`similarity_threshold=0.2` 检索。
+零命中保留非空绑定 ID 和空片段，以区别于未绑定。命中结果按供应商顺序一次性映射为
+`RuntimeKnowledgeChunk` 与从 1 连续编号的 `Citation`；两者使用同一知识库、片段、文档、正文
+和分数。重复片段、超量片段、非法分数/正文或无法识别的返回均关闭失败，任何 RAGFlow 错误
+不得静默降级为普通模型回答。
 
 ## 6. 工作流校验与执行
 

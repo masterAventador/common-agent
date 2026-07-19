@@ -74,3 +74,5 @@ allowlist。非空知识库 ID 会先经 `KnowledgeBaseService` 和 RAGFlow 官�
 `EmployeeRuntime` 是一次会话回复的框架无关协议：`stream(request, stop=...)` 接收 Conversation/Employee/助手消息 ID、有序聊天历史、员工系统指令、显式知识库绑定与检索片段，以及允许调用的工作流 ID；它不包含旧任务模型的启动、审批、恢复或产物接口。运行时只返回单调递增的 `delta` 和一个 `completed/failed/stopped` 终态，终态后的事件由 `RuntimeEventEmitter` 拒绝。`RuntimeStopToken` 可重复请求但只在第一次改变状态；Deep Agents 适配器会让停止信号与上游下一事件竞速，停止胜出后关闭异步流。系统指令、历史正文、知识片段和模型增量均从对象 repr 排除。
 
 `DeepAgentsEmployeeRuntime` 固定使用 `deepagents==0.6.12` 的公开 `create_deep_agent`。它通过 `DeepAgentToolRegistry` 只装配员工本轮白名单中的平台工具，使用非 Sandbox 的 `StateBackend`，并通过公开 Harness Profile 和文件权限规则从模型工具面移除 Todo、本机文件、Shell、默认子代理和 `task`。知识片段被标记为不可信外部数据；Deep Agents 原始消息、工具和异常不会越过适配层。
+
+`ConversationKnowledgeResolver` 把员工绑定与当前已完成用户消息转换为本轮知识上下文。未绑定员工直接返回无知识库语义且不访问 RAGFlow；已绑定员工每次都先经 `KnowledgeBaseService` 检查真实服务可用性和 `v0.25.6` 版本，再按固定首版参数检索。零命中保留知识库 ID；命中片段按原顺序映射成同源的 `RuntimeKnowledgeChunk` 与连续 `Citation`。配置、版本、知识库不存在、服务失败、非法响应和调用方取消均保持明确语义，不静默跳过检索。

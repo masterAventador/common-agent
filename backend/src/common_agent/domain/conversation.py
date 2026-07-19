@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from math import isfinite
@@ -54,7 +54,7 @@ class Citation:
     chunk_id: str
     document_id: str
     document_name: str
-    content: str
+    content: str = field(repr=False)
     score: float
 
     def __post_init__(self) -> None:

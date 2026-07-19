@@ -7,6 +7,8 @@ from common_agent.domain.knowledge import (
     DocumentUpload,
     KnowledgeBaseSummary,
     KnowledgeDocument,
+    KnowledgeRetrievalRequest,
+    KnowledgeRetrievalResult,
     KnowledgeServiceAvailability,
 )
 from common_agent.knowledge.base import (
@@ -84,6 +86,10 @@ class KnowledgeBaseService:
         self._validate_upload(upload)
         await self._ensure_available()
         return await self._knowledge.upload_document(knowledge_base_id, upload)
+
+    async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult:
+        await self._ensure_available()
+        return await self._knowledge.retrieve(request)
 
     async def _ensure_available(self) -> None:
         status = await self._knowledge.status()
