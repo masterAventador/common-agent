@@ -13,6 +13,8 @@ RUN_ID="$(date -u +%Y%m%d%H%M%S)-$$"
 COMMON_AGENT_E2E_KNOWLEDGE_NAME="common-agent-k2-06-${RUN_ID}"
 COMMON_AGENT_E2E_EMPLOYEE_NAME="common-agent-e3-05-employee-${RUN_ID}"
 COMMON_AGENT_E2E_EMPLOYEE_KNOWLEDGE_NAME="common-agent-e3-05-knowledge-${RUN_ID}"
+COMMON_AGENT_E2E_WORKFLOW_NAME="common-agent-w5-05-workflow-${RUN_ID}"
+COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME="common-agent-w5-05-knowledge-${RUN_ID}"
 COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="common-agent-a4-08-employee-${RUN_ID}"
 COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="common-agent-a4-08-knowledge-${RUN_ID}"
 ARTIFACT_ROOT="${REPOSITORY_ROOT}/.local/test-artifacts/platform-e2e/${E2E_SUITE}-${RUN_ID}"
@@ -24,7 +26,7 @@ FRONTEND_PID=""
 RAGFLOW_API_KEY=""
 COMMON_AGENT_DATABASE_URL="mysql+asyncmy://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
 
-if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "demo-chat" ]]; then
+if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "workflow-designer" ]]; then
   echo "不支持的 E2E suite：${E2E_SUITE}" >&2
   exit 2
 fi
@@ -71,6 +73,19 @@ cleanup() {
         uv run --frozen python -m tests.support.demo_chat_e2e_cleanup
     ); then
       echo "Demo 聊天 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
+      cleanup_status=1
+    fi
+  elif [[ "${E2E_SUITE}" == "workflow-designer" && -n "${RAGFLOW_API_KEY}" ]]; then
+    if ! (
+      cd "${BACKEND_ROOT}"
+      RAGFLOW_BASE_URL="${RAGFLOW_BASE_URL}" \
+      RAGFLOW_API_KEY="${RAGFLOW_API_KEY}" \
+      COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
+      COMMON_AGENT_E2E_WORKFLOW_NAME="${COMMON_AGENT_E2E_WORKFLOW_NAME}" \
+      COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME}" \
+        uv run --frozen python -m tests.support.workflow_designer_e2e_cleanup
+    ); then
+      echo "工作流设计器 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
       cleanup_status=1
     fi
   elif [[ -n "${RAGFLOW_API_KEY}" ]]; then
@@ -130,7 +145,7 @@ if [[ "$(docker --context colima-common-agent-dev inspect \
   "${REPOSITORY_ROOT}/infra/platform/manage.sh" up
 fi
 export COMMON_AGENT_DATABASE_URL
-if [[ "${E2E_SUITE}" == "platform" ]]; then
+if [[ "${E2E_SUITE}" != "demo-chat" ]]; then
   export COMMON_AGENT_INTEGRATION_MODE="real"
   if ! curl --fail --silent --show-error \
     "${RAGFLOW_BASE_URL}/api/v1/system/version" >/dev/null 2>&1; then
@@ -175,6 +190,12 @@ wait_for_url "http://127.0.0.1:${FRONTEND_PORT}/knowledge-bases"
       exec pnpm exec playwright test \
         e2e/employees.spec.ts e2e/knowledge-bases.spec.ts \
         --config playwright.config.ts
+  elif [[ "${E2E_SUITE}" == "workflow-designer" ]]; then
+    COMMON_AGENT_E2E_WORKFLOW_NAME="${COMMON_AGENT_E2E_WORKFLOW_NAME}" \
+    COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME}" \
+    COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
+      exec pnpm exec playwright test e2e/workflows.spec.ts --config playwright.config.ts
   else
     COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="${COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME}" \
     COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME}" \

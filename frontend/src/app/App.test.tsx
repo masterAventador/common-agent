@@ -48,6 +48,13 @@ vi.mock("../api/conversations", () => ({
   subscribeToConversationEvents: vi.fn(() => ({ close: vi.fn() })),
 }));
 
+vi.mock("../api/workflows", () => ({
+  createWorkflow: vi.fn(),
+  fetchWorkflows: vi.fn().mockResolvedValue([]),
+  updateWorkflow: vi.fn(),
+  validateWorkflow: vi.fn(),
+}));
+
 const routes = [
   ["/chat", "AI 会话"],
   ["/employees", "数字员工"],

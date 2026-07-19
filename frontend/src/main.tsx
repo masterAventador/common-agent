@@ -6,6 +6,7 @@ import { BrowserRouter } from "react-router-dom";
 
 import { App } from "./app/App";
 import { AppProviders } from "./app/AppProviders";
+import "@xyflow/react/dist/style.css";
 import "./styles/index.css";
 
 const root = document.getElementById("root");

@@ -16,5 +16,6 @@
 - `test-platform-e2e.sh`：复用健康的稳定基础设施，以无窗口 `chromium-headless-shell` 编排正式
   FastAPI/Vite；默认 `platform` 套件验收真实 RAGFlow/Deep Agents/百炼路径，设置
   `COMMON_AGENT_E2E_SUITE=demo-chat` 时只启用显式 Demo 固定适配器，验证两轮会话、引用、断流
-  和重试。两个套件都负责唯一测试数据、预置测试 Seed、本轮 Playwright/前后端进程和成功产物
-  清理。
+  和重试；设置 `COMMON_AGENT_E2E_SUITE=workflow-designer` 时只验收 React Flow 拖拽、连线、
+  服务端校验、真实知识库引用与 MySQL 保存/刷新回显。各套件都负责唯一测试数据、预置测试
+  Seed、本轮 Playwright/前后端进程和成功产物清理。
