@@ -8,6 +8,8 @@ import { Layout, Menu, Space, Tag, Typography } from "antd";
 import type { ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
+import { SystemStatus } from "../components/SystemStatus";
+
 const { Content, Header, Sider } = Layout;
 
 const entries = [
@@ -83,7 +85,10 @@ export function App() {
               本机开发环境
             </Typography.Text>
           </div>
-          <Tag color="processing">无登录 · 本机联调</Tag>
+          <Space size={8}>
+            <SystemStatus />
+            <Tag color="processing">无登录 · 本机联调</Tag>
+          </Space>
         </Header>
         <Content className="app-content">
           <Routes>

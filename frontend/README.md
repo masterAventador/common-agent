@@ -21,3 +21,5 @@ pnpm dev
 ```
 
 开发服务器固定监听 `127.0.0.1:18280` 并启用 strict port；启动前仍须确认端口没有被其他项目占用。
+
+API 默认访问 `http://127.0.0.1:18200/api/v1`，可通过 `VITE_API_BASE_URL` 覆盖。响应先经过生成 TypeScript 类型对应的 Zod 边界，后端错误统一转换为不含传输细节的 `ApiClientError`。

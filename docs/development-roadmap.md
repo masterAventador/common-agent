@@ -2,7 +2,7 @@
 
 > 文档性质：项目开发进度唯一执行台账  
 > 建立日期：2026-07-19  
-> 当前阶段：Wave 1 工程骨架与本地开发闭环
+> 当前阶段：Wave 2 RAGFlow 知识库闭环
 > MVP 顺序：知识库 → 数字员工绑定 → AI 会话 → 可视化工作流
 
 本文件是任务进度、状态、完成定义和验证证据的唯一核对源。`product-scope.md` 只描述产品功能和边界，不承担进度同步；普通任务完成只更新本路线图。
@@ -55,6 +55,7 @@
 | 百炼配置 | `✅` 已从 agent-platform 的 Git 跟踪配置迁移 Demo 模型/Base URL/Key，Key 仅存在于获准的私有配置文件 |
 | 前端入口 | `✅` React/Vite/Ant Design 四入口壳层已通过组件、构建和真实浏览器导航验收 |
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
+| 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | 产品代码 | `⬜` 尚未开始；等待后端、前端基础工具链完成后按纵向功能任务进入 |
 | 本地服务 | `✅` 临时前端初始化预览已停止；后端/RAGFlow 未启动 |
 
@@ -132,7 +133,7 @@
 | B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | ✅ 已完成 |
 | F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | ✅ 已完成 |
 | C1-01 | OpenAPI 契约闭环 | 后端导出、前端生成、漂移检查和公共错误 DTO | B1-02,F1-02 | ✅ 已完成 |
-| F1-03 | 前端 API 基线 | Axios、Query Client、Zod 和后端真实状态提示 | C1-01 | 🚧 实现中 |
+| F1-03 | 前端 API 基线 | Axios、Query Client、Zod 和后端真实状态提示 | C1-01 | ✅ 已完成 |
 
 ## 8. Wave 2：RAGFlow 知识库闭环
 
@@ -142,7 +143,7 @@
 
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
-| K2-01 | 锁定 RAGFlow 版本与资源 | 确切稳定版本；固定 `common-agent-dev`、独立端口/Volume；评估 Docker 32GB 级资源和复用策略 | R0-06 | ⬜ 未开始 |
+| K2-01 | 锁定 RAGFlow 版本与资源 | 确切稳定版本；固定 `common-agent-dev`、独立端口/Volume；评估 Docker 32GB 级资源和复用策略 | R0-06 | 🚧 实现中 |
 | K2-02 | KnowledgeService 契约 | list/create/upload/list-documents/retrieve/status 平台协议和失败测试 | B1-02 | ⬜ 未开始 |
 | K2-03 | RAGFlow 适配器 | 官方 SDK/API 接入、超时、错误转换、版本健康和真实服务验收 | K2-01,K2-02 | ⬜ 未开始 |
 | K2-04 | 知识库 API | 列表、创建、文档上传、解析状态；上传大小/类型限制 | K2-03,C1-01 | ⬜ 未开始 |
@@ -432,10 +433,23 @@
 - 文档：契约生成/检查脚本、`contracts/openapi/openapi.json`、前端生成类型与公共别名、contracts/scripts README、`docs/development-roadmap.md`
 - 遗留：当前 Schema 只包含 Health 和公共错误；以后每个 API 任务必须同任务重新生成并通过漂移检查
 
+### F1-03 前端 API 基线
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：后端测试因 `CorsSettings` 缺失收集失败；前端测试因 Axios、`system.ts` 和 `SystemStatus` 缺失产生 2 个失败套件
+- GREEN：后端 pytest 29 passed，前端 Vitest 11 passed；Ruff、格式、Mypy、ESLint、typecheck、build、peer 和契约漂移检查全部通过
+- 真实边界：同时启动正式 Uvicorn 18200 与 Vite 18280，agent-browser 从正式 React 页面经 Axios/Zod 和真实 CORS 访问 Health，看到“后端正常”；停止 Uvicorn 并刷新同一页面后真实显示“后端不可用”
+- 失败矩阵：覆盖 Health Schema 漂移、公共错误信封映射、传输细节脱敏、Query 成功/失败状态、远程 Origin 拒绝、正式 loopback Origin 允许和后端连接拒绝；没有 Mock 代替最终跨进程验收
+- 清理：关闭 agent-browser、Uvicorn 和 Vite，确认 18200/18280 无监听；删除隔离 SQLite、dist 和 tsbuildinfo，保留被忽略的依赖缓存
+- 文档：根/前端环境示例、frontend README、Axios/Query/Zod/状态组件/CORS 配置与测试、`docs/development-roadmap.md`
+- 遗留：新增 Axios/Query/Zod 后单入口包约 709kB，仍保留真实构建提示；首个业务 Feature 开始时执行路由级懒加载和供应商分包，不调高阈值
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `F1-03`：建立统一前端 API、运行时校验和后端状态提示；
-2. 完成 `K2-01`：锁定 RAGFlow 版本、端口、Volume 和 32GB 级资源策略；
-3. 建立 KnowledgeService 契约并进入真实 RAGFlow 适配。
+1. 完成 `K2-01`：锁定 RAGFlow 版本、端口、Volume 和 32GB 级资源策略；
+2. 完成 `K2-02`：建立 KnowledgeService 平台契约与失败测试；
+3. 完成 `K2-03`：接入正式 RAGFlow 适配器并验收真实服务。

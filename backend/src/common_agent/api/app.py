@@ -5,13 +5,14 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import RequestResponseEndpoint
 
 from common_agent import __version__
 from common_agent.adapters.persistence import Database
 from common_agent.api.errors import error_handlers
 from common_agent.api.routers import system_router
-from common_agent.bootstrap import DatabaseSettings
+from common_agent.bootstrap import CorsSettings, DatabaseSettings
 
 
 @asynccontextmanager
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     database = Database(DatabaseSettings.from_env().url)
+    cors = CorsSettings.from_env()
     app = FastAPI(
         title="common-agent API",
         version=__version__,
@@ -35,6 +37,13 @@ def create_app() -> FastAPI:
         exception_handlers=error_handlers(),
     )
     app.state.database = database
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(cors.origins),
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.middleware("http")
     async def add_request_id(request: Request, call_next: RequestResponseEndpoint) -> Response:

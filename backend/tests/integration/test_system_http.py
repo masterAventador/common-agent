@@ -13,6 +13,7 @@ from http.client import HTTPResponse
 from pathlib import Path
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
+from urllib.request import Request as UrlRequest
 from urllib.request import urlopen
 from uuid import UUID
 
@@ -131,3 +132,17 @@ def test_formal_api_migrates_empty_database_and_recovers_after_restart(tmp_path:
         row = connection.execute("SELECT version_num FROM alembic_version").fetchone()
 
     assert row == ("20260719_0001",)
+
+
+def test_health_allows_the_project_frontend_origin_over_real_http(tmp_path: Path) -> None:
+    request = UrlRequest(
+        "http://127.0.0.1:0/api/v1/system/health",
+        headers={"Origin": "http://127.0.0.1:18280"},
+    )
+
+    with _running_api(_database_url(tmp_path / "cors.db")) as base_url:
+        request.full_url = f"{base_url}/api/v1/system/health"
+        with urlopen(request, timeout=2) as response:
+            response.read()
+
+    assert response.headers["Access-Control-Allow-Origin"] == "http://127.0.0.1:18280"

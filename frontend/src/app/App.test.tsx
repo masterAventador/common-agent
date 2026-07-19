@@ -1,8 +1,17 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { AppProviders } from "./AppProviders";
 import { App } from "./App";
+
+vi.mock("../api/system", () => ({
+  fetchHealth: vi.fn().mockResolvedValue({
+    status: "ok",
+    service: "common-agent-api",
+    version: "0.1.0",
+  }),
+}));
 
 const routes = [
   ["/chat", "AI 会话"],
@@ -14,9 +23,11 @@ const routes = [
 describe("App shell", () => {
   it.each(routes)("renders %s as the %s entry", (path, heading) => {
     render(
-      <MemoryRouter initialEntries={[path]}>
-        <App />
-      </MemoryRouter>,
+      <AppProviders>
+        <MemoryRouter initialEntries={[path]}>
+          <App />
+        </MemoryRouter>
+      </AppProviders>,
     );
 
     expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
@@ -27,9 +38,11 @@ describe("App shell", () => {
 
   it("redirects the root entry to chat", () => {
     render(
-      <MemoryRouter initialEntries={["/"]}>
-        <App />
-      </MemoryRouter>,
+      <AppProviders>
+        <MemoryRouter initialEntries={["/"]}>
+          <App />
+        </MemoryRouter>
+      </AppProviders>,
     );
 
     expect(screen.getByRole("heading", { name: "AI 会话" })).toBeInTheDocument();

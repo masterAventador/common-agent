@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from common_agent.bootstrap.settings import ApiSettings, ConfigurationError, DatabaseSettings
+from common_agent.bootstrap.settings import (
+    ApiSettings,
+    ConfigurationError,
+    CorsSettings,
+    DatabaseSettings,
+)
 
 
 def test_api_settings_use_project_loopback_defaults() -> None:
@@ -49,3 +54,14 @@ def test_database_settings_allow_formal_adapter_override(tmp_path: Path) -> None
     )
 
     assert settings.url == url
+
+
+def test_cors_settings_default_to_project_frontend_origin() -> None:
+    settings = CorsSettings.from_mapping({})
+
+    assert settings.origins == ("http://127.0.0.1:18280",)
+
+
+def test_cors_settings_reject_public_or_remote_origin() -> None:
+    with pytest.raises(ConfigurationError, match="loopback"):
+        CorsSettings.from_mapping({"COMMON_AGENT_CORS_ORIGINS": "https://example.com"})

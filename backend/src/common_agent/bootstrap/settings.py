@@ -66,6 +66,35 @@ class DatabaseSettings:
         return cls(url=f"sqlite+aiosqlite:///{database_path}")
 
 
+@dataclass(frozen=True, slots=True)
+class CorsSettings:
+    origins: tuple[str, ...]
+
+    @classmethod
+    def from_env(cls) -> CorsSettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> CorsSettings:
+        configured = values.get("COMMON_AGENT_CORS_ORIGINS", "http://127.0.0.1:18280")
+        origins = tuple(
+            origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()
+        )
+        if not origins:
+            raise ConfigurationError("COMMON_AGENT_CORS_ORIGINS must not be empty")
+
+        for origin in origins:
+            parsed = urlparse(origin)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
+                or parsed.path not in {"", "/"}
+            ):
+                raise ConfigurationError("COMMON_AGENT_CORS_ORIGINS must contain loopback origins")
+
+        return cls(origins=origins)
+
+
 class ModelSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
