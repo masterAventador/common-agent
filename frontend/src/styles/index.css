@@ -761,6 +761,41 @@ select {
   box-shadow: 0 0 0 3px rgba(212, 56, 13, 0.1);
 }
 
+.react-flow__node.is-run-active .workflow-node-card {
+  border-color: #315efb;
+  box-shadow:
+    0 0 0 4px rgba(49, 94, 251, 0.14),
+    0 10px 30px rgba(49, 94, 251, 0.16);
+  animation: workflow-running-pulse 1.4s ease-in-out infinite;
+}
+
+.react-flow__node.is-run-completed .workflow-node-card {
+  border-color: #35a46f;
+  background: #f3fbf7;
+  box-shadow: 0 0 0 3px rgba(53, 164, 111, 0.12);
+}
+
+.react-flow__node.is-run-failed .workflow-node-card {
+  border-color: #d4380d;
+  background: #fff7f5;
+  box-shadow: 0 0 0 4px rgba(212, 56, 13, 0.13);
+}
+
+@keyframes workflow-running-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 3px rgba(49, 94, 251, 0.1),
+      0 10px 26px rgba(49, 94, 251, 0.11);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 6px rgba(49, 94, 251, 0.18),
+      0 12px 34px rgba(49, 94, 251, 0.2);
+  }
+}
+
 .workflow-node-icon {
   width: 36px;
   height: 36px;
@@ -822,4 +857,115 @@ select {
   display: block;
   margin-top: 2px;
   font-size: 12px;
+}
+
+.workflow-run-panel {
+  margin-top: 24px;
+  padding-top: 2px;
+  border-top: 1px solid #edf0f6;
+}
+
+.workflow-run-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workflow-run-alert {
+  margin-top: 12px;
+}
+
+.workflow-run-actions {
+  margin-top: 12px;
+}
+
+.workflow-run-summary {
+  display: grid;
+  margin-top: 18px;
+  gap: 12px;
+}
+
+.workflow-run-id {
+  max-width: 128px;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-run-node-list {
+  display: grid;
+  gap: 7px;
+}
+
+.workflow-run-node {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 8px 10px;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #e6eaf2;
+  border-radius: 9px;
+  background: #fafbfe;
+}
+
+.workflow-run-node-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b9c0cf;
+}
+
+.workflow-run-node.is-active {
+  border-color: #9eb1ff;
+  background: #f1f5ff;
+}
+
+.workflow-run-node.is-active .workflow-run-node-dot {
+  background: #315efb;
+  box-shadow: 0 0 0 4px rgba(49, 94, 251, 0.12);
+}
+
+.workflow-run-node.is-completed {
+  border-color: #b8e1cd;
+  background: #f3fbf7;
+}
+
+.workflow-run-node.is-completed .workflow-run-node-dot {
+  background: #35a46f;
+}
+
+.workflow-run-node.is-failed {
+  border-color: #ffbbb0;
+  background: #fff7f5;
+}
+
+.workflow-run-node.is-failed .workflow-run-node-dot {
+  background: #d4380d;
+}
+
+.workflow-run-output {
+  display: grid;
+  gap: 7px;
+}
+
+.workflow-run-output pre {
+  max-height: 260px;
+  margin: 0;
+  padding: 11px;
+  overflow: auto;
+  border: 1px solid #dfe5f0;
+  border-radius: 9px;
+  background: #f7f9fc;
+  font: inherit;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__node.is-run-active .workflow-node-card {
+    animation: none;
+  }
 }

@@ -17,5 +17,7 @@
   FastAPI/Vite；默认 `platform` 套件验收真实 RAGFlow/Deep Agents/百炼路径，设置
   `COMMON_AGENT_E2E_SUITE=demo-chat` 时只启用显式 Demo 固定适配器，验证两轮会话、引用、断流
   和重试；设置 `COMMON_AGENT_E2E_SUITE=workflow-designer` 时只验收 React Flow 拖拽、连线、
-  服务端校验、真实知识库引用与 MySQL 保存/刷新回显。各套件都负责唯一测试数据、预置测试
-  Seed、本轮 Playwright/前后端进程和成功产物清理。
+  服务端校验、真实知识库引用与 MySQL 保存/刷新回显；设置
+  `COMMON_AGENT_E2E_SUITE=workflow-run-ui` 时通过正式页面验收真实百炼完成、协作停止、真实
+  RAGFlow 失效失败和刷新摘要恢复。各套件都负责唯一测试数据、预置测试 Seed、本轮
+  Playwright/前后端进程和成功产物清理。

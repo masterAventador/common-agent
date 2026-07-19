@@ -60,7 +60,9 @@ import {
 } from "../../api/workflows";
 import { getErrorMessage } from "../../api/errors";
 import { fetchKnowledgeBases } from "../../api/knowledge";
+import type { WorkflowRun } from "../../api/workflowRuns";
 import { WorkflowNodeCard } from "./WorkflowNodeCard";
+import { WorkflowRunPanel } from "./WorkflowRunPanel";
 import {
   WORKFLOW_NODE_LABELS,
   createNewWorkflowEditorState,
@@ -70,6 +72,7 @@ import {
   type WorkflowEditorEdge,
   type WorkflowEditorState,
 } from "./workflowEditor";
+import { isWorkflowRunActive, useWorkflowRun } from "./useWorkflowRun";
 
 const { Paragraph, Text, Title } = Typography;
 const WORKFLOW_NODE_MIME = "application/common-agent-workflow-node";
@@ -98,12 +101,17 @@ interface SaveResult {
 export function WorkflowsPage() {
   const queryClient = useQueryClient();
   const initialized = useRef(false);
+  const synchronizedRunId = useRef<string | undefined>(undefined);
   const [state, dispatch] = useReducer(
     workflowEditorReducer,
     undefined,
     createNewWorkflowEditorState,
   );
   const [localValidationMessage, setLocalValidationMessage] = useState<string>();
+  const runController = useWorkflowRun(state.workflowId, state.dirty);
+  const activeRun = isWorkflowRunActive(runController.run);
+  const visibleRun =
+    runController.run?.workflow_id === state.workflowId ? runController.run : undefined;
 
   const workflows = useQuery({ queryKey: ["workflows"], queryFn: fetchWorkflows });
   const knowledgeBases = useQuery({
@@ -118,6 +126,22 @@ export function WorkflowsPage() {
       dispatch({ type: "workflow_loaded", workflow: workflows.data[0] });
     }
   }, [workflows.data]);
+
+  useEffect(() => {
+    const restoredRun = runController.run;
+    if (
+      !restoredRun ||
+      !workflows.data ||
+      state.dirty ||
+      synchronizedRunId.current === restoredRun.id
+    ) {
+      return;
+    }
+    synchronizedRunId.current = restoredRun.id;
+    if (state.workflowId === restoredRun.workflow_id) return;
+    const workflow = workflows.data.find((item) => item.id === restoredRun.workflow_id);
+    if (workflow) dispatch({ type: "workflow_loaded", workflow });
+  }, [runController.run, state.dirty, state.workflowId, workflows.data]);
 
   const saveMutation = useMutation({
     mutationFn: async ({ workflowId, configuration }: SaveRequest): Promise<SaveResult> => {
@@ -140,6 +164,7 @@ export function WorkflowsPage() {
     const load = () => {
       saveMutation.reset();
       setLocalValidationMessage(undefined);
+      if (workflow.id !== state.workflowId) runController.clear();
       dispatch({ type: "workflow_loaded", workflow });
     };
     if (!state.dirty) {
@@ -159,6 +184,7 @@ export function WorkflowsPage() {
     const reset = () => {
       saveMutation.reset();
       setLocalValidationMessage(undefined);
+      runController.clear();
       dispatch({ type: "new_workflow" });
     };
     if (!state.dirty) {
@@ -229,7 +255,12 @@ export function WorkflowsPage() {
           </Paragraph>
         </div>
         <Space>
-          <Button icon={<PlusOutlined />} aria-label="新建工作流" onClick={createDraft}>
+          <Button
+            icon={<PlusOutlined />}
+            aria-label="新建工作流"
+            disabled={activeRun}
+            onClick={createDraft}
+          >
             新建工作流
           </Button>
           <Button
@@ -237,6 +268,7 @@ export function WorkflowsPage() {
             icon={<SaveOutlined />}
             aria-label="保存工作流"
             loading={saveMutation.isPending}
+            disabled={activeRun}
             onClick={save}
           >
             校验并保存
@@ -298,6 +330,7 @@ export function WorkflowsPage() {
                   key={workflow.id}
                   className={`workflow-list-item${state.workflowId === workflow.id ? " is-active" : ""}`}
                   aria-label={`选择工作流 ${workflow.name}`}
+                  disabled={activeRun && state.workflowId !== workflow.id}
                   onClick={() => selectWorkflow(workflow)}
                 >
                   <Text strong>{workflow.name}</Text>
@@ -317,7 +350,8 @@ export function WorkflowsPage() {
             {palette.map((item, index) => (
               <button
                 type="button"
-                draggable
+                draggable={!activeRun}
+                disabled={activeRun}
                 key={item.type}
                 className="workflow-palette-item"
                 aria-label={`添加${WORKFLOW_NODE_LABELS[item.type]}节点`}
@@ -364,7 +398,12 @@ export function WorkflowsPage() {
         </aside>
 
         <ReactFlowProvider>
-          <WorkflowCanvas state={state} dispatch={dispatch} />
+          <WorkflowCanvas
+            state={state}
+            run={visibleRun}
+            editingLocked={activeRun}
+            dispatch={dispatch}
+          />
         </ReactFlowProvider>
 
         <WorkflowInspector
@@ -372,6 +411,8 @@ export function WorkflowsPage() {
           knowledgeBases={knowledgeBases.data ?? []}
           knowledgeLoading={knowledgeBases.isPending}
           knowledgeError={knowledgeBases.isError ? getErrorMessage(knowledgeBases.error) : undefined}
+          editingLocked={activeRun}
+          runController={runController}
           dispatch={dispatch}
         />
       </div>
@@ -381,9 +422,13 @@ export function WorkflowsPage() {
 
 function WorkflowCanvas({
   state,
+  run,
+  editingLocked,
   dispatch,
 }: {
   state: WorkflowEditorState;
+  run?: WorkflowRun;
+  editingLocked: boolean;
   dispatch: Dispatch<WorkflowEditorAction>;
 }) {
   const flow = useReactFlow();
@@ -391,9 +436,15 @@ function WorkflowCanvas({
     () =>
       state.nodes.map((node) => ({
         ...node,
-        className: state.invalidNodeIds.has(node.id) ? "is-invalid" : node.className,
+        className: [
+          node.className,
+          state.invalidNodeIds.has(node.id) ? "is-invalid" : undefined,
+          workflowNodeRunClass(run, node.id),
+        ]
+          .filter(Boolean)
+          .join(" "),
       })),
-    [state.invalidNodeIds, state.nodes],
+    [run, state.invalidNodeIds, state.nodes],
   );
   const renderedEdges = useMemo(
     () =>
@@ -406,18 +457,19 @@ function WorkflowCanvas({
 
   const onConnect = useCallback(
     (connection: Connection) => {
-      if (!connection.source || !connection.target) return;
+      if (editingLocked || !connection.source || !connection.target) return;
       dispatch({
         type: "nodes_connected",
         source: connection.source,
         target: connection.target,
       });
     },
-    [dispatch],
+    [dispatch, editingLocked],
   );
 
   const isValidConnection = useCallback(
     (connection: Connection | WorkflowEditorEdge) => {
+      if (editingLocked) return false;
       if (!connection.source || !connection.target || connection.source === connection.target) {
         return false;
       }
@@ -433,12 +485,13 @@ function WorkflowCanvas({
         )
       );
     },
-    [state.edges, state.nodes],
+    [editingLocked, state.edges, state.nodes],
   );
 
   const onDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
+      if (editingLocked) return;
       const nodeType = event.dataTransfer.getData(WORKFLOW_NODE_MIME);
       if (!isWorkflowNodeType(nodeType)) return;
       dispatch({
@@ -447,7 +500,7 @@ function WorkflowCanvas({
         position: flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
       });
     },
-    [dispatch, flow],
+    [dispatch, editingLocked, flow],
   );
 
   return (
@@ -471,8 +524,10 @@ function WorkflowCanvas({
         onNodeClick={(_, node) => dispatch({ type: "node_selected", nodeId: node.id })}
         onPaneClick={() => dispatch({ type: "node_selected", nodeId: null })}
         isValidConnection={isValidConnection}
+        nodesDraggable={!editingLocked}
+        nodesConnectable={!editingLocked}
         defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed }, type: "smoothstep" }}
-        deleteKeyCode={["Backspace", "Delete"]}
+        deleteKeyCode={editingLocked ? null : ["Backspace", "Delete"]}
         fitView
         fitViewOptions={{ maxZoom: 1 }}
         minZoom={0.35}
@@ -491,12 +546,16 @@ function WorkflowInspector({
   knowledgeBases,
   knowledgeLoading,
   knowledgeError,
+  editingLocked,
+  runController,
   dispatch,
 }: {
   state: WorkflowEditorState;
   knowledgeBases: Array<{ id: string; name: string }>;
   knowledgeLoading: boolean;
   knowledgeError?: string;
+  editingLocked: boolean;
+  runController: ReturnType<typeof useWorkflowRun>;
   dispatch: Dispatch<WorkflowEditorAction>;
 }) {
   const selected = state.nodes.find((node) => node.id === state.selectedNodeId);
@@ -513,6 +572,7 @@ function WorkflowInspector({
           aria-label="工作流名称"
           value={state.name}
           maxLength={128}
+          disabled={editingLocked}
           onChange={(event) =>
             dispatch({
               type: "metadata_changed",
@@ -529,6 +589,7 @@ function WorkflowInspector({
           value={state.description}
           maxLength={1_000}
           rows={3}
+          disabled={editingLocked}
           onChange={(event) =>
             dispatch({
               type: "metadata_changed",
@@ -560,6 +621,7 @@ function WorkflowInspector({
               type="text"
               icon={<DeleteOutlined />}
               aria-label={`删除节点 ${selected.data.label} ${selected.id}`}
+              disabled={editingLocked}
               onClick={() =>
                 dispatch({
                   type: "nodes_changed",
@@ -579,6 +641,7 @@ function WorkflowInspector({
                 value={selected.data.config.prompt}
                 maxLength={12_000}
                 rows={8}
+                disabled={editingLocked}
                 onChange={(event) =>
                   dispatch({
                     type: "node_config_changed",
@@ -596,7 +659,7 @@ function WorkflowInspector({
                 aria-label="节点知识库"
                 value={selected.data.config.knowledge_base_id || undefined}
                 loading={knowledgeLoading}
-                disabled={Boolean(knowledgeError)}
+                disabled={editingLocked || Boolean(knowledgeError)}
                 placeholder={knowledgeError ? "知识库暂时不可用" : "选择知识库"}
                 options={knowledgeBases.map((item) => ({ value: item.id, label: item.name }))}
                 onChange={(value) =>
@@ -618,8 +681,22 @@ function WorkflowInspector({
           )}
         </div>
       )}
+      <WorkflowRunPanel
+        workflowId={state.workflowId}
+        dirty={state.dirty}
+        nodes={state.nodes}
+        controller={runController}
+      />
     </aside>
   );
+}
+
+function workflowNodeRunClass(run: WorkflowRun | undefined, nodeId: string): string | undefined {
+  if (!run) return undefined;
+  if (run.failed_node_id === nodeId) return "is-run-failed";
+  if (run.current_node_id === nodeId && isWorkflowRunActive(run)) return "is-run-active";
+  if (run.completed_node_ids.includes(nodeId)) return "is-run-completed";
+  return undefined;
 }
 
 function beginNodeDrag(event: DragEvent<HTMLButtonElement>, nodeType: WorkflowNodeType) {

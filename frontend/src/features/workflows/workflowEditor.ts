@@ -48,7 +48,6 @@ export interface WorkflowEditorState {
   validationIssues: WorkflowValidationIssue[];
   invalidNodeIds: Set<string>;
   invalidEdgeIds: Set<string>;
-  runProjection: null;
 }
 
 export type WorkflowEditorAction =
@@ -80,7 +79,6 @@ export function createNewWorkflowEditorState(): WorkflowEditorState {
     validationIssues: [],
     invalidNodeIds: new Set(),
     invalidEdgeIds: new Set(),
-    runProjection: null,
   };
 }
 
@@ -96,7 +94,6 @@ export function workflowToEditorState(workflow: Workflow): WorkflowEditorState {
     validationIssues: [],
     invalidNodeIds: new Set(),
     invalidEdgeIds: new Set(),
-    runProjection: null,
   };
 }
 

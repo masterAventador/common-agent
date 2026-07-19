@@ -1,0 +1,143 @@
+import { z } from "zod";
+
+import type { components } from "./generated/schema";
+import { apiBaseUrl, apiClient } from "./client";
+import { toApiClientError } from "./errors";
+
+export type WorkflowRun = components["schemas"]["WorkflowRunResponse"];
+export type WorkflowRunEvent = components["schemas"]["WorkflowRunEventResponse"];
+export type StartWorkflowRunInput = components["schemas"]["StartWorkflowRunBody"];
+export type StopWorkflowRunAccepted =
+  components["schemas"]["WorkflowRunStopAcceptedResponse"];
+
+const timestampSchema = z.iso.datetime({ offset: true });
+const nodeIdSchema = z.string().trim().min(1).max(128);
+const runIdSchema = z.uuid();
+const workflowRunStatusSchema = z.enum([
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "stopped",
+]);
+const workflowRunSchema = z.strictObject({
+  id: runIdSchema,
+  workflow_id: z.uuid(),
+  trigger: z.enum(["manual", "employee"]),
+  status: workflowRunStatusSchema,
+  input: z.string().min(1).max(200_000),
+  output: z.string().max(200_000),
+  current_node_id: nodeIdSchema.nullable(),
+  completed_node_ids: z.array(nodeIdSchema).max(100),
+  failed_node_id: nodeIdSchema.nullable(),
+  error_code: z.string().trim().min(1).max(128).nullable(),
+  created_at: timestampSchema,
+  started_at: timestampSchema.nullable(),
+  finished_at: timestampSchema.nullable(),
+  updated_at: timestampSchema,
+});
+const workflowRunEventTypes = [
+  "workflow.run.started",
+  "workflow.node.started",
+  "workflow.node.completed",
+  "workflow.node.failed",
+  "workflow.run.completed",
+  "workflow.run.failed",
+  "workflow.run.stopped",
+] as const;
+const workflowRunEventSchema = z
+  .strictObject({
+    schema_version: z.literal("1"),
+    sequence: z.int().positive(),
+    run_id: runIdSchema,
+    workflow_id: z.uuid(),
+    type: z.enum(workflowRunEventTypes),
+    node_id: nodeIdSchema.nullable(),
+    run: workflowRunSchema,
+    occurred_at: timestampSchema,
+  })
+  .superRefine((value, context) => {
+    if (value.run_id !== value.run.id) {
+      context.addIssue({ code: "custom", message: "事件运行 ID 与摘要不一致", path: ["run"] });
+    }
+    if (value.workflow_id !== value.run.workflow_id) {
+      context.addIssue({ code: "custom", message: "事件工作流 ID 与摘要不一致", path: ["run"] });
+    }
+  });
+const stopAcceptedSchema = z.strictObject({ run_id: runIdSchema });
+
+export function parseWorkflowRunResponse(data: unknown): WorkflowRun {
+  return workflowRunSchema.parse(data);
+}
+
+export function parseWorkflowRunEvent(data: unknown): WorkflowRunEvent {
+  return workflowRunEventSchema.parse(data);
+}
+
+export async function startWorkflowRun(
+  workflowId: string,
+  input: StartWorkflowRunInput,
+): Promise<WorkflowRun> {
+  try {
+    const response = await apiClient.post<unknown>(
+      `/workflows/${encodeURIComponent(workflowId)}/runs`,
+      input,
+    );
+    return parseWorkflowRunResponse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function fetchWorkflowRun(runId: string): Promise<WorkflowRun> {
+  try {
+    const response = await apiClient.get<unknown>(
+      `/workflow-runs/${encodeURIComponent(runId)}`,
+    );
+    return parseWorkflowRunResponse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function stopWorkflowRun(runId: string): Promise<StopWorkflowRunAccepted> {
+  try {
+    const response = await apiClient.post<unknown>(
+      `/workflow-runs/${encodeURIComponent(runId)}/stop`,
+    );
+    return stopAcceptedSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export interface WorkflowRunEventOptions {
+  afterSequence?: number;
+  onEvent: (event: WorkflowRunEvent) => void;
+  onError: (error: Error) => void;
+}
+
+export function subscribeToWorkflowRunEvents(
+  runId: string,
+  options: WorkflowRunEventOptions,
+): { close: () => void } {
+  const afterSequence = options.afterSequence ?? 0;
+  const source = new EventSource(
+    `${apiBaseUrl.replace(/\/$/, "")}/workflow-runs/${encodeURIComponent(
+      runId,
+    )}/events?${new URLSearchParams({ after_sequence: String(afterSequence) })}`,
+  );
+  const handleEvent = (rawEvent: Event) => {
+    try {
+      const messageEvent = rawEvent as MessageEvent<string>;
+      options.onEvent(parseWorkflowRunEvent(JSON.parse(messageEvent.data)));
+    } catch {
+      options.onError(new Error("工作流事件数据格式不合法"));
+    }
+  };
+  for (const eventType of workflowRunEventTypes) {
+    source.addEventListener(eventType, handleEvent);
+  }
+  source.onerror = () => options.onError(new Error("工作流事件流连接中断"));
+  return { close: () => source.close() };
+}
