@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` 知识库、数字员工正式闭环、会话持久化、百炼/Deep Agents 运行时和每条消息自动知识检索已完成；进入会话 API 与 SSE |
+| 产品代码 | `🚧` 知识库、数字员工、连续会话及工作流定义/编译/运行正式链路已完成；进入工作流设计器 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -196,7 +196,7 @@
 | W5-01 | 工作流 Schema 与校验 | 四类节点、边、配置、图不变量和完整非法矩阵 | B1-03,K2-02,A4-02 | ✅ 已完成 |
 | W5-02 | 工作流持久化与 API | 正式仓储、列表/详情/创建/编辑/校验，位置与业务配置分离 | W5-01,C1-01 | ✅ 已完成 |
 | W5-03 | LangGraph 编译器 | 注册节点转换、StateGraph 编译、步数上限和错误映射 | W5-01,K2-03,A4-02 | ✅ 已完成 |
-| W5-04 | 工作流运行与事件 | 手动运行、节点事件、结果、失败和停止摘要 | W5-02,W5-03 | ⬜ 未开始 |
+| W5-04 | 工作流运行与事件 | 手动运行、节点事件、结果、失败和停止摘要 | W5-02,W5-03 | ✅ 已完成 |
 | W5-05 | 工作流设计器 | React Flow 拖拽/连线/配置/保存/服务端校验 | W5-02,F1-03 | ⬜ 未开始 |
 | W5-06 | 手动运行 UI | 输入、运行、节点高亮、失败和最终结果 | W5-04,W5-05 | ⬜ 未开始 |
 | W5-07 | 数字员工触发工具 | 只允许调用员工 allowlist 中工作流，共用 WorkflowService | W5-04,A4-04 | ⬜ 未开始 |
@@ -814,10 +814,26 @@
 - 文档：后端运行说明同步 LangGraph 正式边界、节点注册、错误与运行层职责；唯一进度源记录任务证据和下一步，产品边界未变化，未修改 `docs/product-scope.md`
 - 遗留：无；下一任务 W5-04 直接装配编译器、工作流仓储和正式运行/事件 API，不重复实现节点执行
 
+### W5-04 工作流运行与事件
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增运行领域、事件 Broker、应用服务、MySQL 仓储和随机端口正式 Uvicorn 测试，分别按预期以缺少 `common_agent.domain.workflow_run`、运行服务符号、持久化仓储和运行路由失败；新增 OpenAPI/工作流 SSE 契约测试后，正式快照按预期过期且 `workflow-run-event.schema.json` 不存在。首次对真实 MySQL 执行 `20260720_0005` 时还因 `trigger` 是 MySQL 保留字被 CHECK 约束拒绝，确认无半张表后在 ORM 与不可变迁移中统一引用该列再成功升级。最终全量首轮又发现旧 `test_system_http.py` 仍断言上一迁移头 `0004`，生产入口已实际迁移到 `0005`，修正基线后全绿
+- GREEN：运行领域、事件、服务、编译、正式 MySQL 仓储与随机端口 Demo Uvicorn 相关回归 51 passed，OpenAPI 与双 SSE Schema 契约 9 passed；真实 RAGFlow v0.25.6 + LangGraph + 阿里百炼正式运行入口 1 passed in 8.86s。最终后端全量 371 passed/10 个需显式启用的外部验收 skip，Ruff 139 个文件、严格 Mypy 139 个源/测试文件与 uv lock 通过；前端 10 个文件 36 passed，ESLint、TypeScript、Build、pnpm 冻结锁和所有契约漂移门禁通过
+- 运行模型与持久化：新增不可变 Alembic `20260720_0005` 和 `workflow_runs`，客户端 UUID 是重复提交幂等键，定义外键级联运行摘要；输入/输出上限、触发来源、五态状态机、当前/已完成/失败节点、稳定错误码与 UTC 时间同时受不可变领域模型、SQLAlchemy 映射和 MySQL CHECK 约束。运行仓储加入原 Workflow Unit of Work，不另开旁路事务；节点开始、节点完成和终态都先提交 MySQL 权威摘要再发布事件，编译结果节点顺序或步数与已提交摘要不一致时以 `workflow_run_result_invalid` 关闭失败
+- 正式 API 与事件：公开 `POST /api/v1/workflows/{workflow_id}/runs`、`GET /api/v1/workflow-runs/{run_id}`、`POST /api/v1/workflow-runs/{run_id}/stop` 和 `GET /api/v1/workflow-runs/{run_id}/events`；手动运行返回 202 后在当前 FastAPI lifespan 内异步执行。工作流事件固定 `schema_version=1`，包含运行内单调序号、运行/工作流 ID、可选节点和已提交完整摘要，支持 `after_sequence`/`Last-Event-ID` 进程内回放；历史丢失或进程重启后以 GET MySQL 摘要为权威。通用 SSE resume 解析从会话路由收敛为公共 API 工具，OpenAPI、两类事件 JSON Schema 和前端生成 DTO 仍由单一 Pydantic 来源生成
+- 停止、恢复与资源选择：编译节点执行与 `RuntimeStopToken` 竞速，停止胜出时取消当前节点任务且不伪造 completed；停止请求只设置协作意图，最终 stopped 由同一运行服务持久化。应用优雅关闭先停止活跃工作流再释放会话/共享模型客户端；启动时把遗留 pending/running 收敛为 `failed/workflow_run_interrupted`。当前调用方只有同进程交互式运行，没有跨进程调度、可靠投递或自动重试需求，因此首版不预建消息队列/Worker；该决定不限制后续真实需要时通过同一服务端口加入技术组件
+- 生产同路径边界：专属验收从随机 loopback 端口访问运行中的正式 Uvicorn/FastAPI，先经平台知识库 API 在官方 RAGFlow v0.25.6 创建数据集、上传真实 TXT 并等待解析完成，再经工作流创建与运行 API 进入 `WorkflowService -> SQLAlchemy/MySQL -> WorkflowCompiler -> LangGraph -> RagFlowKnowledgeService -> RAGFlow -> BailianChatModelAdapter -> 阿里百炼`，最终摘要和 SSE 返回唯一动态标记及 start/retrieve/chat/end 四节点。随后经正式 stop 路由终止第二次真实运行，再通过 RAGFlow 官方删除入口让已保存引用失效，第三次正式运行以 retrieve 节点 `knowledge_base_not_found` 失败；重启正式 Uvicorn 后 GET 仍从 MySQL 恢复首个完成摘要。完成证据没有 TestClient、进程内 ASGI、Mock/Fake、直接函数或日志断言；W5-05/W5-06 尚未实现设计器/运行页面，因此本 API 任务不冒充浏览器用户功能验收
+- 失败矩阵：覆盖空白/超长输入、非法 UUID、定义/运行不存在、重复运行 ID、非活跃运行停止、节点异常、模型失败、真实知识库失效、结果节点/步数不匹配、停止与晚到完成竞态、事件状态/节点快照不一致、断点历史淘汰、慢消费者溢出、事务回滚、数据库唯一冲突与非法状态直写、重启恢复、应用关闭协作停止和服务未装配；稳定错误只保存/返回平台码，不泄漏模型响应、知识正文、Key 或本机路径。Demo 随机端口 API 另验证完整事件序列、重复提交、停止和重启恢复，但只作为分层覆盖，不替代上述真实依赖验收
+- 清理：所有 HTTP/服务测试通过正式 lifespan 与 `finally` 关闭 Uvicorn、模型/RAGFlow 客户端并级联删除工作流运行；最终 `common_agent_test` 工作流/节点/边/运行均为 0，RAGFlow `common-agent-w5-04-*` 前缀为 0。18200/18280 无监听，无 Uvicorn、Vite、Playwright 或 `chromium-headless-shell` 残留；本任务没有启动浏览器，前端 dist/tsbuildinfo 与 pytest/Ruff/Python 缓存已精确删除，专属 Docker context 无悬空镜像。健康 MySQL 与 RAGFlow 六服务稳定栈继续复用，未重建、停止或误删基础镜像
+- 文档：后端运行说明、后端/工程架构、生成 OpenAPI/双事件 Schema/TypeScript 契约和唯一进度源已同步；产品功能与边界未变化，未修改 `docs/product-scope.md`
+- 遗留：无；下一任务 W5-05 使用正式工作流 CRUD/校验 API 实现 React Flow 设计器，不把运行状态或 LangGraph 执行搬到前端
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `W5-04`：实现手动运行、节点事件、结果、失败和停止摘要；
-2. 完成 `W5-05`：实现 React Flow 拖拽、连线、配置、保存和服务端校验设计器；
-3. 完成 `W5-06`：实现输入、运行、节点高亮、失败和最终结果手动运行 UI。
+1. 完成 `W5-05`：实现 React Flow 拖拽、连线、配置、保存和服务端校验设计器；
+2. 完成 `W5-06`：实现输入、运行、节点高亮、失败和最终结果手动运行 UI；
+3. 完成 `W5-07`：让数字员工只通过 allowlist 与同一个 `WorkflowService` 触发工作流。

@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from common_agent.api.errors import AppError, ErrorEnvelope
+from common_agent.api.sse import resume_sequence
 from common_agent.conversations.events import (
     ConversationEvent,
     ConversationEventBroker,
@@ -382,7 +383,7 @@ async def stream_events(
         await _application(request).list_messages(conversation_id)
     except ConversationNotFound as error:
         raise _service_error(error) from error
-    resume_after = _resume_sequence(after_sequence, last_event_id)
+    resume_after = resume_sequence(after_sequence, last_event_id)
     broker = _event_broker(request)
     try:
         await broker.validate_resume(conversation_id, after_sequence=resume_after)
@@ -397,18 +398,6 @@ async def stream_events(
             "X-Accel-Buffering": "no",
         },
     )
-
-
-def _resume_sequence(after_sequence: int, last_event_id: str | None) -> int:
-    if after_sequence or last_event_id is None:
-        return after_sequence
-    try:
-        parsed = int(last_event_id)
-    except ValueError:
-        raise AppError("validation_error", "请求参数不合法", 422, False) from None
-    if parsed < 0:
-        raise AppError("validation_error", "请求参数不合法", 422, False)
-    return parsed
 
 
 async def _event_source(

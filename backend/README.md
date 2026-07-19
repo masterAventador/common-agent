@@ -102,7 +102,21 @@ MySQL 同时约束名称、标识、节点类型、JSON 类型、序号、时间
 节点由 `WorkflowNodeRegistry` 注入正式模型与知识服务，AI 节点复用平台知识安全指令，检索节点
 复用统一首版检索参数。编译前再次执行平台图校验；LangGraph 编译失败、未注册节点、执行失败
 和递归步数超限均映射为不泄漏第三方细节的稳定平台错误。当前编译器是内部生产组件，手动运行
-API、节点事件、停止和运行摘要由后续运行层调用，不在编译器内建立第二套传输协议。
+层通过同一个 `WorkflowService` 调用，不在编译器内建立第二套传输协议。
+
+工作流运行摘要由 `20260720_0005` 迁移建立 `workflow_runs` 表，并通过外键归属于正式工作流
+定义。公开入口包括 `POST /api/v1/workflows/{workflow_id}/runs`、
+`GET /api/v1/workflow-runs/{run_id}`、`POST /api/v1/workflow-runs/{run_id}/stop` 和
+`GET /api/v1/workflow-runs/{run_id}/events` SSE。客户端生成的 `run_id` 是幂等边界；运行输入、
+当前/已完成/失败节点、最终输出、稳定错误码和时间均由 MySQL 摘要保存。节点与终态事件严格在
+对应摘要提交后发布，事件携带 `schema_version=1` 和完整已提交快照，可按 `after_sequence` 或
+`Last-Event-ID` 续传当前进程内历史，无法续传时调用方重新读取摘要。
+
+当前 MVP 的交互式工作流由 FastAPI 进程内异步任务托管：停止信号与当前 LangGraph 节点执行
+竞速，停止胜出后取消节点并持久化 stopped；应用优雅关闭先请求活跃运行停止，启动时把遗留
+`pending/running` 收敛为 `failed/workflow_run_interrupted`。现阶段没有需要跨进程可靠投递的
+调用方，因此不预建消息队列或 Worker；一旦并发、重试或调度需求进入路线图，再让同一
+`WorkflowService` 端口接入真实基础设施并按生产同路径重新验收。
 
 `ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。Base URL 只接受百炼官方 `compatible-mode/v1` HTTPS 地址，禁止 URL 凭据、查询参数和非官方主机。
 

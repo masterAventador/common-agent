@@ -262,13 +262,20 @@ WorkflowRun
 ├── workflow_id: UUID
 ├── trigger: manual | employee
 ├── status: pending | running | completed | failed | stopped
-├── current_node_id
 ├── input
 ├── output
+├── current_node_id
+├── completed_node_ids
+├── failed_node_id
+├── error_code
 └── timestamps
 ```
 
 前端位置只用于设计器显示，不影响执行顺序；执行顺序只由通过校验的边决定。
+`workflow_runs` 是平台 MySQL 中的权威运行摘要，客户端生成的 `run_id` 是手动运行幂等边界；
+节点开始、完成以及运行终态每次都先提交摘要，再发布进程内 SSE 事件。首版交互式运行由当前
+FastAPI 进程托管，不为尚不存在的并发或可靠投递需求预建队列与 Worker；应用关闭时协作停止
+活跃运行，启动时把遗留 `pending/running` 收敛为 `failed/workflow_run_interrupted`。
 
 ## 5. AI 会话链路
 
@@ -309,7 +316,7 @@ WorkflowRun
 - 知识检索节点引用的知识库存在；
 - 节点数、边数、输入长度和运行步数有上限。
 
-执行时后端用节点注册表创建函数，构建并编译 `StateGraph`。LangGraph 自己的编译检查是第二道门禁，不能替代平台校验。
+执行时后端用节点注册表创建函数，构建并编译 `StateGraph`。LangGraph 自己的编译检查是第二道门禁，不能替代平台校验。`WorkflowService` 从正式仓储读取已校验定义，持有每次运行的协作式停止信号，并让节点观察器逐步提交 `current_node_id/completed_node_ids`；编译结果的节点顺序或步数与已提交摘要不一致时关闭失败，不接受不确定结果。知识库失效、模型失败与未知执行异常只保存稳定错误码，不保存第三方响应或知识正文。
 
 ## 7. API 基线
 
@@ -341,6 +348,7 @@ PUT    /api/v1/workflows/{workflow_id}
 POST   /api/v1/workflows/validate
 POST   /api/v1/workflows/{workflow_id}/runs
 GET    /api/v1/workflow-runs/{run_id}
+POST   /api/v1/workflow-runs/{run_id}/stop
 GET    /api/v1/workflow-runs/{run_id}/events
 ```
 
@@ -363,6 +371,7 @@ workflow.node.completed
 workflow.node.failed
 workflow.run.completed
 workflow.run.failed
+workflow.run.stopped
 ```
 
 每个会话事件包含固定 `schema_version=1`、`conversation_id`、`message_id`、`turn_id`、会话内
@@ -371,12 +380,23 @@ workflow.run.failed
 `Last-Event-ID` 回放进程内保留历史。无法续传时前端必须重新读取 MySQL 权威消息历史，不能猜测
 丢失内容。前端只消费平台事件，不解析 LangGraph 或 Deep Agents 原始事件。
 
+每个工作流事件包含固定 `schema_version=1`、`run_id`、`workflow_id`、运行内单调
+`sequence`、可选 `node_id`、时间和已提交的完整 `WorkflowRun` 快照。工作流 SSE 同样支持
+`after_sequence` 与 `Last-Event-ID` 回放当前进程保留历史；历史丢失或应用重启后，客户端以
+`GET /api/v1/workflow-runs/{run_id}` 的 MySQL 摘要为权威，不从缺失事件推测终态。
+
 发送接口先在一个 Conversation Unit of Work 中提交用户消息、助手占位和会话更新时间，再
 发布 started 并启动后台生成；后续每个事件也严格“提交后发布”。客户端生成的用户
 `message_id` 是重复提交边界，同一会话有活跃助手消息时拒绝第二次发送。停止只发出停止意图，
 最终 stopped 仍由正式运行时收敛并持久化；重试只允许最后一条 failed/stopped 助手消息，复用
 原消息 ID/序号并清空不完整内容。应用重启时把遗留 pending/streaming 恢复为
 `failed/generation_interrupted`。
+
+手动运行接口先用客户端 `run_id` 提交 `pending`，再提交 `running`、发布 started 并启动后台
+LangGraph；重复 ID 返回冲突且绝不重复执行。节点 started/completed 和最终
+completed/failed/stopped 都严格提交后发布。停止接口只接受活跃运行并设置协作式停止意图，
+当前节点与停止信号竞速，停止胜出后取消节点任务并由运行服务持久化 stopped；应用重启不伪造
+已丢失事件，而是把中断摘要收敛为稳定失败。
 
 ## 9. 错误语义
 
@@ -388,7 +408,10 @@ workflow.run.failed
 - `knowledge_base_not_found`：绑定或节点引用失效；
 - `document_upload_failed`：文件上传失败；
 - `workflow_invalid`：节点图不合法；
-- `workflow_run_failed`：节点执行失败；
+- `workflow_run_conflict`：客户端运行 ID 已经提交；
+- `workflow_run_not_active`：运行已终止或不在当前进程中，不能停止；
+- `workflow_run_interrupted`：应用重启时恢复到的中断运行；
+- 节点执行失败：摘要保存模型、知识库或工作流层稳定错误码；
 - `conversation_busy`：同一会话已有回复在生成；
 - `resource_not_found`：资源不存在；
 - `validation_error`：请求字段错误；

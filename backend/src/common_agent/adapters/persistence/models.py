@@ -37,6 +37,11 @@ from common_agent.domain.workflow import (
     WORKFLOW_NAME_MAX_LENGTH,
     WORKFLOW_NODE_ID_MAX_LENGTH,
 )
+from common_agent.domain.workflow_run import (
+    WORKFLOW_RUN_ERROR_CODE_MAX_LENGTH,
+    WORKFLOW_RUN_INPUT_MAX_LENGTH,
+    WORKFLOW_RUN_OUTPUT_MAX_LENGTH,
+)
 
 
 class PersistenceBase(DeclarativeBase):
@@ -324,3 +329,96 @@ class WorkflowEdgeRow(PersistenceBase):
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
     source: Mapped[str] = mapped_column(String(WORKFLOW_NODE_ID_MAX_LENGTH), nullable=False)
     target: Mapped[str] = mapped_column(String(WORKFLOW_NODE_ID_MAX_LENGTH), nullable=False)
+
+
+class WorkflowRunRow(PersistenceBase):
+    __tablename__ = "workflow_runs"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(id) = 36 AND id = TRIM(id)", name="ck_workflow_runs_id"),
+        CheckConstraint(
+            "`trigger` IN ('manual', 'employee')",
+            name="ck_workflow_runs_trigger",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed', 'stopped')",
+            name="ck_workflow_runs_status",
+        ),
+        CheckConstraint(
+            "current_node_id IS NULL OR "
+            f"(CHAR_LENGTH(current_node_id) BETWEEN 1 AND {WORKFLOW_NODE_ID_MAX_LENGTH} "
+            "AND current_node_id = TRIM(current_node_id))",
+            name="ck_workflow_runs_current_node_id",
+        ),
+        CheckConstraint("JSON_TYPE(completed_node_ids) = 'ARRAY'", name="ck_workflow_runs_nodes"),
+        CheckConstraint(
+            f"CHAR_LENGTH(TRIM(input)) BETWEEN 1 AND {WORKFLOW_RUN_INPUT_MAX_LENGTH}",
+            name="ck_workflow_runs_input",
+        ),
+        CheckConstraint(
+            f"CHAR_LENGTH(output) <= {WORKFLOW_RUN_OUTPUT_MAX_LENGTH} "
+            "AND (output = '' OR CHAR_LENGTH(TRIM(output)) >= 1)",
+            name="ck_workflow_runs_output",
+        ),
+        CheckConstraint(
+            "failed_node_id IS NULL OR "
+            f"(CHAR_LENGTH(failed_node_id) BETWEEN 1 AND {WORKFLOW_NODE_ID_MAX_LENGTH} "
+            "AND failed_node_id = TRIM(failed_node_id))",
+            name="ck_workflow_runs_failed_node_id",
+        ),
+        CheckConstraint(
+            "error_code IS NULL OR "
+            f"(CHAR_LENGTH(error_code) BETWEEN 1 AND {WORKFLOW_RUN_ERROR_CODE_MAX_LENGTH} "
+            "AND error_code = TRIM(error_code))",
+            name="ck_workflow_runs_error_code",
+        ),
+        CheckConstraint(
+            "updated_at >= created_at AND "
+            "(started_at IS NULL OR started_at BETWEEN created_at AND updated_at) AND "
+            "(finished_at IS NULL OR finished_at = updated_at)",
+            name="ck_workflow_runs_timestamps",
+        ),
+        CheckConstraint(
+            "(status = 'pending' AND started_at IS NULL AND finished_at IS NULL "
+            "AND current_node_id IS NULL AND JSON_LENGTH(completed_node_ids) = 0 "
+            "AND output = '' AND failed_node_id IS NULL AND error_code IS NULL) OR "
+            "(status = 'running' AND started_at IS NOT NULL AND finished_at IS NULL "
+            "AND output = '' AND failed_node_id IS NULL AND error_code IS NULL) OR "
+            "(status = 'completed' AND started_at IS NOT NULL AND finished_at IS NOT NULL "
+            "AND CHAR_LENGTH(TRIM(output)) >= 1 AND failed_node_id IS NULL "
+            "AND error_code IS NULL) OR "
+            "(status = 'failed' AND finished_at IS NOT NULL AND output = '' "
+            "AND error_code IS NOT NULL AND "
+            "((failed_node_id IS NULL AND current_node_id IS NULL) "
+            "OR failed_node_id = current_node_id)) OR "
+            "(status = 'stopped' AND finished_at IS NOT NULL AND output = '' "
+            "AND failed_node_id IS NULL AND error_code IS NULL)",
+            name="ck_workflow_runs_state",
+        ),
+        Index("ix_workflow_runs_workflow_created", "workflow_id", "created_at"),
+        Index("ix_workflow_runs_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workflows.id", ondelete="CASCADE", name="fk_workflow_runs_workflow_id"),
+        nullable=False,
+    )
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    input: Mapped[str] = mapped_column(mysql.MEDIUMTEXT(), nullable=False)
+    output: Mapped[str] = mapped_column(mysql.MEDIUMTEXT(), nullable=False)
+    current_node_id: Mapped[str | None] = mapped_column(
+        String(WORKFLOW_NODE_ID_MAX_LENGTH), nullable=True
+    )
+    completed_node_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    failed_node_id: Mapped[str | None] = mapped_column(
+        String(WORKFLOW_NODE_ID_MAX_LENGTH), nullable=True
+    )
+    error_code: Mapped[str | None] = mapped_column(
+        String(WORKFLOW_RUN_ERROR_CODE_MAX_LENGTH), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(mysql.DATETIME(fsp=6), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(mysql.DATETIME(fsp=6), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)

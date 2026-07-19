@@ -1,0 +1,213 @@
+{
+  "$defs": {
+    "WorkflowEventKind": {
+      "enum": [
+        "workflow.run.started",
+        "workflow.node.started",
+        "workflow.node.completed",
+        "workflow.node.failed",
+        "workflow.run.completed",
+        "workflow.run.failed",
+        "workflow.run.stopped"
+      ],
+      "title": "WorkflowEventKind",
+      "type": "string"
+    },
+    "WorkflowRunResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_node_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Completed Node Ids",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "current_node_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Current Node Id"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error Code"
+        },
+        "failed_node_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Failed Node Id"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Finished At"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "input": {
+          "title": "Input",
+          "type": "string"
+        },
+        "output": {
+          "title": "Output",
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Started At"
+        },
+        "status": {
+          "$ref": "#/$defs/WorkflowRunStatus"
+        },
+        "trigger": {
+          "$ref": "#/$defs/WorkflowRunTrigger"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "workflow_id": {
+          "format": "uuid",
+          "title": "Workflow Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "workflow_id",
+        "trigger",
+        "status",
+        "input",
+        "output",
+        "current_node_id",
+        "completed_node_ids",
+        "failed_node_id",
+        "error_code",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "updated_at"
+      ],
+      "title": "WorkflowRunResponse",
+      "type": "object"
+    },
+    "WorkflowRunStatus": {
+      "enum": [
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "stopped"
+      ],
+      "title": "WorkflowRunStatus",
+      "type": "string"
+    },
+    "WorkflowRunTrigger": {
+      "enum": [
+        "manual",
+        "employee"
+      ],
+      "title": "WorkflowRunTrigger",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "node_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Node Id"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "run": {
+      "$ref": "#/$defs/WorkflowRunResponse"
+    },
+    "run_id": {
+      "format": "uuid",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "type": {
+      "$ref": "#/$defs/WorkflowEventKind"
+    },
+    "workflow_id": {
+      "format": "uuid",
+      "title": "Workflow Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sequence",
+    "run_id",
+    "workflow_id",
+    "type",
+    "node_id",
+    "run",
+    "occurred_at"
+  ],
+  "title": "WorkflowRunEventResponse",
+  "type": "object"
+}

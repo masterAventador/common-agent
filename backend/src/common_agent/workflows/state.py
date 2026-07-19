@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TypedDict
+from typing import Protocol, TypedDict
 
-from common_agent.runtimes.base import RuntimeKnowledgeChunk
+from common_agent.runtimes.base import RuntimeKnowledgeChunk, RuntimeStopSignal
 
 
 class WorkflowGraphState(TypedDict, total=False):
@@ -16,6 +16,17 @@ class WorkflowGraphState(TypedDict, total=False):
 
 
 type WorkflowStateUpdate = WorkflowGraphState
+
+
+class WorkflowExecutionObserver(Protocol):
+    async def node_started(self, node_id: str) -> None: ...
+
+    async def node_completed(self, node_id: str) -> None: ...
+
+
+class WorkflowGraphContext(TypedDict):
+    observer: WorkflowExecutionObserver
+    stop: RuntimeStopSignal
 
 
 @dataclass(frozen=True, slots=True)

@@ -17,6 +17,7 @@ from common_agent.adapters.persistence.models import (
     WorkflowEdgeRow,
     WorkflowNodeRow,
     WorkflowRow,
+    WorkflowRunRow,
 )
 from common_agent.adapters.persistence.timestamps import (
     from_database_datetime,
@@ -35,7 +36,18 @@ from common_agent.domain.workflow import (
     WorkflowNodeType,
     WorkflowValidationError,
 )
-from common_agent.ports.workflows import WorkflowAlreadyExists, WorkflowRepository
+from common_agent.domain.workflow_run import (
+    WorkflowRun,
+    WorkflowRunStatus,
+    WorkflowRunTrigger,
+    WorkflowRunValidationError,
+)
+from common_agent.ports.workflows import (
+    WorkflowAlreadyExists,
+    WorkflowRepository,
+    WorkflowRunAlreadyExists,
+    WorkflowRunRepository,
+)
 
 
 class SqlAlchemyWorkflowRepository:
@@ -126,18 +138,78 @@ class SqlAlchemyWorkflowRepository:
         return dict(nodes), dict(edges)
 
 
+class SqlAlchemyWorkflowRunRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, run_id: UUID) -> WorkflowRun | None:
+        row = await self._session.get(WorkflowRunRow, str(run_id))
+        return None if row is None else _run_to_domain(row)
+
+    async def list_active(self) -> tuple[WorkflowRun, ...]:
+        rows = await self._session.scalars(
+            select(WorkflowRunRow)
+            .where(
+                WorkflowRunRow.status.in_(
+                    (WorkflowRunStatus.PENDING.value, WorkflowRunStatus.RUNNING.value)
+                )
+            )
+            .order_by(WorkflowRunRow.created_at, WorkflowRunRow.id)
+        )
+        return tuple(_run_to_domain(row) for row in rows)
+
+    async def add(self, run: WorkflowRun) -> None:
+        self._session.add(WorkflowRunRow(**_run_values(run)))
+        try:
+            await self._session.flush()
+        except IntegrityError:
+            raise WorkflowRunAlreadyExists from None
+
+    async def update(self, run: WorkflowRun) -> bool:
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(
+                update(WorkflowRunRow)
+                .where(WorkflowRunRow.id == str(run.id))
+                .values(
+                    status=run.status.value,
+                    output=run.output,
+                    current_node_id=run.current_node_id,
+                    completed_node_ids=list(run.completed_node_ids),
+                    failed_node_id=run.failed_node_id,
+                    error_code=run.error_code,
+                    started_at=(
+                        None if run.started_at is None else to_database_datetime(run.started_at)
+                    ),
+                    finished_at=(
+                        None if run.finished_at is None else to_database_datetime(run.finished_at)
+                    ),
+                    updated_at=to_database_datetime(run.updated_at),
+                )
+            ),
+        )
+        return bool(result.rowcount)
+
+
 class SqlAlchemyWorkflowUnitOfWork:
     def __init__(self, database: Database) -> None:
         self._database = database
         self._context: AbstractAsyncContextManager[AsyncSession] | None = None
         self._session: AsyncSession | None = None
         self._workflows: WorkflowRepository | None = None
+        self._workflow_runs: WorkflowRunRepository | None = None
 
     @property
     def workflows(self) -> WorkflowRepository:
         if self._workflows is None:
             raise RuntimeError("工作流事务尚未开始")
         return self._workflows
+
+    @property
+    def workflow_runs(self) -> WorkflowRunRepository:
+        if self._workflow_runs is None:
+            raise RuntimeError("工作流事务尚未开始")
+        return self._workflow_runs
 
     async def __aenter__(self) -> SqlAlchemyWorkflowUnitOfWork:
         if self._context is not None:
@@ -147,6 +219,7 @@ class SqlAlchemyWorkflowUnitOfWork:
         self._context = context
         self._session = session
         self._workflows = SqlAlchemyWorkflowRepository(session)
+        self._workflow_runs = SqlAlchemyWorkflowRunRepository(session)
         return self
 
     async def __aexit__(
@@ -159,6 +232,7 @@ class SqlAlchemyWorkflowUnitOfWork:
         self._context = None
         self._session = None
         self._workflows = None
+        self._workflow_runs = None
         if context is None:
             raise RuntimeError("工作流事务尚未开始")
         await context.__aexit__(exc_type, exc_value, traceback)
@@ -185,6 +259,25 @@ def _workflow_values(workflow: WorkflowDefinition) -> dict[str, object]:
         "description": workflow.description,
         "created_at": to_database_datetime(workflow.created_at),
         "updated_at": to_database_datetime(workflow.updated_at),
+    }
+
+
+def _run_values(run: WorkflowRun) -> dict[str, object]:
+    return {
+        "id": str(run.id),
+        "workflow_id": str(run.workflow_id),
+        "trigger": run.trigger.value,
+        "status": run.status.value,
+        "input": run.input,
+        "output": run.output,
+        "current_node_id": run.current_node_id,
+        "completed_node_ids": list(run.completed_node_ids),
+        "failed_node_id": run.failed_node_id,
+        "error_code": run.error_code,
+        "created_at": to_database_datetime(run.created_at),
+        "started_at": None if run.started_at is None else to_database_datetime(run.started_at),
+        "finished_at": (None if run.finished_at is None else to_database_datetime(run.finished_at)),
+        "updated_at": to_database_datetime(run.updated_at),
     }
 
 
@@ -241,6 +334,30 @@ def _to_domain(
         ),
         created_at=from_database_datetime(workflow.created_at),
         updated_at=from_database_datetime(workflow.updated_at),
+    )
+
+
+def _run_to_domain(row: WorkflowRunRow) -> WorkflowRun:
+    try:
+        trigger = WorkflowRunTrigger(row.trigger)
+        status = WorkflowRunStatus(row.status)
+    except ValueError:
+        raise WorkflowRunValidationError("status", "持久化运行枚举无法识别") from None
+    return WorkflowRun(
+        id=UUID(row.id),
+        workflow_id=UUID(row.workflow_id),
+        trigger=trigger,
+        status=status,
+        input=row.input,
+        output=row.output,
+        current_node_id=row.current_node_id,
+        completed_node_ids=tuple(row.completed_node_ids),
+        failed_node_id=row.failed_node_id,
+        error_code=row.error_code,
+        created_at=from_database_datetime(row.created_at),
+        started_at=(None if row.started_at is None else from_database_datetime(row.started_at)),
+        finished_at=(None if row.finished_at is None else from_database_datetime(row.finished_at)),
+        updated_at=from_database_datetime(row.updated_at),
     )
 
 

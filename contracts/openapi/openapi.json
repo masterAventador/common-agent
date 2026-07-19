@@ -781,6 +781,28 @@
         "title": "StartWorkflowNodeBody",
         "type": "object"
       },
+      "StartWorkflowRunBody": {
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "input"
+        ],
+        "title": "StartWorkflowRunBody",
+        "type": "object"
+      },
       "StopAcceptedResponse": {
         "additionalProperties": false,
         "properties": {
@@ -938,6 +960,19 @@
         "title": "WorkflowEdgeBody",
         "type": "object"
       },
+      "WorkflowEventKind": {
+        "enum": [
+          "workflow.run.started",
+          "workflow.node.started",
+          "workflow.node.completed",
+          "workflow.node.failed",
+          "workflow.run.completed",
+          "workflow.run.failed",
+          "workflow.run.stopped"
+        ],
+        "title": "WorkflowEventKind",
+        "type": "string"
+      },
       "WorkflowNodeBody": {
         "discriminator": {
           "mapping": {
@@ -1034,6 +1069,219 @@
         ],
         "title": "WorkflowResponse",
         "type": "object"
+      },
+      "WorkflowRunEventResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "run": {
+            "$ref": "#/components/schemas/WorkflowRunResponse"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/WorkflowEventKind"
+          },
+          "workflow_id": {
+            "format": "uuid",
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sequence",
+          "run_id",
+          "workflow_id",
+          "type",
+          "node_id",
+          "run",
+          "occurred_at"
+        ],
+        "title": "WorkflowRunEventResponse",
+        "type": "object"
+      },
+      "WorkflowRunResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Completed Node Ids",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Node Id"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "failed_node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Node Id"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "input": {
+            "title": "Input",
+            "type": "string"
+          },
+          "output": {
+            "title": "Output",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkflowRunStatus"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/WorkflowRunTrigger"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workflow_id": {
+            "format": "uuid",
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workflow_id",
+          "trigger",
+          "status",
+          "input",
+          "output",
+          "current_node_id",
+          "completed_node_ids",
+          "failed_node_id",
+          "error_code",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "updated_at"
+        ],
+        "title": "WorkflowRunResponse",
+        "type": "object"
+      },
+      "WorkflowRunStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "completed",
+          "failed",
+          "stopped"
+        ],
+        "title": "WorkflowRunStatus",
+        "type": "string"
+      },
+      "WorkflowRunStopAcceptedResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "WorkflowRunStopAcceptedResponse",
+        "type": "object"
+      },
+      "WorkflowRunTrigger": {
+        "enum": [
+          "manual",
+          "employee"
+        ],
+        "title": "WorkflowRunTrigger",
+        "type": "string"
       },
       "WorkflowValidationCode": {
         "enum": [
@@ -2218,6 +2466,242 @@
         ]
       }
     },
+    "/api/v1/workflow-runs/{run_id}": {
+      "get": {
+        "operationId": "get_workflow_run_api_v1_workflow_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Workflow Run",
+        "tags": [
+          "workflow-runs"
+        ]
+      }
+    },
+    "/api/v1/workflow-runs/{run_id}/events": {
+      "get": {
+        "operationId": "stream_workflow_run_events_api_v1_workflow_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_sequence",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Sequence",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRunEventResponse"
+                }
+              }
+            },
+            "description": "工作流运行事件流"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Stream Workflow Run Events",
+        "tags": [
+          "workflow-runs"
+        ]
+      }
+    },
+    "/api/v1/workflow-runs/{run_id}/stop": {
+      "post": {
+        "operationId": "stop_workflow_run_api_v1_workflow_runs__run_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRunStopAcceptedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Stop Workflow Run",
+        "tags": [
+          "workflow-runs"
+        ]
+      }
+    },
     "/api/v1/workflows": {
       "get": {
         "operationId": "list_workflows_api_v1_workflows_get",
@@ -2524,6 +3008,89 @@
         "summary": "Update Workflow",
         "tags": [
           "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/{workflow_id}/runs": {
+      "post": {
+        "operationId": "start_workflow_run_api_v1_workflows__workflow_id__runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartWorkflowRunBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Start Workflow Run",
+        "tags": [
+          "workflow-runs"
         ]
       }
     }

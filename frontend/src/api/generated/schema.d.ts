@@ -180,6 +180,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow-runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Run */
+        get: operations["get_workflow_run_api_v1_workflow_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-runs/{run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream Workflow Run Events */
+        get: operations["stream_workflow_run_events_api_v1_workflow_runs__run_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-runs/{run_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop Workflow Run */
+        post: operations["stop_workflow_run_api_v1_workflow_runs__run_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows": {
         parameters: {
             query?: never;
@@ -227,6 +278,23 @@ export interface paths {
         /** Update Workflow */
         put: operations["update_workflow_api_v1_workflows__workflow_id__put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{workflow_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Workflow Run */
+        post: operations["start_workflow_run_api_v1_workflows__workflow_id__runs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -576,6 +644,16 @@ export interface components {
              */
             type: "start";
         };
+        /** StartWorkflowRunBody */
+        StartWorkflowRunBody: {
+            /** Input */
+            input: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
         /** StopAcceptedResponse */
         StopAcceptedResponse: {
             /**
@@ -637,6 +715,11 @@ export interface components {
             /** Target */
             target: string;
         };
+        /**
+         * WorkflowEventKind
+         * @enum {string}
+         */
+        WorkflowEventKind: "workflow.run.started" | "workflow.node.started" | "workflow.node.completed" | "workflow.node.failed" | "workflow.run.completed" | "workflow.run.failed" | "workflow.run.stopped";
         WorkflowNodeBody: components["schemas"]["StartWorkflowNodeBody"] | components["schemas"]["AiChatWorkflowNodeBody"] | components["schemas"]["KnowledgeRetrievalWorkflowNodeBody"] | components["schemas"]["EndWorkflowNodeBody"];
         /** WorkflowNodePositionBody */
         WorkflowNodePositionBody: {
@@ -671,6 +754,95 @@ export interface components {
              */
             updated_at: string;
         };
+        /** WorkflowRunEventResponse */
+        WorkflowRunEventResponse: {
+            /** Node Id */
+            node_id: string | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            run: components["schemas"]["WorkflowRunResponse"];
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: "1";
+            /** Sequence */
+            sequence: number;
+            type: components["schemas"]["WorkflowEventKind"];
+            /**
+             * Workflow Id
+             * Format: uuid
+             */
+            workflow_id: string;
+        };
+        /** WorkflowRunResponse */
+        WorkflowRunResponse: {
+            /** Completed Node Ids */
+            completed_node_ids: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Node Id */
+            current_node_id: string | null;
+            /** Error Code */
+            error_code: string | null;
+            /** Failed Node Id */
+            failed_node_id: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["WorkflowRunStatus"];
+            trigger: components["schemas"]["WorkflowRunTrigger"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Workflow Id
+             * Format: uuid
+             */
+            workflow_id: string;
+        };
+        /**
+         * WorkflowRunStatus
+         * @enum {string}
+         */
+        WorkflowRunStatus: "pending" | "running" | "completed" | "failed" | "stopped";
+        /** WorkflowRunStopAcceptedResponse */
+        WorkflowRunStopAcceptedResponse: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
+        /**
+         * WorkflowRunTrigger
+         * @enum {string}
+         */
+        WorkflowRunTrigger: "manual" | "employee";
         /**
          * WorkflowValidationCode
          * @enum {string}
@@ -1547,6 +1719,175 @@ export interface operations {
             };
         };
     };
+    get_workflow_run_api_v1_workflow_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    stream_workflow_run_events_api_v1_workflow_runs__run_id__events_get: {
+        parameters: {
+            query?: {
+                after_sequence?: number;
+            };
+            header?: {
+                "Last-Event-ID"?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 工作流运行事件流 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["WorkflowRunEventResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    stop_workflow_run_api_v1_workflow_runs__run_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunStopAcceptedResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_workflows_api_v1_workflows_get: {
         parameters: {
             query?: never;
@@ -1780,6 +2121,68 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    start_workflow_run_api_v1_workflows__workflow_id__runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartWorkflowRunBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -11,7 +11,7 @@
 common-agent/
 ├── frontend/                   # React 聊天工作台
 ├── backend/                    # FastAPI 与 Agent 编排
-├── contracts/                  # OpenAPI、会话事件和公共样例
+├── contracts/                  # OpenAPI、会话/工作流事件和公共样例
 ├── infra/                      # RAGFlow 等外部依赖的本地接入说明
 ├── scripts/                    # 跨前后端生成与验证脚本
 ├── docs/                       # 产品、架构和唯一开发路线图
@@ -37,22 +37,27 @@ backend/
 │       │   │   ├── system.py
 │       │   │   ├── conversations.py
 │       │   │   ├── employees.py
-│       │   │   ├── knowledge_bases.py
-│       │   │   └── workflows.py
+│       │   │   ├── knowledge.py
+│       │   │   ├── workflows.py
+│       │   │   └── workflow_runs.py
 │       │   └── app.py
 │       ├── application/         # 平台用例编排
-│       │   ├── conversation_service.py
 │       │   └── workflow_service.py
+│       ├── conversations/       # 连续会话应用服务与事件
+│       ├── employees/           # 数字员工应用服务与启动 Seed
 │       ├── domain/              # 与第三方无关的会话和能力模型
-│       │   ├── conversations.py
-│       │   ├── employees.py
-│       │   ├── workflows.py
+│       │   ├── conversation.py
+│       │   ├── employee.py
+│       │   ├── knowledge.py
+│       │   ├── workflow.py
+│       │   └── workflow_run.py
 │       │   └── knowledge.py
 │       ├── runtimes/            # EmployeeRuntime 协议
 │       │   └── base.py
 │       ├── workflows/           # 独立工作流校验与 LangGraph 运行时
 │       │   ├── validator.py
 │       │   ├── compiler.py
+│       │   ├── events.py
 │       │   └── nodes/
 │       ├── knowledge/           # KnowledgeService 协议
 │       │   ├── base.py
@@ -129,18 +134,18 @@ frontend/
 
 ```text
 FastAPI / Pydantic
-       ├── OpenAPI ----------> contracts/openapi/
-       └── 会话事件 Schema ---> contracts/events/
-                                  |
-                                  v
-                         frontend/src/api/generated/
+       ├── OpenAPI ------------------> contracts/openapi/
+       └── 会话/工作流事件 Schema ---> contracts/events/
+                                         |
+                                         v
+                                frontend/src/api/generated/
 ```
 
 - Pydantic 是 REST 和流式事件的唯一协议来源；
 - `contracts/` 保存生成快照和公共样例，不手写第二份 DTO；
 - 前端生成代码禁止手工修改；
 - CI/本地门禁检查生成结果无漂移；
-- 会话事件使用显式版本、`conversation_id`、`message_id`、`turn_id` 和单调序号。
+- 会话事件使用显式版本、`conversation_id`、`message_id`、`turn_id` 和单调序号；工作流事件使用显式版本、`run_id`、`workflow_id`、节点快照和运行内单调序号。
 
 ## 5. 基础设施
 

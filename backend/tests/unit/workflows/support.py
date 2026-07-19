@@ -16,8 +16,9 @@ from common_agent.domain.workflow import (
     WorkflowNodePosition,
     WorkflowNodeType,
 )
+from common_agent.domain.workflow_run import WorkflowRun, WorkflowRunStatus
 from common_agent.knowledge.service import KnowledgeBaseService
-from common_agent.ports.workflows import WorkflowAlreadyExists
+from common_agent.ports.workflows import WorkflowAlreadyExists, WorkflowRunAlreadyExists
 from tests.support.knowledge import KnowledgeProbe
 
 
@@ -43,9 +44,40 @@ class WorkflowRepositoryProbe:
         return True
 
 
+class WorkflowRunRepositoryProbe:
+    def __init__(self) -> None:
+        self.values: dict[UUID, WorkflowRun] = {}
+
+    async def get(self, run_id: UUID) -> WorkflowRun | None:
+        return self.values.get(run_id)
+
+    async def list_active(self) -> tuple[WorkflowRun, ...]:
+        return tuple(
+            run
+            for run in self.values.values()
+            if run.status in {WorkflowRunStatus.PENDING, WorkflowRunStatus.RUNNING}
+        )
+
+    async def add(self, run: WorkflowRun) -> None:
+        if run.id in self.values:
+            raise WorkflowRunAlreadyExists
+        self.values[run.id] = run
+
+    async def update(self, run: WorkflowRun) -> bool:
+        if run.id not in self.values:
+            return False
+        self.values[run.id] = run
+        return True
+
+
 class WorkflowUnitOfWorkProbe:
-    def __init__(self, repository: WorkflowRepositoryProbe) -> None:
+    def __init__(
+        self,
+        repository: WorkflowRepositoryProbe,
+        run_repository: WorkflowRunRepositoryProbe,
+    ) -> None:
         self.workflows = repository
+        self.workflow_runs = run_repository
         self.commit_count = 0
 
     async def __aenter__(self) -> WorkflowUnitOfWorkProbe:
@@ -66,10 +98,11 @@ class WorkflowUnitOfWorkProbe:
 class WorkflowUnitOfWorkFactoryProbe:
     def __init__(self) -> None:
         self.repository = WorkflowRepositoryProbe()
+        self.run_repository = WorkflowRunRepositoryProbe()
         self.units: list[WorkflowUnitOfWorkProbe] = []
 
     def __call__(self) -> WorkflowUnitOfWorkProbe:
-        unit = WorkflowUnitOfWorkProbe(self.repository)
+        unit = WorkflowUnitOfWorkProbe(self.repository, self.run_repository)
         self.units.append(unit)
         return unit
 

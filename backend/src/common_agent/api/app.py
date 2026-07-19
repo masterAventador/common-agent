@@ -10,7 +10,11 @@ from starlette.middleware.base import RequestResponseEndpoint
 
 from common_agent import __version__
 from common_agent.adapters.agent.deep_agents import DeepAgentsEmployeeRuntime
-from common_agent.adapters.demo import DemoEmployeeRuntime, DemoKnowledgeService
+from common_agent.adapters.demo import (
+    DemoEmployeeRuntime,
+    DemoKnowledgeService,
+    DemoWorkflowModel,
+)
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.adapters.persistence import Database
@@ -26,6 +30,7 @@ from common_agent.api.routers import (
     knowledge_router,
     system_router,
     workflow_router,
+    workflow_run_router,
 )
 from common_agent.application.workflow_service import WorkflowService
 from common_agent.bootstrap import (
@@ -40,6 +45,10 @@ from common_agent.employees import EmployeeService
 from common_agent.employees.seeds import seed_default_employee
 from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.models.base import TextStreamingModel
+from common_agent.workflows.compiler import WorkflowCompiler
+from common_agent.workflows.events import WorkflowEventBroker
+from common_agent.workflows.nodes.registry import create_workflow_node_registry
 
 
 @asynccontextmanager
@@ -49,11 +58,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     knowledge_adapter: RagFlowKnowledgeService | DemoKnowledgeService | None = None
     runtime: DeepAgentsEmployeeRuntime | DemoEmployeeRuntime | None = None
     conversations: ConversationService | None = None
+    workflows: WorkflowService | None = None
+    demo_workflow_model: DemoWorkflowModel | None = None
     try:
         integration_mode: IntegrationModeSettings = app.state.integration_mode
+        workflow_model: TextStreamingModel
         if integration_mode.mode == "demo":
             knowledge_adapter = DemoKnowledgeService()
             runtime = DemoEmployeeRuntime()
+            demo_workflow_model = DemoWorkflowModel()
+            workflow_model = demo_workflow_model
         else:
             ragflow_settings: RagFlowSettings = app.state.ragflow_settings
             knowledge_adapter = RagFlowKnowledgeService(
@@ -64,12 +78,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             model = BailianChatModelAdapter(ModelSettings.from_env())
             runtime = DeepAgentsEmployeeRuntime(model)
+            workflow_model = model
         knowledge_bases = KnowledgeBaseService(knowledge_adapter)
         app.state.knowledge_bases = knowledge_bases
-        app.state.workflows = WorkflowService(
+        workflow_events = WorkflowEventBroker()
+        workflows = WorkflowService(
             SqlAlchemyWorkflowUnitOfWorkFactory(database),
             knowledge_bases,
+            compiler=WorkflowCompiler(
+                create_workflow_node_registry(workflow_model, knowledge_bases)
+            ),
+            events=workflow_events,
         )
+        app.state.workflow_events = workflow_events
+        app.state.workflows = workflows
         employees = EmployeeService(
             SqlAlchemyEmployeeUnitOfWorkFactory(database),
             knowledge_bases,
@@ -87,6 +109,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.conversation_events = conversation_events
         app.state.conversations = conversations
         await conversations.recover_interrupted()
+        await workflows.recover_interrupted()
         app.state.ready = True
         yield
     finally:
@@ -95,13 +118,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.conversation_events = None
         app.state.employees = None
         app.state.workflows = None
+        app.state.workflow_events = None
         app.state.knowledge_bases = None
+        if workflows is not None:
+            await workflows.aclose()
         if conversations is not None:
             await conversations.aclose()
         elif runtime is not None:
             await runtime.aclose()
         if knowledge_adapter is not None:
             await knowledge_adapter.aclose()
+        if demo_workflow_model is not None:
+            await demo_workflow_model.aclose()
         await database.stop()
 
 
@@ -141,4 +169,5 @@ def create_app() -> FastAPI:
     app.include_router(employee_router)
     app.include_router(conversation_router)
     app.include_router(workflow_router)
+    app.include_router(workflow_run_router)
     return app

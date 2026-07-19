@@ -24,12 +24,14 @@ from common_agent.domain.workflow import (
 )
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.models.base import ModelServiceError
+from common_agent.runtimes.base import RuntimeStopToken
 from common_agent.workflows.compiler import (
     MAX_WORKFLOW_STEPS,
     WorkflowCompiler,
 )
 from common_agent.workflows.errors import (
     WorkflowCompilationFailed,
+    WorkflowExecutionStopped,
     WorkflowNodeNotRegistered,
     WorkflowStepLimitExceeded,
 )
@@ -66,6 +68,29 @@ class WorkflowModelProbe:
 
     async def aclose(self) -> None:
         pass
+
+
+class WorkflowObserverProbe:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str]] = []
+
+    async def node_started(self, node_id: str) -> None:
+        self.events.append(("started", node_id))
+
+    async def node_completed(self, node_id: str) -> None:
+        self.events.append(("completed", node_id))
+
+
+class BlockingWorkflowModelProbe(WorkflowModelProbe):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+
+    async def stream_text(self, messages: Sequence[BaseMessage]) -> AsyncIterator[str]:
+        self.requests.append(tuple(messages))
+        self.started.set()
+        await asyncio.Event().wait()
+        yield "不会到达"
 
 
 def _node(
@@ -233,6 +258,55 @@ def test_actual_langgraph_recursion_limit_maps_to_stable_platform_error() -> Non
 
     assert captured.value.code == "workflow_step_limit_exceeded"
     assert "langgraph" not in str(captured.value).lower()
+
+
+def test_actual_langgraph_reports_platform_node_start_and_completion() -> None:
+    observer = WorkflowObserverProbe()
+    compiled = _compiler(WorkflowModelProbe(), KnowledgeProbe()).compile(
+        _workflow(
+            ("start", WorkflowNodeType.START),
+            ("end", WorkflowNodeType.END),
+        )
+    )
+
+    result = asyncio.run(compiled.invoke("input", observer=observer))
+
+    assert result.output == "input"
+    assert observer.events == [
+        ("started", "start"),
+        ("completed", "start"),
+        ("started", "end"),
+        ("completed", "end"),
+    ]
+
+
+def test_stop_signal_interrupts_active_langgraph_node_without_fake_completion() -> None:
+    async def exercise() -> tuple[list[tuple[str, str]], tuple[str, ...]]:
+        model = BlockingWorkflowModelProbe()
+        observer = WorkflowObserverProbe()
+        stop = RuntimeStopToken()
+        compiled = _compiler(model, KnowledgeProbe()).compile(
+            _workflow(
+                ("start", WorkflowNodeType.START),
+                ("chat", WorkflowNodeType.AI_CHAT),
+                ("end", WorkflowNodeType.END),
+            )
+        )
+        invocation = asyncio.create_task(compiled.invoke("input", observer=observer, stop=stop))
+        await asyncio.wait_for(model.started.wait(), timeout=1)
+        stop.request_stop()
+        with pytest.raises(WorkflowExecutionStopped):
+            await asyncio.wait_for(invocation, timeout=1)
+        return observer.events, tuple(event[1] for event in observer.events)
+
+    events, node_ids = asyncio.run(exercise())
+
+    assert events == [
+        ("started", "start"),
+        ("completed", "start"),
+        ("started", "chat"),
+    ]
+    assert "end" not in node_ids
 
 
 def test_langgraph_compile_failure_is_mapped_without_internal_detail(

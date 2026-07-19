@@ -49,3 +49,11 @@ class WorkflowExecutionFailed(WorkflowExecutionError):
 
     def __init__(self) -> None:
         super().__init__("工作流执行失败")
+
+
+class WorkflowExecutionStopped(WorkflowExecutionError):
+    code = "workflow_execution_stopped"
+    retryable = False
+
+    def __init__(self) -> None:
+        super().__init__("工作流执行已停止")

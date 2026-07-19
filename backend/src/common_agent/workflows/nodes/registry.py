@@ -26,7 +26,7 @@ from common_agent.knowledge.base import (
     KnowledgeServiceUnavailable,
 )
 from common_agent.knowledge.service import KnowledgeBaseService
-from common_agent.models.base import ModelServiceError, ModelServiceUnavailable, StreamingChatModel
+from common_agent.models.base import ModelServiceError, ModelServiceUnavailable, TextStreamingModel
 from common_agent.models.prompts import KNOWLEDGE_SAFETY_INSTRUCTION
 from common_agent.runtimes.base import RuntimeKnowledgeChunk
 from common_agent.workflows.errors import WorkflowNodeConfigurationInvalid
@@ -51,7 +51,7 @@ class WorkflowNodeRegistry:
 
 
 def create_workflow_node_registry(
-    model: StreamingChatModel,
+    model: TextStreamingModel,
     knowledge_bases: KnowledgeBaseService,
 ) -> WorkflowNodeRegistry:
     return WorkflowNodeRegistry(
@@ -74,7 +74,7 @@ def _start_factory(node: WorkflowNode) -> WorkflowNodeRunner:
     return run
 
 
-def _ai_chat_factory(model: StreamingChatModel) -> WorkflowNodeFactory:
+def _ai_chat_factory(model: TextStreamingModel) -> WorkflowNodeFactory:
     def create(node: WorkflowNode) -> WorkflowNodeRunner:
         config = node.config
         if not isinstance(config, AiChatNodeConfig):

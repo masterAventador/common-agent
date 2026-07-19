@@ -5,10 +5,15 @@ from typing import Protocol
 from uuid import UUID
 
 from common_agent.domain.workflow import WorkflowDefinition
+from common_agent.domain.workflow_run import WorkflowRun
 
 
 class WorkflowAlreadyExists(Exception):
     """Raised when a workflow identity is already persisted."""
+
+
+class WorkflowRunAlreadyExists(Exception):
+    """Raised when a workflow run identity is already persisted."""
 
 
 class WorkflowRepository(Protocol):
@@ -21,9 +26,22 @@ class WorkflowRepository(Protocol):
     async def update(self, workflow: WorkflowDefinition) -> bool: ...
 
 
+class WorkflowRunRepository(Protocol):
+    async def get(self, run_id: UUID) -> WorkflowRun | None: ...
+
+    async def list_active(self) -> tuple[WorkflowRun, ...]: ...
+
+    async def add(self, run: WorkflowRun) -> None: ...
+
+    async def update(self, run: WorkflowRun) -> bool: ...
+
+
 class WorkflowUnitOfWork(Protocol):
     @property
     def workflows(self) -> WorkflowRepository: ...
+
+    @property
+    def workflow_runs(self) -> WorkflowRunRepository: ...
 
     async def __aenter__(self) -> WorkflowUnitOfWork: ...
 

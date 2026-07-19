@@ -4,10 +4,14 @@ from typing import Any
 
 from common_agent.api import create_app
 from common_agent.api.routers.conversations import ConversationEventResponse
+from common_agent.api.routers.workflow_runs import WorkflowRunEventResponse
 
 OPENAPI_SNAPSHOT = Path(__file__).resolve().parents[3] / "contracts" / "openapi" / "openapi.json"
 CONVERSATION_EVENT_SNAPSHOT = (
     Path(__file__).resolve().parents[3] / "contracts" / "events" / "conversation-event.schema.json"
+)
+WORKFLOW_RUN_EVENT_SNAPSHOT = (
+    Path(__file__).resolve().parents[3] / "contracts" / "events" / "workflow-run-event.schema.json"
 )
 
 
@@ -166,3 +170,34 @@ def test_committed_conversation_event_schema_matches_sse_payload_model() -> None
     committed = json.loads(CONVERSATION_EVENT_SNAPSHOT.read_text(encoding="utf-8"))
 
     assert committed == ConversationEventResponse.model_json_schema()
+
+
+def test_openapi_exposes_workflow_run_start_summary_stop_and_sse() -> None:
+    schema = _schema()
+    paths = schema["paths"]
+    start = paths["/api/v1/workflows/{workflow_id}/runs"]["post"]
+    summary = paths["/api/v1/workflow-runs/{run_id}"]["get"]
+    stop = paths["/api/v1/workflow-runs/{run_id}/stop"]["post"]
+    events = paths["/api/v1/workflow-runs/{run_id}/events"]["get"]
+
+    assert start["responses"]["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/WorkflowRunResponse"
+    }
+    assert summary["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/WorkflowRunResponse"
+    }
+    assert stop["responses"]["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/WorkflowRunStopAcceptedResponse"
+    }
+    assert events["responses"]["200"]["content"]["text/event-stream"]["schema"] == {
+        "$ref": "#/components/schemas/WorkflowRunEventResponse"
+    }
+    body = schema["components"]["schemas"]["StartWorkflowRunBody"]
+    assert body["properties"]["input"]["maxLength"] == 200000
+    assert set(body["required"]) == {"run_id", "input"}
+
+
+def test_committed_workflow_run_event_schema_matches_sse_payload_model() -> None:
+    committed = json.loads(WORKFLOW_RUN_EVENT_SNAPSHOT.read_text(encoding="utf-8"))
+
+    assert committed == WorkflowRunEventResponse.model_json_schema()

@@ -47,12 +47,9 @@ class ModelStreamInterrupted(ModelServiceError):
 
 
 @runtime_checkable
-class StreamingChatModel(Protocol):
+class TextStreamingModel(Protocol):
     @property
     def provider_name(self) -> str: ...
-
-    @property
-    def chat_model(self) -> BaseChatModel: ...
 
     def stream_text(self, messages: Sequence[BaseMessage]) -> AsyncIterator[str]: ...
 
@@ -64,3 +61,9 @@ class StreamingChatModel(Protocol):
     ) -> ModelServiceError | None: ...
 
     async def aclose(self) -> None: ...
+
+
+@runtime_checkable
+class StreamingChatModel(TextStreamingModel, Protocol):
+    @property
+    def chat_model(self) -> BaseChatModel: ...
