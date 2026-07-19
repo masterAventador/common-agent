@@ -28,6 +28,8 @@ class KnowledgeProbe:
             )
         }
         self.requested_ids: list[str] = []
+        self.retrieval_requests: list[KnowledgeRetrievalRequest] = []
+        self.retrieval_result = KnowledgeRetrievalResult(chunks=())
 
     async def status(self) -> KnowledgeServiceStatus:
         return KnowledgeServiceStatus(
@@ -65,5 +67,5 @@ class KnowledgeProbe:
         raise NotImplementedError
 
     async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult:
-        del request
-        raise NotImplementedError
+        self.retrieval_requests.append(request)
+        return self.retrieval_result

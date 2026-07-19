@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from common_agent.domain.conversation import Citation, Message, MessageRole
 from common_agent.domain.employee import Employee
 from common_agent.domain.knowledge import (
+    DEFAULT_KNOWLEDGE_SIMILARITY_THRESHOLD,
+    DEFAULT_KNOWLEDGE_TOP_K,
     KnowledgeRetrievalRequest,
     KnowledgeRetrievalResult,
     RetrievedChunk,
@@ -17,9 +19,6 @@ from common_agent.knowledge.base import (
 )
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.runtimes.base import RuntimeKnowledgeChunk
-
-CHAT_KNOWLEDGE_TOP_K = 5
-CHAT_KNOWLEDGE_SIMILARITY_THRESHOLD = 0.2
 
 
 class ConversationKnowledgeRequestInvalid(ValueError):
@@ -60,8 +59,8 @@ class ConversationKnowledgeResolver:
                 KnowledgeRetrievalRequest(
                     knowledge_base_id=employee.knowledge_base_id,
                     query=user_message.content,
-                    top_k=CHAT_KNOWLEDGE_TOP_K,
-                    similarity_threshold=CHAT_KNOWLEDGE_SIMILARITY_THRESHOLD,
+                    top_k=DEFAULT_KNOWLEDGE_TOP_K,
+                    similarity_threshold=DEFAULT_KNOWLEDGE_SIMILARITY_THRESHOLD,
                 )
             )
         except KnowledgeServiceError:
@@ -83,7 +82,7 @@ def _map_chunks(
 ) -> tuple[tuple[RuntimeKnowledgeChunk, ...], tuple[Citation, ...]]:
     if not isinstance(result, KnowledgeRetrievalResult):
         raise KnowledgeProviderResponseInvalid()
-    if len(result.chunks) > CHAT_KNOWLEDGE_TOP_K:
+    if len(result.chunks) > DEFAULT_KNOWLEDGE_TOP_K:
         raise KnowledgeProviderResponseInvalid()
     if any(not isinstance(chunk, RetrievedChunk) for chunk in result.chunks):
         raise KnowledgeProviderResponseInvalid()

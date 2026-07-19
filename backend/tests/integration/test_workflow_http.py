@@ -11,7 +11,7 @@ from tests.support.workflows import delete_workflows_from_database_url
 
 
 def _body(*, include_end: bool = True, knowledge_base_id: str | None = None) -> dict[str, object]:
-    processing = (
+    processing: dict[str, object] = (
         {
             "id": "retrieve",
             "type": "knowledge_retrieval",

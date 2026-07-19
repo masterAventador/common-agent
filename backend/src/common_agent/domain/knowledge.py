@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+DEFAULT_KNOWLEDGE_TOP_K = 5
+DEFAULT_KNOWLEDGE_SIMILARITY_THRESHOLD = 0.2
+
 
 class KnowledgeServiceAvailability(StrEnum):
     NOT_CONFIGURED = "not_configured"
@@ -65,8 +68,8 @@ class KnowledgeDocument:
 class KnowledgeRetrievalRequest:
     knowledge_base_id: str
     query: str
-    top_k: int = 5
-    similarity_threshold: float = 0.2
+    top_k: int = DEFAULT_KNOWLEDGE_TOP_K
+    similarity_threshold: float = DEFAULT_KNOWLEDGE_SIMILARITY_THRESHOLD
 
 
 @dataclass(frozen=True, slots=True)

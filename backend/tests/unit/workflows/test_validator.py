@@ -10,6 +10,7 @@ from common_agent.domain.workflow import (
     StartNodeConfig,
     WorkflowEdge,
     WorkflowNode,
+    WorkflowNodeConfig,
     WorkflowNodePosition,
     WorkflowNodeType,
 )
@@ -24,7 +25,7 @@ from common_agent.workflows.validator import (
 
 
 def _node(node_id: str, node_type: WorkflowNodeType) -> WorkflowNode:
-    configs = {
+    configs: dict[WorkflowNodeType, WorkflowNodeConfig] = {
         WorkflowNodeType.START: StartNodeConfig(),
         WorkflowNodeType.AI_CHAT: AiChatNodeConfig(prompt="回答输入"),
         WorkflowNodeType.END: EndNodeConfig(),

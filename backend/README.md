@@ -94,8 +94,15 @@ MySQL 同时约束名称、标识、节点类型、JSON 类型、序号、时间
 `/validate` 在不写入的前提下返回完整图问题列表。请求 Schema 使用 `type` 判别开始、AI 对话、
 知识检索和结束四类节点，拒绝未知节点、错配配置与额外字段。创建和编辑在开启 MySQL 事务前先
 完成图校验；知识检索节点还会经同一个正式 `KnowledgeBaseService` 验证 RAGFlow 数据集存在，
-结构非法、引用失效或 RAGFlow 不可用均关闭失败且不写入。LangGraph 编译和运行不属于本层，
-由后续执行任务直接消费已验证的 `WorkflowDefinition`。
+结构非法、引用失效或 RAGFlow 不可用均关闭失败且不写入。
+
+`WorkflowCompiler` 直接消费已验证的 `WorkflowDefinition`，并使用锁定的 `langgraph==1.2.9`
+公共 `StateGraph` API 编译执行图。平台节点 ID 会映射到独立内部命名空间，虚拟 `START/END`
+只负责接入和退出；`start`、`ai_chat`、`knowledge_retrieval`、`end` 四类平台节点仍逐个真实执行。
+节点由 `WorkflowNodeRegistry` 注入正式模型与知识服务，AI 节点复用平台知识安全指令，检索节点
+复用统一首版检索参数。编译前再次执行平台图校验；LangGraph 编译失败、未注册节点、执行失败
+和递归步数超限均映射为不泄漏第三方细节的稳定平台错误。当前编译器是内部生产组件，手动运行
+API、节点事件、停止和运行摘要由后续运行层调用，不在编译器内建立第二套传输协议。
 
 `ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。Base URL 只接受百炼官方 `compatible-mode/v1` HTTPS 地址，禁止 URL 凭据、查询参数和非官方主机。
 
