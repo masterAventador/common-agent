@@ -54,6 +54,7 @@
 | 平台持久化 | `✅` SQLite 正式适配器、Alembic、async session、空库迁移、回滚和进程重启恢复已跑通 |
 | 百炼配置 | `✅` 已从 agent-platform 的 Git 跟踪配置迁移 Demo 模型/Base URL/Key，Key 仅存在于获准的私有配置文件 |
 | 前端入口 | `✅` React/Vite/Ant Design 四入口壳层已通过组件、构建和真实浏览器导航验收 |
+| 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 产品代码 | `⬜` 尚未开始；等待后端、前端基础工具链完成后按纵向功能任务进入 |
 | 本地服务 | `✅` 临时前端初始化预览已停止；后端/RAGFlow 未启动 |
 
@@ -130,8 +131,8 @@
 | B1-03 | 平台持久化基线 | 持久化适配边界、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | ✅ 已完成 |
 | B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | ✅ 已完成 |
 | F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | ✅ 已完成 |
-| C1-01 | OpenAPI 契约闭环 | 后端导出、前端生成、漂移检查和公共错误 DTO | B1-02,F1-02 | 🚧 实现中 |
-| F1-03 | 前端 API 基线 | Axios、Query Client、Zod 和后端真实状态提示 | C1-01 | ⬜ 未开始 |
+| C1-01 | OpenAPI 契约闭环 | 后端导出、前端生成、漂移检查和公共错误 DTO | B1-02,F1-02 | ✅ 已完成 |
+| F1-03 | 前端 API 基线 | Axios、Query Client、Zod 和后端真实状态提示 | C1-01 | 🚧 实现中 |
 
 ## 8. Wave 2：RAGFlow 知识库闭环
 
@@ -418,10 +419,23 @@
 - 文档：`frontend/README.md`、前端 package/lock/config、正式入口/样式/测试、`docs/development-roadmap.md`
 - 遗留：Ant Design 当前单入口构建包约 564kB 并产生 chunk 提示；等真实 Feature 页面进入后按路由拆分，当前不调高阈值掩盖提示
 
+### C1-01 OpenAPI 契约闭环
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：后端契约测试因 OpenAPI 缺少 `ErrorEnvelope` 和快照文件不存在出现 2 个失败；前端 `pnpm typecheck` 因 `./contracts` 不存在失败
+- GREEN：后端 pytest 26 passed，前端 Vitest 6 passed；Ruff、格式、Mypy、ESLint、typecheck、build、peer 和锁文件门禁通过；`check-contracts.sh` 隔离重建并逐字节比较通过
+- 真实边界：正式 Uvicorn 使用隔离 SQLite 启动后，从真实 `http://127.0.0.1:18200/openapi.json` 获取 Schema，经 jq 排序与已提交 OpenAPI 完全一致；同一快照由 openapi-typescript 7.13.0 生成前端 `schema.d.ts`
+- 失败矩阵：覆盖错误 DTO 缺失、快照缺失、前端类型入口缺失、生成漂移和工具 peer 冲突；openapi-typescript 要求 TypeScript 5，与 typescript-eslint 共同约束后锁定 TypeScript 5.9.3并复验无 peer 问题
+- 清理：漂移脚本 trap 删除唯一临时目录；停止正式 Uvicorn 并确认 18200 无监听；删除隔离数据库、前端 dist 和 tsbuildinfo
+- 文档：契约生成/检查脚本、`contracts/openapi/openapi.json`、前端生成类型与公共别名、contracts/scripts README、`docs/development-roadmap.md`
+- 遗留：当前 Schema 只包含 Health 和公共错误；以后每个 API 任务必须同任务重新生成并通过漂移检查
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `C1-01`：建立 OpenAPI 生成、前端 DTO 和漂移检查；
-2. 完成 `F1-03`：建立统一前端 API、运行时校验和后端状态提示；
-3. 进入 Wave 2 的 RAGFlow 知识库纵向闭环。
+1. 完成 `F1-03`：建立统一前端 API、运行时校验和后端状态提示；
+2. 完成 `K2-01`：锁定 RAGFlow 版本、端口、Volume 和 32GB 级资源策略；
+3. 建立 KnowledgeService 契约并进入真实 RAGFlow 适配。

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict
 
 from common_agent import __version__
-from common_agent.api.errors import AppError
+from common_agent.api.errors import AppError, ErrorEnvelope
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
 
@@ -17,7 +17,16 @@ class HealthResponse(BaseModel):
     version: str
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    responses={
+        503: {
+            "model": ErrorEnvelope,
+            "description": "API 或正式依赖尚未就绪",
+        }
+    },
+)
 async def health(request: Request) -> HealthResponse:
     if not getattr(request.app.state, "ready", False):
         raise AppError(
