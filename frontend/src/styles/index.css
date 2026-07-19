@@ -203,3 +203,79 @@ select {
 .knowledge-inline-alert {
   margin-bottom: 16px;
 }
+
+.employees-page {
+  min-height: calc(100vh - 128px);
+  padding: 28px;
+  border: 1px solid #e6eaf2;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 38px rgba(21, 35, 71, 0.05);
+}
+
+.employees-page-heading {
+  margin-bottom: 24px;
+}
+
+.employees-page-heading .ant-typography {
+  margin-top: 0;
+}
+
+.employees-title-icon {
+  color: #315efb;
+  font-size: 24px;
+}
+
+.employees-inline-alert {
+  margin-bottom: 20px;
+}
+
+.employees-empty-card {
+  padding: 48px 0;
+  border-style: dashed;
+}
+
+.employees-empty-card .ant-empty-footer {
+  margin-top: 8px;
+}
+
+.employee-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.employee-card {
+  min-height: 250px;
+}
+
+.employee-card .ant-card-body {
+  display: flex;
+  min-height: 190px;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.employee-description {
+  min-height: 44px;
+}
+
+.employee-prompt-preview {
+  display: grid;
+  min-height: 82px;
+  padding: 12px;
+  gap: 5px;
+  border-radius: 10px;
+  background: #f7f9fc;
+}
+
+.employee-prompt-preview .ant-typography:last-child {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.employee-card .ant-flex:last-child {
+  margin-top: auto;
+}

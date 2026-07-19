@@ -30,6 +30,11 @@ API 默认访问 `http://127.0.0.1:18200/api/v1`，可通过 `VITE_API_BASE_URL`
 2 秒刷新后端快照；后端不可用、列表/文档加载失败和上传失败均提供明确错误或重试入口。前端
 不保存 RAGFlow Token，也不直接请求 RAGFlow。
 
+`/employees` 是数字员工正式页面：通过平台 API 查看、新建和编辑数字员工，可选绑定一个
+RAGFlow 知识库，并从卡片进入带 `employee_id` 的聊天入口。员工列表与知识库列表独立加载；
+知识库暂不可用时仍能查看和编辑员工，已有失效绑定会明确标记，两个失败边界分别提供重试。
+页面不直接请求 RAGFlow，也不包含行业或业务自动化字段。
+
 `pnpm test:e2e` 是知识库浏览器闭环的唯一正式入口。它复用健康的项目 MySQL/RAGFlow 稳定
 栈，临时启动正式 FastAPI/Vite 和 Playwright Chromium，验证创建、上传、完成、刷新恢复与
 真实 RAGFlow 取消解析后的失败展示；入口会按锁定的 Playwright 版本检查 Chromium，已安装

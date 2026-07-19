@@ -20,6 +20,12 @@ vi.mock("../api/knowledge", () => ({
   uploadKnowledgeDocument: vi.fn(),
 }));
 
+vi.mock("../api/employees", () => ({
+  fetchEmployees: vi.fn().mockResolvedValue([]),
+  createEmployee: vi.fn(),
+  updateEmployee: vi.fn(),
+}));
+
 const routes = [
   ["/chat", "AI 会话"],
   ["/employees", "数字员工"],

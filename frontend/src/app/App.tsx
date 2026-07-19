@@ -15,6 +15,10 @@ const KnowledgeBasesPage = lazy(async () => {
   const module = await import("../features/knowledge-bases/KnowledgeBasesPage");
   return { default: module.KnowledgeBasesPage };
 });
+const EmployeesPage = lazy(async () => {
+  const module = await import("../features/employees/EmployeesPage");
+  return { default: module.EmployeesPage };
+});
 
 const entries = [
   {
@@ -99,7 +103,10 @@ export function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/chat" replace />} />
               {entries
-                .filter((entry) => entry.path !== "/knowledge-bases")
+                .filter(
+                  (entry) =>
+                    entry.path !== "/knowledge-bases" && entry.path !== "/employees",
+                )
                 .map((entry) => (
                   <Route
                     key={entry.path}
@@ -108,6 +115,7 @@ export function App() {
                   />
                 ))}
               <Route path="/knowledge-bases" element={<KnowledgeBasesPage />} />
+              <Route path="/employees" element={<EmployeesPage />} />
               <Route path="*" element={<Navigate to="/chat" replace />} />
             </Routes>
           </Suspense>

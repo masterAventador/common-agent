@@ -1,0 +1,278 @@
+import {
+  EditOutlined,
+  MessageOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  TeamOutlined,
+} from "@ant-design/icons";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Alert,
+  Button,
+  Card,
+  Empty,
+  Flex,
+  Form,
+  Input,
+  Modal,
+  Select,
+  Skeleton,
+  Space,
+  Tag,
+  Typography,
+} from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+import {
+  createEmployee,
+  fetchEmployees,
+  updateEmployee,
+  type Employee,
+  type EmployeeConfigurationInput,
+} from "../../api/employees";
+import { getErrorMessage } from "../../api/errors";
+import { fetchKnowledgeBases } from "../../api/knowledge";
+
+const { Text, Title } = Typography;
+
+type EditorState = { mode: "create" } | { mode: "edit"; employee: Employee };
+
+function employeeFormValues(employee: Employee): EmployeeConfigurationInput {
+  return {
+    name: employee.name,
+    description: employee.description,
+    system_prompt: employee.system_prompt,
+    knowledge_base_id: employee.knowledge_base_id,
+  };
+}
+
+export function EmployeesPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [editor, setEditor] = useState<EditorState>();
+  const [form] = Form.useForm<EmployeeConfigurationInput>();
+
+  const employees = useQuery({
+    queryKey: ["employees"],
+    queryFn: fetchEmployees,
+  });
+  const knowledgeBases = useQuery({
+    queryKey: ["knowledge-bases"],
+    queryFn: fetchKnowledgeBases,
+  });
+
+  const knowledgeBaseNames = useMemo(
+    () => new Map(knowledgeBases.data?.map((item) => [item.id, item.name]) ?? []),
+    [knowledgeBases.data],
+  );
+
+  useEffect(() => {
+    if (!editor) return;
+    form.setFieldsValue(
+      editor.mode === "edit"
+        ? employeeFormValues(editor.employee)
+        : { name: "", description: "", system_prompt: "", knowledge_base_id: null },
+    );
+  }, [editor, form]);
+
+  const saveMutation = useMutation({
+    mutationFn: (values: EmployeeConfigurationInput) => {
+      const normalizedValues = {
+        ...values,
+        knowledge_base_id: values.knowledge_base_id ?? null,
+      };
+      return editor?.mode === "edit"
+        ? updateEmployee(editor.employee.id, normalizedValues)
+        : createEmployee(normalizedValues);
+    },
+    onSuccess: async () => {
+      setEditor(undefined);
+      form.resetFields();
+      await queryClient.invalidateQueries({ queryKey: ["employees"] });
+    },
+  });
+
+  const closeEditor = () => {
+    setEditor(undefined);
+    saveMutation.reset();
+    form.resetFields();
+  };
+
+  const knowledgeBaseLabel = (employee: Employee) => {
+    if (!employee.knowledge_base_id) return <Tag>未绑定知识库</Tag>;
+    const name = knowledgeBaseNames.get(employee.knowledge_base_id);
+    if (name) return <Tag color="blue">{name}</Tag>;
+    if (knowledgeBases.isError) return <Tag color="warning">已绑定知识库</Tag>;
+    if (knowledgeBases.isPending) return <Tag>正在读取知识库</Tag>;
+    return <Tag color="error">知识库已失效</Tag>;
+  };
+
+  if (employees.isPending) {
+    return (
+      <section className="employees-page" aria-label="数字员工加载中">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </section>
+    );
+  }
+
+  if (employees.isError) {
+    return (
+      <section className="employees-page">
+        <Alert
+          type="error"
+          showIcon
+          title="数字员工加载失败"
+          description={getErrorMessage(employees.error)}
+          action={
+            <Button
+              aria-label="重试加载"
+              icon={<ReloadOutlined />}
+              onClick={() => void employees.refetch()}
+            >
+              重试加载
+            </Button>
+          }
+        />
+      </section>
+    );
+  }
+
+  const items = employees.data;
+
+  return (
+    <section className="employees-page">
+      <Flex justify="space-between" align="flex-start" gap={24} className="employees-page-heading">
+        <div>
+          <Space align="center">
+            <TeamOutlined className="employees-title-icon" />
+            <Title level={2}>数字员工</Title>
+          </Space>
+          <Typography.Paragraph type="secondary">
+            配置通用会话角色和系统指令，可按需绑定一个知识库。
+          </Typography.Paragraph>
+        </div>
+        <Button
+          type="primary"
+          aria-label="创建数字员工"
+          icon={<PlusOutlined />}
+          onClick={() => setEditor({ mode: "create" })}
+        >
+          创建数字员工
+        </Button>
+      </Flex>
+
+      {knowledgeBases.isError && (
+        <Alert
+          type="warning"
+          showIcon
+          title="知识库选项加载失败"
+          description={getErrorMessage(knowledgeBases.error)}
+          action={<Button onClick={() => void knowledgeBases.refetch()}>重试知识库</Button>}
+          className="employees-inline-alert"
+        />
+      )}
+
+      {items.length === 0 ? (
+        <Card className="employees-empty-card">
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有数字员工">
+            <Text type="secondary">创建后即可配置知识库并开始会话。</Text>
+          </Empty>
+        </Card>
+      ) : (
+        <div className="employee-card-grid">
+          {items.map((employee) => (
+            <Card
+              key={employee.id}
+              className="employee-card"
+              title={employee.name}
+              extra={knowledgeBaseLabel(employee)}
+            >
+              <Text type="secondary" className="employee-description">
+                {employee.description || "暂无说明"}
+              </Text>
+              <div className="employee-prompt-preview">
+                <Text type="secondary">系统指令</Text>
+                <Text>{employee.system_prompt}</Text>
+              </div>
+              <Flex gap={8} justify="flex-end" wrap>
+                <Button
+                  aria-label={`编辑 ${employee.name}`}
+                  icon={<EditOutlined />}
+                  onClick={() => setEditor({ mode: "edit", employee })}
+                >
+                  编辑
+                </Button>
+                <Button
+                  type="primary"
+                  aria-label={`与${employee.name}开始对话`}
+                  icon={<MessageOutlined />}
+                  onClick={() =>
+                    navigate(`/chat?${new URLSearchParams({ employee_id: employee.id })}`)
+                  }
+                >
+                  开始对话
+                </Button>
+              </Flex>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Modal
+        title={editor?.mode === "edit" ? "编辑数字员工" : "创建数字员工"}
+        open={Boolean(editor)}
+        styles={{ body: { maxHeight: "calc(100vh - 280px)", overflowY: "auto" } }}
+        okText={editor?.mode === "edit" ? "保存修改" : "确认创建"}
+        cancelText="取消"
+        confirmLoading={saveMutation.isPending}
+        onOk={() => form.submit()}
+        onCancel={closeEditor}
+      >
+        <Form<EmployeeConfigurationInput>
+          form={form}
+          layout="vertical"
+          requiredMark={false}
+          onFinish={(values) => saveMutation.mutate(values)}
+        >
+          {saveMutation.isError && (
+            <Alert
+              type="error"
+              showIcon
+              title="保存失败"
+              description={getErrorMessage(saveMutation.error)}
+              className="employees-inline-alert"
+            />
+          )}
+          <Form.Item
+            label="名称"
+            name="name"
+            rules={[{ required: true, whitespace: true, message: "请输入数字员工名称" }]}
+          >
+            <Input placeholder="例如：知识助理" autoFocus />
+          </Form.Item>
+          <Form.Item label="说明" name="description">
+            <Input.TextArea placeholder="说明这个数字员工适合处理什么问题" rows={3} />
+          </Form.Item>
+          <Form.Item
+            label="系统指令"
+            name="system_prompt"
+            rules={[{ required: true, whitespace: true, message: "请输入系统指令" }]}
+          >
+            <Input.TextArea placeholder="定义回答风格、边界和信息使用原则" rows={6} />
+          </Form.Item>
+          <Form.Item label="知识库" name="knowledge_base_id">
+            <Select
+              allowClear
+              disabled={knowledgeBases.isError}
+              loading={knowledgeBases.isPending}
+              placeholder={knowledgeBases.isError ? "知识库暂时不可用" : "不绑定知识库"}
+              options={knowledgeBases.data?.map((item) => ({ value: item.id, label: item.name }))}
+            />
+          </Form.Item>
+          <Text type="secondary">工作流调用权限将在工作流能力接入后配置。</Text>
+        </Form>
+      </Modal>
+    </section>
+  );
+}

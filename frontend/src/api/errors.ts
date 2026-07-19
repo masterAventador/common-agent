@@ -31,6 +31,10 @@ export class ApiClientError extends Error {
   }
 }
 
+export function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "请求失败，请稍后重试";
+}
+
 export function toApiClientError(error: unknown): ApiClientError {
   if (axios.isAxiosError(error)) {
     const parsed = apiErrorSchema.safeParse(error.response?.data);

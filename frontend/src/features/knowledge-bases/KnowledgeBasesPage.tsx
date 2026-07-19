@@ -32,6 +32,7 @@ import {
   type CreateKnowledgeBaseInput,
   type KnowledgeDocument,
 } from "../../api/knowledge";
+import { getErrorMessage } from "../../api/errors";
 
 const { Text, Title } = Typography;
 const ACCEPTED_DOCUMENTS =
@@ -43,10 +44,6 @@ const parsingStatus = {
   completed: { color: "success", label: "已完成" },
   failed: { color: "error", label: "解析失败" },
 } as const;
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "请求失败，请稍后重试";
-}
 
 function formatBytes(value: number): string {
   if (value < 1024) return `${value} B`;
@@ -160,7 +157,7 @@ export function KnowledgeBasesPage() {
           type="error"
           showIcon
           title="知识库加载失败"
-          description={errorMessage(knowledgeBases.error)}
+          description={getErrorMessage(knowledgeBases.error)}
           action={
             <Button
               aria-label="重试加载"
@@ -270,7 +267,7 @@ export function KnowledgeBasesPage() {
                 showIcon
                 closable
                 title="文档上传失败"
-                description={errorMessage(uploadMutation.error)}
+                description={getErrorMessage(uploadMutation.error)}
                 className="knowledge-inline-alert"
                 onClose={() => uploadMutation.reset()}
               />
@@ -281,7 +278,7 @@ export function KnowledgeBasesPage() {
                 type="error"
                 showIcon
                 title="文档状态加载失败"
-                description={errorMessage(documents.error)}
+                description={getErrorMessage(documents.error)}
                 action={<Button onClick={() => void documents.refetch()}>重试</Button>}
               />
             ) : (
@@ -322,7 +319,7 @@ export function KnowledgeBasesPage() {
               type="error"
               showIcon
               title="创建失败"
-              description={errorMessage(createMutation.error)}
+              description={getErrorMessage(createMutation.error)}
               className="knowledge-inline-alert"
             />
           )}
