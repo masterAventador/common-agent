@@ -52,6 +52,7 @@
 | 工程骨架 | `✅` frontend/backend/contracts/infra/scripts 已按目标边界建立，未混入临时 Sites 或空业务模块 |
 | 后端入口 | `✅` FastAPI app factory、lifespan、请求 ID、统一错误和真实 loopback Health 已跑通 |
 | 平台持久化 | `✅` SQLite 正式适配器、Alembic、async session、空库迁移、回滚和进程重启恢复已跑通 |
+| 百炼配置 | `✅` 已从 agent-platform 的 Git 跟踪配置迁移 Demo 模型/Base URL/Key，Key 仅存在于获准的私有配置文件 |
 | 产品代码 | `⬜` 尚未开始；等待后端、前端基础工具链完成后按纵向功能任务进入 |
 | 本地服务 | `✅` 临时前端初始化预览已停止；后端/RAGFlow 未启动 |
 
@@ -126,8 +127,8 @@
 | B1-01 | 初始化 Backend 包 | Python 3.12、uv、src layout、pytest/Ruff/Mypy 和冻结锁文件 | F1-01 | ✅ 已完成 |
 | B1-02 | FastAPI 与错误边界 | app factory、lifespan、统一错误和真实 loopback Health | B1-01 | ✅ 已完成 |
 | B1-03 | 平台持久化基线 | 持久化适配边界、初始 SQLite 正式适配器、迁移、async session、空库升级和重启恢复；为 PostgreSQL 适配保留稳定边界 | B1-02 | ✅ 已完成 |
-| B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | 🚧 实现中 |
-| F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | ⬜ 未开始 |
+| B1-04 | 百炼 Demo 配置 | 从 agent-platform 安全迁移模型/base URL/Key；Key 不进入输出和测试快照 | B1-01 | ✅ 已完成 |
+| F1-02 | 初始化 Frontend | React/TypeScript/Vite/Ant Design/pnpm、四入口空壳和专属端口 | F1-01 | 🚧 实现中 |
 | C1-01 | OpenAPI 契约闭环 | 后端导出、前端生成、漂移检查和公共错误 DTO | B1-02,F1-02 | ⬜ 未开始 |
 | F1-03 | 前端 API 基线 | Axios、Query Client、Zod 和后端真实状态提示 | C1-01 | ⬜ 未开始 |
 
@@ -390,10 +391,23 @@
 - 文档：`.env.example`、`backend/README.md`、Alembic 配置/迁移、正式 Database 适配器、`docs/development-roadmap.md`
 - 遗留：领域专属 Repository 随 Employee/Conversation/Workflow 任务定义，避免当前提前创建无调用方的通用仓储；PostgreSQL 等其他正式适配器按真实需求单独 TDD 和验收
 
+### B1-04 百炼 Demo 配置
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：配置单元/集成测试先因 `ModelSettings` 不存在产生两个收集错误，证明测试能捕获缺少正式配置模型与 Demo 文件加载入口
+- GREEN：百炼配置定向测试 6 passed；全量后端 pytest 24 passed；Ruff、格式、Mypy 和锁文件检查全部通过
+- 真实边界：来源 `agent-platform/infra/compose/.env.litellm` 已由 `git ls-files` 证明受版本控制；迁移时把 LiteLLM 的 `dashscope/qwen-plus` 转为百炼直连模型名 `qwen-plus`，保留真实 HTTPS Base URL，Demo Key 只写入 PRIVATE 仓库获准的 `backend/.env.demo`
+- 失败矩阵：覆盖三项配置分别缺失、非 HTTPS Base URL、`SecretStr` repr/JSON 脱敏、真实 Demo 文件加载；扫描确认三个字段各一条且 Key 未出现在 `.env.demo` 之外的项目文件
+- 清理：未启动模型请求、端口、进程或容器；未创建临时 Key 文件或把 Key 打印到命令输出、测试快照、日志和路线图
+- 文档：`.env.example`、`backend/.env.demo`、`backend/README.md`、ModelSettings 与配置测试、`docs/development-roadmap.md`
+- 遗留：本任务只证明安全配置边界；`ChatOpenAI` 真实百炼请求、超时/重试和回复脱敏由 A4-02 验收
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `B1-04`：安全迁移阿里百炼 Demo 配置；
-2. 完成 `F1-02`：初始化 React/TypeScript/Vite/Ant Design 前端；
-3. 建立 OpenAPI 生成和统一前端 API 基线。
+1. 完成 `F1-02`：初始化 React/TypeScript/Vite/Ant Design 前端；
+2. 完成 `C1-01`：建立 OpenAPI 生成和漂移检查；
+3. 完成 `F1-03`：建立统一前端 API、运行时校验和后端状态提示。

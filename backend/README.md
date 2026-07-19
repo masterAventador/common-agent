@@ -35,3 +35,5 @@ uv run python -m common_agent
 COMMON_AGENT_DATABASE_URL=sqlite+aiosqlite:////absolute/path/to/database.db \
   uv run alembic upgrade head
 ```
+
+`ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。

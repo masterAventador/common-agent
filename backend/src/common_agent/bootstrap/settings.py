@@ -4,6 +4,11 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlparse
+
+from dotenv import dotenv_values
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class ConfigurationError(ValueError):
@@ -61,9 +66,60 @@ class DatabaseSettings:
         return cls(url=f"sqlite+aiosqlite:///{database_path}")
 
 
+class ModelSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    provider: Literal["bailian"] = "bailian"
+    api_key: SecretStr
+    base_url: str
+    model: str
+
+    @classmethod
+    def from_env(cls) -> ModelSettings:
+        values = _demo_values(None)
+        for key in ("BAILIAN_API_KEY", "BAILIAN_BASE_URL", "BAILIAN_MODEL"):
+            configured = os.environ.get(key)
+            if configured:
+                values[key] = configured
+        return cls.from_mapping(values)
+
+    @classmethod
+    def from_demo_file(cls, path: Path | None = None) -> ModelSettings:
+        return cls.from_mapping(_demo_values(path))
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> ModelSettings:
+        api_key = _required(values, "BAILIAN_API_KEY")
+        base_url = _required(values, "BAILIAN_BASE_URL")
+        model = _required(values, "BAILIAN_MODEL")
+
+        parsed = urlparse(base_url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ConfigurationError("BAILIAN_BASE_URL must be a valid HTTPS URL")
+
+        return cls(
+            api_key=SecretStr(api_key),
+            base_url=base_url.rstrip("/"),
+            model=model,
+        )
+
+
 def _find_project_root() -> Path:
     candidates = [Path.cwd(), *Path.cwd().parents, *Path(__file__).resolve().parents]
     for candidate in candidates:
         if (candidate / "CLAUDE.md").is_file():
             return candidate
     return Path.cwd()
+
+
+def _demo_values(path: Path | None) -> dict[str, str]:
+    demo_path = path or Path(__file__).resolve().parents[3] / ".env.demo"
+    parsed = dotenv_values(demo_path, interpolate=False)
+    return {key: value for key, value in parsed.items() if value is not None}
+
+
+def _required(values: Mapping[str, str], key: str) -> str:
+    value = values.get(key, "").strip()
+    if not value:
+        raise ConfigurationError(f"{key} is required")
+    return value
