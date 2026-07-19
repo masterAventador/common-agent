@@ -64,6 +64,10 @@ class RuntimeCapabilityUnavailable(Exception):
         super().__init__("数字员工请求了未注册或未授权的平台能力")
 
 
+class DeepAgentToolResolver(Protocol):
+    async def resolve(self, capability_ids: Sequence[UUID]) -> tuple[BaseTool, ...]: ...
+
+
 class DeepAgentToolRegistry:
     def __init__(self, tools: Mapping[UUID, BaseTool] | None = None) -> None:
         registered = dict(tools or {})
@@ -80,7 +84,7 @@ class DeepAgentToolRegistry:
             names.add(registered_tool.name)
         self._tools = registered
 
-    def resolve(self, capability_ids: Sequence[UUID]) -> tuple[BaseTool, ...]:
+    async def resolve(self, capability_ids: Sequence[UUID]) -> tuple[BaseTool, ...]:
         resolved: list[BaseTool] = []
         for capability_id in capability_ids:
             registered_tool = self._tools.get(capability_id)
@@ -108,7 +112,7 @@ class DeepAgentsEmployeeRuntime:
         self,
         model: StreamingChatModel,
         *,
-        tools: DeepAgentToolRegistry | None = None,
+        tools: DeepAgentToolResolver | None = None,
         harness_profile_key: str = "openai",
         agent_builder: AgentBuilder = create_deep_agent,
     ) -> None:
@@ -143,7 +147,7 @@ class DeepAgentsEmployeeRuntime:
             return
 
         try:
-            allowed_tools = self._tools.resolve(request.allowed_workflow_ids)
+            allowed_tools = await self._tools.resolve(request.allowed_workflow_ids)
             graph = cast(
                 "_AgentGraph",
                 self._agent_builder(

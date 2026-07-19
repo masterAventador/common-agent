@@ -15,9 +15,13 @@ const employeeApi = vi.hoisted(() => ({
 const knowledgeApi = vi.hoisted(() => ({
   fetchKnowledgeBases: vi.fn(),
 }));
+const workflowApi = vi.hoisted(() => ({
+  fetchWorkflows: vi.fn(),
+}));
 
 vi.mock("../../api/employees", () => employeeApi);
 vi.mock("../../api/knowledge", () => knowledgeApi);
+vi.mock("../../api/workflows", () => workflowApi);
 
 const knowledgeBase = {
   id: "kb-1",
@@ -25,6 +29,16 @@ const knowledgeBase = {
   description: "公共资料",
   document_count: 2,
   parsing_count: 0,
+};
+
+const workflow = {
+  id: "9a2f8cb8-7f5f-41f8-b101-9ed76f40d9c6",
+  name: "产品问答流程",
+  description: "受控工作流",
+  nodes: [],
+  edges: [],
+  created_at: "2026-07-20T04:00:00Z",
+  updated_at: "2026-07-20T04:00:00Z",
 };
 
 const employee = {
@@ -70,6 +84,7 @@ describe("EmployeesPage", () => {
     vi.clearAllMocks();
     employeeApi.fetchEmployees.mockResolvedValue([employee]);
     knowledgeApi.fetchKnowledgeBases.mockResolvedValue([knowledgeBase]);
+    workflowApi.fetchWorkflows.mockResolvedValue([workflow]);
   });
 
   it("lists generic employees and resolves their bound knowledge base names", async () => {
@@ -104,6 +119,8 @@ describe("EmployeesPage", () => {
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "知识库" }));
     await screen.findByRole("option", { name: "通用产品手册" });
     fireEvent.click(await screen.findByTitle("通用产品手册"));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "允许工作流" }));
+    fireEvent.click(await screen.findByTitle("产品问答流程"));
     expect(screen.getAllByText("通用产品手册").length).toBeGreaterThan(1);
     await user.click(screen.getByRole("button", { name: "确认创建" }));
 
@@ -113,6 +130,7 @@ describe("EmployeesPage", () => {
         description: "回答内部制度问题",
         system_prompt: "只依据可靠资料回答。",
         knowledge_base_id: "kb-1",
+        allowed_workflow_ids: [workflow.id],
       }),
     );
     expect(await screen.findByText("制度问答助理")).toBeInTheDocument();
@@ -142,6 +160,7 @@ describe("EmployeesPage", () => {
         description: "更新后的说明",
         system_prompt: "优先依据知识库回答。",
         knowledge_base_id: "kb-1",
+        allowed_workflow_ids: [],
       }),
     );
     expect(await screen.findByText("更新后的说明")).toBeInTheDocument();
@@ -157,6 +176,19 @@ describe("EmployeesPage", () => {
     expect(screen.getByText("知识库服务暂时不可用")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "创建数字员工" }));
     expect(screen.getByRole("combobox", { name: "知识库" })).toBeDisabled();
+  });
+
+  it("shows existing workflow permissions and disables only that field when workflows fail", async () => {
+    employeeApi.fetchEmployees.mockResolvedValue([{ ...employee, allowed_workflow_ids: [workflow.id] }]);
+    workflowApi.fetchWorkflows.mockRejectedValue(new Error("工作流服务暂时不可用"));
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("工作流选项加载失败")).toBeInTheDocument();
+    expect(screen.getByText("已授权 1 个工作流")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "编辑 知识助理" }));
+    expect(screen.getByRole("combobox", { name: "允许工作流" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "知识库" })).toBeEnabled();
   });
 
   it("keeps the modal footer reachable on short desktop viewports", async () => {

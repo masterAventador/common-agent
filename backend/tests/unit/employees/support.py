@@ -10,6 +10,20 @@ from common_agent.ports.employees import EmployeeAlreadyExists
 from tests.support.knowledge import KnowledgeProbe
 
 
+class WorkflowDirectoryProbe:
+    def __init__(self) -> None:
+        self.available_ids: set[UUID] = set()
+        self.requested_ids: list[UUID] = []
+
+    async def get(self, workflow_id: UUID) -> object:
+        self.requested_ids.append(workflow_id)
+        if workflow_id not in self.available_ids:
+            from common_agent.application.workflow_service import WorkflowNotFound
+
+            raise WorkflowNotFound
+        return object()
+
+
 class EmployeeRepositoryProbe:
     def __init__(self) -> None:
         self.values: dict[UUID, Employee] = {}
@@ -71,16 +85,28 @@ def employee_service_with_probes() -> tuple[
     EmployeeService,
     EmployeeUnitOfWorkFactoryProbe,
     KnowledgeProbe,
+    WorkflowDirectoryProbe,
 ]:
     units = EmployeeUnitOfWorkFactoryProbe()
     knowledge = KnowledgeProbe()
-    return EmployeeService(units, KnowledgeBaseService(knowledge)), units, knowledge
+    workflows = WorkflowDirectoryProbe()
+    return (
+        EmployeeService(units, KnowledgeBaseService(knowledge), workflows=workflows),
+        units,
+        knowledge,
+        workflows,
+    )
 
 
-def employee_configuration(knowledge_base_id: str | None = None) -> EmployeeConfiguration:
+def employee_configuration(
+    knowledge_base_id: str | None = None,
+    *,
+    allowed_workflow_ids: tuple[UUID, ...] = (),
+) -> EmployeeConfiguration:
     return EmployeeConfiguration(
         name="通用助理",
         description="与业务无关的会话角色",
         system_prompt="根据可用信息回答问题。",
         knowledge_base_id=knowledge_base_id,
+        allowed_workflow_ids=allowed_workflow_ids,
     )

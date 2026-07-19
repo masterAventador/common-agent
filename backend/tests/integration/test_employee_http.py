@@ -8,37 +8,65 @@ import httpx
 from tests.support.employees import delete_employees_from_database_url
 from tests.support.http import assert_error_response, running_api
 from tests.support.settings import TEST_DATABASE_URL
+from tests.support.workflows import delete_workflows_from_database_url
 
 
-def _body(*, knowledge_base_id: str | None = None) -> dict[str, str | None]:
+def _body(
+    *,
+    knowledge_base_id: str | None = None,
+    allowed_workflow_ids: list[str] | None = None,
+) -> dict[str, object]:
     return {
         "name": "通用助理",
         "description": "与具体业务无关",
         "system_prompt": "根据用户问题提供帮助。",
         "knowledge_base_id": knowledge_base_id,
+        "allowed_workflow_ids": allowed_workflow_ids or [],
+    }
+
+
+def _workflow_body() -> dict[str, object]:
+    return {
+        "name": f"员工授权工作流-{uuid4().hex}",
+        "description": "员工 API allowlist 验收",
+        "nodes": [
+            {"id": "start", "type": "start", "position": {"x": 0, "y": 0}, "config": {}},
+            {"id": "end", "type": "end", "position": {"x": 240, "y": 0}, "config": {}},
+        ],
+        "edges": [{"id": "edge", "source": "start", "target": "end"}],
     }
 
 
 def test_employee_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
     employee_id: str | None = None
+    workflow_id: str | None = None
     try:
         with (
             running_api(TEST_DATABASE_URL) as api_url,
             httpx.Client(base_url=api_url, timeout=5) as client,
         ):
-            created = client.post("/api/v1/employees", json=_body())
+            workflow = client.post("/api/v1/workflows", json=_workflow_body())
+            assert workflow.status_code == 201
+            workflow_id = workflow.json()["id"]
+            created = client.post(
+                "/api/v1/employees",
+                json=_body(allowed_workflow_ids=[workflow_id]),
+            )
             assert created.status_code == 201
             payload = created.json()
             employee_id = str(payload["id"])
             UUID(employee_id)
-            assert payload["allowed_workflow_ids"] == []
+            assert payload["allowed_workflow_ids"] == [workflow_id]
             assert payload["knowledge_base_id"] is None
 
             listed = client.get("/api/v1/employees")
             detailed = client.get(f"/api/v1/employees/{employee_id}")
             updated = client.put(
                 f"/api/v1/employees/{employee_id}",
-                json={**_body(), "name": "更新后的通用助理"},
+                json={
+                    **_body(allowed_workflow_ids=[workflow_id]),
+                    "name": "更新后的通用助理",
+                },
             )
 
             assert listed.status_code == 200
@@ -55,9 +83,12 @@ def test_employee_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
             restored = restarted_client.get(f"/api/v1/employees/{employee_id}")
             assert restored.status_code == 200
             assert restored.json()["name"] == "更新后的通用助理"
+            assert restored.json()["allowed_workflow_ids"] == [workflow_id]
     finally:
         if employee_id is not None:
             asyncio.run(delete_employees_from_database_url(TEST_DATABASE_URL, employee_id))
+        if workflow_id is not None:
+            asyncio.run(delete_workflows_from_database_url(TEST_DATABASE_URL, workflow_id))
 
 
 def test_employee_validation_and_missing_resources_use_stable_errors() -> None:
@@ -66,9 +97,13 @@ def test_employee_validation_and_missing_resources_use_stable_errors() -> None:
         httpx.Client(base_url=api_url, timeout=5) as client,
     ):
         blank_name = client.post("/api/v1/employees", json={**_body(), "name": "   "})
-        forbidden_workflow = client.post(
+        missing_workflow = client.post(
             "/api/v1/employees",
             json={**_body(), "allowed_workflow_ids": [str(uuid4())]},
+        )
+        duplicate_workflow = client.post(
+            "/api/v1/employees",
+            json={**_body(), "allowed_workflow_ids": [str(uuid4())] * 2},
         )
         invalid_id = client.get("/api/v1/employees/not-a-uuid")
         missing = client.get(f"/api/v1/employees/{uuid4()}")
@@ -78,7 +113,8 @@ def test_employee_validation_and_missing_resources_use_stable_errors() -> None:
         )
 
     assert_error_response(blank_name, status=422, code="validation_error")
-    assert_error_response(forbidden_workflow, status=422, code="validation_error")
+    assert_error_response(missing_workflow, status=404, code="workflow_not_found")
+    assert_error_response(duplicate_workflow, status=422, code="validation_error")
     assert_error_response(invalid_id, status=422, code="validation_error")
     assert_error_response(missing, status=404, code="employee_not_found")
     assert_error_response(missing_update, status=404, code="employee_not_found")

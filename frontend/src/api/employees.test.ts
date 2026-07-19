@@ -34,6 +34,7 @@ const input = {
   description: "通用知识问答",
   system_prompt: "优先依据知识库回答。",
   knowledge_base_id: "kb-1",
+  allowed_workflow_ids: [],
 };
 
 describe("employee API boundary", () => {
@@ -48,6 +49,12 @@ describe("employee API boundary", () => {
     expect(() => parseEmployeeResponse({ ...employee, private_prompt: "secret" })).toThrow();
     expect(() => parseEmployeeResponse({ ...employee, id: "not-a-uuid" })).toThrow();
     expect(() => parseEmployeeResponse({ ...employee, created_at: "not-a-date" })).toThrow();
+    expect(() =>
+      parseEmployeeResponse({
+        ...employee,
+        allowed_workflow_ids: [employee.id, employee.id],
+      }),
+    ).toThrow();
   });
 
   it("uses only platform employee endpoints for list, detail, create, and update", async () => {

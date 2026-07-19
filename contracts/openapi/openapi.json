@@ -293,6 +293,15 @@
       "EmployeeConfigurationBody": {
         "additionalProperties": false,
         "properties": {
+          "allowed_workflow_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Allowed Workflow Ids",
+            "type": "array"
+          },
           "description": {
             "default": "",
             "maxLength": 1000,

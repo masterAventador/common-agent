@@ -9,6 +9,7 @@ EMPLOYEE_NAME_MAX_LENGTH = 128
 EMPLOYEE_DESCRIPTION_MAX_LENGTH = 1_000
 EMPLOYEE_SYSTEM_PROMPT_MAX_LENGTH = 12_000
 EMPLOYEE_KNOWLEDGE_BASE_ID_MAX_LENGTH = 128
+EMPLOYEE_ALLOWED_WORKFLOWS_MAX_ITEMS = 100
 
 
 class EmployeeValidationError(ValueError):
@@ -24,6 +25,14 @@ class EmployeeConfiguration:
     description: str
     system_prompt: str
     knowledge_base_id: str | None
+    allowed_workflow_ids: tuple[UUID, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "allowed_workflow_ids",
+            _workflow_ids(self.allowed_workflow_ids),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +153,11 @@ def _workflow_ids(values: Iterable[UUID]) -> tuple[UUID, ...]:
         raise EmployeeValidationError("allowed_workflow_ids", "必须只包含 UUID")
     if len(set(result)) != len(result):
         raise EmployeeValidationError("allowed_workflow_ids", "不能包含重复项")
+    if len(result) > EMPLOYEE_ALLOWED_WORKFLOWS_MAX_ITEMS:
+        raise EmployeeValidationError(
+            "allowed_workflow_ids",
+            f"不能超过 {EMPLOYEE_ALLOWED_WORKFLOWS_MAX_ITEMS} 项",
+        )
     return result
 
 

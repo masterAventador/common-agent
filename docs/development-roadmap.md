@@ -199,7 +199,7 @@
 | W5-04 | 工作流运行与事件 | 手动运行、节点事件、结果、失败和停止摘要 | W5-02,W5-03 | ✅ 已完成 |
 | W5-05 | 工作流设计器 | React Flow 拖拽/连线/配置/保存/服务端校验 | W5-02,F1-03 | ✅ 已完成 |
 | W5-06 | 手动运行 UI | 输入、运行、节点高亮、失败和最终结果 | W5-04,W5-05 | ✅ 已完成 |
-| W5-07 | 数字员工触发工具 | 只允许调用员工 allowlist 中工作流，共用 WorkflowService | W5-04,A4-04 | ⬜ 未开始 |
+| W5-07 | 数字员工触发工具 | 只允许调用员工 allowlist 中工作流，共用 WorkflowService | W5-04,A4-04 | ✅ 已完成 |
 | W5-08 | 工作流 E2E | 创建图→保存→手动运行→员工触发→刷新查看摘要 | W5-06,W5-07 | ⬜ 未开始 |
 
 ## 12. Wave 6：MVP 收口
@@ -862,10 +862,26 @@
 - 文档：只更新唯一进度源、E2E 脚本说明和正式调用脚本；产品范围没有变化，未修改 `docs/product-scope.md`
 - 遗留：无；下一任务 W5-07 让数字员工只通过已配置 allowlist 调用同一个 `WorkflowService`，不复制编译、执行、事件或持久化链路
 
+### W5-07 数字员工触发工具
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增员工工作流工具、`WorkflowService.wait_for_run` 和员工 allowlist 服务测试；定向 pytest 因生产模块 `common_agent.adapters.agent.workflow_tools` 不存在发生收集错误，证明当前静态 Deep Agents 工具注册表尚不能把用户新保存的工作流解析为受控工具。后续最小实现必须同时打通员工配置保存、逐工作流动态工具暴露、`employee` 触发来源、终态等待和稳定失败返回，不能用直接编译图或测试工具替代同一个 `WorkflowService`
+- GREEN：工作流工具/等待、Deep Agents 注册表、员工领域/服务与运行服务定向 31 passed，员工正式 HTTP、Deep Agents 适配和会话服务回归 21 passed；最终后端全量 378 passed/11 个显式外部验收 skip，Ruff lint、除不可变已应用 `20260720_0005` 外 149 个文件格式、严格 Mypy 150 个源/测试文件和 uv lock 通过。前端最终 14 个文件 57 passed，ESLint、TypeScript、生产 Build、pnpm 冻结锁和 OpenAPI/生成 DTO 漂移通过；ShellCheck 与 `git diff --check` 通过。专属真实员工工具验收 1 passed in 5.95s
+- 员工配置与引用：公开 Employee POST/PUT 的 `allowed_workflow_ids` 现支持最多 100 个无重复 UUID，创建和更新会在数据库事务外逐项经正式 `WorkflowService.get()` 确认定义存在，再原子保存原顺序；不存在引用返回 `workflow_not_found`，重复/超量在访问工作流前返回 `validation_error`，失败创建不写库、失败更新不覆盖原配置。React 员工表单从正式工作流列表多选权限，卡片显示授权数量；员工、知识库和工作流三类查询独立失败，工作流不可用只禁用对应字段
+- 动态工具与双重边界：`DeepAgentsEmployeeRuntime` 的注册口提升为异步 `DeepAgentToolResolver`，生产 `WorkflowToolRegistry` 每轮按当前员工持久化 allowlist 重新读取定义并只返回同序工具；空 allowlist 不暴露工具，失效 ID fail closed。每个工具名称含唯一 UUID 且闭包固定目标工作流，模型参数只有受领域上限约束的 `input`，无法在调用时替换目标 ID；原 Deep Agents 保留名、重复名、文件/Shell/Todo/task 禁用与未知能力测试继续全量回归
+- 共用运行服务：工具只调用现有 `WorkflowService.start_run(..., trigger=employee)`，由同一仓储、LangGraph 编译器、节点观察器、事件 Broker 和 MySQL 摘要执行；新增 `wait_for_run()` 屏蔽调用方取消对后台任务的直接传播并返回已持久化终态。工具取消会再经同一服务发送停止意图，完成结果以包含 run/workflow ID、名称、状态和 output 的安全 JSON 交给模型；失败/停止只暴露稳定平台语义，不直接导入工作流图或复制执行代码
+- 生产同路径验收：显式 real 用例从随机 loopback 正式 Uvicorn/FastAPI 先创建 start→end 工作流和带 allowlist 员工，再经公开会话创建、消息 POST 和 SSE 进入 `ConversationService -> DeepAgentsEmployeeRuntime -> deepagents 0.6.12 -> BailianChatModelAdapter -> 阿里百炼 -> WorkflowToolRegistry -> WorkflowService -> SQLAlchemy/MySQL -> LangGraph`。真实模型调用工具后助手终态和正式运行 GET 均返回唯一 `COMMON_AGENT_W5_07_*` 标记，运行摘要确认 `trigger=employee`、真实输入、completed 和同一工作流；随后无 allowlist 员工通过同一会话入口请求按 ID 绕过权限，助手正常说明且该工作流运行记录逐字段保持不变。完成证据没有 Mock/Fake、TestClient、进程内 ASGI、直接编译器调用或日志断言；数据库只用于确认真实副作用及再从公开 GET 读取 run ID
+- 失败矩阵：覆盖空/单个/多项 allowlist、重复/超量/不存在引用、创建/更新前置验证和事务保持、动态定义缺失、精确工具名与顺序、employee 触发来源、工作流完成/模型节点失败/停止、未知运行、工具取消、稳定错误不泄漏，以及正式会话有权执行与无权零副作用。低层 Probe/Fake 只定位失败；真实 Deep Agents/百炼会话链解除本任务完成门禁。员工页面的多选与独立失败由 Vitest 覆盖，完整无头浏览器“设计→手动运行→员工触发→刷新摘要”仍由专门 W5-08 验收，不把本内部工具任务冒充跨页面总 E2E
+- 契约与文档：Employee 请求 Schema、OpenAPI 和前端生成 DTO 增加有上限的 UUID allowlist 并经隔离重建逐字节一致；后端/前端说明与后端架构同步动态工具和共享服务边界。唯一进度源为本 roadmap，产品边界未变化，未修改 `docs/product-scope.md`
+- 清理与正式库：真实验收以 finally 按会话→员工→工作流顺序精确清理；最终测试库员工/会话/消息/工作流/运行全为 0，W5-07 工作流名前缀为 0。发现默认正式库仍停在既有 `20260719_0003` 后，通过正式 `python -m common_agent` lifespan 无旁路升级到 `20260720_0005`，公开 Health 返回 200，正式库保持 Seed 1、会话/消息/工作流/运行 0；两库 `alembic check` 均无漂移。18200/18280 无监听，无 Uvicorn/Vite/Playwright/Chromium 残留，无 dangling 镜像；本任务未启动浏览器，构建产物和项目测试缓存已删除，健康 MySQL/RAGFlow 稳定栈继续复用
+- 遗留：无；下一任务 W5-08 只组合已完成的设计器、手动运行和员工工具，通过固定无头 Chromium 从真实页面完成跨端闭环，并补齐员工触发运行卡片/刷新摘要的用户可见关联
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `W5-07`：让数字员工只通过 allowlist 与同一个 `WorkflowService` 触发工作流；
-2. 完成 `W5-08`：从真实浏览器完成创建图、手动运行、员工触发和刷新摘要的跨端验收；
-3. 完成 `Q6-01`：汇总并补齐 MVP 完整失败矩阵。
+1. 完成 `W5-08`：从真实浏览器完成创建图、手动运行、员工触发和刷新摘要的跨端验收；
+2. 完成 `Q6-01`：汇总并补齐 MVP 完整失败矩阵；
+3. 完成 `Q6-02`：执行全量质量门禁并建立基线。

@@ -10,6 +10,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 
 from common_agent import __version__
 from common_agent.adapters.agent.deep_agents import DeepAgentsEmployeeRuntime
+from common_agent.adapters.agent.workflow_tools import WorkflowToolRegistry
 from common_agent.adapters.demo import (
     DemoEmployeeRuntime,
     DemoKnowledgeService,
@@ -77,7 +78,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 timeout_seconds=ragflow_settings.timeout_seconds,
             )
             model = BailianChatModelAdapter(ModelSettings.from_env())
-            runtime = DeepAgentsEmployeeRuntime(model)
             workflow_model = model
         knowledge_bases = KnowledgeBaseService(knowledge_adapter)
         app.state.knowledge_bases = knowledge_bases
@@ -92,13 +92,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.workflow_events = workflow_events
         app.state.workflows = workflows
+        if integration_mode.mode != "demo":
+            runtime = DeepAgentsEmployeeRuntime(
+                model,
+                tools=WorkflowToolRegistry(workflows),
+            )
         employees = EmployeeService(
             SqlAlchemyEmployeeUnitOfWorkFactory(database),
             knowledge_bases,
+            workflows=workflows,
         )
         app.state.employees = employees
         await seed_default_employee(employees)
         conversation_events = ConversationEventBroker()
+        if runtime is None:
+            raise RuntimeError("数字员工运行时未完成装配")
         conversations = ConversationService(
             SqlAlchemyConversationUnitOfWorkFactory(database),
             employees=employees,

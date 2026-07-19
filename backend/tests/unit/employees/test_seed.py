@@ -11,7 +11,7 @@ from tests.unit.employees.support import employee_service_with_probes
 
 
 def test_default_employee_seed_is_generic_and_idempotent() -> None:
-    service, units, knowledge = employee_service_with_probes()
+    service, units, knowledge, workflows = employee_service_with_probes()
 
     first = asyncio.run(seed_default_employee(service))
     second = asyncio.run(seed_default_employee(service))
@@ -26,10 +26,11 @@ def test_default_employee_seed_is_generic_and_idempotent() -> None:
     assert len(units.repository.values) == 1
     assert units.commit_count == 1
     assert knowledge.requested_ids == []
+    assert workflows.requested_ids == []
 
 
 def test_default_employee_seed_never_overwrites_user_edits() -> None:
-    service, units, _ = employee_service_with_probes()
+    service, units, _, _ = employee_service_with_probes()
     seeded = asyncio.run(seed_default_employee(service))
     edited = asyncio.run(
         service.update(

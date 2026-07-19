@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Protocol
 from uuid import UUID
 
 from common_agent.domain.employee import Employee, EmployeeConfiguration
@@ -21,14 +22,21 @@ class EmployeeNotFound(EmployeeServiceError):
     message = "数字员工不存在"
 
 
+class WorkflowDirectory(Protocol):
+    async def get(self, workflow_id: UUID) -> object: ...
+
+
 class EmployeeService:
     def __init__(
         self,
         unit_of_work_factory: EmployeeUnitOfWorkFactory,
         knowledge_bases: KnowledgeBaseService,
+        *,
+        workflows: WorkflowDirectory,
     ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
         self._knowledge_bases = knowledge_bases
+        self._workflows = workflows
 
     async def list(self) -> tuple[Employee, ...]:
         async with self._unit_of_work_factory() as unit_of_work:
@@ -43,11 +51,13 @@ class EmployeeService:
 
     async def create(self, configuration: EmployeeConfiguration) -> Employee:
         await self._validate_knowledge_base(configuration.knowledge_base_id)
+        await self._validate_workflows(configuration.allowed_workflow_ids)
         employee = Employee.create(
             name=configuration.name,
             description=configuration.description,
             system_prompt=configuration.system_prompt,
             knowledge_base_id=configuration.knowledge_base_id,
+            allowed_workflow_ids=configuration.allowed_workflow_ids,
         )
         async with self._unit_of_work_factory() as unit_of_work:
             await unit_of_work.employees.add(employee)
@@ -65,12 +75,14 @@ class EmployeeService:
             return existing
 
         await self._validate_knowledge_base(configuration.knowledge_base_id)
+        await self._validate_workflows(configuration.allowed_workflow_ids)
         candidate = Employee.create(
             employee_id=employee_id,
             name=configuration.name,
             description=configuration.description,
             system_prompt=configuration.system_prompt,
             knowledge_base_id=configuration.knowledge_base_id,
+            allowed_workflow_ids=configuration.allowed_workflow_ids,
         )
         try:
             async with self._unit_of_work_factory() as unit_of_work:
@@ -90,6 +102,7 @@ class EmployeeService:
     ) -> Employee:
         await self.get(employee_id)
         await self._validate_knowledge_base(configuration.knowledge_base_id)
+        await self._validate_workflows(configuration.allowed_workflow_ids)
         async with self._unit_of_work_factory() as unit_of_work:
             current = await unit_of_work.employees.get(employee_id)
             if current is None:
@@ -99,7 +112,7 @@ class EmployeeService:
                 description=configuration.description,
                 system_prompt=configuration.system_prompt,
                 knowledge_base_id=configuration.knowledge_base_id,
-                allowed_workflow_ids=current.allowed_workflow_ids,
+                allowed_workflow_ids=configuration.allowed_workflow_ids,
             )
             if not await unit_of_work.employees.update(updated):
                 raise EmployeeNotFound
@@ -109,3 +122,7 @@ class EmployeeService:
     async def _validate_knowledge_base(self, knowledge_base_id: str | None) -> None:
         if knowledge_base_id is not None:
             await self._knowledge_bases.get_knowledge_base(knowledge_base_id)
+
+    async def _validate_workflows(self, workflow_ids: tuple[UUID, ...]) -> None:
+        for workflow_id in workflow_ids:
+            await self._workflows.get(workflow_id)

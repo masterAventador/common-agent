@@ -13,7 +13,10 @@ const employeeSchema = z.strictObject({
   description: z.string(),
   system_prompt: z.string().min(1),
   knowledge_base_id: z.string().min(1).nullable(),
-  allowed_workflow_ids: z.array(z.uuid()),
+  allowed_workflow_ids: z
+    .array(z.uuid())
+    .max(100)
+    .refine((items) => new Set(items).size === items.length),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });

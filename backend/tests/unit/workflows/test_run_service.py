@@ -107,7 +107,7 @@ def test_manual_run_persists_each_node_then_completed_summary_and_events() -> No
             input="执行这个工作流",
             trigger=WorkflowRunTrigger.MANUAL,
         )
-        completed = await _terminal(service, run_id)
+        completed = await service.wait_for_run(run_id)
         stream = broker.stream(run_id)
         events = [await anext(stream) for _ in range(8)]
         await stream.aclose()
@@ -128,6 +128,17 @@ def test_manual_run_persists_each_node_then_completed_summary_and_events() -> No
             WorkflowEventKind.RUN_COMPLETED,
         ]
         assert units.commit_count >= 6
+
+    asyncio.run(exercise())
+
+
+def test_wait_for_run_rejects_unknown_run() -> None:
+    async def exercise() -> None:
+        service, _, _, _ = _service()
+
+        with pytest.raises(WorkflowRunNotFound):
+            await service.wait_for_run(uuid4())
+        await service.aclose()
 
     asyncio.run(exercise())
 

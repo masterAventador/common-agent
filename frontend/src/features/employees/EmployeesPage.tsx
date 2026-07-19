@@ -33,6 +33,7 @@ import {
 } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
 import { fetchKnowledgeBases } from "../../api/knowledge";
+import { fetchWorkflows } from "../../api/workflows";
 
 const { Text, Title } = Typography;
 
@@ -44,6 +45,7 @@ function employeeFormValues(employee: Employee): EmployeeConfigurationInput {
     description: employee.description,
     system_prompt: employee.system_prompt,
     knowledge_base_id: employee.knowledge_base_id,
+    allowed_workflow_ids: employee.allowed_workflow_ids,
   };
 }
 
@@ -61,10 +63,18 @@ export function EmployeesPage() {
     queryKey: ["knowledge-bases"],
     queryFn: fetchKnowledgeBases,
   });
+  const workflows = useQuery({
+    queryKey: ["workflows"],
+    queryFn: fetchWorkflows,
+  });
 
   const knowledgeBaseNames = useMemo(
     () => new Map(knowledgeBases.data?.map((item) => [item.id, item.name]) ?? []),
     [knowledgeBases.data],
+  );
+  const workflowNames = useMemo(
+    () => new Map(workflows.data?.map((item) => [item.id, item.name]) ?? []),
+    [workflows.data],
   );
 
   useEffect(() => {
@@ -72,7 +82,13 @@ export function EmployeesPage() {
     form.setFieldsValue(
       editor.mode === "edit"
         ? employeeFormValues(editor.employee)
-        : { name: "", description: "", system_prompt: "", knowledge_base_id: null },
+        : {
+            name: "",
+            description: "",
+            system_prompt: "",
+            knowledge_base_id: null,
+            allowed_workflow_ids: [],
+          },
     );
   }, [editor, form]);
 
@@ -81,6 +97,7 @@ export function EmployeesPage() {
       const normalizedValues = {
         ...values,
         knowledge_base_id: values.knowledge_base_id ?? null,
+        allowed_workflow_ids: values.allowed_workflow_ids ?? [],
       };
       return editor?.mode === "edit"
         ? updateEmployee(editor.employee.id, normalizedValues)
@@ -106,6 +123,19 @@ export function EmployeesPage() {
     if (knowledgeBases.isError) return <Tag color="warning">已绑定知识库</Tag>;
     if (knowledgeBases.isPending) return <Tag>正在读取知识库</Tag>;
     return <Tag color="error">知识库已失效</Tag>;
+  };
+
+  const workflowPermissionLabel = (employee: Employee) => {
+    const count = employee.allowed_workflow_ids.length;
+    if (count === 0) return <Tag>未授权工作流</Tag>;
+    const names = employee.allowed_workflow_ids
+      .map((workflowId) => workflowNames.get(workflowId))
+      .filter((name): name is string => Boolean(name));
+    return (
+      <Tag color="purple" title={names.join("、") || undefined}>
+        已授权 {count} 个工作流
+      </Tag>
+    );
   };
 
   if (employees.isPending) {
@@ -149,7 +179,7 @@ export function EmployeesPage() {
             <Title level={2}>数字员工</Title>
           </Space>
           <Typography.Paragraph type="secondary">
-            配置通用会话角色和系统指令，可按需绑定一个知识库。
+            配置通用会话角色和系统指令，可按需绑定一个知识库并授权独立工作流。
           </Typography.Paragraph>
         </div>
         <Button
@@ -169,6 +199,17 @@ export function EmployeesPage() {
           title="知识库选项加载失败"
           description={getErrorMessage(knowledgeBases.error)}
           action={<Button onClick={() => void knowledgeBases.refetch()}>重试知识库</Button>}
+          className="employees-inline-alert"
+        />
+      )}
+
+      {workflows.isError && (
+        <Alert
+          type="warning"
+          showIcon
+          title="工作流选项加载失败"
+          description={getErrorMessage(workflows.error)}
+          action={<Button onClick={() => void workflows.refetch()}>重试工作流</Button>}
           className="employees-inline-alert"
         />
       )}
@@ -194,6 +235,10 @@ export function EmployeesPage() {
               <div className="employee-prompt-preview">
                 <Text type="secondary">系统指令</Text>
                 <Text>{employee.system_prompt}</Text>
+              </div>
+              <div className="employee-prompt-preview">
+                <Text type="secondary">工作流权限</Text>
+                <div>{workflowPermissionLabel(employee)}</div>
               </div>
               <Flex gap={8} justify="flex-end" wrap>
                 <Button
@@ -270,7 +315,19 @@ export function EmployeesPage() {
               options={knowledgeBases.data?.map((item) => ({ value: item.id, label: item.name }))}
             />
           </Form.Item>
-          <Text type="secondary">工作流调用权限将在工作流能力接入后配置。</Text>
+          <Form.Item label="允许工作流" name="allowed_workflow_ids">
+            <Select
+              mode="multiple"
+              allowClear
+              disabled={workflows.isError}
+              loading={workflows.isPending}
+              placeholder={workflows.isError ? "工作流暂时不可用" : "不授权工作流"}
+              options={workflows.data?.map((item) => ({ value: item.id, label: item.name }))}
+              optionFilterProp="label"
+              maxTagCount="responsive"
+            />
+          </Form.Item>
+          <Text type="secondary">数字员工只会看到并调用这里明确授权的工作流。</Text>
         </Form>
       </Modal>
     </section>

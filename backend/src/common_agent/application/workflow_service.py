@@ -245,6 +245,13 @@ class WorkflowService:
             active.stop.request_stop()
             return WorkflowRunStopAccepted(run_id=run_id)
 
+    async def wait_for_run(self, run_id: UUID) -> WorkflowRun:
+        active = self._active_runs.get(run_id)
+        if active is None or active.task is None:
+            return await self.get_run(run_id)
+        await asyncio.shield(active.task)
+        return await self.get_run(run_id)
+
     async def recover_interrupted(self) -> int:
         self._ensure_execution_available()
         async with self._unit_of_work_factory() as unit_of_work:

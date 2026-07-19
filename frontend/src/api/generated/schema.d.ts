@@ -443,6 +443,8 @@ export interface components {
         DocumentParsingStatus: "uploaded" | "parsing" | "completed" | "failed";
         /** EmployeeConfigurationBody */
         EmployeeConfigurationBody: {
+            /** Allowed Workflow Ids */
+            allowed_workflow_ids?: string[];
             /**
              * Description
              * @default

@@ -85,7 +85,11 @@ def test_openapi_exposes_generic_employee_crud_contract() -> None:
     assert properties["description"]["maxLength"] == 1000
     assert properties["system_prompt"]["maxLength"] == 12000
     assert properties["knowledge_base_id"]["anyOf"][0]["maxLength"] == 128
-    assert "allowed_workflow_ids" not in properties
+    assert properties["allowed_workflow_ids"]["maxItems"] == 100
+    assert properties["allowed_workflow_ids"]["items"] == {
+        "type": "string",
+        "format": "uuid",
+    }
 
 
 def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> None:

@@ -56,10 +56,11 @@ JSON 数组和 UTC 时间顺序同时受领域模型与 MySQL CHECK 约束；`DA
 正式 `KnowledgeService` 校验。
 
 数字员工公开入口为 `/api/v1/employees`：集合支持 GET/POST，`/{employee_id}` 支持 GET/PUT。
-创建和更新请求只接受上述通用会话配置，不接受业务字段，也暂不允许客户端写入工作流
-allowlist。非空知识库 ID 会先经 `KnowledgeBaseService` 和 RAGFlow 官方数据集详情 API 校验，
-只有验证成功后才进入 Employee Unit of Work 并提交 MySQL；失效引用、RAGFlow 不可用或未配置
-都会关闭失败且不写入。员工不存在时优先返回 `employee_not_found`，不发起无意义的外围校验。
+创建和更新请求只接受上述通用会话配置，不接受业务字段；`allowed_workflow_ids` 最多 100 项且
+不得重复。非空知识库 ID 会先经 `KnowledgeBaseService` 和 RAGFlow 官方数据集详情 API 校验，
+每个工作流 ID 也必须经同一个 `WorkflowService` 确认存在，全部验证成功后才进入 Employee Unit
+of Work 并提交 MySQL；失效引用或外围服务失败都会关闭失败且不写入。员工不存在时优先返回
+`employee_not_found`，不发起无意义的外围校验。
 
 正式 App 每次启动都会幂等确保固定 UUID `6f3d43e0-6f6d-5a67-9f25-756a0b9ed2ab` 的通用
 “知识助理”存在。它默认不绑定知识库或工作流；若记录已存在，启动过程只读取，不覆盖用户
@@ -124,6 +125,6 @@ MySQL 同时约束名称、标识、节点类型、JSON 类型、序号、时间
 
 `EmployeeRuntime` 是一次会话回复的框架无关协议：`stream(request, stop=...)` 接收 Conversation/Employee/助手消息 ID、有序聊天历史、员工系统指令、显式知识库绑定与检索片段，以及允许调用的工作流 ID；它不包含旧任务模型的启动、审批、恢复或产物接口。运行时只返回单调递增的 `delta` 和一个 `completed/failed/stopped` 终态，终态后的事件由 `RuntimeEventEmitter` 拒绝。`RuntimeStopToken` 可重复请求但只在第一次改变状态；Deep Agents 适配器会让停止信号与上游下一事件竞速，停止胜出后关闭异步流。系统指令、历史正文、知识片段和模型增量均从对象 repr 排除。
 
-`DeepAgentsEmployeeRuntime` 固定使用 `deepagents==0.6.12` 的公开 `create_deep_agent`。它通过 `DeepAgentToolRegistry` 只装配员工本轮白名单中的平台工具，使用非 Sandbox 的 `StateBackend`，并通过公开 Harness Profile 和文件权限规则从模型工具面移除 Todo、本机文件、Shell、默认子代理和 `task`。知识片段被标记为不可信外部数据；Deep Agents 原始消息、工具和异常不会越过适配层。
+`DeepAgentsEmployeeRuntime` 固定使用 `deepagents==0.6.12` 的公开 `create_deep_agent`。它通过异步工具解析器只装配员工本轮白名单中的平台工具，使用非 Sandbox 的 `StateBackend`，并通过公开 Harness Profile 和文件权限规则从模型工具面移除 Todo、本机文件、Shell、默认子代理和 `task`。生产 `WorkflowToolRegistry` 每轮从正式定义仓储解析 allowlist，为每个工作流生成绑定固定 ID 的独立工具；工具以 `employee` 触发来源调用同一个 `WorkflowService.start_run()`，通过 `wait_for_run()` 等待已持久化终态后才把安全结果交回模型，失败只返回平台错误码。调用被取消时会向同一运行服务发送停止意图，不复制或直接导入 LangGraph 图。知识片段被标记为不可信外部数据；Deep Agents 原始消息、工具和异常不会越过适配层。
 
 `ConversationKnowledgeResolver` 把员工绑定与当前已完成用户消息转换为本轮知识上下文。未绑定员工直接返回无知识库语义且不访问 RAGFlow；已绑定员工每次都先经 `KnowledgeBaseService` 检查真实服务可用性和 `v0.25.6` 版本，再按固定首版参数检索。零命中保留知识库 ID；命中片段按原顺序映射成同源的 `RuntimeKnowledgeChunk` 与连续 `Citation`。配置、版本、知识库不存在、服务失败、非法响应和调用方取消均保持明确语义，不静默跳过检索。

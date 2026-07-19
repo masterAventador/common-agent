@@ -116,7 +116,7 @@ application --------------+
 
 提供明确用例：
 
-- `EmployeeService`：数字员工 CRUD 和知识库绑定；
+- `EmployeeService`：数字员工 CRUD、知识库绑定和工作流 allowlist 引用校验；
 - `KnowledgeBaseService`：RAGFlow 知识库与文档操作；
 - `ConversationService`：创建会话、保存消息、自动检索、生成回复；
 - `WorkflowService`：校验、保存和运行工作流；
@@ -126,6 +126,11 @@ application --------------+
 `KnowledgeBaseService` 调用 RAGFlow 官方数据集详情入口，验证成功后才提交员工；更新先确认
 员工存在，再校验新绑定，最后在新事务内重新读取并原子更新，避免把外部网络等待放进数据库
 事务，也避免无效知识库覆盖已有配置。
+
+工作流 allowlist 同样在事务外经正式 `WorkflowService.get()` 逐项确认；重复、超量或不存在引用
+在员工写入前关闭失败。会话每一轮再按已持久化 allowlist 动态解析独立工具，每个工具闭包固定唯一
+工作流 ID，模型不能通过参数替换目标；工具只调用 `WorkflowService.start_run()` / `wait_for_run()`，
+触发来源固定为 `employee`，取消时通过同一服务停止，不直接编译或执行工作流图。
 
 启动 Seed 复用同一个 `EmployeeService.ensure` 与 Unit of Work，不另写 SQL 或旁路仓储。固定
 平台 UUID 只在记录不存在时创建默认知识助理；已存在即原样返回，因此用户编辑和后续知识库
@@ -288,6 +293,7 @@ FastAPI 进程托管，不为尚不存在的并发或可靠投递需求预建队
   -> KnowledgeService.retrieve(question)
   -> 把历史消息、系统指令、知识片段和引用交给 EmployeeRuntime
   -> Deep Agents 调用阿里百炼
+  -> 如模型调用授权工作流工具，经同一个 WorkflowService 运行并等待持久化终态
   -> 每个 Runtime delta/终态先写回助手消息和引用并提交 MySQL
   -> 再转换并发布 assistant.delta / assistant.completed 等平台 SSE 事件
 ```
