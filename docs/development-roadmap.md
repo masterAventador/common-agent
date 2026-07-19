@@ -57,7 +57,7 @@
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` KnowledgeService、真实 RAGFlow 适配器及知识库正式 API 已完成；知识库页面与浏览器闭环继续按 Wave 2 推进 |
+| 产品代码 | `🚧` KnowledgeService、真实 RAGFlow 适配器、知识库正式 API 与页面已完成；Playwright 关键路径继续按 Wave 2 推进 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -151,7 +151,7 @@
 | K2-02 | KnowledgeService 契约 | list/create/upload/list-documents/retrieve/status 平台协议和失败测试 | B1-02 | ✅ 已完成 |
 | K2-03 | RAGFlow 适配器 | 官方 SDK/API 接入、超时、错误转换、版本健康和真实服务验收 | K2-01,K2-02 | ✅ 已完成 |
 | K2-04 | 知识库 API | 列表、创建、文档上传、解析状态；上传大小/类型限制 | K2-03,B1-05,C1-01 | ✅ 已完成 |
-| K2-05 | 知识库页面 | 创建、上传、真实状态、失败重试和空状态 | K2-04,F1-03 | ⬜ 未开始 |
+| K2-05 | 知识库页面 | 创建、上传、真实状态、失败重试和空状态 | K2-04,F1-03 | ✅ 已完成 |
 | K2-06 | 知识库 Playwright | 浏览器完成创建→上传→解析完成/失败展示 | K2-05 | ⬜ 未开始 |
 
 ## 9. Wave 3：数字员工与知识库绑定
@@ -527,10 +527,24 @@
 - 文档：后端 README、后端架构、OpenAPI 快照、前端生成 DTO、依赖锁文件和 `docs/development-roadmap.md`
 - 遗留：K2-04 只交付 API，不提前实现页面；K2-05 通过正式 Axios/Query/Zod 接入这些接口，K2-06 再用 Playwright 完成浏览器生产同路径验收
 
+### K2-05 知识库页面
+
+- 状态：✅ 已完成
+- 日期：2026-07-19
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增知识库 API/Zod 边界与页面交互测试，定向 Vitest 因 `./knowledge` 和 `./KnowledgeBasesPage` 不存在出现 2 个失败套件；最小实现后继续真实捕获图标污染按钮可访问名称、jsdom 缺少 `matchMedia`/`ResizeObserver`、TanStack Query mutation 透传上下文和 Ant Design 6 弃用 API，均修正后进入 GREEN
+- GREEN：知识库 API、页面与 App 路由定向测试 12 passed；前端全量 `pnpm test` 18 passed，ESLint、TypeScript、Vite Build 和 peer 门禁全部通过；知识库页面采用路由级 lazy import，构建由原单入口拆为入口、知识库和共享依赖 chunk，仍保留 653 KiB 共享 chunk 警告而未调高阈值掩盖
+- 真实边界：`agent-browser` 从 `http://127.0.0.1:18280/knowledge-bases` 经正式 Vite、Axios、FastAPI、`KnowledgeBaseService`、RAGFlow 适配器和官方 RAGFlow v0.25.6 创建唯一通用知识库，上传 162 B TXT，页面轮询后显示 1 个文档和真实“已完成”；网络记录仅访问平台 `/api/v1/knowledge-bases`，创建 201、上传 202，前端未直连 RAGFlow；桌面视口 LCP 528 ms、CLS 0，页面异常为空
+- 失败矩阵：组件/边界测试覆盖空状态、严格响应漂移、创建、multipart、`uploaded/parsing/completed/failed`、失败错误码、安全列表错误和同 Query 重试；真实浏览器中停止 FastAPI 后刷新显示“后端不可用 / 无法连接后端服务 / 重试加载”，恢复正式 API 后点击重试重新显示同一知识库和完成文档
+- 通用性：页面与 API 只使用知识库名称、描述、文档和解析状态等平台通用字段，不包含行业、自动化任务或其他业务模型；所有第三方访问都封装在后端正式适配层
+- 清理：按唯一 ID 删除浏览器验收知识库并经平台正式列表确认 `[]`；关闭 agent-browser 会话，停止临时 FastAPI/Vite；浏览器截图与报告仅保存在 `/tmp/common-agent-k2-05-qa`，不进入 Git；平台 MySQL 与 RAGFlow 六服务稳定栈保留供 K2-06 复用
+- 文档：前端 README、知识库 API/Feature/样式/测试和 `docs/development-roadmap.md`
+- 遗留：K2-06 增加可重复 Playwright 正式关键路径；共享依赖 chunk 的现有体积提示保留，后续页面增多后依据真实加载剖面细分稳定 vendor，而不是提前制造大量小 chunk
+
 ## 16. 当前下一步
 
 严格按顺序：
 
-1. 完成 `K2-05`：实现知识库正式页面和真实状态交互；
-2. 完成 `K2-06`：以正式页面和真实 RAGFlow 验收知识库纵向闭环；
-3. 完成 `E3-01`：建立数字员工领域模型、MySQL 迁移和知识库引用完整性策略。
+1. 完成 `K2-06`：以正式页面和真实 RAGFlow 验收知识库纵向闭环；
+2. 完成 `E3-01`：建立数字员工领域模型、MySQL 迁移和知识库引用完整性策略；
+3. 完成 `E3-02`：提供数字员工正式 API 与知识库绑定边界。

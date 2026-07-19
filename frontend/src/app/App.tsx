@@ -5,12 +5,16 @@ import {
   TeamOutlined,
 } from "@ant-design/icons";
 import { Layout, Menu, Space, Tag, Typography } from "antd";
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { SystemStatus } from "../components/SystemStatus";
 
 const { Content, Header, Sider } = Layout;
+const KnowledgeBasesPage = lazy(async () => {
+  const module = await import("../features/knowledge-bases/KnowledgeBasesPage");
+  return { default: module.KnowledgeBasesPage };
+});
 
 const entries = [
   {
@@ -91,17 +95,22 @@ export function App() {
           </Space>
         </Header>
         <Content className="app-content">
-          <Routes>
-            <Route path="/" element={<Navigate to="/chat" replace />} />
-            {entries.map((entry) => (
-              <Route
-                key={entry.path}
-                path={entry.path}
-                element={<EntryShell title={entry.label} description={entry.description} />}
-              />
-            ))}
-            <Route path="*" element={<Navigate to="/chat" replace />} />
-          </Routes>
+          <Suspense fallback={<section className="entry-shell">页面加载中…</section>}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/chat" replace />} />
+              {entries
+                .filter((entry) => entry.path !== "/knowledge-bases")
+                .map((entry) => (
+                  <Route
+                    key={entry.path}
+                    path={entry.path}
+                    element={<EntryShell title={entry.label} description={entry.description} />}
+                  />
+                ))}
+              <Route path="/knowledge-bases" element={<KnowledgeBasesPage />} />
+              <Route path="*" element={<Navigate to="/chat" replace />} />
+            </Routes>
+          </Suspense>
         </Content>
       </Layout>
     </Layout>

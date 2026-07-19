@@ -1,0 +1,143 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { PropsWithChildren } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { KnowledgeBasesPage } from "./KnowledgeBasesPage";
+
+const knowledgeApi = vi.hoisted(() => ({
+  createKnowledgeBase: vi.fn(),
+  fetchKnowledgeBases: vi.fn(),
+  fetchKnowledgeDocuments: vi.fn(),
+  uploadKnowledgeDocument: vi.fn(),
+}));
+
+vi.mock("../../api/knowledge", () => knowledgeApi);
+
+const knowledgeBase = {
+  id: "kb-1",
+  name: "通用产品手册",
+  description: "与业务无关的公共资料",
+  document_count: 4,
+  parsing_count: 1,
+};
+
+const documents = [
+  {
+    id: "doc-uploaded",
+    knowledge_base_id: "kb-1",
+    name: "uploaded.txt",
+    size_bytes: 10,
+    parsing_status: "uploaded",
+    error_code: null,
+  },
+  {
+    id: "doc-parsing",
+    knowledge_base_id: "kb-1",
+    name: "parsing.md",
+    size_bytes: 20,
+    parsing_status: "parsing",
+    error_code: null,
+  },
+  {
+    id: "doc-completed",
+    knowledge_base_id: "kb-1",
+    name: "completed.pdf",
+    size_bytes: 30,
+    parsing_status: "completed",
+    error_code: null,
+  },
+  {
+    id: "doc-failed",
+    knowledge_base_id: "kb-1",
+    name: "failed.docx",
+    size_bytes: 40,
+    parsing_status: "failed",
+    error_code: "parser_failed",
+  },
+] as const;
+
+function TestProviders({ children }: PropsWithChildren) {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+describe("KnowledgeBasesPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    knowledgeApi.fetchKnowledgeBases.mockResolvedValue([]);
+    knowledgeApi.fetchKnowledgeDocuments.mockResolvedValue([]);
+  });
+
+  it("renders an actionable empty state", async () => {
+    render(<KnowledgeBasesPage />, { wrapper: TestProviders });
+
+    expect(await screen.findByText("还没有知识库")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建知识库" })).toBeEnabled();
+    expect(knowledgeApi.fetchKnowledgeDocuments).not.toHaveBeenCalled();
+  });
+
+  it("creates a generic knowledge base and refreshes the list", async () => {
+    knowledgeApi.fetchKnowledgeBases.mockResolvedValueOnce([]).mockResolvedValue([knowledgeBase]);
+    knowledgeApi.createKnowledgeBase.mockResolvedValue(knowledgeBase);
+    const user = userEvent.setup();
+    render(<KnowledgeBasesPage />, { wrapper: TestProviders });
+
+    await screen.findByText("还没有知识库");
+    await user.click(screen.getByRole("button", { name: "创建知识库" }));
+    await user.type(screen.getByRole("textbox", { name: "名称" }), "通用产品手册");
+    await user.type(screen.getByRole("textbox", { name: "描述" }), "与业务无关的公共资料");
+    await user.click(screen.getByRole("button", { name: "确认创建" }));
+
+    await waitFor(() =>
+      expect(knowledgeApi.createKnowledgeBase).toHaveBeenCalledWith({
+        name: "通用产品手册",
+        description: "与业务无关的公共资料",
+      }),
+    );
+    expect(await screen.findByText("通用产品手册")).toBeInTheDocument();
+  });
+
+  it("shows all real parsing states and uploads an allowed document", async () => {
+    knowledgeApi.fetchKnowledgeBases.mockResolvedValue([knowledgeBase]);
+    knowledgeApi.fetchKnowledgeDocuments.mockResolvedValue(documents);
+    knowledgeApi.uploadKnowledgeDocument.mockResolvedValue(documents[1]);
+    const user = userEvent.setup();
+    render(<KnowledgeBasesPage />, { wrapper: TestProviders });
+
+    expect(await screen.findByText("已上传")).toBeInTheDocument();
+    expect(screen.getByText("解析中")).toBeInTheDocument();
+    expect(screen.getByText("已完成")).toBeInTheDocument();
+    expect(screen.getByText("解析失败")).toBeInTheDocument();
+    expect(screen.getByText("parser_failed")).toBeInTheDocument();
+
+    const file = new File(["shared knowledge"], "shared.txt", { type: "text/plain" });
+    await user.upload(screen.getByLabelText("选择文档"), file);
+    await user.click(screen.getByRole("button", { name: "上传文档" }));
+
+    await waitFor(() =>
+      expect(knowledgeApi.uploadKnowledgeDocument).toHaveBeenCalledWith("kb-1", file),
+    );
+  });
+
+  it("shows a safe list error and retries through the same query", async () => {
+    knowledgeApi.fetchKnowledgeBases
+      .mockRejectedValueOnce(new Error("知识库服务暂时不可用"))
+      .mockResolvedValueOnce([]);
+    const user = userEvent.setup();
+    render(<KnowledgeBasesPage />, { wrapper: TestProviders });
+
+    expect(await screen.findByText("知识库加载失败")).toBeInTheDocument();
+    expect(screen.getByText("知识库服务暂时不可用")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重试加载" }));
+
+    expect(await screen.findByText("还没有知识库")).toBeInTheDocument();
+    expect(knowledgeApi.fetchKnowledgeBases).toHaveBeenCalledTimes(2);
+  });
+});

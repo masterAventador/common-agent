@@ -13,6 +13,13 @@ vi.mock("../api/system", () => ({
   }),
 }));
 
+vi.mock("../api/knowledge", () => ({
+  fetchKnowledgeBases: vi.fn().mockResolvedValue([]),
+  fetchKnowledgeDocuments: vi.fn().mockResolvedValue([]),
+  createKnowledgeBase: vi.fn(),
+  uploadKnowledgeDocument: vi.fn(),
+}));
+
 const routes = [
   ["/chat", "AI 会话"],
   ["/employees", "数字员工"],
@@ -21,7 +28,7 @@ const routes = [
 ] as const;
 
 describe("App shell", () => {
-  it.each(routes)("renders %s as the %s entry", (path, heading) => {
+  it.each(routes)("renders %s as the %s entry", async (path, heading) => {
     render(
       <AppProviders>
         <MemoryRouter initialEntries={[path]}>
@@ -30,7 +37,7 @@ describe("App shell", () => {
       </AppProviders>,
     );
 
-    expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: heading })).toBeInTheDocument();
     for (const [, label] of routes) {
       expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
     }

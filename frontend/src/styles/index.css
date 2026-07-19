@@ -85,3 +85,121 @@ select {
 .entry-shell .ant-typography {
   margin: 0;
 }
+
+.knowledge-page {
+  min-height: calc(100vh - 128px);
+  padding: 28px;
+  border: 1px solid #e6eaf2;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 38px rgba(21, 35, 71, 0.05);
+}
+
+.knowledge-page-heading {
+  margin-bottom: 24px;
+}
+
+.knowledge-page-heading .ant-typography {
+  margin-top: 0;
+}
+
+.knowledge-title-icon {
+  color: #315efb;
+  font-size: 24px;
+}
+
+.knowledge-empty-card {
+  padding: 48px 0;
+  border-style: dashed;
+}
+
+.knowledge-empty-card .ant-empty-footer {
+  margin-top: 8px;
+}
+
+.knowledge-workspace {
+  display: grid;
+  grid-template-columns: minmax(250px, 320px) minmax(620px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.knowledge-base-list {
+  display: grid;
+  gap: 10px;
+}
+
+.knowledge-base-item {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid #e6eaf2;
+  border-radius: 12px;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.knowledge-base-item:hover,
+.knowledge-base-item:focus-visible {
+  border-color: #91a8ff;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(49, 94, 251, 0.1);
+}
+
+.knowledge-base-item.is-active {
+  border-color: #315efb;
+  background: #f4f7ff;
+}
+
+.knowledge-base-description {
+  display: -webkit-box;
+  min-height: 44px;
+  margin: 8px 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.knowledge-upload-row {
+  margin-bottom: 20px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #f7f9fc;
+}
+
+.knowledge-file-picker {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  height: 32px;
+  padding: 0 15px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.knowledge-file-picker:hover,
+.knowledge-file-picker:focus-within {
+  border-color: #315efb;
+  color: #315efb;
+}
+
+.knowledge-file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.knowledge-inline-alert {
+  margin-bottom: 16px;
+}
