@@ -3,6 +3,7 @@ set -euo pipefail
 
 contract_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 contract_project_root="$(cd "${contract_script_dir}/.." && pwd)"
+contract_uv_runner="${contract_script_dir}/uv.sh"
 contract_temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/common-agent-contracts.XXXXXX")"
 contract_temp_openapi="${contract_temp_dir}/openapi.json"
 contract_temp_conversation_event="${contract_temp_dir}/conversation-event.schema.json"
@@ -20,8 +21,9 @@ cleanup_contract_temp() {
 trap cleanup_contract_temp EXIT
 
 cd "${contract_project_root}/backend"
-uv run --frozen python -m common_agent.contracts.export_openapi --output "${contract_temp_openapi}"
-uv run --frozen python -m common_agent.contracts.export_event_schema \
+"${contract_uv_runner}" run --frozen python -m common_agent.contracts.export_openapi \
+  --output "${contract_temp_openapi}"
+"${contract_uv_runner}" run --frozen python -m common_agent.contracts.export_event_schema \
   --output "${contract_temp_conversation_event}" \
   --workflow-output "${contract_temp_workflow_run_event}"
 

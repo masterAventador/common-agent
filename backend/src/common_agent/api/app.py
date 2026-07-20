@@ -27,6 +27,7 @@ from common_agent.adapters.persistence.demo_knowledge import (
 )
 from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeUnitOfWorkFactory
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
+from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.api.errors import error_handlers
 from common_agent.api.routers import (
     conversation_router,
@@ -51,7 +52,6 @@ from common_agent.employees.seeds import seed_default_employee
 from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.models.base import TextStreamingModel
-from common_agent.workflows.compiler import WorkflowCompiler
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
 
@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         workflows = WorkflowService(
             SqlAlchemyWorkflowUnitOfWorkFactory(database),
             knowledge_bases,
-            compiler=WorkflowCompiler(
+            compiler=LangGraphWorkflowCompiler(
                 create_workflow_node_registry(workflow_model, knowledge_bases)
             ),
             events=workflow_events,

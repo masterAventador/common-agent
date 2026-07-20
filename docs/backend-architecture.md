@@ -69,7 +69,10 @@ React
 ### 2.4 LangGraph 负责独立工作流
 
 - 前端提交平台自定义的节点和边，不提交 Python 代码；
-- 后端先做业务校验，再把节点转换为 `StateGraph` 节点并编译；
+- 平台只定义编译、执行、节点输入/输出、观察、停止与结果协议，
+  `WorkflowService` 不识别 LangGraph 类型；
+- `adapters/workflow/langgraph/` 先调用平台业务校验，再把平台节点转换为
+  `StateGraph` 节点并编译；
 - 第一版只允许有向无环的线性/汇合图，不支持条件分支、循环和并行；
 - 开始、AI 对话、知识检索、结束四类节点由后端注册表提供；
 - 用户手动运行和数字员工工具调用都经过同一个 `WorkflowService`。
@@ -100,7 +103,7 @@ application --------------+
  +-> models -------------->+ adapters/bailian
  +-> runtimes ------------>+ adapters/deep_agents
  +-> knowledge ----------->+ adapters/ragflow
- +-> workflows ----------->+ langgraph
+ +-> workflows ----------->+ adapters/workflow/langgraph
  +-> ports ---------------->+ adapters/mysql|redis|queue|object_store
 ```
 
@@ -153,6 +156,12 @@ application --------------+
 `aclose()` 组成。工作流节点必须看到完成终态后才接受输出：缺少终态、空输出、重复终态或终态
 之后继续输出都关闭失败；已出现增量后缺终态映射为可重试流中断。供应商消息、Chunk、响应、
 异常和客户端释放都由外围适配器转换，平台协议不暴露 LangChain、OpenAI 或 Deep Agents 类型。
+
+平台图执行协议由 `WorkflowCompiler/CompiledWorkflow`、不可变节点上下文与结果、
+`WorkflowExecutionObserver`、可幂等请求的 `WorkflowExecutionStopToken` 和严格
+`WorkflowExecutionResult` 组成。结果要求已完成节点唯一且与步数完全一致；
+LangGraph 的 `StateGraph`、Runtime context、TypedDict 状态、节点包装、递归上限异常与
+编译结果都只存在于外围适配器。
 
 ## 4. 核心模型
 
@@ -341,7 +350,14 @@ FastAPI 进程托管，不为尚不存在的并发或可靠投递需求预建队
 - 知识检索节点引用的知识库存在；
 - 节点数、边数、输入长度和运行步数有上限。
 
-执行时后端用节点注册表创建函数，构建并编译 `StateGraph`。LangGraph 自己的编译检查是第二道门禁，不能替代平台校验。`WorkflowService` 从正式仓储读取已校验定义，持有每次运行的协作式停止信号，并让节点观察器逐步提交 `current_node_id/completed_node_ids`；编译结果的节点顺序或步数与已提交摘要不一致时关闭失败，不接受不确定结果。知识库失效、模型失败与未知执行异常只保存稳定错误码，不保存第三方响应或知识正文。
+执行时平台节点注册表只接收 `WorkflowNodeExecutionContext` 并返回
+`WorkflowNodeExecutionResult`；LangGraph 适配器负责构建 `StateGraph`、投影图状态、调用
+节点、累计已完成顺序和步数，并将第三方递归/编译/执行异常转为稳定平台错误。
+LangGraph 自己的编译检查是第二道门禁，不能替代平台校验。`WorkflowService` 从正式仓储
+读取已校验定义，只持有平台编译器端口、停止令牌和节点观察器，逐步提交
+`current_node_id/completed_node_ids`；执行结果的节点顺序或步数与已提交摘要不一致时关闭
+失败，不接受不确定结果。知识库失效、模型失败与未知执行异常只保存稳定错误码，
+不保存第三方响应或知识正文。
 
 ## 7. API 基线
 

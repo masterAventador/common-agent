@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_ROOT="${REPOSITORY_ROOT}/backend"
 FRONTEND_ROOT="${REPOSITORY_ROOT}/frontend"
+UV_RUNNER="${SCRIPT_DIR}/uv.sh"
 RUNTIME_ROOT="${REPOSITORY_ROOT}/.local/dev/demo-light"
 LEGACY_RAGFLOW_CHECKOUT="${REPOSITORY_ROOT}/.local/dev/common-agent-dev/ragflow/upstream/v0.25.6"
 BACKEND_LOG="${RUNTIME_ROOT}/backend.log"
@@ -150,7 +151,7 @@ setup() {
   git -C "${REPOSITORY_ROOT}" submodule update --init --recursive third_party/ragflow
   (
     cd "${BACKEND_ROOT}"
-    uv sync --frozen
+    "${UV_RUNNER}" sync --frozen
   )
   (
     cd "${FRONTEND_ROOT}"

@@ -6,13 +6,16 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.application.workflow_service import (
+    WorkflowExecutionUnavailable,
     WorkflowNotFound,
     WorkflowRunConflict,
     WorkflowRunNotActive,
     WorkflowRunNotFound,
     WorkflowService,
 )
+from common_agent.domain.workflow import WorkflowDefinition
 from common_agent.domain.workflow_run import (
     WorkflowRun,
     WorkflowRunOrigin,
@@ -28,11 +31,15 @@ from common_agent.models.base import (
     ModelStreamDelta,
     ModelStreamEvent,
 )
-from common_agent.runtimes.base import RuntimeStopSignal
-from common_agent.workflows.compiler import CompiledWorkflow, WorkflowCompiler
 from common_agent.workflows.events import WorkflowEventBroker, WorkflowEventKind
+from common_agent.workflows.execution import (
+    CompiledWorkflow,
+    WorkflowCompiler,
+    WorkflowExecutionObserver,
+    WorkflowExecutionResult,
+    WorkflowExecutionStopSignal,
+)
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
-from common_agent.workflows.state import WorkflowExecutionObserver, WorkflowExecutionResult
 from tests.support.knowledge import KnowledgeProbe
 from tests.unit.workflows.support import WorkflowUnitOfWorkFactoryProbe, workflow_configuration
 
@@ -72,19 +79,20 @@ def _service(
     *,
     model: RunModelProbe | None = None,
     units: WorkflowUnitOfWorkFactoryProbe | None = None,
+    compiler: WorkflowCompiler | None = None,
 ) -> tuple[WorkflowService, WorkflowUnitOfWorkFactoryProbe, WorkflowEventBroker, RunModelProbe]:
     active_units = units or WorkflowUnitOfWorkFactoryProbe()
     knowledge = KnowledgeProbe()
     active_model = model or RunModelProbe()
     events = WorkflowEventBroker()
-    compiler = WorkflowCompiler(
+    active_compiler = compiler or LangGraphWorkflowCompiler(
         create_workflow_node_registry(active_model, KnowledgeBaseService(knowledge))
     )
     return (
         WorkflowService(
             active_units,
             KnowledgeBaseService(knowledge),
-            compiler=compiler,
+            compiler=active_compiler,
             events=events,
         ),
         active_units,
@@ -145,6 +153,27 @@ def test_wait_for_run_rejects_unknown_run() -> None:
 
         with pytest.raises(WorkflowRunNotFound):
             await service.wait_for_run(uuid4())
+        await service.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_start_run_requires_platform_compiler_and_event_ports() -> None:
+    async def exercise() -> None:
+        service = WorkflowService(
+            WorkflowUnitOfWorkFactoryProbe(),
+            KnowledgeBaseService(KnowledgeProbe()),
+            events=WorkflowEventBroker(),
+        )
+
+        with pytest.raises(WorkflowExecutionUnavailable):
+            await service.start_run(
+                uuid4(),
+                run_id=uuid4(),
+                input="缺少编译器",
+                trigger=WorkflowRunTrigger.MANUAL,
+            )
+
         await service.aclose()
 
     asyncio.run(exercise())
@@ -281,25 +310,34 @@ def test_node_failure_is_persisted_without_exposing_provider_error() -> None:
     asyncio.run(exercise())
 
 
-def test_compiler_result_mismatch_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def invalid_invoke(
-        compiled: CompiledWorkflow,
+class _InvalidCompiledWorkflow:
+    workflow_id = "invalid-result"
+
+    async def invoke(
+        self,
         user_input: str,
         *,
         observer: WorkflowExecutionObserver | None = None,
-        stop: RuntimeStopSignal | None = None,
+        stop: WorkflowExecutionStopSignal | None = None,
     ) -> WorkflowExecutionResult:
-        del compiled, user_input, observer, stop
+        del user_input, observer, stop
         return WorkflowExecutionResult(
             output="不可信结果",
             completed_node_ids=("not-persisted",),
             step_count=1,
         )
 
-    monkeypatch.setattr(CompiledWorkflow, "invoke", invalid_invoke)
+
+class _InvalidCompiler:
+    def compile(self, workflow: WorkflowDefinition) -> CompiledWorkflow:
+        del workflow
+        return _InvalidCompiledWorkflow()
+
+
+def test_compiler_result_mismatch_fails_closed() -> None:
 
     async def exercise() -> None:
-        service, _, broker, _ = _service()
+        service, _, broker, _ = _service(compiler=_InvalidCompiler())
         workflow = await service.create(workflow_configuration())
         run_id = uuid4()
         await service.start_run(

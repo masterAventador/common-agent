@@ -39,9 +39,14 @@ from common_agent.models.base import (
 from common_agent.models.prompts import KNOWLEDGE_SAFETY_INSTRUCTION
 from common_agent.runtimes.base import RuntimeKnowledgeChunk
 from common_agent.workflows.errors import WorkflowNodeConfigurationInvalid
-from common_agent.workflows.state import WorkflowGraphState, WorkflowStateUpdate
+from common_agent.workflows.execution import (
+    WorkflowNodeExecutionContext,
+    WorkflowNodeExecutionResult,
+)
 
-type WorkflowNodeRunner = Callable[[WorkflowGraphState], Awaitable[WorkflowStateUpdate]]
+type WorkflowNodeRunner = Callable[
+    [WorkflowNodeExecutionContext], Awaitable[WorkflowNodeExecutionResult]
+]
 type WorkflowNodeFactory = Callable[[WorkflowNode], WorkflowNodeRunner]
 
 
@@ -77,8 +82,8 @@ def _start_factory(node: WorkflowNode) -> WorkflowNodeRunner:
     if not isinstance(node.config, StartNodeConfig):
         raise WorkflowNodeConfigurationInvalid()
 
-    async def run(state: WorkflowGraphState) -> WorkflowStateUpdate:
-        return _completed_update(state, node, output=state["input"])
+    async def run(state: WorkflowNodeExecutionContext) -> WorkflowNodeExecutionResult:
+        return WorkflowNodeExecutionResult(output=state.user_input)
 
     return run
 
@@ -89,7 +94,7 @@ def _ai_chat_factory(model: TextStreamingModel) -> WorkflowNodeFactory:
         if not isinstance(config, AiChatNodeConfig):
             raise WorkflowNodeConfigurationInvalid()
 
-        async def run(state: WorkflowGraphState) -> WorkflowStateUpdate:
+        async def run(state: WorkflowNodeExecutionContext) -> WorkflowNodeExecutionResult:
             request = _model_request(config.prompt, state)
             chunks: list[str] = []
             completed = False
@@ -120,7 +125,7 @@ def _ai_chat_factory(model: TextStreamingModel) -> WorkflowNodeFactory:
             output = "".join(chunks)
             if not output.strip():
                 raise ModelProviderResponseInvalid()
-            return _completed_update(state, node, output=output)
+            return WorkflowNodeExecutionResult(output=output)
 
         return run
 
@@ -135,8 +140,8 @@ def _knowledge_retrieval_factory(
         if not isinstance(config, KnowledgeRetrievalNodeConfig):
             raise WorkflowNodeConfigurationInvalid()
 
-        async def run(state: WorkflowGraphState) -> WorkflowStateUpdate:
-            query = state.get("output") or state["input"]
+        async def run(state: WorkflowNodeExecutionContext) -> WorkflowNodeExecutionResult:
+            query = state.output or state.user_input
             try:
                 result = await knowledge_bases.retrieve(
                     KnowledgeRetrievalRequest(
@@ -151,7 +156,7 @@ def _knowledge_retrieval_factory(
                 raise
             except Exception:
                 raise KnowledgeServiceUnavailable() from None
-            return _completed_update(state, node, knowledge=knowledge)
+            return WorkflowNodeExecutionResult(knowledge=knowledge)
 
         return run
 
@@ -162,19 +167,19 @@ def _end_factory(node: WorkflowNode) -> WorkflowNodeRunner:
     if not isinstance(node.config, EndNodeConfig):
         raise WorkflowNodeConfigurationInvalid()
 
-    async def run(state: WorkflowGraphState) -> WorkflowStateUpdate:
-        output = state.get("output")
+    async def run(state: WorkflowNodeExecutionContext) -> WorkflowNodeExecutionResult:
+        output = state.output
         if not output:
-            output = _knowledge_text(state.get("knowledge", ())) or state["input"]
-        return _completed_update(state, node, output=output)
+            output = _knowledge_text(state.knowledge) or state.user_input
+        return WorkflowNodeExecutionResult(output=output)
 
     return run
 
 
-def _model_request(prompt: str, state: WorkflowGraphState) -> ModelRequest:
+def _model_request(prompt: str, state: WorkflowNodeExecutionContext) -> ModelRequest:
     system_prompt = f"{prompt}\n\n{KNOWLEDGE_SAFETY_INSTRUCTION}"
-    context = state.get("output") or state["input"]
-    knowledge = _knowledge_text(state.get("knowledge", ()))
+    context = state.output or state.user_input
+    knowledge = _knowledge_text(state.knowledge)
     if knowledge:
         context = f"用户输入:\n{context}\n\n检索到的知识片段:\n{knowledge}"
     return ModelRequest(
@@ -229,22 +234,3 @@ def _runtime_chunks(
         )
     except (AttributeError, TypeError, ValueError):
         raise KnowledgeProviderResponseInvalid() from None
-
-
-def _completed_update(
-    state: WorkflowGraphState,
-    node: WorkflowNode,
-    *,
-    output: str | None = None,
-    knowledge: tuple[RuntimeKnowledgeChunk, ...] | None = None,
-) -> WorkflowStateUpdate:
-    update: WorkflowStateUpdate = {
-        "current_node_id": node.id,
-        "completed_node_ids": (*state.get("completed_node_ids", ()), node.id),
-        "step_count": state.get("step_count", 0) + 1,
-    }
-    if output is not None:
-        update["output"] = output
-    if knowledge is not None:
-        update["knowledge"] = knowledge
-    return update

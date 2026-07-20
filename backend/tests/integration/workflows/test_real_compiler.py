@@ -9,6 +9,7 @@ import pytest
 
 from common_agent.adapters.knowledge.ragflow import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
+from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.bootstrap.settings import ModelSettings
 from common_agent.domain.knowledge import (
     CreateKnowledgeBaseRequest,
@@ -27,7 +28,6 @@ from common_agent.domain.workflow import (
     WorkflowNodeType,
 )
 from common_agent.knowledge.service import KnowledgeBaseService
-from common_agent.workflows.compiler import WorkflowCompiler
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
 from tests.support.ragflow import delete_dataset, provision_api_key
 
@@ -85,7 +85,7 @@ async def _exercise_real_compiler(base_url: str, api_key: str, expected_version:
             pytest.fail("W5-03 真实文档解析超时")
 
         workflow = _workflow(dataset.id)
-        compiler = WorkflowCompiler(
+        compiler = LangGraphWorkflowCompiler(
             create_workflow_node_registry(model, KnowledgeBaseService(knowledge))
         )
         result = await compiler.compile(workflow).invoke(

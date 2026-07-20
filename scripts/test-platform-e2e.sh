@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_ROOT="${REPOSITORY_ROOT}/backend"
 FRONTEND_ROOT="${REPOSITORY_ROOT}/frontend"
+UV_RUNNER="${SCRIPT_DIR}/uv.sh"
 API_PORT=18200
 FRONTEND_PORT=18280
 RAGFLOW_BASE_URL="http://127.0.0.1:19380"
@@ -81,7 +82,7 @@ cleanup() {
       COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
       COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="${COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME}" \
       COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME}" \
-        uv run --frozen python -m tests.support.demo_chat_e2e_cleanup
+        "${UV_RUNNER}" run --frozen python -m tests.support.demo_chat_e2e_cleanup
     ); then
       echo "Demo 聊天 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
       cleanup_status=1
@@ -94,7 +95,7 @@ cleanup() {
       COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
       COMMON_AGENT_E2E_WORKFLOW_NAME="${COMMON_AGENT_E2E_WORKFLOW_NAME}" \
       COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME}" \
-        uv run --frozen python -m tests.support.workflow_designer_e2e_cleanup
+        "${UV_RUNNER}" run --frozen python -m tests.support.workflow_designer_e2e_cleanup
     ); then
       echo "工作流设计器 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
       cleanup_status=1
@@ -109,7 +110,7 @@ cleanup() {
       COMMON_AGENT_E2E_WORKFLOW_STOP_NAME="${COMMON_AGENT_E2E_WORKFLOW_STOP_NAME}" \
       COMMON_AGENT_E2E_WORKFLOW_FAILURE_NAME="${COMMON_AGENT_E2E_WORKFLOW_FAILURE_NAME}" \
       COMMON_AGENT_E2E_WORKFLOW_FAILURE_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_WORKFLOW_FAILURE_KNOWLEDGE_NAME}" \
-        uv run --frozen python -m tests.support.workflow_run_ui_e2e_cleanup
+        "${UV_RUNNER}" run --frozen python -m tests.support.workflow_run_ui_e2e_cleanup
     ); then
       echo "手动运行 UI E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
       cleanup_status=1
@@ -120,7 +121,7 @@ cleanup() {
       COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
       COMMON_AGENT_E2E_WORKFLOW_CHAT_NAME="${COMMON_AGENT_E2E_WORKFLOW_CHAT_NAME}" \
       COMMON_AGENT_E2E_WORKFLOW_CHAT_EMPLOYEE_NAME="${COMMON_AGENT_E2E_WORKFLOW_CHAT_EMPLOYEE_NAME}" \
-        uv run --frozen python -m tests.support.workflow_chat_e2e_cleanup
+        "${UV_RUNNER}" run --frozen python -m tests.support.workflow_chat_e2e_cleanup
     ); then
       echo "工作流对话 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
       cleanup_status=1
@@ -134,7 +135,7 @@ cleanup() {
       COMMON_AGENT_E2E_MVP_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_MVP_KNOWLEDGE_NAME}" \
       COMMON_AGENT_E2E_MVP_EMPLOYEE_NAME="${COMMON_AGENT_E2E_MVP_EMPLOYEE_NAME}" \
       COMMON_AGENT_E2E_MVP_WORKFLOW_NAME="${COMMON_AGENT_E2E_MVP_WORKFLOW_NAME}" \
-        uv run --frozen python -m tests.support.mvp_acceptance_e2e_cleanup
+        "${UV_RUNNER}" run --frozen python -m tests.support.mvp_acceptance_e2e_cleanup
     ); then
       echo "MVP 总验收数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
       cleanup_status=1
@@ -148,7 +149,7 @@ cleanup() {
       COMMON_AGENT_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_KNOWLEDGE_NAME}" \
       COMMON_AGENT_E2E_EMPLOYEE_NAME="${COMMON_AGENT_E2E_EMPLOYEE_NAME}" \
       COMMON_AGENT_E2E_EMPLOYEE_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_EMPLOYEE_KNOWLEDGE_NAME}" \
-        uv run --frozen python -m tests.support.platform_e2e_cleanup
+        "${UV_RUNNER}" run --frozen python -m tests.support.platform_e2e_cleanup
     ); then
       echo "平台 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
       cleanup_status=1
@@ -205,7 +206,7 @@ if [[ "${E2E_SUITE}" != "demo-chat" ]]; then
   fi
   RAGFLOW_API_KEY="$(
     cd "${BACKEND_ROOT}"
-    uv run --frozen python -c \
+    "${UV_RUNNER}" run --frozen python -c \
       'import asyncio; from tests.support.ragflow import provision_api_key; print(asyncio.run(provision_api_key("http://127.0.0.1:19380")))'
   )"
   export RAGFLOW_API_KEY
@@ -218,7 +219,7 @@ if [[ "${E2E_SUITE}" != "demo-chat" ]]; then
       COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
       RAGFLOW_BASE_URL="${RAGFLOW_BASE_URL}" \
       RAGFLOW_API_KEY="${RAGFLOW_API_KEY}" \
-        uv run --frozen python -m tests.support.mvp_acceptance_empty
+        "${UV_RUNNER}" run --frozen python -m tests.support.mvp_acceptance_empty
     )
   fi
 else
@@ -227,7 +228,7 @@ fi
 
 (
   cd "${BACKEND_ROOT}"
-  exec uv run --frozen python -m common_agent
+  exec "${UV_RUNNER}" run --frozen python -m common_agent
 ) >"${BACKEND_LOG}" 2>&1 &
 BACKEND_PID=$!
 wait_for_url "http://127.0.0.1:${API_PORT}/api/v1/system/health"

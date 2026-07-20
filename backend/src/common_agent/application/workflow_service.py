@@ -20,11 +20,14 @@ from common_agent.domain.workflow_run import (
 from common_agent.knowledge.base import KnowledgeBaseNotFound
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.ports.workflows import WorkflowRunAlreadyExists, WorkflowUnitOfWorkFactory
-from common_agent.runtimes.base import RuntimeStopToken
-from common_agent.workflows.compiler import WorkflowCompiler
 from common_agent.workflows.errors import WorkflowExecutionStopped
 from common_agent.workflows.events import WorkflowEventBroker, WorkflowEventKind
-from common_agent.workflows.state import WorkflowExecutionObserver, WorkflowExecutionResult
+from common_agent.workflows.execution import (
+    WorkflowCompiler,
+    WorkflowExecutionObserver,
+    WorkflowExecutionResult,
+    WorkflowExecutionStopToken,
+)
 from common_agent.workflows.validator import (
     WorkflowGraphInvalid,
     WorkflowValidationCode,
@@ -79,7 +82,7 @@ class WorkflowRunStopAccepted:
 
 @dataclass(slots=True)
 class _ActiveWorkflowRun:
-    stop: RuntimeStopToken
+    stop: WorkflowExecutionStopToken
     task: asyncio.Task[None] | None = None
 
 
@@ -230,7 +233,7 @@ class WorkflowService:
                     raise WorkflowRunNotFound
                 await unit_of_work.commit()
 
-            stop = RuntimeStopToken()
+            stop = WorkflowExecutionStopToken()
             active = _ActiveWorkflowRun(stop=stop)
             self._active_runs[run_id] = active
             await self._event_broker.publish(
@@ -300,7 +303,7 @@ class WorkflowService:
         self,
         workflow: WorkflowDefinition,
         run: WorkflowRun,
-        stop: RuntimeStopToken,
+        stop: WorkflowExecutionStopToken,
     ) -> None:
         try:
             compiler = self._workflow_compiler

@@ -10,10 +10,14 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
+from common_agent.adapters.workflow.langgraph.state import (
+    WorkflowGraphContext,
+    WorkflowGraphState,
+    WorkflowGraphUpdate,
+)
 from common_agent.domain.workflow import WorkflowDefinition, WorkflowNodeType
 from common_agent.knowledge.base import KnowledgeServiceError
 from common_agent.models.base import ModelServiceError
-from common_agent.runtimes.base import RuntimeStopSignal
 from common_agent.workflows.errors import (
     WorkflowCompilationError,
     WorkflowCompilationFailed,
@@ -23,14 +27,14 @@ from common_agent.workflows.errors import (
     WorkflowNodeNotRegistered,
     WorkflowStepLimitExceeded,
 )
-from common_agent.workflows.nodes.registry import WorkflowNodeRegistry, WorkflowNodeRunner
-from common_agent.workflows.state import (
+from common_agent.workflows.execution import (
     WorkflowExecutionObserver,
     WorkflowExecutionResult,
-    WorkflowGraphContext,
-    WorkflowGraphState,
-    WorkflowStateUpdate,
+    WorkflowExecutionStopSignal,
+    WorkflowNodeExecutionContext,
+    WorkflowNodeExecutionResult,
 )
+from common_agent.workflows.nodes.registry import WorkflowNodeRegistry, WorkflowNodeRunner
 from common_agent.workflows.validator import MAX_WORKFLOW_NODES, ensure_workflow_graph_valid
 
 MAX_WORKFLOW_STEPS = MAX_WORKFLOW_NODES + 2
@@ -73,7 +77,7 @@ class _ObservedNode:
         state: WorkflowGraphState,
         *,
         runtime: Runtime[WorkflowGraphContext],
-    ) -> WorkflowStateUpdate:
+    ) -> WorkflowGraphUpdate:
         observer = runtime.context["observer"]
         stop = runtime.context["stop"]
         if stop.is_requested:
@@ -82,7 +86,9 @@ class _ObservedNode:
         if stop.is_requested:
             raise WorkflowExecutionStopped()
 
-        runner_task: asyncio.Future[WorkflowStateUpdate] = asyncio.ensure_future(self.runner(state))
+        runner_task: asyncio.Future[WorkflowNodeExecutionResult] = asyncio.ensure_future(
+            self.runner(_node_context(state))
+        )
         stop_task = asyncio.create_task(stop.wait())
         try:
             waiters = {
@@ -97,7 +103,7 @@ class _ObservedNode:
                 await _discard_task(runner_task)
                 raise WorkflowExecutionStopped()
             await _discard_task(stop_task)
-            update = runner_task.result()
+            update = _node_update(state, self.node_id, runner_task.result())
             await observer.node_completed(self.node_id)
             return update
         finally:
@@ -106,7 +112,7 @@ class _ObservedNode:
 
 
 @dataclass(frozen=True, slots=True)
-class CompiledWorkflow:
+class _LangGraphCompiledWorkflow:
     workflow_id: str
     _graph: _CompiledGraph
     _step_limit: int
@@ -116,8 +122,10 @@ class CompiledWorkflow:
         user_input: str,
         *,
         observer: WorkflowExecutionObserver | None = None,
-        stop: RuntimeStopSignal | None = None,
+        stop: WorkflowExecutionStopSignal | None = None,
     ) -> WorkflowExecutionResult:
+        if not isinstance(user_input, str) or not user_input.strip():
+            raise WorkflowExecutionFailed()
         initial: WorkflowGraphState = {
             "input": user_input,
             "output": "",
@@ -143,7 +151,7 @@ class CompiledWorkflow:
         return _execution_result(result)
 
 
-class WorkflowCompiler:
+class LangGraphWorkflowCompiler:
     def __init__(
         self,
         registry: WorkflowNodeRegistry,
@@ -159,7 +167,7 @@ class WorkflowCompiler:
         self._registry = registry
         self._step_limit = step_limit
 
-    def compile(self, workflow: WorkflowDefinition) -> CompiledWorkflow:
+    def compile(self, workflow: WorkflowDefinition) -> _LangGraphCompiledWorkflow:
         ensure_workflow_graph_valid(workflow.nodes, workflow.edges)
         graph = StateGraph(WorkflowGraphState, context_schema=WorkflowGraphContext)
         internal_ids = {
@@ -196,7 +204,7 @@ class WorkflowCompiler:
             raise
         except Exception:
             raise WorkflowCompilationFailed() from None
-        return CompiledWorkflow(str(workflow.id), compiled, self._step_limit)
+        return _LangGraphCompiledWorkflow(str(workflow.id), compiled, self._step_limit)
 
 
 async def _discard_task[Result](task: asyncio.Future[Result]) -> None:
@@ -204,6 +212,47 @@ async def _discard_task[Result](task: asyncio.Future[Result]) -> None:
         task.cancel()
     with suppress(asyncio.CancelledError, Exception):
         await task
+
+
+def _node_context(state: WorkflowGraphState) -> WorkflowNodeExecutionContext:
+    try:
+        return WorkflowNodeExecutionContext(
+            user_input=state["input"],
+            output=state.get("output", ""),
+            knowledge=state.get("knowledge", ()),
+        )
+    except (KeyError, TypeError, ValueError):
+        raise WorkflowExecutionFailed() from None
+
+
+def _node_update(
+    state: WorkflowGraphState,
+    node_id: str,
+    result: WorkflowNodeExecutionResult,
+) -> WorkflowGraphUpdate:
+    if not isinstance(result, WorkflowNodeExecutionResult):
+        raise WorkflowExecutionFailed()
+    completed_node_ids = state.get("completed_node_ids", ())
+    step_count = state.get("step_count", 0)
+    if (
+        not isinstance(completed_node_ids, tuple)
+        or any(not isinstance(completed, str) for completed in completed_node_ids)
+        or not isinstance(step_count, int)
+        or isinstance(step_count, bool)
+        or step_count != len(completed_node_ids)
+        or node_id in completed_node_ids
+    ):
+        raise WorkflowExecutionFailed()
+    update: WorkflowGraphUpdate = {
+        "current_node_id": node_id,
+        "completed_node_ids": (*completed_node_ids, node_id),
+        "step_count": step_count + 1,
+    }
+    if result.output is not None:
+        update["output"] = result.output
+    if result.knowledge is not None:
+        update["knowledge"] = result.knowledge
+    return update
 
 
 def _execution_result(result: object) -> WorkflowExecutionResult:
@@ -220,8 +269,11 @@ def _execution_result(result: object) -> WorkflowExecutionResult:
         or isinstance(step_count, bool)
     ):
         raise WorkflowExecutionFailed()
-    return WorkflowExecutionResult(
-        output=output,
-        completed_node_ids=completed_node_ids,
-        step_count=step_count,
-    )
+    try:
+        return WorkflowExecutionResult(
+            output=output,
+            completed_node_ids=completed_node_ids,
+            step_count=step_count,
+        )
+    except (TypeError, ValueError):
+        raise WorkflowExecutionFailed() from None

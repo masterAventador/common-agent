@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+import ast
+import asyncio
+from pathlib import Path
+from typing import cast
+
+import pytest
+
+from common_agent.domain.workflow import WorkflowDefinition
+from common_agent.runtimes.base import RuntimeKnowledgeChunk
+from common_agent.workflows.execution import (
+    CompiledWorkflow,
+    WorkflowCompiler,
+    WorkflowExecutionObserver,
+    WorkflowExecutionResult,
+    WorkflowExecutionStopSignal,
+    WorkflowExecutionStopToken,
+    WorkflowNodeExecutionContext,
+    WorkflowNodeExecutionResult,
+)
+
+
+class _ObserverProbe:
+    async def node_started(self, node_id: str) -> None:
+        del node_id
+
+    async def node_completed(self, node_id: str) -> None:
+        del node_id
+
+
+class _CompiledProbe:
+    workflow_id = "workflow-probe"
+
+    async def invoke(
+        self,
+        user_input: str,
+        *,
+        observer: WorkflowExecutionObserver | None = None,
+        stop: WorkflowExecutionStopSignal | None = None,
+    ) -> WorkflowExecutionResult:
+        del observer, stop
+        return WorkflowExecutionResult(
+            output=user_input,
+            completed_node_ids=("start", "end"),
+            step_count=2,
+        )
+
+
+class _CompilerProbe:
+    def compile(self, workflow: WorkflowDefinition) -> CompiledWorkflow:
+        del workflow
+        return _CompiledProbe()
+
+
+def test_platform_graph_execution_protocol_is_strict_and_runtime_checkable() -> None:
+    token = WorkflowExecutionStopToken()
+    context = WorkflowNodeExecutionContext(user_input="输入", output="", knowledge=())
+    node_result = WorkflowNodeExecutionResult(output="输出")
+    execution_result = asyncio.run(_CompiledProbe().invoke("完成", observer=_ObserverProbe()))
+
+    assert isinstance(token, WorkflowExecutionStopSignal)
+    assert isinstance(_CompiledProbe(), CompiledWorkflow)
+    assert isinstance(_CompilerProbe(), WorkflowCompiler)
+    assert context.user_input == "输入"
+    assert node_result.output == "输出"
+    assert execution_result.completed_node_ids == ("start", "end")
+    assert token.request_stop() is True
+    assert token.request_stop() is False
+    assert token.is_requested is True
+    asyncio.run(asyncio.wait_for(token.wait(), timeout=0.1))
+
+    with pytest.raises(ValueError):
+        WorkflowNodeExecutionContext(user_input="", output="", knowledge=())
+    with pytest.raises(ValueError):
+        WorkflowNodeExecutionContext(
+            user_input="输入",
+            output=cast(str, None),
+            knowledge=(),
+        )
+    with pytest.raises(ValueError):
+        WorkflowNodeExecutionContext(
+            user_input="输入",
+            output="",
+            knowledge=cast(tuple[RuntimeKnowledgeChunk, ...], ("非法知识",)),
+        )
+    with pytest.raises(ValueError):
+        WorkflowNodeExecutionResult()
+    with pytest.raises(ValueError):
+        WorkflowNodeExecutionResult(output=" ")
+    with pytest.raises(ValueError):
+        WorkflowNodeExecutionResult(
+            knowledge=cast(tuple[RuntimeKnowledgeChunk, ...], ("非法知识",))
+        )
+    with pytest.raises(ValueError):
+        WorkflowExecutionResult(output="", completed_node_ids=("start",), step_count=1)
+    with pytest.raises(ValueError):
+        WorkflowExecutionResult(
+            output="完成",
+            completed_node_ids=("start", "start"),
+            step_count=2,
+        )
+    with pytest.raises(ValueError):
+        WorkflowExecutionResult(output="完成", completed_node_ids=("start",), step_count=2)
+
+
+def test_langgraph_imports_stay_inside_workflow_adapter() -> None:
+    source_root = Path(__file__).parents[3] / "src" / "common_agent"
+    violations: list[str] = []
+    for source_file in source_root.rglob("*.py"):
+        relative = source_file.relative_to(source_root)
+        if relative.parts[:3] == ("adapters", "workflow", "langgraph"):
+            continue
+        tree = ast.parse(source_file.read_text(encoding="utf-8"), filename=str(source_file))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                modules = [node.module or ""]
+            else:
+                continue
+            for module in modules:
+                if module.split(".", 1)[0] == "langgraph":
+                    violations.append(f"{relative}:{node.lineno}:{module}")
+
+    assert violations == []

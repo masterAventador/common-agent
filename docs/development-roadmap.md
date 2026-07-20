@@ -282,7 +282,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 | H7-01 | 本地质量门禁与可选 GitHub CI 镜像 | 以本机冻结安装和可复现命令为权威，执行后端 pytest/Ruff/Mypy/uv lock/audit、前端 Vitest/ESLint/Typecheck/Build/pnpm audit、契约漂移、ShellCheck 和 Demo 链路；PR/main workflow 只镜像同一组门禁，不依赖付费 Hosted Runner，也不作为完成前提；缓存不得绕过锁文件，失败不得吞掉；真实外部依赖门禁保留显式入口 | D8-03 | ✅ 已完成 |
 | H7-02 | 自动化覆盖率门禁 | 后端、前端分别生成行/分支覆盖率；先记录真实基线并补足缺口，最终后端总体行覆盖率不低于 85%、核心领域/应用不低于 90%，前端总体行覆盖率不低于 80%，新增改动不得降低；报告不进入 Git | H7-01 | ✅ 已完成 |
 | H7-03 | 平台自有消息与模型协议 | 定义不依赖 LangChain 的平台消息、模型请求、增量、终态、错误和释放协议；会话与工作流节点只消费平台类型；百炼与 Deep Agents 适配器负责双向转换；真实百炼、会话和工作流回归全部通过 | H7-02 | ✅ 已完成 |
-| H7-04 | 平台自有图执行协议 | 定义不依赖 LangGraph 的编译、执行、节点观察、停止和结果协议；把 LangGraph 编译器、运行状态和节点框架转换移入 `adapters/workflow/langgraph/`；`WorkflowService` 只依赖平台端口，手动与员工触发语义不变 | H7-03 | ⬜ 未开始 |
+| H7-04 | 平台自有图执行协议 | 定义不依赖 LangGraph 的编译、执行、节点观察、停止和结果协议；把 LangGraph 编译器、运行状态和节点框架转换移入 `adapters/workflow/langgraph/`；`WorkflowService` 只依赖平台端口，手动与员工触发语义不变 | H7-03 | ✅ 已完成 |
 | H7-05 | 第三方依赖边界门禁 | 增加可自动执行的 import/AST 架构测试；除 `api/` 的 FastAPI 边界和 `adapters/` 外，生产平台层不得导入 FastAPI、SQLAlchemy、HTTP SDK、LangChain、LangGraph、Deep Agents 或供应商类型；修正规则和架构文档与实现口径 | H7-04 | ⬜ 未开始 |
 | H7-06 | 结构化日志、指标与追踪 | 统一 JSON 日志和关联上下文，覆盖 request/conversation/message/turn/workflow/run ID、耗时、状态与稳定错误码；提供本机最小健康/指标入口和跨服务 trace context；默认脱敏提示词、知识正文、Key、密码和上游响应，故障测试证明可定位且不泄密 | H7-05 | ⬜ 未开始 |
 | H7-07 | 事件与锁状态生命周期 | 为会话/工作流 Broker 历史、订阅者、per-ID 锁和终态状态增加有界容量、TTL/LRU 与安全回收；保留允许的 SSE 回放窗口，慢消费者和历史缺口语义不变；通过大量短会话/运行及长时间 soak 证明内存最终回落且无活跃状态误删 | H7-06 | ⬜ 未开始 |
@@ -337,13 +337,13 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 ## 18. 当前下一步
 
-R8-00、D8-01、D8-02、D8-03、H7-01、H7-02、H7-03 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
+R8-00、D8-01、D8-02、D8-03、H7-01、H7-02、H7-03、H7-04 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
 embedding/rerank 统一使用阿里百炼，本地模型退场；全新克隆可由统一入口进入 12 GiB
 `demo-light`，Demo 知识、员工绑定与会话引用在后端重启后保持一致；`real` 可按需切到暂定
 32 GiB，完成脱敏体检、费用诊断、真实纵向门禁和跨 Colima 重启恢复；本机质量门禁已经冻结，
 GitHub Hosted Runner 只作可选镜像、不作为验收依赖；前后端行/分支覆盖率已建立本机不回退门禁；
-平台消息与模型协议不再暴露 LangChain/OpenAI/Deep Agents 类型。下一任务进入 H7-04，收回
-LangGraph 图执行协议，之后继续第三方边界门禁；R8-04 仍独立负责 32 GiB 的峰值
+平台消息/模型/图执行协议不再暴露 LangChain、OpenAI、Deep Agents 或 LangGraph 类型。
+下一任务进入 H7-05，建立完整第三方依赖边界门禁；R8-04 仍独立负责 32 GiB 的峰值
 与 30 分钟 soak，不用 D8-03 的功能通过冒充长期资源验收。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
 
@@ -1196,3 +1196,20 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - 真实回归：在项目专属 32 GiB real 栈上显式启用而非依赖默认 skip，一次执行真实百炼适配、Deep Agents 流/协作停止/错误、会话 HTTP/SSE、RAGFlow+百炼工作流编译、手动工作流运行和员工 allowlist 工具触发共 `6 passed in 37.54s`。六项均经正式适配器/API/MySQL/RAGFlow/百炼路径完成并由 finally 删除唯一数据，没有 Mock/Fake 或 GitHub Runner 结果
 - 清理：Demo 与 real 测试 finally 已删除会话、员工、知识库和工作流唯一数据；real 前后端、平台/RAGFlow 容器及项目专属 32 GiB Colima 最终停止，释放当前电脑内存。稳定数据、0600 Token、冻结依赖和官方镜像保留；覆盖率报告只在 Git 忽略目录生成并在提交前精确删除
 - 遗留：无；下一任务 H7-04 定义平台自有图编译、执行、节点观察、停止与结果协议，把 LangGraph 类型和运行状态收回 `adapters/workflow/langgraph/`
+
+### H7-04 平台自有图执行协议
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增平台图执行契约测试，首次定向执行因 `common_agent.workflows.execution` 不存在而在收集阶段按预期失败；同一契约同时扫描生产包，要求只有 `adapters/workflow/langgraph/` 能导入 LangGraph。实现后平台协议、LangGraph 适配器、应用服务与员工工具定向首轮 `30 passed`
+- 平台协议：新增 `workflows/execution.py`，仅用平台类型定义可运行时检查的 `WorkflowCompiler/CompiledWorkflow`、节点观察器、停止信号与幂等停止令牌、不可变节点输入/输出及最终结果。非空输入/输出、知识类型、已完成节点唯一性与步数一致性在构造边界关闭失败，不保留 LangGraph 兼容捷径
+- 适配层收口：删除平台包的 `workflows/compiler.py` 和 `workflows/state.py`，把 `StateGraph`、START/END、Runtime context、TypedDict 图状态、节点包装、停止竞速、递归上限与编译/运行异常翻译全部移入 `adapters/workflow/langgraph/`。平台节点注册表改为只处理 `WorkflowNodeExecutionContext/Result`，节点 ID、完成顺序和步数由适配器投影
+- 应用边界：`WorkflowService` 现在只注入平台 `WorkflowCompiler` 端口，并使用平台观察器、停止令牌和结果；缺少编译器/事件端口直接拒绝运行。FastAPI 装配根才实例化 `LangGraphWorkflowCompiler`，手动触发、员工 allowlist 工具、节点观察、协作停止、错误码和持久摘要语义不变
+- 边界门禁：新增 AST 扫描硬性禁止适配目录外的任何 LangGraph import；最终生产扫描只剩 `adapters/workflow/langgraph/compiler.py` 和 `state.py` 导入第三方图类型。架构与目录文档明确平台端口、外围状态投影和唯一装配根，RAGFlow 官方 submodule 与源码保持未修改
+- 覆盖率门禁：新协议首轮使总体行降到 `90.81%` 并被冻结门禁真实拒绝；补齐非法节点上下文/结果、重复节点、步数错配、空已编译输入和缺失编译器端口后，最终用项目固定 uv 0.11.16 完整执行 `418 passed, 12 skipped in 121.17s`，总体行 `90.99%`、分支 `73.06%`、核心行 `93.26%`、核心分支 `74.63%`，六项均不低于 H7-02 冻结阈值，没有排除生产文件或放宽阈值
+- 本机工具修复：末次门禁发现全局 Homebrew uv 实际为 0.7.21，无法执行 H7-01 记录的 audit 预览子命令。新增 `scripts/uv.sh` 固定 0.11.16：版本匹配时直接执行，否则经精确版本的隔离 `uv tool run`，不修改用户全局工具。coverage、dev、real、契约与 E2E 入口统一改走该脚本，CI 契约验证实际版本；固定 uv 完成 lock 检查和 83 包安全审计，无已知漏洞或不良项目状态
+- GREEN：普通后端全量 `416 passed, 12 skipped in 67.06s`，最终覆盖率全量如上；提交前固定 uv 定向 `32 passed`，Ruff lint、161 个文件格式及严格 Mypy 161 个源/测试/门禁文件通过。前端 14 files/61 tests，行 `86.17%`、分支 `75.00%`，ESLint、TypeScript、Build、pnpm audit 与生成契约通过；602.76 kB 既有 chunk 警告保留给 H7-09，未提高阈值。CI/覆盖率/dev/real/两类基础设施契约、ShellCheck、`git diff --check` 全部通过
+- 真实验收：12 GiB demo-light 上正式 React/FastAPI/MySQL 两轮带引用会话与中断恢复 `1 passed (5.4s)`。随后临时切到项目专属 32 GiB real，显式执行真实百炼、Deep Agents 流/停止/错误、会话 HTTP/SSE、RAGFlow+百炼图编译、手动运行和员工 allowlist 工具触发共 `6 passed in 35.49s`，没有 Mock/Fake 或 GitHub Runner 结果
+- 清理：Demo/real 测试 finally 已删除唯一业务数据；real 前后端、平台/RAGFlow 容器和项目专属 32 GiB Colima 已停止，稳定数据、0600 Token、冻结依赖与官方镜像保留。覆盖率报告、前端构建/覆盖率产物与两次环境前置失败日志在提交前精确删除
+- 遗留：无；下一任务 H7-05 将 FastAPI、SQLAlchemy、HTTP SDK、LangChain、LangGraph、Deep Agents 和供应商类型的完整平台/适配层依赖方向固化为自动架构门禁

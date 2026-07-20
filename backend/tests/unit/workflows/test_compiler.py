@@ -7,6 +7,11 @@ from typing import cast
 import pytest
 from langgraph.graph import StateGraph
 
+from common_agent.adapters.workflow.langgraph import (
+    MAX_WORKFLOW_STEPS,
+    LangGraphWorkflowCompiler,
+)
+from common_agent.adapters.workflow.langgraph.state import WorkflowGraphState
 from common_agent.domain.knowledge import KnowledgeRetrievalResult, RetrievedChunk
 from common_agent.domain.workflow import (
     AiChatNodeConfig,
@@ -32,19 +37,15 @@ from common_agent.models.base import (
     ModelStreamInterrupted,
     TextStreamingModel,
 )
-from common_agent.runtimes.base import RuntimeStopToken
-from common_agent.workflows.compiler import (
-    MAX_WORKFLOW_STEPS,
-    WorkflowCompiler,
-)
 from common_agent.workflows.errors import (
     WorkflowCompilationFailed,
+    WorkflowExecutionFailed,
     WorkflowExecutionStopped,
     WorkflowNodeNotRegistered,
     WorkflowStepLimitExceeded,
 )
+from common_agent.workflows.execution import WorkflowExecutionStopToken
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
-from common_agent.workflows.state import WorkflowGraphState
 from common_agent.workflows.validator import WorkflowGraphInvalid, WorkflowValidationCode
 from tests.support.knowledge import KnowledgeProbe
 
@@ -143,12 +144,12 @@ def _compiler(
     knowledge: KnowledgeProbe,
     *,
     step_limit: int | None = None,
-) -> WorkflowCompiler:
+) -> LangGraphWorkflowCompiler:
     registry = create_workflow_node_registry(model, KnowledgeBaseService(knowledge))
     return (
-        WorkflowCompiler(registry)
+        LangGraphWorkflowCompiler(registry)
         if step_limit is None
-        else WorkflowCompiler(registry, step_limit=step_limit)
+        else LangGraphWorkflowCompiler(registry, step_limit=step_limit)
     )
 
 
@@ -290,7 +291,7 @@ def test_compiler_fails_closed_when_node_type_is_not_registered() -> None:
     )
 
     with pytest.raises(WorkflowNodeNotRegistered) as captured:
-        WorkflowCompiler(registry).compile(workflow)
+        LangGraphWorkflowCompiler(registry).compile(workflow)
 
     assert captured.value.node_type is WorkflowNodeType.AI_CHAT
     assert captured.value.code == "workflow_node_not_registered"
@@ -310,6 +311,18 @@ def test_actual_langgraph_recursion_limit_maps_to_stable_platform_error() -> Non
 
     assert captured.value.code == "workflow_step_limit_exceeded"
     assert "langgraph" not in str(captured.value).lower()
+
+
+def test_compiled_workflow_rejects_empty_platform_input() -> None:
+    compiled = _compiler(WorkflowModelProbe(), KnowledgeProbe()).compile(
+        _workflow(
+            ("start", WorkflowNodeType.START),
+            ("end", WorkflowNodeType.END),
+        )
+    )
+
+    with pytest.raises(WorkflowExecutionFailed):
+        asyncio.run(compiled.invoke(" "))
 
 
 def test_actual_langgraph_reports_platform_node_start_and_completion() -> None:
@@ -336,7 +349,7 @@ def test_stop_signal_interrupts_active_langgraph_node_without_fake_completion() 
     async def exercise() -> tuple[list[tuple[str, str]], tuple[str, ...]]:
         model = BlockingWorkflowModelProbe()
         observer = WorkflowObserverProbe()
-        stop = RuntimeStopToken()
+        stop = WorkflowExecutionStopToken()
         compiled = _compiler(model, KnowledgeProbe()).compile(
             _workflow(
                 ("start", WorkflowNodeType.START),
@@ -388,7 +401,7 @@ def test_langgraph_compile_failure_is_mapped_without_internal_detail(
 @pytest.mark.parametrize("step_limit", [True, 0, -1, MAX_WORKFLOW_STEPS + 1])
 def test_compiler_rejects_invalid_step_limit(step_limit: object) -> None:
     with pytest.raises(ValueError, match="step_limit"):
-        WorkflowCompiler(
+        LangGraphWorkflowCompiler(
             create_workflow_node_registry(
                 WorkflowModelProbe(),
                 KnowledgeBaseService(KnowledgeProbe()),

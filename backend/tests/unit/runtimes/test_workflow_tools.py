@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from common_agent.adapters.agent.workflow_tools import WorkflowToolRegistry
+from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.application.workflow_service import WorkflowService
 from common_agent.domain.workflow_run import (
     WorkflowRunOrigin,
@@ -15,7 +16,6 @@ from common_agent.domain.workflow_run import (
     WorkflowRunTrigger,
 )
 from common_agent.knowledge.service import KnowledgeBaseService
-from common_agent.workflows.compiler import WorkflowCompiler
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
 from tests.support.knowledge import KnowledgeProbe
@@ -34,7 +34,7 @@ def _service(*, model: RunModelProbe | None = None) -> WorkflowService:
     return WorkflowService(
         WorkflowUnitOfWorkFactoryProbe(),
         knowledge,
-        compiler=WorkflowCompiler(
+        compiler=LangGraphWorkflowCompiler(
             create_workflow_node_registry(model or RunModelProbe(), knowledge)
         ),
         events=WorkflowEventBroker(),
@@ -110,7 +110,7 @@ def test_cancelled_tool_stops_the_shared_workflow_run_before_propagating() -> No
         service = WorkflowService(
             units,
             knowledge,
-            compiler=WorkflowCompiler(create_workflow_node_registry(model, knowledge)),
+            compiler=LangGraphWorkflowCompiler(create_workflow_node_registry(model, knowledge)),
             events=WorkflowEventBroker(),
         )
         workflow = await service.create(workflow_configuration())

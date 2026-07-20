@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_ROOT="${REPOSITORY_ROOT}/backend"
 FRONTEND_ROOT="${REPOSITORY_ROOT}/frontend"
+UV_RUNNER="${SCRIPT_DIR}/uv.sh"
 BACKEND_REPORT_ROOT="${REPOSITORY_ROOT}/.local/coverage/backend"
 ACTION="${1:-all}"
 
@@ -17,14 +18,14 @@ run_backend() {
   mkdir -p "${BACKEND_REPORT_ROOT}"
   (
     cd "${BACKEND_ROOT}"
-    uv run --frozen pytest \
+    "${UV_RUNNER}" run --frozen pytest \
       --cov=common_agent \
       --cov-branch \
       --cov-report=term-missing \
       --cov-report=
-    uv run --frozen coverage json -o "${BACKEND_REPORT_ROOT}/coverage.json"
-    uv run --frozen coverage xml -o "${BACKEND_REPORT_ROOT}/coverage.xml"
-    uv run --frozen python "${SCRIPT_DIR}/check-backend-coverage.py" \
+    "${UV_RUNNER}" run --frozen coverage json -o "${BACKEND_REPORT_ROOT}/coverage.json"
+    "${UV_RUNNER}" run --frozen coverage xml -o "${BACKEND_REPORT_ROOT}/coverage.xml"
+    "${UV_RUNNER}" run --frozen python "${SCRIPT_DIR}/check-backend-coverage.py" \
       "${BACKEND_REPORT_ROOT}/coverage.json" \
       "${OVERALL_LINE_MINIMUM}" \
       "${OVERALL_BRANCH_MINIMUM}" \
