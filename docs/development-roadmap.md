@@ -59,7 +59,7 @@
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
 | 产品代码 | `✅` 知识库、数字员工、连续会话、工作流设计/运行及两类触发的 MVP 正式链路已完成 |
 | 本地服务 | `✅` D8-03 验收后 real 前后端、平台/RAGFlow 容器和项目专属 Colima 已停止；原生 Volume、0600 Token 与官方镜像保留，下一任务可按需复用 |
-| 后续整改 | `🟨` Wave 8 的 R8-00、D8-01、D8-02、D8-03 已完成；CI、平台自有协议、可观测性、运行态内存、代码拆分、32 GiB soak、数据管理和生产化继续按 Wave 7-10 推进，MVP 完成事实不变 |
+| 后续整改 | `🟨` Wave 8 的 R8-00、D8-01、D8-02、D8-03 与 Wave 7 的 H7-01 至 H7-08 已完成；前端包体、32 GiB soak、数据管理和生产化继续按 Wave 7-10 推进，MVP 完成事实不变 |
 
 ## 4. 全局完成门禁
 
@@ -286,7 +286,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 | H7-05 | 第三方依赖边界门禁 | 增加可自动执行的 import/AST 架构测试；除 `api/` 的 FastAPI 边界和 `adapters/` 外，生产平台层不得导入 FastAPI、SQLAlchemy、HTTP SDK、LangChain、LangGraph、Deep Agents 或供应商类型；修正规则和架构文档与实现口径 | H7-04 | ✅ 已完成 |
 | H7-06 | 结构化日志、指标与追踪 | 统一 JSON 日志和关联上下文，覆盖 request/conversation/message/turn/workflow/run ID、耗时、状态与稳定错误码；提供本机最小健康/指标入口和跨服务 trace context；默认脱敏提示词、知识正文、Key、密码和上游响应，故障测试证明可定位且不泄密 | H7-05 | ✅ 已完成 |
 | H7-07 | 事件与锁状态生命周期 | 为会话/工作流 Broker 历史、订阅者、per-ID 锁和终态状态增加有界容量、TTL/LRU 与安全回收；保留允许的 SSE 回放窗口，慢消费者和历史缺口语义不变；通过大量短会话/运行及长时间 soak 证明内存最终回落且无活跃状态误删 | H7-06 | ✅ 已完成 |
-| H7-08 | 核心大文件按职责拆分 | 在既有行为测试保护下拆分 ChatPage、WorkflowsPage、ConversationService、WorkflowService 和大型路由；页面容器只做编排，消息/运行/设计器状态与协议映射独立；服务按用例/运行协调/持久化投影分责，禁止循环依赖和跨 Feature 私有导入 | H7-07 | ⬜ 未开始 |
+| H7-08 | 核心大文件按职责拆分 | 在既有行为测试保护下拆分 ChatPage、WorkflowsPage、ConversationService、WorkflowService 和大型路由；页面容器只做编排，消息/运行/设计器状态与协议映射独立；服务按用例/运行协调/持久化投影分责，禁止循环依赖和跨 Feature 私有导入 | H7-07 | ✅ 已完成 |
 | H7-09 | 前端包体与加载性能 | 建立 bundle 分析和预算门禁，路由与稳定 vendor 合理拆分；任何初始或异步单 chunk 不超过 500 kB，四入口真实浏览器首屏、交互和缓存复用无回归；不得仅调高 warning 阈值 | H7-08 | ⬜ 未开始 |
 
 ## 15. Wave 8：开发体验与资源优化
@@ -337,7 +337,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 ## 18. 当前下一步
 
-R8-00、D8-01、D8-02、D8-03、H7-01、H7-02、H7-03、H7-04、H7-05、H7-06 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
+R8-00、D8-01、D8-02、D8-03、H7-01 至 H7-08 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
 embedding/rerank 统一使用阿里百炼，本地模型退场；全新克隆可由统一入口进入 12 GiB
 `demo-light`，Demo 知识、员工绑定与会话引用在后端重启后保持一致；`real` 可按需切到暂定
 32 GiB，完成脱敏体检、费用诊断、真实纵向门禁和跨 Colima 重启恢复；本机质量门禁已经冻结，
@@ -345,7 +345,9 @@ GitHub Hosted Runner 只作可选镜像、不作为验收依赖；前后端行/�
 平台消息/模型/图执行协议不再暴露 LangChain、OpenAI、Deep Agents 或 LangGraph 类型，生产
 第三方 import 和平台内部依赖方向由关闭失败的统一 AST 门禁约束；正式 API、会话、工作流及
 RAGFlow/百炼出站已具备脱敏 JSON 日志、有界进程指标和关联追踪；事件历史、订阅者、per-ID
-锁与终态状态也已具备容量、TTL/LRU 和安全回收。下一任务进入 H7-08，按职责拆分核心大文件；
+锁与终态状态也已具备容量、TTL/LRU 和安全回收；核心页面、服务与大型路由已按编排、运行协调、
+持久化和投影职责拆分，并由体量、依赖方向、Feature 私有边界和循环依赖门禁保护。下一任务进入
+H7-09，建立前端包体分析和不超过 500 kB 的 chunk 预算；
 R8-04 仍独立负责 32 GiB 的峰值
 与 30 分钟 soak，不用 D8-03 的功能通过冒充长期资源验收。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
@@ -1260,3 +1262,17 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - 生产同路径：12 GiB demo-light 上正式 React/FastAPI/MySQL 两轮带引用会话与中断恢复 `1 passed in 6.1s`；随后临时切到项目专属 32 GiB real，显式执行真实百炼、Deep Agents 流/停止/错误、会话 HTTP/SSE、RAGFlow+百炼图编译、手动运行和员工 allowlist 工具触发共 `6 passed in 38.79s`。没有使用 Mock/Fake 或 GitHub Runner 结果，RAGFlow 官方 submodule 与源码保持未修改
 - 清理与边界：Demo/real 用例 finally 已删除唯一会话、员工、知识库和工作流数据；前后端、无头浏览器、平台/RAGFlow 容器和项目专属 Colima 已停止，18200/18280 无监听，稳定数据、固定镜像、冻结依赖与 0600 Token 保留。当前仍是单 FastAPI 进程内短期回放；跨进程持久事件、可靠队列和 Worker 只由 S10-05 交付，不用本任务的内存 Broker 冒充分布式可靠性
 - 遗留：无；下一任务 H7-08 在现有行为与覆盖率保护下拆分 ChatPage、WorkflowsPage、ConversationService、WorkflowService 和大型路由
+
+### H7-08 核心大文件按职责拆分
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先增加职责预算、实现层不得反向依赖门面、跨 Feature 私有导入和页面容器反向依赖门禁，首次定向执行准确得到 7 个失败：`ConversationService` 633 行、`WorkflowService` 470 行、会话/工作流/运行路由 421/430/295 行、`ChatPage` 691 行、`WorkflowsPage` 725 行；证明原实现把用例、运行、持久化、协议和展示集中在同一文件。拆分完成后补充前后端循环依赖扫描，默认 pytest 会自动执行
+- 后端职责：`ConversationService` 收敛为 153 行用例门面，事务读写与重试准备、运行协调、消息权威投影及稳定 contracts 分别进入独立模块；`WorkflowService` 收敛为 120 行门面，定义目录、运行协调、运行投影及 contracts 分责。发送和重试继续先确认员工与活动状态再提交消息，运行停止、恢复、关闭、锁与事件语义不变；实现模块不导入门面且依赖图无环
+- API 边界：会话、工作流定义和工作流运行路由分别收敛为 180/144/194 行；Pydantic DTO 移入 `api/schemas/`，服务依赖解析移入 `api/routers/services.py`，会话 SSE 移入 `conversation_events.py`。既有路由路径、OpenAPI、错误信封和公开响应类导入保持兼容，事件路由不重复生成 Tag
+- 前端职责：`ChatPage` 从 691 行收敛为 91 行，只处理页面状态和三栏编排；Query/Mutation/SSE/URL 协调、消息归并、消息/引用展示和工作区分别进入 controller/state/presentation。`WorkflowsPage` 从 725 行收敛为 155 行；设计器 Query/reducer/保存/运行同步、画布、节点面板、属性与运行面板、拖拽协议分离。跨 Feature 私有导入、实现层反向依赖页面容器和拆分模块循环依赖均由架构门禁关闭失败
+- GREEN：架构、依赖与 OpenAPI 定向 `26 passed`；Ruff 和严格 Mypy 189 个源/测试文件通过。权威后端覆盖率全量 `464 passed, 12 skipped in 128.48s`，总体行 `91.66%`、分支 `74.23%`、核心行 `93.74%`、核心分支 `74.63%`，均高于冻结阈值。前端 14 files/61 tests，行 `86.30%`、分支 `75.48%`，ESLint、TypeScript、生产 Build 和生成契约漂移通过；现有 602.76 kB chunk 警告如实保留给 H7-09，没有调高阈值
+- 生产同路径：12 GiB demo-light 经正式 React/FastAPI/MySQL 完成两轮引用会话与中断恢复，浏览器用例 `1 passed in 5.2s`；退出阶段的 runner 等待被人工中断后，已用正式清理器删除其唯一会话、员工、知识库和 Seed。随后临时切到项目专属 32 GiB real，显式执行真实百炼、Deep Agents、会话 SSE、RAGFlow+百炼图编译、手动运行与员工工具共 `6 passed in 35.37s`，没有 Mock/Fake 或 GitHub Runner 结果
+- 清理与边界：Demo/real 唯一测试数据已删除；前后端、浏览器、平台/RAGFlow 容器和项目专属 Colima 已停止，18200/18280 无监听。覆盖率、构建、tsbuildinfo、字节码和保留日志已精确清理；稳定数据、0600 Token、冻结依赖与官方镜像保留，RAGFlow 官方 submodule commit 与 `UPSTREAM_COMMIT` 一致且工作区未修改
+- 遗留：无；下一任务 H7-09 建立 bundle 分析和单 chunk 不超过 500 kB 的门禁，并验证四入口真实浏览器加载与缓存复用

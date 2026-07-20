@@ -1,0 +1,161 @@
+import { FileTextOutlined, RedoOutlined } from "@ant-design/icons";
+import { Alert, Button, Collapse, Flex, Progress, Space, Spin, Tag, Typography } from "antd";
+
+import type { ConversationMessage } from "../../api/conversations";
+import type { WorkflowRun } from "../../api/workflowRuns";
+import type { Workflow } from "../../api/workflows";
+
+const { Text } = Typography;
+const workflowRunStatus: Record<
+  WorkflowRun["status"],
+  { color: string; label: string }
+> = {
+  pending: { color: "default", label: "等待运行" },
+  running: { color: "processing", label: "运行中" },
+  completed: { color: "success", label: "已完成" },
+  failed: { color: "error", label: "运行失败" },
+  stopped: { color: "default", label: "已停止" },
+};
+
+export function MessageBubble({
+  message,
+  workflowRuns,
+  workflows,
+  retrying,
+  onOpenWorkflowRun,
+  onRetry,
+}: {
+  message: ConversationMessage;
+  workflowRuns: WorkflowRun[];
+  workflows: Map<string, Workflow>;
+  retrying: boolean;
+  onOpenWorkflowRun: (runId: string) => void;
+  onRetry: (messageId: string) => void;
+}) {
+  const isAssistant = message.role === "assistant";
+  const isActive = ["pending", "streaming"].includes(message.status);
+  const mayRetry = isAssistant && ["failed", "stopped"].includes(message.status);
+  return (
+    <article
+      className={`chat-message ${isAssistant ? "is-assistant" : "is-user"}`}
+      aria-label={isAssistant ? "助手消息" : "用户消息"}
+    >
+      <div className="chat-message-author">{isAssistant ? "AI" : "你"}</div>
+      <div className="chat-message-body">
+        {message.content ? (
+          <Typography.Paragraph className="chat-message-content">
+            {message.content}
+          </Typography.Paragraph>
+        ) : isActive ? (
+          <Space>
+            <Spin size="small" />
+            <Text type="secondary">正在思考…</Text>
+          </Space>
+        ) : (
+          <Text type="secondary">本次没有生成可显示的内容</Text>
+        )}
+        {message.status === "failed" && <Tag color="error">生成失败</Tag>}
+        {message.status === "stopped" && <Tag>已停止</Tag>}
+        {mayRetry && (
+          <Button
+            size="small"
+            icon={<RedoOutlined />}
+            loading={retrying}
+            aria-label="重试回答"
+            onClick={() => onRetry(message.id)}
+          >
+            重新生成
+          </Button>
+        )}
+        <CitationList message={message} />
+        {isAssistant && (
+          <WorkflowRunCards runs={workflowRuns} workflows={workflows} onOpen={onOpenWorkflowRun} />
+        )}
+      </div>
+    </article>
+  );
+}
+
+function CitationList({ message }: { message: ConversationMessage }) {
+  if (message.citations.length === 0) return null;
+  return (
+    <div className="chat-citations" aria-label={`引用资料 ${message.citations.length}`}>
+      <Text strong>
+        <FileTextOutlined /> 引用资料 {message.citations.length}
+      </Text>
+      {message.citations.map((citation) => (
+        <div
+          key={`${citation.knowledge_base_id}:${citation.chunk_id}`}
+          className="chat-citation-item"
+        >
+          <Flex justify="space-between" align="center" gap={8}>
+            <Text strong>{citation.document_name}</Text>
+            <Tag color="geekblue">相关度 {Math.round(citation.score * 100)}%</Tag>
+          </Flex>
+          <Text type="secondary">{citation.content}</Text>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WorkflowRunCards({
+  runs,
+  workflows,
+  onOpen,
+}: {
+  runs: WorkflowRun[];
+  workflows: Map<string, Workflow>;
+  onOpen: (runId: string) => void;
+}) {
+  if (runs.length === 0) return null;
+  return (
+    <div className="chat-workflow-runs" aria-label={`工作流运行 ${runs.length}`}>
+      <Text strong>工作流运行</Text>
+      <Collapse
+        size="small"
+        items={runs.map((run) => {
+          const workflow = workflows.get(run.workflow_id);
+          const status = workflowRunStatus[run.status];
+          const nodeCount = workflow?.nodes.length ?? run.completed_node_ids.length;
+          const progress =
+            nodeCount === 0
+              ? 0
+              : Math.min(100, Math.round((run.completed_node_ids.length / nodeCount) * 100));
+          return {
+            key: run.id,
+            label: (
+              <Flex justify="space-between" align="center" gap={8}>
+                <Text strong>{workflow?.name ?? `工作流 ${run.workflow_id.slice(0, 8)}`}</Text>
+                <Tag color={status.color}>{status.label}</Tag>
+              </Flex>
+            ),
+            children: (
+              <div className="chat-workflow-run-summary">
+                <Progress
+                  percent={run.status === "completed" ? 100 : progress}
+                  status={run.status === "failed" ? "exception" : undefined}
+                  size="small"
+                />
+                <div>
+                  <Text type="secondary">输入</Text>
+                  <Typography.Paragraph>{run.input}</Typography.Paragraph>
+                </div>
+                {run.output && (
+                  <div>
+                    <Text type="secondary">运行结果</Text>
+                    <Typography.Paragraph>{run.output}</Typography.Paragraph>
+                  </div>
+                )}
+                {run.error_code && <Alert type="error" showIcon title={run.error_code} />}
+                <Button size="small" onClick={() => onOpen(run.id)}>
+                  查看运行详情
+                </Button>
+              </div>
+            ),
+          };
+        })}
+      />
+    </div>
+  );
+}

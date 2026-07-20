@@ -1,7 +1,7 @@
 # 通用 Agent 中台后端架构
 
 > 状态：已确认的 MVP 基线  
-> 确认日期：2026-07-19  
+> 确认日期：2026-07-20
 > 运行范围：本机 FastAPI + 按需平台基础设施 + 本机 RAGFlow，外部只调用阿里百炼
 
 ## 1. 建设目标
@@ -122,6 +122,10 @@ application --------------+
 
 禁止在路由中拼提示词、直接调用 RAGFlow SDK、编译 LangGraph 或写 SQL。
 
+会话、工作流定义和工作流运行路由只保留 HTTP 用例编排；Pydantic DTO 位于
+`api/schemas/`，服务依赖解析集中在 `api/routers/services.py`，会话 SSE 独立位于
+`conversation_events.py`。路由不能重新吸收 Schema、事件流实现或服务装配。
+
 ### 3.2 Application 层
 
 提供明确用例：
@@ -131,6 +135,14 @@ application --------------+
 - `ConversationService`：创建会话、保存消息、自动检索、生成回复；
 - `WorkflowService`：校验、保存和运行工作流；
 - `SystemService`：报告后端、百炼和 RAGFlow 真实状态。
+
+`ConversationService` 与 `WorkflowService` 是保持公开调用面的薄门面，不承载全部实现：
+
+- 会话由 `ConversationPersistence` 管理事务读写与重试准备，`ConversationRuntimeCoordinator`
+  管理活动生成、停止和资源关闭，`ConversationMessageProjector` 把运行事件写入消息权威快照；
+- 工作流由 `WorkflowCatalog` 管理定义校验与保存，`WorkflowRunCoordinator` 管理编译、执行、
+  停止和等待，`WorkflowRunProjection` 管理运行摘要与事件投影；
+- contracts 模块保存稳定服务错误和返回值，具体实现不得反向导入门面，也不得形成循环依赖。
 
 `EmployeeService` 通过 `EmployeeUnitOfWorkFactory` 管理平台 MySQL 事务。创建绑定先在事务外经
 `KnowledgeBaseService` 调用 RAGFlow 官方数据集详情入口，验证成功后才提交员工；更新先确认

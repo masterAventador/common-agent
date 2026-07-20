@@ -1,0 +1,208 @@
+import { PlusOutlined, SendOutlined, StopOutlined, TeamOutlined } from "@ant-design/icons";
+import { Alert, Button, Empty, Flex, Input, Skeleton, Tag, Typography } from "antd";
+
+import type { Employee } from "../../api/employees";
+import { getErrorMessage } from "../../api/errors";
+import { MessageBubble } from "./ChatMessages";
+import type { ChatPageController } from "./useChatPageController";
+
+const { Text, Title } = Typography;
+
+export function ChatWorkspace({
+  controller,
+  employee,
+}: {
+  controller: ChatPageController;
+  employee: Employee;
+}) {
+  const {
+    activeMessage,
+    conversations,
+    createMutation,
+    draft,
+    messages,
+    retryMutation,
+    runsByMessageId,
+    selectedConversation,
+    selectConversation,
+    sendDraft,
+    sendMutation,
+    setDraft,
+    stopMutation,
+    workflowsById,
+    openWorkflowRun,
+  } = controller;
+
+  return (
+    <div className="chat-workspace">
+      <aside className="chat-conversations-panel" role="region" aria-label="会话列表">
+        <Flex justify="space-between" align="center" gap={8} className="chat-panel-heading">
+          <Text strong>会话</Text>
+          <Button
+            type="primary"
+            size="small"
+            icon={<PlusOutlined />}
+            loading={createMutation.isPending}
+            aria-label="新建会话"
+            onClick={() => createMutation.mutate()}
+          >
+            新建
+          </Button>
+        </Flex>
+        {conversations.isPending ? (
+          <Skeleton active paragraph={{ rows: 6 }} />
+        ) : conversations.isError ? (
+          <Alert
+            type="error"
+            showIcon
+            title="会话列表加载失败"
+            action={<Button onClick={() => void conversations.refetch()}>重试</Button>}
+          />
+        ) : conversations.data.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有会话" />
+        ) : (
+          <div className="chat-conversation-list">
+            {conversations.data.map((conversation) => (
+              <div key={conversation.id} className="chat-conversation-list-item">
+                <button
+                  type="button"
+                  className={`chat-conversation-button ${
+                    selectedConversation?.id === conversation.id ? "is-active" : ""
+                  }`}
+                  aria-label={`打开会话 ${conversation.title}`}
+                  onClick={() => selectConversation(conversation.id)}
+                >
+                  <Text strong>{conversation.title}</Text>
+                  <Text type="secondary">{formatConversationTime(conversation.updated_at)}</Text>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </aside>
+
+      <main className="chat-messages-panel" role="region" aria-label="消息区域">
+        <div className="chat-messages-heading">
+          <div>
+            <Title level={3}>{selectedConversation?.title ?? "选择一个会话"}</Title>
+            <Text type="secondary">{employee.name}</Text>
+          </div>
+          {activeMessage && <Tag color="processing">正在生成</Tag>}
+        </div>
+        <div className="chat-message-scroll" aria-live="polite">
+          {!selectedConversation ? (
+            <Empty description="新建或选择会话后开始提问" />
+          ) : messages.isPending ? (
+            <Skeleton active paragraph={{ rows: 8 }} />
+          ) : messages.isError ? (
+            <Alert
+              type="error"
+              showIcon
+              title="消息历史加载失败"
+              description={getErrorMessage(messages.error)}
+              action={<Button onClick={() => void messages.refetch()}>重试</Button>}
+            />
+          ) : messages.data.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="发送第一条消息开始对话" />
+          ) : (
+            messages.data.map((message) => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                workflowRuns={runsByMessageId.get(message.id) ?? []}
+                workflows={workflowsById}
+                retrying={retryMutation.isPending && retryMutation.variables === message.id}
+                onOpenWorkflowRun={openWorkflowRun}
+                onRetry={(messageId) => retryMutation.mutate(messageId)}
+              />
+            ))
+          )}
+        </div>
+        <div className="chat-composer">
+          <Input.TextArea
+            aria-label="消息输入"
+            value={draft}
+            autoSize={{ minRows: 2, maxRows: 6 }}
+            maxLength={200_000}
+            disabled={!selectedConversation}
+            placeholder={selectedConversation ? "输入消息，Enter 发送，Shift+Enter 换行" : "请先新建会话"}
+            onChange={(event) => setDraft(event.target.value)}
+            onPressEnter={(event) => {
+              if (event.shiftKey) return;
+              event.preventDefault();
+              sendDraft();
+            }}
+          />
+          <Flex justify="space-between" align="center" gap={12}>
+            <Text type="secondary">回复、引用和状态都会自动保存，刷新后可恢复。</Text>
+            {activeMessage ? (
+              <Button
+                danger
+                icon={<StopOutlined />}
+                loading={stopMutation.isPending}
+                aria-label="停止生成"
+                onClick={() => stopMutation.mutate()}
+              >
+                停止生成
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                loading={sendMutation.isPending}
+                disabled={!selectedConversation || !draft.trim()}
+                aria-label="发送消息"
+                onClick={sendDraft}
+              >
+                发送
+              </Button>
+            )}
+          </Flex>
+        </div>
+      </main>
+
+      <aside className="chat-employee-panel" role="region" aria-label="数字员工信息">
+        <EmployeeDetails employee={employee} />
+      </aside>
+    </div>
+  );
+}
+
+function EmployeeDetails({ employee }: { employee: Employee }) {
+  return (
+    <>
+      <div className="chat-employee-avatar" aria-hidden="true">
+        <TeamOutlined />
+      </div>
+      <Title level={4}>{employee.name}</Title>
+      <Text type="secondary">{employee.description || "暂无说明"}</Text>
+      <div className="chat-employee-binding">
+        {employee.knowledge_base_id ? <Tag color="blue">已绑定知识库</Tag> : <Tag>未绑定知识库</Tag>}
+        <Tag>{employee.allowed_workflow_ids.length} 个工作流权限</Tag>
+      </div>
+      <div className="chat-system-prompt">
+        <Text type="secondary">系统指令</Text>
+        <Text>{employee.system_prompt}</Text>
+      </div>
+      <Alert
+        type="info"
+        showIcon
+        title={
+          employee.knowledge_base_id
+            ? "每次提问都会自动检索已绑定知识库"
+            : "当前员工使用通用模型能力回答"
+        }
+      />
+    </>
+  );
+}
+
+function formatConversationTime(timestamp: string): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestamp));
+}

@@ -1,7 +1,7 @@
 # 通用 Agent 中台工程结构
 
 > 状态：已确认的 MVP 基线  
-> 确认日期：2026-07-19
+> 确认日期：2026-07-20
 
 ## 1. 核心决策
 
@@ -36,18 +36,24 @@ backend/
 │       ├── api/                 # FastAPI 路由、依赖和错误边界
 │       │   ├── routers/
 │       │   │   ├── system.py
-│       │   │   ├── conversations.py
+│       │   │   ├── conversations.py       # 会话 REST 编排
+│       │   │   ├── conversation_events.py # 会话 SSE 边界
+│       │   │   ├── services.py            # 路由依赖解析
 │       │   │   ├── employees.py
 │       │   │   ├── knowledge.py
 │       │   │   ├── workflows.py
 │       │   │   └── workflow_runs.py
+│       │   ├── schemas/           # 会话、工作流和运行 HTTP DTO
 │       │   ├── app.py            # FastAPI 组合根
 │       │   ├── observability.py  # HTTP 关联、请求日志和进程内指标边界
 │       │   └── server.py         # Uvicorn 进程边界
-│       ├── application/         # 平台用例编排
-│       │   └── workflow_service.py
+│       ├── application/         # 平台工作流用例编排
+│       │   ├── workflow_service.py        # 稳定薄门面
+│       │   ├── workflow_catalog.py        # 定义校验/持久化
+│       │   ├── workflow_runs.py           # 运行协调
+│       │   └── workflow_run_projection.py # 运行投影
 │       ├── concurrency.py       # 可回收的按 ID 异步锁池
-│       ├── conversations/       # 连续会话应用服务与事件
+│       ├── conversations/       # 会话门面、持久化、运行协调、消息投影与事件
 │       ├── employees/           # 数字员工应用服务与启动 Seed
 │       ├── domain/              # 与第三方无关的会话和能力模型
 │       │   ├── conversation.py
@@ -106,6 +112,8 @@ api -> application -> domain
 - `observability/` 只用标准库定义 JSON 日志、W3C trace context 与进程内有界指标；业务服务
   绑定平台会话/工作流 ID，外围 HTTP 适配器负责把 trace context 传给 RAGFlow 与百炼；
 - `application/` 分别负责“发送消息并生成回复”和“触发工作流”用例；
+- 会话和工作流公开 Service 只作稳定用例门面；事务持久化、运行协调和权威投影位于独立模块，
+  实现模块不得反向导入门面或形成循环依赖；
 - `domain/` 不导入 FastAPI、Deep Agents、LangGraph 或 RAGFlow；
 - `models/` 定义平台自有 system/user/assistant 消息、请求、增量、完成终态、安全错误和释放协议，
   不导入 LangChain、OpenAI、Deep Agents 或供应商 SDK；
@@ -130,10 +138,10 @@ frontend/
 ├── src/
 │   ├── app/                     # Provider、布局和入口
 │   ├── features/
-│   │   ├── chat/                # 会话列表、消息流、输入和员工信息
+│   │   ├── chat/                # 页面编排、Query/SSE 控制器、消息投影与三栏展示
 │   │   ├── employees/           # 数字员工列表、编辑和知识库绑定
 │   │   ├── knowledge-bases/     # 知识库创建、文档上传和解析状态
-│   │   └── workflows/           # 节点面板、画布、配置、运行和结果
+│   │   └── workflows/           # 页面编排、设计器控制器、节点面板、画布、属性和运行
 │   ├── components/              # 真实跨功能复用的公共 UI
 │   ├── api/                     # Axios、SSE、Query Client 和生成契约
 │   ├── schemas/                 # Zod 运行时边界
@@ -151,6 +159,8 @@ frontend/
 ```
 
 第一版只有聊天工作台与独立工作流设计器，不为未实现能力创建空 Feature 目录或菜单。工作流画布使用成熟的 React 节点图库，不自行实现缩放、拖拽、连线和命中测试。
+页面容器只组合控制器和展示区域；协议映射、服务端状态、流式/运行状态、画布和属性表单分模块维护。
+架构门禁限制页面容器体量、跨 Feature 私有导入、实现层反向依赖容器和拆分模块循环依赖。
 
 ## 4. 跨端契约
 
