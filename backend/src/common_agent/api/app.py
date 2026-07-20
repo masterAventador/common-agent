@@ -22,6 +22,9 @@ from common_agent.adapters.persistence import Database
 from common_agent.adapters.persistence.conversations import (
     SqlAlchemyConversationUnitOfWorkFactory,
 )
+from common_agent.adapters.persistence.demo_knowledge import (
+    SqlAlchemyDemoKnowledgeUnitOfWorkFactory,
+)
 from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeUnitOfWorkFactory
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
 from common_agent.api.errors import error_handlers
@@ -66,7 +69,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         integration_mode: IntegrationModeSettings = app.state.integration_mode
         workflow_model: TextStreamingModel
         if integration_mode.mode == "demo":
-            knowledge_adapter = DemoKnowledgeService()
+            knowledge_adapter = DemoKnowledgeService(
+                SqlAlchemyDemoKnowledgeUnitOfWorkFactory(database)
+            )
             runtime = DemoEmployeeRuntime()
             demo_workflow_model = DemoWorkflowModel()
             workflow_model = demo_workflow_model

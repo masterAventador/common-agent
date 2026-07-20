@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     CheckConstraint,
     Float,
     ForeignKey,
@@ -31,6 +32,14 @@ from common_agent.domain.employee import (
     EMPLOYEE_NAME_MAX_LENGTH,
     EMPLOYEE_SYSTEM_PROMPT_MAX_LENGTH,
 )
+from common_agent.domain.knowledge import (
+    KNOWLEDGE_BASE_DESCRIPTION_MAX_LENGTH,
+    KNOWLEDGE_BASE_ID_MAX_LENGTH,
+    KNOWLEDGE_BASE_NAME_MAX_LENGTH,
+    KNOWLEDGE_DOCUMENT_ERROR_CODE_MAX_LENGTH,
+    KNOWLEDGE_DOCUMENT_ID_MAX_LENGTH,
+    KNOWLEDGE_DOCUMENT_NAME_MAX_LENGTH,
+)
 from common_agent.domain.workflow import (
     WORKFLOW_DESCRIPTION_MAX_LENGTH,
     WORKFLOW_EDGE_ID_MAX_LENGTH,
@@ -46,6 +55,99 @@ from common_agent.domain.workflow_run import (
 
 class PersistenceBase(DeclarativeBase):
     pass
+
+
+class DemoKnowledgeBaseRow(PersistenceBase):
+    __tablename__ = "demo_knowledge_bases"
+    __table_args__ = (
+        CheckConstraint(
+            f"CHAR_LENGTH(id) BETWEEN 1 AND {KNOWLEDGE_BASE_ID_MAX_LENGTH} AND id = TRIM(id)",
+            name="ck_demo_knowledge_bases_id",
+        ),
+        CheckConstraint(
+            f"CHAR_LENGTH(name) BETWEEN 1 AND {KNOWLEDGE_BASE_NAME_MAX_LENGTH} "
+            "AND name = TRIM(name)",
+            name="ck_demo_knowledge_bases_name",
+        ),
+        CheckConstraint(
+            f"CHAR_LENGTH(description) <= {KNOWLEDGE_BASE_DESCRIPTION_MAX_LENGTH} "
+            "AND description = TRIM(description)",
+            name="ck_demo_knowledge_bases_description",
+        ),
+        UniqueConstraint("name", name="uq_demo_knowledge_bases_name"),
+        Index("ix_demo_knowledge_bases_created", "created_at", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(KNOWLEDGE_BASE_ID_MAX_LENGTH), primary_key=True)
+    name: Mapped[str] = mapped_column(String(KNOWLEDGE_BASE_NAME_MAX_LENGTH), nullable=False)
+    description: Mapped[str] = mapped_column(
+        String(KNOWLEDGE_BASE_DESCRIPTION_MAX_LENGTH), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class DemoKnowledgeDocumentRow(PersistenceBase):
+    __tablename__ = "demo_knowledge_documents"
+    __table_args__ = (
+        CheckConstraint(
+            f"CHAR_LENGTH(id) BETWEEN 1 AND {KNOWLEDGE_DOCUMENT_ID_MAX_LENGTH} AND id = TRIM(id)",
+            name="ck_demo_knowledge_documents_id",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(knowledge_base_id) BETWEEN 1 AND "
+            f"{KNOWLEDGE_BASE_ID_MAX_LENGTH} AND knowledge_base_id = TRIM(knowledge_base_id)",
+            name="ck_demo_knowledge_documents_base_id",
+        ),
+        CheckConstraint(
+            f"CHAR_LENGTH(name) BETWEEN 1 AND {KNOWLEDGE_DOCUMENT_NAME_MAX_LENGTH} "
+            "AND name = TRIM(name)",
+            name="ck_demo_knowledge_documents_name",
+        ),
+        CheckConstraint(
+            "size_bytes BETWEEN 1 AND 20971520",
+            name="ck_demo_knowledge_documents_size",
+        ),
+        CheckConstraint(
+            "parsing_status IN ('uploaded', 'parsing', 'completed', 'failed')",
+            name="ck_demo_knowledge_documents_status",
+        ),
+        CheckConstraint(
+            "(parsing_status = 'failed' AND error_code IS NOT NULL) OR "
+            "(parsing_status != 'failed' AND error_code IS NULL)",
+            name="ck_demo_knowledge_documents_error",
+        ),
+        CheckConstraint(
+            "error_code IS NULL OR "
+            f"(CHAR_LENGTH(error_code) BETWEEN 1 AND {KNOWLEDGE_DOCUMENT_ERROR_CODE_MAX_LENGTH} "
+            "AND error_code = TRIM(error_code))",
+            name="ck_demo_knowledge_documents_error_code",
+        ),
+        Index(
+            "ix_demo_knowledge_documents_base_created",
+            "knowledge_base_id",
+            "created_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(KNOWLEDGE_DOCUMENT_ID_MAX_LENGTH), primary_key=True)
+    knowledge_base_id: Mapped[str] = mapped_column(
+        String(KNOWLEDGE_BASE_ID_MAX_LENGTH),
+        ForeignKey(
+            "demo_knowledge_bases.id",
+            ondelete="CASCADE",
+            name="fk_demo_knowledge_documents_base_id",
+        ),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(KNOWLEDGE_DOCUMENT_NAME_MAX_LENGTH), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    parsing_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(
+        String(KNOWLEDGE_DOCUMENT_ERROR_CODE_MAX_LENGTH), nullable=True
+    )
+    content: Mapped[str] = mapped_column(mysql.LONGTEXT(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
 
 
 class EmployeeRow(PersistenceBase):

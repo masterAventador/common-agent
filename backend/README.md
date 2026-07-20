@@ -31,8 +31,9 @@ uv run python -m common_agent
 `COMMON_AGENT_INTEGRATION_MODE` 默认且正式取值为 `real`，会接入 RAGFlow、Deep Agents 与阿里
 百炼。设为 `demo` 时仍使用同一 FastAPI、MySQL、领域服务、REST/SSE 和 React 页面，只把知识
 服务与员工运行时切换为确定性固定适配器；健康接口返回 `integration_mode=demo`，前端必须显示
-“演示模式”，不得把固定回答冒充真实外部服务。Demo 知识数据仅保存在当前后端进程内，员工、
-会话、消息和引用仍写入正式配置的 MySQL。
+“演示模式”，不得把固定回答冒充真实外部服务。Demo 知识库、文档正文和完成态由
+`20260720_0007` 迁移建立的项目专属 MySQL 表保存，与员工、会话、消息和引用一起在后端重启后
+恢复；Demo 不借此冒充 RAGFlow 解析、向量或重排能力。
 
 启动时会通过 Alembic 把平台正式 MySQL 升级到 `head` 并执行连接探测。默认连接为 `127.0.0.1:19506/common_agent`，使用 SQLAlchemy async、`aiomysql`、PyMySQL `>=1.1.1` 和 MySQL 8.4 LTS；该实例、端口和 Volume 与 RAGFlow 内部 MySQL 完全隔离。配置只接受带用户名、密码、端口和数据库名的 loopback `mysql+aiomysql` URL。
 
@@ -47,7 +48,8 @@ COMMON_AGENT_DATABASE_URL='mysql+aiomysql://common_agent:common_agent_dev@127.0.
 状态列表。上传只接受 TXT、Markdown、PDF、DOCX，单文件最大 20 MiB；文件会在读取完成或
 失败后关闭，RAGFlow 不可用、版本漂移、结果未知和上传输入错误均转换为稳定错误信封。
 正式入口只读取 loopback `RAGFLOW_*` 配置，并在 FastAPI lifespan 中创建和释放 RAGFlow
-客户端。
+客户端。Demo 适配器实现同一 `KnowledgeService` 契约，通过平台仓储端口读写 MySQL；关闭
+适配器只释放实例，不删除已提交知识数据，重复名称、失效 ID 和上传失败仍映射为同一平台错误。
 
 数字员工使用平台自有 `employees` 表保存通用会话角色配置：名称、说明、系统指令、可选的
 RAGFlow 知识库 ID 和独立工作流 allowlist。表由 `20260719_0002` 迁移建立，字段长度、空白、

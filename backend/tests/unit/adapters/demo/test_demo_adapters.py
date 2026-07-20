@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from uuid import UUID
 
+import pytest
+
 from common_agent.adapters.demo import DemoEmployeeRuntime, DemoKnowledgeService
 from common_agent.domain.conversation import MessageRole
 from common_agent.domain.knowledge import (
@@ -12,6 +14,7 @@ from common_agent.domain.knowledge import (
     KnowledgeRetrievalRequest,
     KnowledgeServiceAvailability,
 )
+from common_agent.knowledge.base import KnowledgeRequestRejected
 from common_agent.runtimes.base import (
     EmployeeRuntimeRequest,
     RuntimeConversationMessage,
@@ -20,6 +23,7 @@ from common_agent.runtimes.base import (
     RuntimeKnowledgeChunk,
     RuntimeStopToken,
 )
+from tests.support.knowledge import MemoryDemoKnowledgeUnitOfWorkFactory
 
 CONVERSATION_ID = UUID("40b8bf77-fd8b-46ca-a103-5bebc29e185e")
 EMPLOYEE_ID = UUID("ddbdad78-1128-4334-ad02-d28833357529")
@@ -95,7 +99,8 @@ async def _events(
 
 def test_demo_knowledge_adapter_supports_formal_crud_upload_and_retrieval() -> None:
     async def exercise() -> None:
-        knowledge = DemoKnowledgeService()
+        unit_of_work = MemoryDemoKnowledgeUnitOfWorkFactory()
+        knowledge = DemoKnowledgeService(unit_of_work)
         status = await knowledge.status()
         created = await knowledge.create_knowledge_base(
             CreateKnowledgeBaseRequest(name="演示知识库", description="固定知识")
@@ -119,7 +124,24 @@ def test_demo_knowledge_adapter_supports_formal_crud_upload_and_retrieval() -> N
         assert uploaded.parsing_status is DocumentParsingStatus.COMPLETED
         assert retrieved.chunks[0].document_name == "demo-guide.txt"
         assert retrieved.chunks[0].content == "Common Agent 是通用 Agent 中台。"
+        with pytest.raises(KnowledgeRequestRejected):
+            await knowledge.create_knowledge_base(
+                CreateKnowledgeBaseRequest(name="演示知识库", description="重复名称")
+            )
         await knowledge.aclose()
+
+        reopened = DemoKnowledgeService(unit_of_work)
+        assert (await reopened.get_knowledge_base(created.id)).document_count == 1
+        assert (await reopened.list_documents(created.id)) == (uploaded,)
+        assert (
+            await reopened.retrieve(
+                KnowledgeRetrievalRequest(
+                    knowledge_base_id=created.id,
+                    query="重启后还能检索吗?",
+                )
+            )
+        ).chunks[0].content == "Common Agent 是通用 Agent 中台。"
+        await reopened.aclose()
 
     asyncio.run(exercise())
 

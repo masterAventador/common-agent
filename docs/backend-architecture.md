@@ -76,6 +76,7 @@ React
 - 数字员工和知识库绑定；
 - 会话与消息；
 - 工作流定义和运行摘要；
+- Demo 模式的知识库、文档正文与解析终态；
 - RAGFlow 知识库的稳定引用和展示缓存。
 
 平台正式持久化使用独立 MySQL 8.4 LTS，通过 SQLAlchemy async、`aiomysql`、PyMySQL `>=1.1.1` 与 Alembic 接入，固定开发入口为 `127.0.0.1:19506/common_agent`。领域与应用层只依赖仓储端口；平台 MySQL 使用专属容器、端口、Volume 和资源限制，与 RAGFlow 内部 MySQL 完全隔离。SQLite 和其他数据库不能替代当前正式 MySQL 的完成验收。
@@ -237,12 +238,18 @@ KnowledgeBaseRef
 └── synced_at
 ```
 
-RAGFlow 是知识库状态的权威来源。数字员工表只保存不透明的 `knowledge_base_id`，不直连
+real 模式下 RAGFlow 是知识库状态的权威来源。数字员工表只保存不透明的 `knowledge_base_id`，不直连
 RAGFlow 内部 MySQL，也不跨服务建立数据库外键。创建或修改绑定时，`EmployeeService` 必须
 通过正式 `KnowledgeService` 查询当前数据集并确认 ID 存在；RAGFlow 不可用或引用失效时
 关闭失败并拒绝写入。已绑定的数据集后来被删除时，员工定义保留原引用，由读取/会话链路
 返回稳定的“知识库不存在或已失效”错误，不能静默改成无知识库回答。展示缓存只有出现真实
 性能需要时才引入，缓存不得取代 RAGFlow 的权威状态。
+
+Demo 模式实现相同 `KnowledgeService` 协议，但不调用或伪装 RAGFlow。项目专属 MySQL 的
+`demo_knowledge_bases` 与 `demo_knowledge_documents` 保存知识库、文档正文、完成/失败状态和
+稳定顺序；外键只约束 Demo 文档归属，不把员工表绑定成 Demo 专用结构。后端重启后，员工绑定、
+已有消息引用和重新检索必须指向同一知识库与文档；应用关闭不得清空已提交数据。Demo 数据仍由
+明确测试/用户删除生命周期管理，不能依赖进程退出制造“已清理”。
 
 ### 4.5 工作流
 

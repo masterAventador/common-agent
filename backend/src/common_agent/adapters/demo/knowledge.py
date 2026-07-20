@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from uuid import uuid4
 
 from common_agent.domain.conversation import CITATION_CONTENT_MAX_LENGTH
 from common_agent.domain.knowledge import (
+    KNOWLEDGE_DOCUMENT_NAME_MAX_LENGTH,
     CreateKnowledgeBaseRequest,
     DocumentParsingStatus,
     DocumentUpload,
@@ -22,20 +23,20 @@ from common_agent.knowledge.base import (
     KnowledgeDocumentUploadFailed,
     KnowledgeRequestRejected,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class _DemoDocument:
-    value: KnowledgeDocument
-    text: str
+from common_agent.ports.knowledge import (
+    DemoKnowledgeBaseAlreadyExists,
+    DemoKnowledgeUnitOfWorkFactory,
+    DemoKnowledgeWriteConflict,
+    PersistedDemoKnowledgeBase,
+    PersistedDemoKnowledgeDocument,
+)
 
 
 class DemoKnowledgeService:
     provider_name = "demo"
 
-    def __init__(self) -> None:
-        self._bases: dict[str, CreateKnowledgeBaseRequest] = {}
-        self._documents: dict[str, list[_DemoDocument]] = {}
+    def __init__(self, unit_of_work: DemoKnowledgeUnitOfWorkFactory) -> None:
+        self._unit_of_work = unit_of_work
         self._closed = False
 
     async def status(self) -> KnowledgeServiceStatus:
@@ -48,26 +49,40 @@ class DemoKnowledgeService:
 
     async def list_knowledge_bases(self) -> tuple[KnowledgeBaseSummary, ...]:
         self._ensure_open()
-        return tuple(
-            self._summary(knowledge_base_id) for knowledge_base_id in reversed(self._bases)
-        )
+        async with self._unit_of_work() as unit_of_work:
+            values = await unit_of_work.knowledge.list_knowledge_bases()
+        return tuple(value.summary for value in values)
 
     async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
         self._ensure_open()
-        self._require_base(knowledge_base_id)
-        return self._summary(knowledge_base_id)
+        async with self._unit_of_work() as unit_of_work:
+            value = await unit_of_work.knowledge.get_knowledge_base(knowledge_base_id)
+        if value is None:
+            raise KnowledgeBaseNotFound()
+        return value.summary
 
     async def create_knowledge_base(
         self,
         request: CreateKnowledgeBaseRequest,
     ) -> KnowledgeBaseSummary:
         self._ensure_open()
-        if any(item.name == request.name for item in self._bases.values()):
-            raise KnowledgeRequestRejected()
-        knowledge_base_id = uuid4().hex
-        self._bases[knowledge_base_id] = request
-        self._documents[knowledge_base_id] = []
-        return self._summary(knowledge_base_id)
+        created = PersistedDemoKnowledgeBase(
+            summary=KnowledgeBaseSummary(
+                id=uuid4().hex,
+                name=request.name,
+                description=request.description,
+                document_count=0,
+                parsing_count=0,
+            ),
+            created_at=datetime.now(UTC),
+        )
+        try:
+            async with self._unit_of_work() as unit_of_work:
+                await unit_of_work.knowledge.add_knowledge_base(created)
+                await unit_of_work.commit()
+        except DemoKnowledgeBaseAlreadyExists:
+            raise KnowledgeRequestRejected() from None
+        return created.summary
 
     async def upload_document(
         self,
@@ -75,9 +90,8 @@ class DemoKnowledgeService:
         upload: DocumentUpload,
     ) -> KnowledgeDocument:
         self._ensure_open()
-        self._require_base(knowledge_base_id)
         name = PurePosixPath(upload.file_name.replace("\\", "/")).name
-        if not name or name in {".", ".."}:
+        if not name or name in {".", ".."} or len(name) > KNOWLEDGE_DOCUMENT_NAME_MAX_LENGTH:
             raise KnowledgeDocumentUploadFailed()
         document = KnowledgeDocument(
             id=uuid4().hex,
@@ -87,52 +101,52 @@ class DemoKnowledgeService:
             parsing_status=DocumentParsingStatus.COMPLETED,
             error_code=None,
         )
-        text = upload.content.decode("utf-8", errors="replace").strip()
-        self._documents[knowledge_base_id].insert(0, _DemoDocument(document, text))
+        persisted = PersistedDemoKnowledgeDocument(
+            document=document,
+            content=upload.content.decode("utf-8", errors="replace").strip(),
+            created_at=datetime.now(UTC),
+        )
+        try:
+            async with self._unit_of_work() as unit_of_work:
+                if await unit_of_work.knowledge.get_knowledge_base(knowledge_base_id) is None:
+                    raise KnowledgeBaseNotFound()
+                await unit_of_work.knowledge.add_document(persisted)
+                await unit_of_work.commit()
+        except DemoKnowledgeWriteConflict:
+            raise KnowledgeDocumentUploadFailed() from None
         return document
 
     async def list_documents(self, knowledge_base_id: str) -> tuple[KnowledgeDocument, ...]:
         self._ensure_open()
-        self._require_base(knowledge_base_id)
-        return tuple(item.value for item in self._documents[knowledge_base_id])
+        async with self._unit_of_work() as unit_of_work:
+            if await unit_of_work.knowledge.get_knowledge_base(knowledge_base_id) is None:
+                raise KnowledgeBaseNotFound()
+            documents = await unit_of_work.knowledge.list_documents(knowledge_base_id)
+        return tuple(item.document for item in documents)
 
     async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult:
         self._ensure_open()
-        self._require_base(request.knowledge_base_id)
-        documents = (item for item in self._documents[request.knowledge_base_id] if item.text)
+        async with self._unit_of_work() as unit_of_work:
+            if await unit_of_work.knowledge.get_knowledge_base(request.knowledge_base_id) is None:
+                raise KnowledgeBaseNotFound()
+            documents = await unit_of_work.knowledge.list_documents(request.knowledge_base_id)
+        available_documents = (item for item in documents if item.content)
         return KnowledgeRetrievalResult(
             chunks=tuple(
                 RetrievedChunk(
-                    id=f"demo-{item.value.id}",
-                    document_id=item.value.id,
-                    document_name=item.value.name,
-                    content=item.text[:CITATION_CONTENT_MAX_LENGTH],
+                    id=f"demo-{item.document.id}",
+                    document_id=item.document.id,
+                    document_name=item.document.name,
+                    content=item.content[:CITATION_CONTENT_MAX_LENGTH],
                     score=max(request.similarity_threshold, 1.0 - index * 0.05),
                 )
-                for index, item in enumerate(documents)
+                for index, item in enumerate(available_documents)
                 if index < request.top_k
             )
         )
 
     async def aclose(self) -> None:
         self._closed = True
-        self._bases.clear()
-        self._documents.clear()
-
-    def _summary(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
-        request = self._bases[knowledge_base_id]
-        documents = self._documents[knowledge_base_id]
-        return KnowledgeBaseSummary(
-            id=knowledge_base_id,
-            name=request.name,
-            description=request.description,
-            document_count=len(documents),
-            parsing_count=0,
-        )
-
-    def _require_base(self, knowledge_base_id: str) -> None:
-        if knowledge_base_id not in self._bases:
-            raise KnowledgeBaseNotFound()
 
     def _ensure_open(self) -> None:
         if self._closed:

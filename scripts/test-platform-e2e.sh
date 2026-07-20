@@ -79,6 +79,7 @@ cleanup() {
       cd "${BACKEND_ROOT}"
       COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
       COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="${COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME}" \
+      COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME}" \
         uv run --frozen python -m tests.support.demo_chat_e2e_cleanup
     ); then
       echo "Demo 聊天 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2

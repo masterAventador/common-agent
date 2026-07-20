@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.domain.knowledge import (
+    KNOWLEDGE_BASE_DESCRIPTION_MAX_LENGTH,
+    KNOWLEDGE_BASE_NAME_MAX_LENGTH,
     CreateKnowledgeBaseRequest,
     DocumentParsingStatus,
     DocumentUpload,
@@ -34,9 +36,19 @@ router = APIRouter(prefix="/api/v1/knowledge-bases", tags=["knowledge-bases"])
 
 KnowledgeBaseName = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=KNOWLEDGE_BASE_NAME_MAX_LENGTH,
+    ),
 ]
-KnowledgeBaseDescription = Annotated[str, StringConstraints(strip_whitespace=True, max_length=1024)]
+KnowledgeBaseDescription = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        max_length=KNOWLEDGE_BASE_DESCRIPTION_MAX_LENGTH,
+    ),
+]
 
 
 class CreateKnowledgeBaseBody(BaseModel):
