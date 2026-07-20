@@ -11,6 +11,7 @@ from common_agent.conversations.events import (
     ConversationEventKind,
     EventHistoryUnavailable,
     EventStreamOverflow,
+    EventSubscriberLimitExceeded,
 )
 from common_agent.domain.conversation import Message
 
@@ -124,3 +125,200 @@ def test_event_broker_closes_a_slow_subscriber_instead_of_dropping_events() -> N
             await anext(stream)
 
     asyncio.run(exercise())
+
+
+def test_event_broker_bounds_terminal_states_and_preserves_active_state() -> None:
+    async def exercise() -> None:
+        broker = ConversationEventBroker(
+            history_limit=4,
+            state_limit=16,
+            state_ttl_seconds=60,
+        )
+        active_id = uuid4()
+        active = Message.create_assistant(conversation_id=active_id, sequence_number=2)
+        active_event = await broker.publish(
+            turn_id=uuid4(),
+            message=active,
+            kind=ConversationEventKind.ASSISTANT_STARTED,
+        )
+
+        for _ in range(500):
+            conversation_id = uuid4()
+            turn_id = uuid4()
+            pending = Message.create_assistant(
+                conversation_id=conversation_id,
+                sequence_number=2,
+            )
+            streaming = pending.append_delta("x")
+            completed = streaming.complete()
+            await broker.publish(
+                turn_id=turn_id,
+                message=pending,
+                kind=ConversationEventKind.ASSISTANT_STARTED,
+            )
+            await broker.publish(
+                turn_id=turn_id,
+                message=streaming,
+                kind=ConversationEventKind.ASSISTANT_DELTA,
+                delta="x",
+            )
+            await broker.publish(
+                turn_id=turn_id,
+                message=completed,
+                kind=ConversationEventKind.ASSISTANT_COMPLETED,
+            )
+
+        snapshot = await broker.lifecycle_snapshot()
+        active_stream = broker.stream(active_id)
+        assert await anext(active_stream) == active_event
+        await active_stream.aclose()
+        await broker.aclose()
+
+        assert snapshot.state_count <= 16
+        assert snapshot.active_state_count == 1
+        assert snapshot.subscriber_count == 0
+        assert snapshot.retained_event_count <= 16 * 4
+
+    asyncio.run(exercise())
+
+
+def test_event_broker_expires_terminal_state_but_not_live_subscriber() -> None:
+    async def exercise() -> None:
+        broker = ConversationEventBroker(
+            history_limit=4,
+            state_limit=8,
+            state_ttl_seconds=0.02,
+            subscriber_limit=1,
+        )
+        conversation_id = uuid4()
+        turn_id = uuid4()
+        pending = Message.create_assistant(
+            conversation_id=conversation_id,
+            sequence_number=2,
+        )
+        streaming = pending.append_delta("x")
+        completed = streaming.complete()
+        await broker.publish(
+            turn_id=turn_id,
+            message=pending,
+            kind=ConversationEventKind.ASSISTANT_STARTED,
+        )
+        await broker.publish(
+            turn_id=turn_id,
+            message=streaming,
+            kind=ConversationEventKind.ASSISTANT_DELTA,
+            delta="x",
+        )
+        terminal = await broker.publish(
+            turn_id=turn_id,
+            message=completed,
+            kind=ConversationEventKind.ASSISTANT_COMPLETED,
+        )
+
+        stream = broker.stream(conversation_id, after_sequence=terminal.sequence - 1)
+        assert await anext(stream) == terminal
+        await asyncio.sleep(0.04)
+        retained = await broker.lifecycle_snapshot()
+        assert retained.state_count == 1
+        assert retained.subscriber_count == 1
+
+        second = broker.stream(conversation_id)
+        with pytest.raises(EventSubscriberLimitExceeded, match="订阅者"):
+            await anext(second)
+        await second.aclose()
+        await stream.aclose()
+        await asyncio.sleep(0.04)
+
+        expired = await broker.lifecycle_snapshot()
+        assert expired.state_count == 0
+        with pytest.raises(EventHistoryUnavailable):
+            await broker.validate_resume(
+                conversation_id,
+                after_sequence=terminal.sequence,
+            )
+        await broker.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_event_broker_globally_bounds_subscribers_across_conversations() -> None:
+    async def exercise() -> None:
+        broker = ConversationEventBroker(
+            state_limit=1,
+            subscriber_limit=4,
+            total_subscriber_limit=1,
+        )
+        first_id = uuid4()
+        first_stream = broker.stream(first_id)
+        first_waiter = asyncio.create_task(anext(first_stream))
+        await asyncio.sleep(0)
+
+        second_stream = broker.stream(uuid4())
+        with pytest.raises(EventSubscriberLimitExceeded, match="订阅者"):
+            await anext(second_stream)
+        await second_stream.aclose()
+
+        pending = Message.create_assistant(
+            conversation_id=first_id,
+            sequence_number=2,
+        )
+        event = await broker.publish(
+            turn_id=uuid4(),
+            message=pending,
+            kind=ConversationEventKind.ASSISTANT_STARTED,
+        )
+        assert await first_waiter == event
+        await first_stream.aclose()
+        assert (await broker.lifecycle_snapshot()).subscriber_count == 0
+        await broker.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_event_broker_trims_completed_overflow_without_evicting_active_states() -> None:
+    async def exercise() -> None:
+        broker = ConversationEventBroker(state_limit=2, state_ttl_seconds=60)
+        active_messages = [
+            Message.create_assistant(conversation_id=uuid4(), sequence_number=2) for _ in range(4)
+        ]
+        for pending in active_messages:
+            await broker.publish(
+                turn_id=uuid4(),
+                message=pending,
+                kind=ConversationEventKind.ASSISTANT_STARTED,
+            )
+        assert (await broker.lifecycle_snapshot()).active_state_count == 4
+
+        await broker.publish(
+            turn_id=uuid4(),
+            message=active_messages[0].append_delta("done").complete(),
+            kind=ConversationEventKind.ASSISTANT_COMPLETED,
+        )
+        snapshot = await broker.lifecycle_snapshot()
+        assert snapshot.state_count == 3
+        assert snapshot.active_state_count == 3
+
+        for pending in active_messages[1:]:
+            stream = broker.stream(pending.conversation_id)
+            assert (await anext(stream)).message.conversation_id == pending.conversation_id
+            await stream.aclose()
+        await broker.aclose()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"history_limit": 0},
+        {"subscriber_queue_limit": 0},
+        {"subscriber_limit": 0},
+        {"total_subscriber_limit": 0},
+        {"state_limit": 0},
+        {"state_ttl_seconds": 0},
+        {"state_ttl_seconds": 86_401},
+    ],
+)
+def test_event_broker_rejects_invalid_lifecycle_limits(arguments: dict[str, int]) -> None:
+    with pytest.raises(ValueError):
+        ConversationEventBroker(**arguments)

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
 from dataclasses import dataclass
 from time import monotonic
 from typing import Protocol
 from uuid import UUID, uuid4
 
+from common_agent.concurrency import KeyedLockPool
 from common_agent.conversations.events import ConversationEventBroker, ConversationEventKind
 from common_agent.domain.conversation import (
     MESSAGE_ERROR_CODE_MAX_LENGTH,
@@ -135,7 +135,7 @@ class ConversationService:
         self._knowledge = knowledge
         self._runtime = runtime
         self._events = events
-        self._locks: defaultdict[UUID, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._locks: KeyedLockPool[UUID] = KeyedLockPool()
         self._active: dict[UUID, _ActiveRun] = {}
         self._closed = False
 
@@ -181,7 +181,7 @@ class ConversationService:
         content: str,
     ) -> TurnAccepted:
         self._ensure_open()
-        async with self._locks[conversation_id]:
+        async with self._locks.hold(conversation_id):
             if conversation_id in self._active:
                 raise ConversationBusy
             conversation, _ = await self._load_conversation(conversation_id)
@@ -234,7 +234,7 @@ class ConversationService:
             )
 
     async def stop(self, conversation_id: UUID) -> StopAccepted:
-        async with self._locks[conversation_id]:
+        async with self._locks.hold(conversation_id):
             active = self._active.get(conversation_id)
             if active is None:
                 raise GenerationNotActive
@@ -252,7 +252,7 @@ class ConversationService:
             raise MessageNotFound
         conversation_id = message.conversation_id
 
-        async with self._locks[conversation_id]:
+        async with self._locks.hold(conversation_id):
             if conversation_id in self._active:
                 raise ConversationBusy
             conversation, messages = await self._load_conversation(conversation_id)
@@ -496,7 +496,7 @@ class ConversationService:
                     error_code=outcome_error,
                     duration_ms=max(0.0, (monotonic() - started_at) * 1000),
                 )
-                async with self._locks[conversation.id]:
+                async with self._locks.hold(conversation.id):
                     active = self._active.get(conversation.id)
                     if active is not None and active.turn_id == turn_id:
                         self._active.pop(conversation.id, None)

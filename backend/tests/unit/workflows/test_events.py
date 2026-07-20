@@ -11,6 +11,7 @@ from common_agent.workflows.events import (
     WorkflowEventHistoryUnavailable,
     WorkflowEventKind,
     WorkflowEventStreamOverflow,
+    WorkflowEventSubscriberLimitExceeded,
 )
 
 
@@ -84,3 +85,87 @@ def test_workflow_events_reject_state_mismatch_history_gap_and_slow_consumer() -
             await broker.validate_resume(running.id, after_sequence=0)
 
     asyncio.run(exercise())
+
+
+def test_workflow_event_states_are_lru_bounded_and_ttl_expired() -> None:
+    async def exercise() -> None:
+        broker = WorkflowEventBroker(
+            history_limit=4,
+            state_limit=12,
+            state_ttl_seconds=0.02,
+        )
+        active = _running_run()
+        active_event = await broker.publish(run=active, kind=WorkflowEventKind.RUN_STARTED)
+
+        for _ in range(300):
+            running = _running_run()
+            await broker.publish(run=running, kind=WorkflowEventKind.RUN_STARTED)
+            completed = running.complete("done")
+            await broker.publish(run=completed, kind=WorkflowEventKind.RUN_COMPLETED)
+
+        bounded = await broker.lifecycle_snapshot()
+        assert bounded.state_count <= 12
+        assert bounded.active_state_count == 1
+        assert bounded.retained_event_count <= 12 * 4
+
+        active_stream = broker.stream(active.id)
+        assert await anext(active_stream) == active_event
+        await asyncio.sleep(0.04)
+        assert (await broker.lifecycle_snapshot()).state_count == 1
+        await active_stream.aclose()
+
+        stopped = active.stop()
+        terminal = await broker.publish(run=stopped, kind=WorkflowEventKind.RUN_STOPPED)
+        await asyncio.sleep(0.04)
+        assert (await broker.lifecycle_snapshot()).state_count == 0
+        with pytest.raises(WorkflowEventHistoryUnavailable):
+            await broker.validate_resume(active.id, after_sequence=terminal.sequence)
+        await broker.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_workflow_event_broker_globally_bounds_subscribers_and_closes_waiters() -> None:
+    async def exercise() -> None:
+        broker = WorkflowEventBroker(
+            state_limit=1,
+            subscriber_limit=4,
+            total_subscriber_limit=1,
+        )
+        first = _running_run()
+        first_stream = broker.stream(first.id)
+        first_waiter = asyncio.create_task(anext(first_stream))
+        await asyncio.sleep(0)
+
+        second_stream = broker.stream(_running_run().id)
+        with pytest.raises(WorkflowEventSubscriberLimitExceeded, match="订阅者"):
+            await anext(second_stream)
+        await second_stream.aclose()
+
+        await broker.aclose()
+        with pytest.raises(WorkflowEventStreamOverflow):
+            await first_waiter
+        await first_stream.aclose()
+        with pytest.raises(RuntimeError, match="closed"):
+            await broker.publish(run=first, kind=WorkflowEventKind.RUN_STARTED)
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"history_limit": 0},
+        {"subscriber_queue_limit": 0},
+        {"subscriber_limit": 0},
+        {"total_subscriber_limit": 0},
+        {"state_limit": 0},
+        {"state_ttl_seconds": 0},
+        {"state_ttl_seconds": 86_401},
+    ],
+)
+def test_workflow_event_broker_rejects_invalid_lifecycle_limits(
+    arguments: dict[str, int],
+) -> None:
+    with pytest.raises(ValueError):
+        WorkflowEventBroker(**arguments)

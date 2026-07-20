@@ -91,7 +91,7 @@
 | SQLite | 文件不可写、迁移失败、唯一冲突、事务回滚和重启恢复 | ➖ 不适用：B1-05 后平台正式与测试链均只装配 MySQL，源码和依赖没有 SQLite 运行适配器；不得以历史 B1-03 记录冒充当前链路 |
 | 平台 MySQL | 未启动、连接/认证失败、迁移失败、唯一冲突、事务回滚、重启恢复、端口/Volume 隔离和资源清理 | ✅ `test_database.py`、各 SQLAlchemy 仓储/正式 Uvicorn 集成、Alembic check、`infra/platform/test-manage.sh`；真实 8.4.10 容器重启与正式 app lifespan 已验收 |
 | PostgreSQL | 连接失败、迁移失败、连接池耗尽、事务回滚和 Schema 隔离 | ➖ 不适用：MVP 未选择 PostgreSQL，也没有驱动、容器或运行时代码 |
-| Redis/消息队列 | 不可用、超时、重复投递、乱序、积压、消费失败和恢复 | ➖ 平台不适用：没有平台 Redis/MQ；进程内 SSE Broker 的顺序、历史缺口、慢消费者关闭与重放由 `test_conversation_events.py`/`workflows/test_events.py` 覆盖；RAGFlow 内部 Valkey 不作为平台接口 |
+| Redis/消息队列 | 不可用、超时、重复投递、乱序、积压、消费失败和恢复 | ➖ 平台不适用：没有平台 Redis/MQ；进程内 SSE Broker 的顺序、历史缺口、慢消费者关闭、重放、有界订阅/状态与 TTL/LRU 回收由事件测试及 `tests/soak/` 覆盖；RAGFlow 内部 Valkey 不作为平台接口 |
 | 对象存储 | Bucket/权限错误、上传中断、重复对象、清理失败和容量上限 | ➖ 平台不适用：文档只经 RAGFlow 正式 API，平台没有对象存储适配器；RAGFlow 内部 MinIO 由固定上游栈管理，不绕过 RAGFlow 直连 |
 | Worker | 启动失败、任务丢失、超时、重试幂等、崩溃恢复和优雅停止 | ➖ 平台不适用：MVP 没有分布式 Worker；会话/工作流进程内任务的恢复、取消、停止和 lifespan 关闭分别有服务测试 |
 | RAGFlow | 未启动、Key 错误、超时、知识库不存在和 API 版本漂移 | ✅ `adapters/knowledge/test_ragflow.py` 故障注入定位，真实 v0.25.6 生命周期/公开 HTTP/会话检索验收；正式适配层统一安全错误 |
@@ -285,7 +285,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 | H7-04 | 平台自有图执行协议 | 定义不依赖 LangGraph 的编译、执行、节点观察、停止和结果协议；把 LangGraph 编译器、运行状态和节点框架转换移入 `adapters/workflow/langgraph/`；`WorkflowService` 只依赖平台端口，手动与员工触发语义不变 | H7-03 | ✅ 已完成 |
 | H7-05 | 第三方依赖边界门禁 | 增加可自动执行的 import/AST 架构测试；除 `api/` 的 FastAPI 边界和 `adapters/` 外，生产平台层不得导入 FastAPI、SQLAlchemy、HTTP SDK、LangChain、LangGraph、Deep Agents 或供应商类型；修正规则和架构文档与实现口径 | H7-04 | ✅ 已完成 |
 | H7-06 | 结构化日志、指标与追踪 | 统一 JSON 日志和关联上下文，覆盖 request/conversation/message/turn/workflow/run ID、耗时、状态与稳定错误码；提供本机最小健康/指标入口和跨服务 trace context；默认脱敏提示词、知识正文、Key、密码和上游响应，故障测试证明可定位且不泄密 | H7-05 | ✅ 已完成 |
-| H7-07 | 事件与锁状态生命周期 | 为会话/工作流 Broker 历史、订阅者、per-ID 锁和终态状态增加有界容量、TTL/LRU 与安全回收；保留允许的 SSE 回放窗口，慢消费者和历史缺口语义不变；通过大量短会话/运行及长时间 soak 证明内存最终回落且无活跃状态误删 | H7-06 | ⬜ 未开始 |
+| H7-07 | 事件与锁状态生命周期 | 为会话/工作流 Broker 历史、订阅者、per-ID 锁和终态状态增加有界容量、TTL/LRU 与安全回收；保留允许的 SSE 回放窗口，慢消费者和历史缺口语义不变；通过大量短会话/运行及长时间 soak 证明内存最终回落且无活跃状态误删 | H7-06 | ✅ 已完成 |
 | H7-08 | 核心大文件按职责拆分 | 在既有行为测试保护下拆分 ChatPage、WorkflowsPage、ConversationService、WorkflowService 和大型路由；页面容器只做编排，消息/运行/设计器状态与协议映射独立；服务按用例/运行协调/持久化投影分责，禁止循环依赖和跨 Feature 私有导入 | H7-07 | ⬜ 未开始 |
 | H7-09 | 前端包体与加载性能 | 建立 bundle 分析和预算门禁，路由与稳定 vendor 合理拆分；任何初始或异步单 chunk 不超过 500 kB，四入口真实浏览器首屏、交互和缓存复用无回归；不得仅调高 warning 阈值 | H7-08 | ⬜ 未开始 |
 
@@ -344,8 +344,9 @@ embedding/rerank 统一使用阿里百炼，本地模型退场；全新克隆可
 GitHub Hosted Runner 只作可选镜像、不作为验收依赖；前后端行/分支覆盖率已建立本机不回退门禁；
 平台消息/模型/图执行协议不再暴露 LangChain、OpenAI、Deep Agents 或 LangGraph 类型，生产
 第三方 import 和平台内部依赖方向由关闭失败的统一 AST 门禁约束；正式 API、会话、工作流及
-RAGFlow/百炼出站已具备脱敏 JSON 日志、有界进程指标和关联追踪。下一任务进入 H7-07，治理
-事件历史、订阅者、per-ID 锁与终态状态的有界生命周期；R8-04 仍独立负责 32 GiB 的峰值
+RAGFlow/百炼出站已具备脱敏 JSON 日志、有界进程指标和关联追踪；事件历史、订阅者、per-ID
+锁与终态状态也已具备容量、TTL/LRU 和安全回收。下一任务进入 H7-08，按职责拆分核心大文件；
+R8-04 仍独立负责 32 GiB 的峰值
 与 30 分钟 soak，不用 D8-03 的功能通过冒充长期资源验收。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
 
@@ -1245,3 +1246,17 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - 失败矩阵：覆盖非法 traceparent、嵌套上下文恢复、出站子 span、内部异常、422 稳定错误、敏感结构字段与自由文本、错误码基数上限、指标并发安全、正式日志纯 JSON、会话/工作流完成关联，以及既有认证、超时、断流、停止和真实供应商链路；测试不把提示词、知识正文、Key、密码或上游响应写入失败输出
 - 清理与边界：Demo/real 用例 finally 已清理本轮会话、员工、知识库和工作流数据；前后端、Playwright、平台/RAGFlow 容器和项目专属 Colima 已停止，18200/18280 无监听，稳定数据、固定镜像、冻结依赖与 0600 Token 保留。RAGFlow 官方 submodule 与源码未修改；指标是本机进程诊断而非持久审计/跨实例聚合，审计与生产指标仍由 Wave 10 对应任务交付
 - 遗留：无；下一任务 H7-07 为事件历史、订阅者、per-ID 锁和终态状态增加有界容量、TTL/LRU 与安全回收，并以压力/soak 证明内存回落且不误删活跃状态
+
+### H7-07 事件与锁状态生命周期
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先为会话/工作流 Broker 增加大量终态 ID、活跃状态保护、TTL、单 ID 订阅者上限和按 ID 锁取消等待回收测试，首次收集因 `common_agent.concurrency` 不存在按预期失败；最小实现后再补全局订阅容量与“容量已满时活跃状态不得误删”用例，避免不同 ID 的长连接绕过单 ID 上限，也不以强制淘汰正在运行的状态冒充有界治理
+- 生命周期边界：两类 Broker 每个 ID 最多保留 512 个事件、每个订阅队列 128 项、每个 ID 最多 64 个订阅者、进程内总订阅者最多 1024 个；无活跃运行且无订阅者的状态最多保留 1024 个并按 LRU 淘汰，空闲 300 秒后由可取消定时器回收。活动运行和正在消费的 SSE 不会被 TTL/LRU 删除；瞬时活动数超过保留上限时只允许受实际活动负载保护的临时超额，转为终态后立即向 1024 收敛。容量淘汰、TTL 或进程重启后的续传继续返回原 `event_history_unavailable`，客户端读取 MySQL 权威消息/运行摘要；慢消费者仍关闭该流且不静默丢事件
+- 锁与关闭：新增标准库 `KeyedLockPool`，同一会话/运行继续严格串行，不同 ID 互不阻塞；持有者、等待者和取消等待者都计入引用，最后一个使用者离开即删除锁项，不使用会永久增长的 `defaultdict(asyncio.Lock)`。FastAPI lifespan 在服务停止并等待后台任务后关闭两个 Broker，取消所有回收定时器、唤醒并关闭订阅流、清空进程状态；关闭后发布/续传关闭失败
+- 压测：新增可独立运行的 `tests/soak/event_lifecycle_soak.py`。最终 60 秒在不启动 Docker 的情况下完成 149,100 轮唯一短会话、工作流与锁，两个 Broker 状态峰值始终为 128，TTL 后状态和锁项全部回到 0；tracemalloc 峰值 794,640 bytes、回收后相对基线残留 44,424 bytes。定向失败矩阵与短 soak 共 `28 passed`，覆盖活跃保护、终态即时收敛、LRU/TTL、局部/全局订阅上限、历史缺口、慢消费者、关闭唤醒、锁串行及取消回收
+- GREEN：最终权威后端覆盖率全量 `451 passed, 12 skipped in 126.67s`，总体行 `91.28%`、分支 `74.17%`、核心行 `93.19%`、核心分支 `74.63%`，全部高于冻结阈值；Ruff、严格 Mypy 174 个源/测试文件、uv lock、83 包安全审计和 CI 镜像契约通过。前端 14 files/61 tests、行 `86.17%`、分支 `75.00%`，ESLint、TypeScript、Build、pnpm audit 与契约漂移通过；既有 602.76 kB chunk 警告仍留给 H7-09，本任务未修改前端协议、依赖或构建阈值
+- 生产同路径：12 GiB demo-light 上正式 React/FastAPI/MySQL 两轮带引用会话与中断恢复 `1 passed in 6.1s`；随后临时切到项目专属 32 GiB real，显式执行真实百炼、Deep Agents 流/停止/错误、会话 HTTP/SSE、RAGFlow+百炼图编译、手动运行和员工 allowlist 工具触发共 `6 passed in 38.79s`。没有使用 Mock/Fake 或 GitHub Runner 结果，RAGFlow 官方 submodule 与源码保持未修改
+- 清理与边界：Demo/real 用例 finally 已删除唯一会话、员工、知识库和工作流数据；前后端、无头浏览器、平台/RAGFlow 容器和项目专属 Colima 已停止，18200/18280 无监听，稳定数据、固定镜像、冻结依赖与 0600 Token 保留。当前仍是单 FastAPI 进程内短期回放；跨进程持久事件、可靠队列和 Worker 只由 S10-05 交付，不用本任务的内存 Broker 冒充分布式可靠性
+- 遗留：无；下一任务 H7-08 在现有行为与覆盖率保护下拆分 ChatPage、WorkflowsPage、ConversationService、WorkflowService 和大型路由

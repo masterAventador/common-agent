@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from time import monotonic
 from uuid import UUID
 
+from common_agent.concurrency import KeyedLockPool
 from common_agent.domain.workflow import (
     KnowledgeRetrievalNodeConfig,
     WorkflowConfiguration,
@@ -116,7 +116,7 @@ class WorkflowService:
         self._knowledge_bases = knowledge_bases
         self._compiler = compiler
         self._events = events
-        self._run_locks: defaultdict[UUID, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._run_locks: KeyedLockPool[UUID] = KeyedLockPool()
         self._active_runs: dict[UUID, _ActiveWorkflowRun] = {}
         self._closed = False
 
@@ -216,7 +216,7 @@ class WorkflowService:
         origin: WorkflowRunOrigin | None = None,
     ) -> WorkflowRun:
         self._ensure_execution_available()
-        async with self._run_locks[run_id]:
+        async with self._run_locks.hold(run_id):
             workflow = await self.get(workflow_id)
             pending = WorkflowRun.create(
                 workflow_id=workflow.id,
@@ -252,7 +252,7 @@ class WorkflowService:
             return running
 
     async def stop_run(self, run_id: UUID) -> WorkflowRunStopAccepted:
-        async with self._run_locks[run_id]:
+        async with self._run_locks.hold(run_id):
             run = await self.get_run(run_id)
             active = self._active_runs.get(run_id)
             if run.is_terminal or active is None:
@@ -353,7 +353,7 @@ class WorkflowService:
                     error_code=outcome_error,
                     duration_ms=max(0.0, (monotonic() - started_at) * 1000),
                 )
-                async with self._run_locks[run.id]:
+                async with self._run_locks.hold(run.id):
                     self._active_runs.pop(run.id, None)
 
     async def _persist_node_started(self, run_id: UUID, node_id: str) -> None:
@@ -377,7 +377,7 @@ class WorkflowService:
         run_id: UUID,
         result: WorkflowExecutionResult,
     ) -> None:
-        async with self._run_locks[run_id]:
+        async with self._run_locks.hold(run_id):
             current = await self.get_run(run_id)
             if current.is_terminal:
                 return
@@ -393,7 +393,7 @@ class WorkflowService:
         )
 
     async def _persist_failure(self, run_id: UUID, error_code: str) -> None:
-        async with self._run_locks[run_id]:
+        async with self._run_locks.hold(run_id):
             current = await self.get_run(run_id)
             if current.is_terminal:
                 return
@@ -408,7 +408,7 @@ class WorkflowService:
         await self._event_broker.publish(run=failed, kind=WorkflowEventKind.RUN_FAILED)
 
     async def _persist_stopped(self, run_id: UUID) -> None:
-        async with self._run_locks[run_id]:
+        async with self._run_locks.hold(run_id):
             current = await self.get_run(run_id)
             if current.is_terminal:
                 return
@@ -424,7 +424,7 @@ class WorkflowService:
         kind: WorkflowEventKind,
         node_id: str,
     ) -> None:
-        async with self._run_locks[run_id]:
+        async with self._run_locks.hold(run_id):
             current = await self.get_run(run_id)
             if current.is_terminal:
                 raise WorkflowExecutionStopped

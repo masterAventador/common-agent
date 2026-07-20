@@ -65,6 +65,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     conversations: ConversationService | None = None
     workflows: WorkflowService | None = None
     demo_workflow_model: DemoWorkflowModel | None = None
+    conversation_events: ConversationEventBroker | None = None
+    workflow_events: WorkflowEventBroker | None = None
     try:
         integration_mode: IntegrationModeSettings = app.state.integration_mode
         workflow_model: TextStreamingModel
@@ -148,6 +150,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await conversations.aclose()
         elif runtime is not None:
             await runtime.aclose()
+        if conversation_events is not None:
+            await conversation_events.aclose()
+        if workflow_events is not None:
+            await workflow_events.aclose()
         if knowledge_adapter is not None:
             await knowledge_adapter.aclose()
         if demo_workflow_model is not None:

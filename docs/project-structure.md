@@ -46,6 +46,7 @@ backend/
 │       │   └── server.py         # Uvicorn 进程边界
 │       ├── application/         # 平台用例编排
 │       │   └── workflow_service.py
+│       ├── concurrency.py       # 可回收的按 ID 异步锁池
 │       ├── conversations/       # 连续会话应用服务与事件
 │       ├── employees/           # 数字员工应用服务与启动 Seed
 │       ├── domain/              # 与第三方无关的会话和能力模型
@@ -82,6 +83,7 @@ backend/
 │   ├── integration/
 │   ├── architecture/           # 生产 import/AST 依赖边界门禁
 │   ├── contract/
+│   ├── soak/                    # 事件、锁与长时间运行资源回落验证
 │   └── fixtures/
 ├── pyproject.toml
 ├── uv.lock
