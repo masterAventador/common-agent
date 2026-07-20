@@ -58,8 +58,8 @@
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
 | 产品代码 | `✅` 知识库、数字员工、连续会话、工作流设计/运行及两类触发的 MVP 正式链路已完成 |
-| 本地服务 | `✅` D8-02 验收后的前后端、平台容器和项目专属 Colima 已停止；MySQL/RAGFlow 数据与官方镜像保留，下一任务可按需复用 |
-| 后续整改 | `🟨` R8-00、D8-01、D8-02 已完成；CI、平台自有协议、可观测性、运行态内存、代码拆分、real 入口、资源优化、数据管理和生产化继续按 Wave 7-10 推进，MVP 完成事实不变 |
+| 本地服务 | `✅` D8-03 验收后 real 前后端、平台/RAGFlow 容器和项目专属 Colima 已停止；原生 Volume、0600 Token 与官方镜像保留，下一任务可按需复用 |
+| 后续整改 | `🟨` Wave 8 的 R8-00、D8-01、D8-02、D8-03 已完成；CI、平台自有协议、可观测性、运行态内存、代码拆分、32 GiB soak、数据管理和生产化继续按 Wave 7-10 推进，MVP 完成事实不变 |
 
 ## 4. 全局完成门禁
 
@@ -104,7 +104,7 @@
 | 工作流图 | 缺少开始/结束、孤立、自环、重复边、环、未知节点和无效配置 | ✅ 领域、完整服务端 Validator、编译器、正式 HTTP 与 React Flow 页面均覆盖，非法图不打开写事务 |
 | 工作流运行 | 节点失败、停止、输出不匹配、知识库失效和模型失败 | ✅ `test_run_service.py`、正式 HTTP/SSE、真实 RAGFlow/LangGraph/百炼和无头运行 UI；终态均以 MySQL 摘要恢复 |
 | 前端 | 后端不可用、Schema 漂移、刷新恢复、重复事件和安全错误展示 | ✅ 各 API Zod/错误边界和四页面组件测试；真实无头页面覆盖解析失败、停止/重试、刷新恢复、运行失败/摘要；公共错误不展示 provider detail |
-| Docker | 端口/名称冲突、内存不足、健康失败、其他项目隔离和镜像清理 | ✅ 两类 `test-manage.sh` 覆盖非法/占用端口、32 GiB 内存拒绝、非法资源值及平台/RAGFlow 健康失败；独立 `colima-common-agent-dev` context、固定名称/端口/Volume/资源上限经真实配置与运行核对，代表性无头 E2E 前后七个稳定容器 ID/启动时间不变，镜像按 digest 唯一且 dangling 为 0 |
+| Docker | 端口/名称冲突、内存不足、健康失败、其他项目隔离和镜像清理 | ✅ 两类 `test-manage.sh` 与 `test-real.sh` 覆盖非法/占用端口、12/32 GiB 模式边界、非法资源值及平台/RAGFlow 健康失败；独立 `colima-common-agent-dev` context、固定名称/端口/原生 Volume/资源上限经真实 stop→Colima 关闭→up 核对，迁移后的 MySQL 不再受 macOS bind UID/大小写字典限制，镜像与数据按项目复用 |
 
 表内技术是当前已识别边界，不构成白名单。任务采用其他数据库、中间件、存储、运行时、协议、调度、观测或工程工具时，必须在进入实现前把该技术的正式依赖、失败模式和清理证据补入本矩阵及任务完成定义。
 
@@ -301,7 +301,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 | R8-00 | 百炼向量/重排迁移与本地模型退场 | 仅通过 RAGFlow v0.25.6 官方 `Tongyi-Qianwen` 供应商的公开 UI/API/配置接入百炼 `text-embedding-v4` 和 `qwen3-rerank`，禁止修改 RAGFlow 源码、镜像内文件、已安装包或维护 fork/patch；迁移 API Key、区域/业务空间、模型绑定、超时/限流/费用和脱敏诊断；embedding 变更必须重建既有知识库索引，中文基准同时验证初召回与重排顺序，失败时保持可恢复；正式门禁通过后移除本地 TEI 服务、BGE-M3/本地 rerank 权重、挂载、端口、profile、下载/检查和启停入口且不保留本地模型兜底；`real` 改为不含本地模型的按需 32 GiB 暂定模式，不复用旧 48 GiB 重型 profile；统一 `demo-light` 入口与 8-12 GiB 门禁由紧随其后的 D8-01 交付 | Q6-05 | ✅ 已完成 |
 | D8-01 | 全新克隆一键 Demo | 提供统一的 `doctor/setup/up/status/stop/clean` 开发入口；检查并冻结安装 uv/pnpm 依赖、使用轻量平台 MySQL 启动 Demo 前后端、显示访问地址并精确清理；从无 `.venv`/`node_modules` 的临时克隆完成两轮 Demo 会话，失败给出可操作信息，当前 64 GiB 电脑不启动 48 GiB profile | R8-00 | ✅ 已完成 |
 | D8-02 | Demo 知识状态持久语义 | Demo 知识库、文档和解析/检索状态使用可重启恢复的项目专属持久边界，或采用同等一致的显式生命周期设计；员工绑定、会话引用与知识数据在后端重启后保持一致，不出现持久员工引用已消失内存知识库；与 real 协议和错误语义保持契约一致 | D8-01 | ✅ 已完成 |
-| D8-03 | real 模式一键体检与启停 | 在不打印凭据的前提下统一检查按需 Colima context、MySQL、RAGFlow 官方版本/源码完整性、RAGFlow Token、百炼 embedding/rerank 供应商、模型绑定、区域/业务空间、端口和磁盘；提供不含本地模型的 `real` 模式可重复启停、健康和费用诊断，保留稳定栈复用；64 GiB 电脑本地完成知识库→员工→两轮会话→工作流，向量/重排配置、限流、超时和费用边界失败显示真实可恢复错误；128 GiB 电脑仅可按相同 Git revision 独立执行同一门禁，不作为远程依赖 | D8-02,R8-00 | ⬜ 未开始 |
+| D8-03 | real 模式一键体检与启停 | 在不打印凭据的前提下统一检查按需 Colima context、MySQL、RAGFlow 官方版本/源码完整性、RAGFlow Token、百炼 embedding/rerank 供应商、模型绑定、区域/业务空间、端口和磁盘；提供不含本地模型的 `real` 模式可重复启停、健康和费用诊断，保留稳定栈复用；64 GiB 电脑本地完成知识库→员工→两轮会话→工作流，向量/重排配置、限流、超时和费用边界失败显示真实可恢复错误；128 GiB 电脑仅可按相同 Git revision 独立执行同一门禁，不作为远程依赖 | D8-02,R8-00 | ✅ 已完成 |
 | R8-04 | Colima 32 GiB 专项优化与验收 | 以原 28.63 GiB 和 R8-00 真实稳定采样约 6.25 GiB 为上下界基线，实测百炼 embedding/rerank 下的 RAGFlow/ES/解析/运行峰值、中文召回与重排质量、延迟、费用、限流和数据边界；把本机完整 `real` 链路峰值压到不高于 25 GiB，在暂定 32 GiB profile 连续完成冷启动、解析/检索、两轮会话、工作流及 30 分钟 soak，无 OOM、持续 Swap 压力、重启或质量下降后确认并保留 real 默认值，否则按实测上调；`demo-light` 仍保持 8-12 GiB，避免长期占用 64 GiB 主机一半内存 | D8-03 | ⬜ 未开始 |
 
 ## 16. Wave 9：数据管理与产品可维护性
@@ -337,11 +337,12 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 ## 18. 当前下一步
 
-R8-00、D8-01、D8-02 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
+R8-00、D8-01、D8-02、D8-03 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
 embedding/rerank 统一使用阿里百炼，本地模型退场；全新克隆可由统一入口进入 12 GiB
-`demo-light`，Demo 知识、员工绑定与会话引用在后端重启后保持一致。下一任务 D8-03 提供 real
-一键诊断与启停，随后由 R8-04 证明 32 GiB 长期峰值/soak。D8-03 完成后进入 H7-01，
-并按依赖顺序完成覆盖率、平台自有协议和第三方边界收口。所有后续任务仍遵循
+`demo-light`，Demo 知识、员工绑定与会话引用在后端重启后保持一致；`real` 可按需切到暂定
+32 GiB，完成脱敏体检、费用诊断、真实纵向门禁和跨 Colima 重启恢复。下一任务进入 H7-01，
+并按依赖顺序完成 CI、覆盖率、平台自有协议和第三方边界收口；R8-04 仍独立负责 32 GiB 的峰值
+与 30 分钟 soak，不用 D8-03 的功能通过冒充长期资源验收。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
 
 ## 19. 高冲突与唯一写入区域
@@ -1134,3 +1135,19 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - GREEN：迁移/系统入口/Demo 重启/适配器定向 `16 passed, 1 skipped`，唯一 skip 是本任务不启动的真实 RAGFlow 状态探测；后端全量 `403 passed, 12 skipped in 65.47s`，12 项都是需显式 real/RAGFlow/百炼开关的既有门禁，本任务的 Demo 重启与页面门禁没有 skip。Ruff 全仓、156 个文件格式、严格 Mypy 155 个源/测试文件、uv 82 包锁、OpenAPI/生成 DTO 漂移、E2E 脚本 ShellCheck、Bash 语法和 `git diff --check` 全部通过
 - 数据库与清理：正式 `common_agent` 和隔离 `common_agent_test` 均由应用 lifespan 升到 `20260720_0007 (head)`，两次 `alembic check` 都返回无新操作。最终两库 Demo 知识库/文档均为 0，测试库会话/消息为 0；18200/18280 无监听、两个项目 launchd 标签不存在，平台容器/网络已删除，12 GiB 项目专属 Colima 已停止。MySQL/RAGFlow 数据目录、Colima 磁盘与官方镜像保留
 - 遗留：无；下一任务 D8-03 在不泄漏凭据的前提下提供完整 real 模式一键体检、32 GiB 切换、健康/费用诊断和本机真实纵向链路
+
+### D8-03 real 模式一键体检与启停
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：新增 `scripts/test-real.sh` 后首轮按预期以“缺少统一的 real 开发入口”失败；Token 文件单元测试首轮 3 项因 `RagFlowModelConfigurator.ensure_api_token` 尚不存在失败，随后实现公开 Token 查询/创建、有效性探测和原子 0600 落盘后转绿。首次真实 `up` 进一步暴露旧 macOS bind Volume 在 Colima 重启后映射为容器内 `root:root`，RAGFlow MySQL 因不能写 `binlog.index` unhealthy；物理复制到 Linux 原生 Volume 又真实暴露数据字典 `lower_case_table_names=2` 与 Linux `0` 不兼容，没有删除数据或用空库绕过
+- 统一入口与体检：新增可执行 `scripts/real.sh doctor/setup/up/status/cost/stop`，固定项目 `common-agent-dev` profile/context、8 CPU、暂定 32 GiB/100 GiB 磁盘和 loopback 端口；检查 Node/uv/pnpm、两份锁、RAGFlow 官方 submodule origin/tag/commit/工作区、磁盘、端口、平台 MySQL、五个 RAGFlow 容器、重启/OOM、FastAPI real 状态和 Vite。百炼诊断只报告 `provider=bailian`、北京业务空间、聊天/embedding/rerank 模型、60/60/2 超时重试和凭据存在状态，不输出 Key 或业务空间主机标识
+- Token 与凭据：复用现有 RAGFlow 本地会话，只经 v0.25.6 公开 `/api/v1/system/tokens` 与公开数据集探测查询/创建/验证 API Token；Token 原子写到 Git 忽略的项目本地文件，父目录 0700、文件实测 0600，symlink、错误权限、无效前缀和失效 Token 关闭失败。launchd 任务只拿脚本路径，后端子进程启动时读取文件；CLI、费用诊断、状态、测试和日志均不打印 Token/百炼 Key
+- 稳定数据卷：外围 Compose 把 Elasticsearch、MySQL、MinIO、Valkey 切到项目专属 Colima 原生 external Volume。首次迁移停止并重建外围容器，前三者/Valkey 从旧卷只读复制；旧 MySQL 先只读复制到 Git 忽略快照，再以同版本 8.0.39 从快照逻辑导出 `rag_flow`，导入原生 v3 Volume，跨越 macOS 大小写字典边界。旧 bind 目录、旧 Volume、快照和中间物理复制均保留；目标就绪标记让重复 `up` 直接复用。最终完整 `stop → Colima 关闭 → up` 后五容器再次 healthy，全部 `restarts=0`、`oom=false`
+- 真实模式与费用：`up` 先按锁文件幂等安装，复用本地 `infiniflow/ragflow:v0.25.6` 镜像和稳定数据，再配置并验证 `text-embedding-v4`、`qwen3-rerank` 与租户默认绑定；RAGFlow 容器健康早于账号 API 完全就绪的竞态由 60 秒有限重试吸收，失败只保留阶段码。`cost` 明确聊天、embedding、rerank 的百炼按量计费、数据外发区域、实时价格来源、重试/限流/超时恢复边界，并只读报告 `datasets=0, documents=0` 和容器内存；不启动或回退到任何本地 embedding/rerank
+- 64 GiB 本机验收：项目专属 Docker 实际 `MemTotal=33,585,893,376` bytes（约 31.28 GiB）。同一无头 Chromium、单 worker、零重试从空业务数据经正式 React/FastAPI/MySQL/RAGFlow/Deep Agents/百炼连续完成知识库上传与向量化、员工绑定、两轮带引用检索会话、工作流设计/手动运行和员工工具触发，最终 `1 passed (22.6s)`，finally 删除工作流与知识库。验收不连接 128 GiB Mac，也没有远程依赖；其他电脑只能 checkout 同一 Git revision 独立运行同一门禁
+- 资源与失败边界：稳定采样 RAGFlow API/ES/MySQL/MinIO/Valkey/平台 MySQL 约为 4.124 GiB/1.419 GiB/394.2 MiB/73.77 MiB/4.051 MiB/486.3 MiB，合计约 6.50 GiB；五个 RAGFlow 容器无重启或 OOM。模型限流/有限重试/请求与分块超时/5xx/空流、RAGFlow 超时/服务失败/非法响应和脱敏恢复定向 `53 passed`；费用命令不硬编码易漂移单价，金额以执行时百炼控制台为准
+- GREEN：后端全量 `407 passed, 12 skipped in 64.99s`，12 项仍是需显式外部开关的分层真实测试，本任务已由唯一完整 MVP real 浏览器门禁解除纵向链路风险；Ruff lint、排除已应用不可变 0005 后 162 个 Python 文件格式、严格 Mypy 155 个源/测试文件、uv 82 包锁通过。前端 14 files/61 tests、ESLint、TypeScript、Build、OpenAPI/生成 DTO 漂移和 pnpm frozen lock 通过；`test-real.sh`、两类 `test-manage.sh`、`test-dev.sh`、项目全部 ShellCheck、Alembic 无漂移、Bash 语法、`git diff --check` 和 RAGFlow submodule 完整性通过
+- 清理：真实 E2E 产物和业务数据已由 finally 删除，RAGFlow 迁移计划回到 0 知识库/0 文档；最终 real launchd 前后端、平台/RAGFlow 容器和 32 GiB Colima 已停止，释放当前 64 GiB 电脑内存。稳定原生 Volume、旧卷/迁移快照、0600 Token、冻结依赖和官方镜像保留，未删除用户数据；无临时 MySQL 探针或迁移容器残留
+- 遗留：32 GiB 只证明当前功能链路和跨重启可用，完整峰值不高于 25 GiB、30 分钟 soak、持续 Swap 和中文质量/费用基线仍由 R8-04 保持未开始；下一任务 H7-01 建立 CI 基线，之后按路线图进入覆盖率、平台自有消息/模型/图执行协议与第三方类型边界

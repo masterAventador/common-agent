@@ -14,6 +14,7 @@ colima start common-agent-dev --cpus 8 --memory 32 --disk 100 --root-disk 20 \
   --runtime docker --vm-type vz --vz-rosetta --activate=false
 infra/ragflow/manage.sh prepare
 infra/ragflow/manage.sh pull-image
+infra/ragflow/manage.sh migrate-native-volumes
 infra/ragflow/manage.sh check-ports
 infra/ragflow/manage.sh up
 infra/ragflow/manage.sh configure-bailian
@@ -29,9 +30,19 @@ bash infra/ragflow/test-manage.sh
 
 固定开发栈 Compose project name 为 `common-agent-dev`。普通开发和定向测试复用该栈，
 不因 FastAPI 或 React 改动重建 RAGFlow；`stop` 停止服务但保留容器，`down` 删除容器和
-网络但保留数据。数据和日志位于被 Git 忽略的 `.local/dev/common-agent-dev/ragflow/`，官方
+网络但保留数据。Elasticsearch、MySQL、MinIO 和 Valkey 状态使用项目专属 Colima 内的原生
+Docker Volume，日志位于被 Git 忽略的 `.local/dev/common-agent-dev/ragflow/data/logs/`，官方
 checkout 位于 `third_party/ragflow` submodule。只有改动 RAGFlow 版本、submodule 指针、Compose
 或存储时才重建整栈；任务镜像清理不得删除仍由稳定栈使用的官方镜像。
+
+旧版外围层曾把四个数据卷 bind 到 macOS `.local/`。VZ/virtiofs 在 Colima 重启后会把这些文件
+重新映射为容器内 `root:root`，导致 MySQL 无法写 binlog；旧 MySQL 还使用只能在大小写不敏感
+文件系统启动的 `lower_case_table_names=2` 数据字典。`migrate-native-volumes` 因此先停止并仅在
+首次迁移时重建旧外围容器，
+对 Elasticsearch/MinIO/Valkey 做只读复制；MySQL 旧卷先只读复制到 Git 忽略的迁移快照，再以
+同版本 MySQL 启动该快照，逻辑导出 `rag_flow` 后导入新的原生 v3 Volume。旧 bind 目录、旧
+Volume、迁移快照和物理复制 v2 均不删除，可用于回退；目标卷带就绪标记，重复 `real up` 只
+复用，不重复迁移。
 
 管理脚本默认固定使用 Docker context `colima-common-agent-dev`。该 context 来自同名独立
 Colima profile，不会改变全局当前 context，也不会与其他项目共享 Docker 镜像存储、

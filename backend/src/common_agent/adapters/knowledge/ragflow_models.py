@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from time import monotonic, sleep
 from typing import Any, Final, Literal, cast
 from urllib.parse import urlparse
@@ -317,6 +319,91 @@ class RagFlowModelConfigurator:
         self._authenticate()
         return cast(str, self._authorization)
 
+    def ensure_api_token(self, *, token_file: Path) -> None:
+        current = _read_token_file(token_file)
+        if current is not None and self._api_token_valid(current):
+            _write_token_file(token_file, current)
+            return
+
+        token = next(
+            (
+                candidate
+                for candidate in self._listed_api_tokens()
+                if self._api_token_valid(candidate)
+            ),
+            None,
+        )
+        if token is None:
+            token = self._create_api_token()
+            if not self._api_token_valid(token):
+                raise RagFlowModelConfigurationError("token_create_verify")
+        _write_token_file(token_file, token)
+
+    def check_api_token(self, *, token_file: Path) -> None:
+        token = _read_token_file(token_file, require_private_mode=True)
+        if token is None:
+            raise RagFlowModelConfigurationError("token_file")
+        if not self._api_token_valid(token):
+            raise RagFlowModelConfigurationError("token_invalid")
+
+    def _api_token_valid(self, token: str) -> bool:
+        if not token.startswith("ragflow-"):
+            return False
+        try:
+            response = self._client.get(
+                "/api/v1/datasets",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"page": 1, "page_size": 1},
+            )
+            response.raise_for_status()
+            payload = _payload(response)
+        except (httpx.HTTPError, TypeError, ValueError):
+            return False
+        return payload.get("code") == 0
+
+    def _listed_api_tokens(self) -> tuple[str, ...]:
+        self._authenticate()
+        try:
+            response = self._client.get(
+                "/api/v1/system/tokens",
+                headers={"Authorization": cast(str, self._authorization)},
+            )
+            response.raise_for_status()
+            payload = _payload(response)
+        except (httpx.HTTPError, TypeError, ValueError):
+            raise RagFlowModelConfigurationError("token_list") from None
+        data = payload.get("data")
+        if payload.get("code") != 0 or not isinstance(data, list):
+            raise RagFlowModelConfigurationError("token_list")
+        return tuple(
+            token
+            for item in data
+            if isinstance(item, dict)
+            and isinstance((token := item.get("token")), str)
+            and token.startswith("ragflow-")
+        )
+
+    def _create_api_token(self) -> str:
+        self._authenticate()
+        try:
+            response = self._client.post(
+                "/api/v1/system/tokens",
+                headers={"Authorization": cast(str, self._authorization)},
+            )
+            response.raise_for_status()
+            payload = _payload(response)
+        except (httpx.HTTPError, TypeError, ValueError):
+            raise RagFlowModelConfigurationError("token_create") from None
+        data = payload.get("data")
+        token = data.get("token") if isinstance(data, dict) else None
+        if (
+            payload.get("code") != 0
+            or not isinstance(token, str)
+            or not token.startswith("ragflow-")
+        ):
+            raise RagFlowModelConfigurationError("token_create")
+        return token
+
     def _authenticate(self) -> None:
         if self._authorization is not None:
             return
@@ -428,6 +515,46 @@ def _payload(response: httpx.Response) -> dict[str, Any]:
     return value
 
 
+def _read_token_file(token_file: Path, *, require_private_mode: bool = False) -> str | None:
+    if token_file.is_symlink():
+        raise RagFlowModelConfigurationError("token_file")
+    try:
+        file_stat = token_file.stat()
+        token = token_file.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        raise RagFlowModelConfigurationError("token_file") from None
+    if require_private_mode and file_stat.st_mode & 0o077:
+        raise RagFlowModelConfigurationError("token_file_mode")
+    return token if token.startswith("ragflow-") else None
+
+
+def _write_token_file(token_file: Path, token: str) -> None:
+    if token_file.is_symlink() or not token.startswith("ragflow-"):
+        raise RagFlowModelConfigurationError("token_file")
+    try:
+        token_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=token_file.parent,
+            prefix=f".{token_file.name}.",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            os.chmod(temporary_path, 0o600)
+            handle.write(f"{token}\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, token_file)
+        os.chmod(token_file, 0o600)
+    except OSError:
+        if "temporary_path" in locals():
+            temporary_path.unlink(missing_ok=True)
+        raise RagFlowModelConfigurationError("token_file") from None
+
+
 def _ragflow_provider_base_url(value: str) -> str | None:
     parsed = urlparse(value)
     host = parsed.hostname or ""
@@ -456,6 +583,17 @@ def _ragflow_provider_base_url(value: str) -> str | None:
     return f"https://{host}/api/v1"
 
 
+def _bailian_endpoint_scope(value: str) -> tuple[str, str]:
+    host = urlparse(value).hostname or ""
+    if host.endswith(".cn-beijing.maas.aliyuncs.com"):
+        return "business-space", "cn-beijing"
+    if host.endswith(".ap-southeast-1.maas.aliyuncs.com"):
+        return "business-space", "ap-southeast-1"
+    if host == "dashscope-intl.aliyuncs.com":
+        return "public", "international"
+    return "public", "cn"
+
+
 def _string_value(value: Any) -> str:
     return value if isinstance(value, str) else ""
 
@@ -473,6 +611,9 @@ def main(argv: list[str] | None = None) -> int:
     action = arguments[0] if arguments else "status"
     if action not in {
         "apply",
+        "check-token",
+        "diagnose",
+        "ensure-token",
         "status",
         "native-base-url",
         "plan-migration",
@@ -480,7 +621,8 @@ def main(argv: list[str] | None = None) -> int:
     }:
         print(
             "用法: python -m common_agent.adapters.knowledge.ragflow_models "
-            "{apply|status|native-base-url|plan-migration|migrate}",
+            "{apply|status|ensure-token|check-token|diagnose|native-base-url|"
+            "plan-migration|migrate}",
             file=sys.stderr,
         )
         return 2
@@ -491,6 +633,24 @@ def main(argv: list[str] | None = None) -> int:
             if native_base_url is None:
                 raise RagFlowModelConfigurationError("input")
             print(native_base_url)
+            return 0
+        if action == "diagnose":
+            bailian = ModelSettings.from_env()
+            ragflow = RagFlowSettings.from_env()
+            endpoint, region = _bailian_endpoint_scope(bailian.base_url)
+            print(
+                "百炼配置: "
+                f"provider={bailian.provider}, "
+                "BAILIAN_API_KEY=present, "
+                f"endpoint={endpoint}, "
+                f"region={region}, "
+                f"chat={bailian.model}, "
+                f"embedding={ragflow.embedding_model}, "
+                f"rerank={ragflow.rerank_model}, "
+                f"timeout={bailian.timeout_seconds:g}s, "
+                f"stream_timeout={bailian.stream_chunk_timeout_seconds:g}s, "
+                f"retries={bailian.max_retries}"
+            )
             return 0
         if (
             action == "migrate"
@@ -504,6 +664,17 @@ def main(argv: list[str] | None = None) -> int:
             trust_env=False,
         ) as client:
             configurator = RagFlowModelConfigurator(client=client)
+            if action in {"ensure-token", "check-token"}:
+                raw_token_file = os.environ.get("RAGFLOW_TOKEN_FILE", "").strip()
+                if not raw_token_file:
+                    raise RagFlowModelConfigurationError("token_file")
+                token_file = Path(raw_token_file).expanduser()
+                if action == "ensure-token":
+                    configurator.ensure_api_token(token_file=token_file)
+                else:
+                    configurator.check_api_token(token_file=token_file)
+                print("RAGFlow API Token: ready (local file mode 0600)")
+                return 0
             if action == "apply":
                 bailian = ModelSettings.from_env()
                 status = configurator.apply(

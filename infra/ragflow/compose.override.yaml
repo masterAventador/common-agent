@@ -25,30 +25,18 @@ services:
     mem_limit: 256m
 volumes:
   esdata01:
-    name: common-agent-ragflow-esdata
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${RAGFLOW_DATA_ROOT}/elasticsearch
+    name: common-agent-ragflow-esdata-v2
+    driver: !reset null
+    external: true
   mysql_data:
-    name: common-agent-ragflow-mysql-data
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${RAGFLOW_DATA_ROOT}/mysql
+    name: common-agent-ragflow-mysql-data-v3
+    driver: !reset null
+    external: true
   minio_data:
-    name: common-agent-ragflow-minio-data
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${RAGFLOW_DATA_ROOT}/minio
+    name: common-agent-ragflow-minio-data-v2
+    driver: !reset null
+    external: true
   redis_data:
-    name: common-agent-ragflow-valkey-data
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${RAGFLOW_DATA_ROOT}/redis
+    name: common-agent-ragflow-valkey-data-v2
+    driver: !reset null
+    external: true

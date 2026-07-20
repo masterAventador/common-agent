@@ -35,7 +35,7 @@ git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
 
 64 GiB 日常开发机默认使用项目专属的 `demo-light`：同一个 `common-agent-dev` Colima profile
 以 12 GiB 运行，只启动平台 MySQL、FastAPI 和 Vite，不启动 RAGFlow，也不会调用百炼
-embedding/rerank。真实知识库链路仍由后续 `real` 入口把同一 profile 重启到暂定 32 GiB 后验收，
+embedding/rerank。真实知识库链路由 `real` 入口把同一 profile 重启到暂定 32 GiB 后验收，
 两种模式不会同时运行。
 
 ```bash
@@ -52,6 +52,25 @@ scripts/dev.sh clean
 pnpm；macOS 前后端进程使用项目专属 launchd 标签托管，`stop/clean` 不按模糊进程名停止其他项目。
 `clean` 删除本入口的进程、容器、日志和已被 submodule 取代的旧 RAGFlow checkout，但保留
 MySQL/RAGFlow 数据、依赖和官方镜像。
+
+## 真实知识链路
+
+需要调试或验收 RAGFlow、Deep Agents 和百炼时使用统一 `real` 入口：
+
+```bash
+scripts/real.sh doctor  # 脱敏检查工具、源码、模型/区域、端口、磁盘和当前栈
+scripts/real.sh setup   # 初始化 submodule 并按锁文件安装依赖
+scripts/real.sh up      # 按需切到暂定 32 GiB，启动完整稳定栈和前后端
+scripts/real.sh status  # 检查容器重启/OOM、模型绑定、Token 和平台依赖
+scripts/real.sh cost    # 显示调用/重试/数据边界、待迁移文档数和实时容器内存
+scripts/real.sh stop    # 停止并释放 Colima 内存，保留容器、数据、Token 和镜像
+```
+
+`real` 不启动本地 embedding/rerank；文档向量化和检索重排固定调用北京百炼业务空间的
+`text-embedding-v4` 与 `qwen3-rerank`。RAGFlow API Token 仅保存在 Git 忽略、权限 `0600` 的
+项目本地文件中，体检、日志和费用诊断只输出是否存在，不输出值。RAGFlow 状态数据使用项目专属
+Colima 原生 Volume，避免 macOS bind mount 在虚拟机重启后丢失容器 UID；旧 bind 数据首次迁移
+后仍保留作回退。当前 32 GiB 是 D8-03 可运行值，是否长期保持仍由 R8-04 峰值和 soak 验收决定。
 
 ## 项目文档
 

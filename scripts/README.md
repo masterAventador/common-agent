@@ -17,6 +17,12 @@
   pnpm；前后端使用精确 launchd 标签管理，清理保留数据库数据、冻结依赖和官方镜像；
 - `test-dev.sh`：检查统一入口动作、12 GiB 资源边界、Demo 适配器、固定 pnpm、项目专属进程标签
   和精确清理契约；
+- `real.sh`：macOS 本机统一 `real` 入口，提供 `doctor/setup/up/status/cost/stop`；按需把同一项目
+  profile 切到暂定 32 GiB，复用平台 MySQL、官方 RAGFlow 原生 Volume 与镜像，通过 0600 本地
+  文件向 FastAPI 传递 RAGFlow Token，并对百炼区域、模型绑定、重试、费用和外发数据边界做脱敏
+  诊断；不启动本地 embedding/rerank；
+- `test-real.sh`：检查 real 入口动作、32 GiB/context、官方 RAGFlow、原生数据卷、百炼绑定、
+  Token 文件、费用脱敏和本地模型退场契约；
 - `generate-contracts.sh`：从正式 FastAPI 应用导出 OpenAPI 并生成前端 TypeScript 类型；
 - `check-contracts.sh`：在隔离临时目录重建契约并检查已提交文件无漂移；
 - `test-platform-e2e.sh`：复用健康的稳定基础设施，以无窗口 `chromium-headless-shell` 编排正式

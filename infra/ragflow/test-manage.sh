@@ -66,6 +66,16 @@ rg --color=never --fixed-strings --quiet 'plan-bailian-migration) configure_bail
   fail "RAGFlow 管理脚本缺少既有知识库迁移预检入口"
 rg --color=never --fixed-strings --quiet 'migrate-bailian) configure_bailian_models migrate' "${MANAGER}" || \
   fail "RAGFlow 管理脚本缺少既有知识库显式重建入口"
+rg --color=never --fixed-strings --quiet 'migrate-native-volumes) migrate_native_volumes' "${MANAGER}" || \
+  fail "RAGFlow 管理脚本缺少 macOS bind volume 到原生 Volume 的迁移入口"
+rg --color=never --fixed-strings --quiet 'mysqldump --socket=/tmp/mysql.sock' "${MANAGER}" || \
+  fail "RAGFlow MySQL 没有通过逻辑导出跨越 lower_case_table_names 数据字典边界"
+rg --color=never --fixed-strings --quiet -- '-v "${legacy_volume}:/source:ro"' "${MANAGER}" || \
+  fail "RAGFlow MySQL 迁移没有只读复制旧 Volume"
+rg --color=never --fixed-strings --quiet 'MYSQL_MIGRATION_SNAPSHOT_ROOT' "${MANAGER}" || \
+  fail "RAGFlow MySQL 迁移没有通过独立快照保护旧 Volume"
+rg --color=never --fixed-strings --quiet 'common-agent-ragflow-mysql-data-v3' "${MANAGER}" || \
+  fail "RAGFlow MySQL 没有使用可跨 Colima 重启的原生 v3 Volume"
 CONFIG="$(
   BAILIAN_API_KEY=fixture-bailian-secret \
     BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1 \
@@ -98,7 +108,13 @@ done
 if rg --color=never --quiet 'DOCKER_DEFAULT_PLATFORM' "${MANAGER}"; then
   fail "管理脚本不得把外围多架构镜像全局强制为 amd64"
 fi
-rg --color=never --quiet 'name: common-agent-ragflow-esdata' <<< "${CONFIG}"
+rg --color=never --quiet 'name: common-agent-ragflow-esdata-v2' <<< "${CONFIG}"
+rg --color=never --quiet 'name: common-agent-ragflow-mysql-data-v3' <<< "${CONFIG}"
+rg --color=never --quiet 'name: common-agent-ragflow-minio-data-v2' <<< "${CONFIG}"
+rg --color=never --quiet 'name: common-agent-ragflow-valkey-data-v2' <<< "${CONFIG}"
+if rg --color=never --quiet 'device: .*common-agent-dev/ragflow/data/(elasticsearch|mysql|minio|redis)' <<< "${CONFIG}"; then
+  fail "RAGFlow 数据卷不得继续使用会在 Colima 重启后丢失容器 UID 的 macOS bind mount"
+fi
 rg --color=never --quiet 'host_ip: 127\.0\.0\.1' <<< "${CONFIG}"
 rg --color=never --quiet 'published: "19380"' <<< "${CONFIG}"
 rg --color=never --quiet 'published: "19387"' <<< "${CONFIG}"

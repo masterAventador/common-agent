@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Inner-container scripts intentionally expand in their own shell.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,6 +11,12 @@ RUNTIME_ROOT="${RAGFLOW_RUNTIME_ROOT:-${REPOSITORY_ROOT}/third_party/ragflow}"
 DATA_ROOT="${RAGFLOW_DATA_ROOT:-${STACK_ROOT}/data}"
 UPSTREAM_URL="https://github.com/infiniflow/ragflow.git"
 OFFICIAL_IMAGE="infiniflow/ragflow:${VERSION}"
+VOLUME_MIGRATION_IMAGE="mysql:8.0.39"
+VOLUME_MARKER=".common-agent-native-volume-ready"
+MYSQL_MIGRATION_SOURCE_CONTAINER="common-agent-ragflow-mysql-migration-source"
+MYSQL_MIGRATION_TARGET_CONTAINER="common-agent-ragflow-mysql-migration-target"
+MYSQL_MIGRATION_PASSWORD="${RAGFLOW_MYSQL_MIGRATION_PASSWORD:-infini_rag_flow}"
+MYSQL_MIGRATION_SNAPSHOT_ROOT="${RAGFLOW_MYSQL_MIGRATION_SNAPSHOT_ROOT:-${STACK_ROOT}/migration/mysql-source-snapshot}"
 PROJECT_NAME="common-agent-dev"
 DOCKER_CONTEXT_NAME="${RAGFLOW_DOCKER_CONTEXT:-colima-common-agent-dev}"
 
@@ -179,6 +186,212 @@ pull_image() {
   fi
 }
 
+volume_exists() {
+  docker_cli volume inspect "$1" > /dev/null 2>&1
+}
+
+volume_has_entries() {
+  docker_cli run --rm \
+    --entrypoint sh \
+    -v "$1:/volume:ro" \
+    "${VOLUME_MIGRATION_IMAGE}" \
+    -c 'test -n "$(ls -A /volume)"'
+}
+
+volume_has_marker() {
+  docker_cli run --rm \
+    --entrypoint sh \
+    -v "$1:/volume:ro" \
+    "${VOLUME_MIGRATION_IMAGE}" \
+    -c "test -f /volume/${VOLUME_MARKER}"
+}
+
+native_volumes_ready() {
+  local volume_name
+  for volume_name in \
+    common-agent-ragflow-esdata-v2 \
+    common-agent-ragflow-mysql-data-v3 \
+    common-agent-ragflow-minio-data-v2 \
+    common-agent-ragflow-valkey-data-v2; do
+    volume_exists "${volume_name}" && volume_has_marker "${volume_name}" || return 1
+  done
+}
+
+migrate_native_volume() {
+  local legacy_volume="$1"
+  local native_volume="$2"
+  local owner="$3"
+  if volume_exists "${native_volume}" && volume_has_entries "${native_volume}"; then
+    if volume_has_marker "${native_volume}"; then
+      echo "复用 RAGFlow 原生数据卷：${native_volume}"
+      return
+    fi
+    docker_cli volume rm "${native_volume}" > /dev/null
+  fi
+
+  docker_cli volume create "${native_volume}" > /dev/null
+  if ! volume_exists "${legacy_volume}" || ! volume_has_entries "${legacy_volume}"; then
+    docker_cli run --rm \
+      --entrypoint sh \
+      -v "${native_volume}:/target" \
+      "${VOLUME_MIGRATION_IMAGE}" \
+      -c "touch /target/${VOLUME_MARKER}"
+    echo "创建 RAGFlow 原生数据卷：${native_volume}"
+    return
+  fi
+
+  docker_cli run --rm \
+    --user 0 \
+    --entrypoint sh \
+    -v "${legacy_volume}:/source:ro" \
+    -v "${native_volume}:/target" \
+    "${VOLUME_MIGRATION_IMAGE}" \
+    -c 'test -z "$(ls -A /target)"; cp -a /source/. /target/; touch "/target/$1"; chown -R "$2" /target' \
+    sh "${VOLUME_MARKER}" "${owner}"
+  echo "RAGFlow 数据已只读复制到原生卷：${legacy_volume} -> ${native_volume}"
+}
+
+wait_for_mysql_container() {
+  local container_name="$1"
+  local socket_option="${2:-}"
+  local deadline=$((SECONDS + 120))
+  while ((SECONDS < deadline)); do
+    if docker_cli exec "${container_name}" \
+      mysqladmin ${socket_option:+"${socket_option}"} ping \
+      -uroot "-p${MYSQL_MIGRATION_PASSWORD}" --silent > /dev/null 2>&1; then
+      return
+    fi
+    if [[ "$(docker_cli inspect --format '{{.State.Status}}' "${container_name}" 2>/dev/null || true)" == "exited" ]]; then
+      docker_cli logs --tail 80 "${container_name}" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  echo "RAGFlow MySQL 数据迁移容器未在 120 秒内就绪：${container_name}" >&2
+  return 1
+}
+
+cleanup_mysql_migration_containers() {
+  docker_cli rm -f \
+    "${MYSQL_MIGRATION_SOURCE_CONTAINER}" \
+    "${MYSQL_MIGRATION_TARGET_CONTAINER}" > /dev/null 2>&1 || true
+}
+
+prepare_mysql_source_snapshot() {
+  local legacy_volume="$1"
+  local snapshot_marker="${MYSQL_MIGRATION_SNAPSHOT_ROOT}/.common-agent-source-snapshot-ready"
+  mkdir -p "${MYSQL_MIGRATION_SNAPSHOT_ROOT}"
+  if [[ -f "${snapshot_marker}" ]]; then
+    return
+  fi
+  if [[ -n "$(find "${MYSQL_MIGRATION_SNAPSHOT_ROOT}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    echo "RAGFlow MySQL 迁移快照目录非空且缺少就绪标记：${MYSQL_MIGRATION_SNAPSHOT_ROOT}" >&2
+    return 1
+  fi
+  docker_cli run --rm \
+    --user 0 \
+    --entrypoint sh \
+    -v "${legacy_volume}:/source:ro" \
+    -v "${MYSQL_MIGRATION_SNAPSHOT_ROOT}:/target" \
+    "${VOLUME_MIGRATION_IMAGE}" \
+    -c 'test -z "$(ls -A /target)"; cp -a /source/. /target/; touch /target/.common-agent-source-snapshot-ready'
+  echo "RAGFlow MySQL 旧卷已只读复制到迁移快照：${MYSQL_MIGRATION_SNAPSHOT_ROOT}"
+}
+
+migrate_mysql_native_volume() {
+  local legacy_volume="common-agent-ragflow-mysql-data"
+  local native_volume="common-agent-ragflow-mysql-data-v3"
+  local table_count
+  if volume_exists "${native_volume}" && volume_has_marker "${native_volume}"; then
+    echo "复用 RAGFlow 原生数据卷：${native_volume}"
+    return
+  fi
+  cleanup_mysql_migration_containers
+  if volume_exists "${native_volume}"; then
+    docker_cli volume rm "${native_volume}" > /dev/null
+  fi
+  docker_cli volume create "${native_volume}" > /dev/null
+  if ! volume_exists "${legacy_volume}" || ! volume_has_entries "${legacy_volume}"; then
+    docker_cli run --rm \
+      --entrypoint sh \
+      -v "${native_volume}:/target" \
+      "${VOLUME_MIGRATION_IMAGE}" \
+      -c "touch /target/${VOLUME_MARKER}; chown -R 999:999 /target"
+    echo "创建 RAGFlow 原生数据卷：${native_volume}"
+    return
+  fi
+  prepare_mysql_source_snapshot "${legacy_volume}"
+
+  docker_cli run -d \
+    --name "${MYSQL_MIGRATION_SOURCE_CONTAINER}" \
+    --entrypoint mysqld \
+    -v "${MYSQL_MIGRATION_SNAPSHOT_ROOT}:/var/lib/mysql" \
+    "${VOLUME_MIGRATION_IMAGE}" \
+    --no-defaults \
+    --user=root \
+    --datadir=/var/lib/mysql \
+    --lower-case-table-names=2 \
+    --skip-networking \
+    --socket=/tmp/mysql.sock \
+    --pid-file=/tmp/mysql.pid > /dev/null
+  docker_cli run -d \
+    --name "${MYSQL_MIGRATION_TARGET_CONTAINER}" \
+    -e "MYSQL_ROOT_PASSWORD=${MYSQL_MIGRATION_PASSWORD}" \
+    -e MYSQL_DATABASE=rag_flow \
+    -v "${native_volume}:/var/lib/mysql" \
+    "${VOLUME_MIGRATION_IMAGE}" > /dev/null
+
+  if ! wait_for_mysql_container "${MYSQL_MIGRATION_SOURCE_CONTAINER}" "--socket=/tmp/mysql.sock" || \
+    ! wait_for_mysql_container "${MYSQL_MIGRATION_TARGET_CONTAINER}"; then
+    cleanup_mysql_migration_containers
+    return 1
+  fi
+  if ! docker_cli exec "${MYSQL_MIGRATION_SOURCE_CONTAINER}" \
+    mysqldump --socket=/tmp/mysql.sock \
+      -uroot "-p${MYSQL_MIGRATION_PASSWORD}" \
+      --single-transaction --routines --events --triggers --set-gtid-purged=OFF rag_flow | \
+    docker_cli exec -i "${MYSQL_MIGRATION_TARGET_CONTAINER}" \
+      mysql -uroot "-p${MYSQL_MIGRATION_PASSWORD}" rag_flow; then
+    cleanup_mysql_migration_containers
+    return 1
+  fi
+  table_count="$(
+    docker_cli exec "${MYSQL_MIGRATION_TARGET_CONTAINER}" \
+      mysql -N -uroot "-p${MYSQL_MIGRATION_PASSWORD}" \
+      -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='rag_flow';"
+  )"
+  if [[ ! "${table_count}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "RAGFlow MySQL 逻辑迁移未产生业务表" >&2
+    cleanup_mysql_migration_containers
+    return 1
+  fi
+  docker_cli exec "${MYSQL_MIGRATION_TARGET_CONTAINER}" \
+    sh -c "touch /var/lib/mysql/${VOLUME_MARKER}; chown mysql:mysql /var/lib/mysql/${VOLUME_MARKER}"
+  cleanup_mysql_migration_containers
+  echo "RAGFlow MySQL 已从 macOS 数据字典逻辑迁移到原生卷：${legacy_volume} -> ${native_volume}"
+}
+
+migrate_native_volumes() {
+  prepare
+  if native_volumes_ready; then
+    echo "RAGFlow 原生数据卷：ready"
+    return
+  fi
+  if [[ -n "$(docker_cli ps -aq --filter name=common-agent-ragflow)" ]]; then
+    compose down
+  fi
+  if ! docker_cli image inspect "${VOLUME_MIGRATION_IMAGE}" > /dev/null 2>&1; then
+    docker_cli pull "${VOLUME_MIGRATION_IMAGE}"
+  fi
+  migrate_native_volume \
+    common-agent-ragflow-esdata common-agent-ragflow-esdata-v2 1000:0
+  migrate_mysql_native_volume
+  migrate_native_volume \
+    common-agent-ragflow-minio-data common-agent-ragflow-minio-data-v2 0:0
+  migrate_native_volume \
+    common-agent-ragflow-valkey-data common-agent-ragflow-valkey-data-v2 999:999
+}
+
 bailian_native_base_url() {
   local backend_python="${REPOSITORY_ROOT}/backend/.venv/bin/python"
   [[ -x "${backend_python}" ]] || return 1
@@ -200,6 +413,7 @@ case "${1:-}" in
   prepare) prepare ;;
   check-resources) check_resources ;;
   pull-image) pull_image ;;
+  migrate-native-volumes) migrate_native_volumes ;;
   check-ports) check_ports ;;
   configure-bailian) configure_bailian_models apply ;;
   check-bailian) configure_bailian_models status ;;
@@ -224,7 +438,7 @@ case "${1:-}" in
   config) compose config ;;
   logs) compose logs -f ragflow-cpu ;;
   *)
-    echo "用法: $0 {prepare|pull-image|check-resources|check-ports|up|configure-bailian|check-bailian|plan-bailian-migration|migrate-bailian|stop|down|status|config|logs}" >&2
+    echo "用法: $0 {prepare|pull-image|migrate-native-volumes|check-resources|check-ports|up|configure-bailian|check-bailian|plan-bailian-migration|migrate-bailian|stop|down|status|config|logs}" >&2
     exit 2
     ;;
 esac
