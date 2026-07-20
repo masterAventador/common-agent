@@ -14,7 +14,7 @@ from common_agent.domain.knowledge import (
     KnowledgeRetrievalRequest,
     KnowledgeServiceAvailability,
 )
-from common_agent.knowledge.base import KnowledgeRequestRejected
+from common_agent.knowledge.base import KnowledgeBaseNotFound, KnowledgeRequestRejected
 from common_agent.runtimes.base import (
     EmployeeRuntimeRequest,
     RuntimeConversationMessage,
@@ -141,6 +141,10 @@ def test_demo_knowledge_adapter_supports_formal_crud_upload_and_retrieval() -> N
                 )
             )
         ).chunks[0].content == "Common Agent 是通用 Agent 中台。"
+        await reopened.delete_knowledge_base(created.id)
+        assert await reopened.list_knowledge_bases() == ()
+        with pytest.raises(KnowledgeBaseNotFound):
+            await reopened.delete_knowledge_base(created.id)
         await reopened.aclose()
 
     asyncio.run(exercise())

@@ -6,6 +6,10 @@ from fastapi import APIRouter, Request, status
 
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.routers.knowledge import knowledge_error_to_app_error
+from common_agent.api.routers.resource_deletion import (
+    resource_deletion_error,
+    resource_deletion_service,
+)
 from common_agent.api.routers.services import workflow_service
 from common_agent.api.schemas.workflows import (
     WorkflowConfigurationBody,
@@ -15,6 +19,7 @@ from common_agent.api.schemas.workflows import (
     workflow_response,
     workflow_validation_response,
 )
+from common_agent.application.resource_deletion import ResourceDeletionError
 from common_agent.application.workflow_service import WorkflowNotFound
 from common_agent.domain.workflow import WorkflowValidationError
 from common_agent.knowledge.base import KnowledgeServiceError
@@ -45,6 +50,22 @@ def workflow_error(error: Exception) -> AppError:
 )
 async def list_workflows(request: Request) -> list[WorkflowResponse]:
     return [workflow_response(workflow) for workflow in await workflow_service(request).list()]
+
+
+@router.delete(
+    "/{workflow_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def delete_workflow(request: Request, workflow_id: UUID) -> None:
+    try:
+        await resource_deletion_service(request).delete_workflow(workflow_id)
+    except ResourceDeletionError as error:
+        raise resource_deletion_error(error) from error
 
 
 @router.post(

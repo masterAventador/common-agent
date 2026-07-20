@@ -41,9 +41,11 @@ def test_openapi_exposes_knowledge_contract_and_stable_validation_errors() -> No
     schema = _schema()
     paths = schema["paths"]
     knowledge = paths["/api/v1/knowledge-bases"]
+    knowledge_detail = paths["/api/v1/knowledge-bases/{knowledge_base_id}"]
     documents = paths["/api/v1/knowledge-bases/{knowledge_base_id}/documents"]
 
     assert set(knowledge) == {"get", "post"}
+    assert set(knowledge_detail) == {"delete"}
     assert set(documents) == {"get", "post"}
     assert knowledge["post"]["responses"]["201"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/KnowledgeBaseResponse"
@@ -72,7 +74,7 @@ def test_openapi_exposes_generic_employee_crud_contract() -> None:
     detail = schema["paths"]["/api/v1/employees/{employee_id}"]
 
     assert set(collection) == {"get", "post"}
-    assert set(detail) == {"get", "put"}
+    assert set(detail) == {"delete", "get", "put"}
     assert collection["post"]["responses"]["201"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/EmployeeResponse"
     }
@@ -99,6 +101,7 @@ def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> Non
     paths = schema["paths"]
 
     assert set(paths["/api/v1/conversations"]) == {"get", "post"}
+    assert set(paths["/api/v1/conversations/{conversation_id}"]) == {"delete"}
     assert set(paths["/api/v1/conversations/{conversation_id}/messages"]) == {
         "get",
         "post",
@@ -146,7 +149,7 @@ def test_openapi_exposes_discriminated_workflow_crud_and_validation_contracts() 
 
     assert set(paths["/api/v1/workflows"]) == {"get", "post"}
     assert set(paths["/api/v1/workflows/validate"]) == {"post"}
-    assert set(paths["/api/v1/workflows/{workflow_id}"]) == {"get", "put"}
+    assert set(paths["/api/v1/workflows/{workflow_id}"]) == {"delete", "get", "put"}
     assert paths["/api/v1/workflows"]["post"]["responses"]["201"]["content"]["application/json"][
         "schema"
     ] == {"$ref": "#/components/schemas/WorkflowResponse"}

@@ -74,6 +74,10 @@ class KnowledgeBaseService:
         await self._ensure_available()
         return await self._knowledge.create_knowledge_base(request)
 
+    async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
+        await self._ensure_available()
+        await self._knowledge.delete_knowledge_base(knowledge_base_id)
+
     async def list_documents(self, knowledge_base_id: str) -> tuple[KnowledgeDocument, ...]:
         await self._ensure_available()
         return await self._knowledge.list_documents(knowledge_base_id)

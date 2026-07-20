@@ -24,6 +24,7 @@ from common_agent.adapters.persistence.demo_knowledge import (
     SqlAlchemyDemoKnowledgeUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeUnitOfWorkFactory
+from common_agent.adapters.persistence.resources import SqlAlchemyResourceDeletionStore
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.api.errors import error_handlers
@@ -36,6 +37,8 @@ from common_agent.api.routers import (
     workflow_router,
     workflow_run_router,
 )
+from common_agent.application.resource_deletion import ResourceDeletionService
+from common_agent.application.resource_locks import ResourceMutationGuard
 from common_agent.application.system_service import SystemService
 from common_agent.application.workflow_service import WorkflowService
 from common_agent.bootstrap import (
@@ -90,7 +93,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             model = BailianChatModelAdapter(ModelSettings.from_env())
             workflow_model = model
         knowledge_bases = KnowledgeBaseService(knowledge_adapter)
+        resource_guard = ResourceMutationGuard()
         app.state.knowledge_bases = knowledge_bases
+        app.state.resource_deletions = ResourceDeletionService(
+            SqlAlchemyResourceDeletionStore(database),
+            knowledge_bases,
+            guard=resource_guard,
+        )
         app.state.system = SystemService(
             integration_mode=integration_mode.mode,
             model_provider=workflow_model.provider_name,
@@ -104,6 +113,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 create_workflow_node_registry(workflow_model, knowledge_bases)
             ),
             events=workflow_events,
+            guard=resource_guard,
         )
         app.state.workflow_events = workflow_events
         app.state.workflows = workflows
@@ -116,6 +126,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             SqlAlchemyEmployeeUnitOfWorkFactory(database),
             knowledge_bases,
             workflows=workflows,
+            guard=resource_guard,
         )
         app.state.employees = employees
         await seed_default_employee(employees)
@@ -128,6 +139,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             knowledge=ConversationKnowledgeResolver(knowledge_adapter),
             runtime=runtime,
             events=conversation_events,
+            guard=resource_guard,
         )
         app.state.conversation_events = conversation_events
         app.state.conversations = conversations
@@ -143,6 +155,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.workflows = None
         app.state.workflow_events = None
         app.state.knowledge_bases = None
+        app.state.resource_deletions = None
         app.state.system = None
         if workflows is not None:
             await workflows.aclose()

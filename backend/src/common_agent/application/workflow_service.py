@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from common_agent.application.resource_locks import (
+    ResourceMutationGuard,
+    workflow_resource,
+)
 from common_agent.application.workflow_catalog import WorkflowCatalog
 from common_agent.application.workflow_contracts import (
     WorkflowExecutionUnavailable,
@@ -37,8 +41,14 @@ class WorkflowService:
         *,
         compiler: WorkflowCompiler | None = None,
         events: WorkflowEventBroker | None = None,
+        guard: ResourceMutationGuard | None = None,
     ) -> None:
-        self._catalog = WorkflowCatalog(unit_of_work_factory, knowledge_bases)
+        self._guard = guard or ResourceMutationGuard()
+        self._catalog = WorkflowCatalog(
+            unit_of_work_factory,
+            knowledge_bases,
+            guard=self._guard,
+        )
         locks: KeyedLockPool[UUID] = KeyedLockPool()
         projection = WorkflowRunProjection(unit_of_work_factory, events, locks)
         self._runs = WorkflowRunCoordinator(
@@ -86,13 +96,14 @@ class WorkflowService:
         trigger: WorkflowRunTrigger,
         origin: WorkflowRunOrigin | None = None,
     ) -> WorkflowRun:
-        return await self._runs.start(
-            workflow_id,
-            run_id=run_id,
-            input=input,
-            trigger=trigger,
-            origin=origin,
-        )
+        async with self._guard.hold(workflow_resource(workflow_id)):
+            return await self._runs.start(
+                workflow_id,
+                run_id=run_id,
+                input=input,
+                trigger=trigger,
+                origin=origin,
+            )
 
     async def stop_run(self, run_id: UUID) -> WorkflowRunStopAccepted:
         return await self._runs.stop(run_id)

@@ -85,6 +85,15 @@ class SqlAlchemyConversationRepository:
         )
         return bool(result.rowcount)
 
+    async def delete(self, conversation_id: UUID) -> bool:
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(
+                delete(ConversationRow).where(ConversationRow.id == str(conversation_id))
+            ),
+        )
+        return bool(result.rowcount)
+
 
 class SqlAlchemyMessageRepository:
     def __init__(self, session: AsyncSession) -> None:

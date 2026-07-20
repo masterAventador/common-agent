@@ -84,6 +84,15 @@ class DemoKnowledgeService:
             raise KnowledgeRequestRejected() from None
         return created.summary
 
+    async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
+        self._ensure_open()
+        async with self._unit_of_work() as unit_of_work:
+            deleted = await unit_of_work.knowledge.delete_knowledge_base(knowledge_base_id)
+            if deleted:
+                await unit_of_work.commit()
+        if not deleted:
+            raise KnowledgeBaseNotFound()
+
     async def upload_document(
         self,
         knowledge_base_id: str,

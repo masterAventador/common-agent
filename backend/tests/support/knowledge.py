@@ -53,6 +53,12 @@ class _MemoryDemoKnowledgeRepository:
         self._state.bases[value.summary.id] = value
         self._state.documents[value.summary.id] = []
 
+    async def delete_knowledge_base(self, knowledge_base_id: str) -> bool:
+        if self._state.bases.pop(knowledge_base_id, None) is None:
+            return False
+        self._state.documents.pop(knowledge_base_id, None)
+        return True
+
     async def list_documents(
         self, knowledge_base_id: str
     ) -> tuple[PersistedDemoKnowledgeDocument, ...]:
@@ -146,6 +152,10 @@ class KnowledgeProbe:
     ) -> KnowledgeBaseSummary:
         del request
         raise NotImplementedError
+
+    async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
+        if self.values.pop(knowledge_base_id, None) is None:
+            raise KnowledgeBaseNotFound
 
     async def upload_document(
         self, knowledge_base_id: str, upload: DocumentUpload

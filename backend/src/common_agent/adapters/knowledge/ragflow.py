@@ -19,6 +19,7 @@ from common_agent.domain.knowledge import (
     RetrievedChunk,
 )
 from common_agent.knowledge.base import (
+    KnowledgeBaseDeleteResultUnknown,
     KnowledgeBaseNotFound,
     KnowledgeConfigurationMissing,
     KnowledgeDocumentUploadFailed,
@@ -198,6 +199,14 @@ class RagFlowKnowledgeService:
         )
         return self._knowledge_base(_validate(_DATASET_ADAPTER, data))
 
+    async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
+        await self._request(
+            "DELETE",
+            "/api/v1/datasets",
+            failure_mode="delete",
+            json={"ids": [knowledge_base_id]},
+        )
+
     async def upload_document(
         self, knowledge_base_id: str, upload: DocumentUpload
     ) -> KnowledgeDocument:
@@ -290,7 +299,7 @@ class RagFlowKnowledgeService:
         path: str,
         *,
         dataset_scoped: bool = False,
-        failure_mode: Literal["standard", "upload", "post_upload"] = "standard",
+        failure_mode: Literal["standard", "upload", "post_upload", "delete"] = "standard",
         **kwargs: Any,
     ) -> Any:
         self._require_configured()
@@ -304,13 +313,19 @@ class RagFlowKnowledgeService:
         except httpx.HTTPError as error:
             if failure_mode in {"upload", "post_upload"}:
                 raise KnowledgeDocumentUploadResultUnknown() from error
+            if failure_mode == "delete":
+                raise KnowledgeBaseDeleteResultUnknown() from error
             raise KnowledgeServiceUnavailable() from error
 
         if response.status_code >= 500:
             if failure_mode in {"upload", "post_upload"}:
                 raise KnowledgeDocumentUploadResultUnknown()
+            if failure_mode == "delete":
+                raise KnowledgeBaseDeleteResultUnknown()
             raise KnowledgeServiceUnavailable()
         if response.status_code >= 400:
+            if failure_mode == "delete" and response.status_code == 404:
+                return None
             if failure_mode == "post_upload":
                 raise KnowledgeDocumentUploadResultUnknown()
             if failure_mode == "upload":
@@ -324,9 +339,18 @@ class RagFlowKnowledgeService:
         except (OverflowError, ValueError) as error:
             if failure_mode in {"upload", "post_upload"}:
                 raise KnowledgeDocumentUploadResultUnknown() from error
+            if failure_mode == "delete":
+                raise KnowledgeBaseDeleteResultUnknown() from error
             raise KnowledgeProviderResponseInvalid() from error
-        envelope = _validate(_ENVELOPE_ADAPTER, raw)
+        try:
+            envelope = _validate(_ENVELOPE_ADAPTER, raw)
+        except KnowledgeProviderResponseInvalid as error:
+            if failure_mode == "delete":
+                raise KnowledgeBaseDeleteResultUnknown() from error
+            raise
         if envelope.code != 0:
+            if failure_mode == "delete" and envelope.code == 102:
+                return None
             if failure_mode == "post_upload":
                 raise KnowledgeDocumentUploadResultUnknown()
             if failure_mode == "upload":

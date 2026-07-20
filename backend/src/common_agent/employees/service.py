@@ -3,6 +3,12 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import UUID
 
+from common_agent.application.resource_locks import (
+    ResourceMutationGuard,
+    employee_resource,
+    knowledge_base_resource,
+    workflow_resource,
+)
 from common_agent.domain.employee import Employee, EmployeeConfiguration
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.ports.employees import EmployeeAlreadyExists, EmployeeUnitOfWorkFactory
@@ -33,10 +39,12 @@ class EmployeeService:
         knowledge_bases: KnowledgeBaseService,
         *,
         workflows: WorkflowDirectory,
+        guard: ResourceMutationGuard | None = None,
     ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
         self._knowledge_bases = knowledge_bases
         self._workflows = workflows
+        self._guard = guard or ResourceMutationGuard()
 
     async def list(self) -> tuple[Employee, ...]:
         async with self._unit_of_work_factory() as unit_of_work:
@@ -50,18 +58,19 @@ class EmployeeService:
         return employee
 
     async def create(self, configuration: EmployeeConfiguration) -> Employee:
-        await self._validate_knowledge_base(configuration.knowledge_base_id)
-        await self._validate_workflows(configuration.allowed_workflow_ids)
-        employee = Employee.create(
-            name=configuration.name,
-            description=configuration.description,
-            system_prompt=configuration.system_prompt,
-            knowledge_base_id=configuration.knowledge_base_id,
-            allowed_workflow_ids=configuration.allowed_workflow_ids,
-        )
-        async with self._unit_of_work_factory() as unit_of_work:
-            await unit_of_work.employees.add(employee)
-            await unit_of_work.commit()
+        async with self._guard.hold(*_configuration_resources(configuration)):
+            await self._validate_knowledge_base(configuration.knowledge_base_id)
+            await self._validate_workflows(configuration.allowed_workflow_ids)
+            employee = Employee.create(
+                name=configuration.name,
+                description=configuration.description,
+                system_prompt=configuration.system_prompt,
+                knowledge_base_id=configuration.knowledge_base_id,
+                allowed_workflow_ids=configuration.allowed_workflow_ids,
+            )
+            async with self._unit_of_work_factory() as unit_of_work:
+                await unit_of_work.employees.add(employee)
+                await unit_of_work.commit()
         return employee
 
     async def ensure(
@@ -69,54 +78,62 @@ class EmployeeService:
         employee_id: UUID,
         configuration: EmployeeConfiguration,
     ) -> Employee:
-        async with self._unit_of_work_factory() as unit_of_work:
-            existing = await unit_of_work.employees.get(employee_id)
-        if existing is not None:
-            return existing
-
-        await self._validate_knowledge_base(configuration.knowledge_base_id)
-        await self._validate_workflows(configuration.allowed_workflow_ids)
-        candidate = Employee.create(
-            employee_id=employee_id,
-            name=configuration.name,
-            description=configuration.description,
-            system_prompt=configuration.system_prompt,
-            knowledge_base_id=configuration.knowledge_base_id,
-            allowed_workflow_ids=configuration.allowed_workflow_ids,
-        )
-        try:
+        async with self._guard.hold(
+            employee_resource(employee_id),
+            *_configuration_resources(configuration),
+        ):
             async with self._unit_of_work_factory() as unit_of_work:
                 existing = await unit_of_work.employees.get(employee_id)
-                if existing is not None:
-                    return existing
-                await unit_of_work.employees.add(candidate)
-                await unit_of_work.commit()
-        except EmployeeAlreadyExists:
-            return await self.get(employee_id)
-        return candidate
+            if existing is not None:
+                return existing
 
-    async def update(
-        self,
-        employee_id: UUID,
-        configuration: EmployeeConfiguration,
-    ) -> Employee:
-        await self.get(employee_id)
-        await self._validate_knowledge_base(configuration.knowledge_base_id)
-        await self._validate_workflows(configuration.allowed_workflow_ids)
-        async with self._unit_of_work_factory() as unit_of_work:
-            current = await unit_of_work.employees.get(employee_id)
-            if current is None:
-                raise EmployeeNotFound
-            updated = current.reconfigure(
+            await self._validate_knowledge_base(configuration.knowledge_base_id)
+            await self._validate_workflows(configuration.allowed_workflow_ids)
+            candidate = Employee.create(
+                employee_id=employee_id,
                 name=configuration.name,
                 description=configuration.description,
                 system_prompt=configuration.system_prompt,
                 knowledge_base_id=configuration.knowledge_base_id,
                 allowed_workflow_ids=configuration.allowed_workflow_ids,
             )
-            if not await unit_of_work.employees.update(updated):
-                raise EmployeeNotFound
-            await unit_of_work.commit()
+            try:
+                async with self._unit_of_work_factory() as unit_of_work:
+                    existing = await unit_of_work.employees.get(employee_id)
+                    if existing is not None:
+                        return existing
+                    await unit_of_work.employees.add(candidate)
+                    await unit_of_work.commit()
+            except EmployeeAlreadyExists:
+                return await self.get(employee_id)
+            return candidate
+
+    async def update(
+        self,
+        employee_id: UUID,
+        configuration: EmployeeConfiguration,
+    ) -> Employee:
+        async with self._guard.hold(
+            employee_resource(employee_id),
+            *_configuration_resources(configuration),
+        ):
+            await self.get(employee_id)
+            await self._validate_knowledge_base(configuration.knowledge_base_id)
+            await self._validate_workflows(configuration.allowed_workflow_ids)
+            async with self._unit_of_work_factory() as unit_of_work:
+                current = await unit_of_work.employees.get(employee_id)
+                if current is None:
+                    raise EmployeeNotFound
+                updated = current.reconfigure(
+                    name=configuration.name,
+                    description=configuration.description,
+                    system_prompt=configuration.system_prompt,
+                    knowledge_base_id=configuration.knowledge_base_id,
+                    allowed_workflow_ids=configuration.allowed_workflow_ids,
+                )
+                if not await unit_of_work.employees.update(updated):
+                    raise EmployeeNotFound
+                await unit_of_work.commit()
         return updated
 
     async def _validate_knowledge_base(self, knowledge_base_id: str | None) -> None:
@@ -126,3 +143,10 @@ class EmployeeService:
     async def _validate_workflows(self, workflow_ids: tuple[UUID, ...]) -> None:
         for workflow_id in workflow_ids:
             await self._workflows.get(workflow_id)
+
+
+def _configuration_resources(configuration: EmployeeConfiguration) -> tuple[str, ...]:
+    resources = [workflow_resource(value) for value in configuration.allowed_workflow_ids]
+    if configuration.knowledge_base_id is not None:
+        resources.append(knowledge_base_resource(configuration.knowledge_base_id))
+    return tuple(resources)

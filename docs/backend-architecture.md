@@ -134,6 +134,7 @@ application --------------+
 - `KnowledgeBaseService`：RAGFlow 知识库与文档操作；
 - `ConversationService`：创建会话、保存消息、自动检索、生成回复；
 - `WorkflowService`：校验、保存和运行工作流；
+- `ResourceDeletionService`：统一执行会话、员工、知识库和工作流的引用安全删除；
 - `SystemService`：报告后端、百炼和 RAGFlow 真实状态。
 
 `ConversationService` 与 `WorkflowService` 是保持公开调用面的薄门面，不承载全部实现：
@@ -158,6 +159,11 @@ application --------------+
 平台 UUID 只在记录不存在时创建默认知识助理；已存在即原样返回，因此用户编辑和后续知识库
 绑定不会被重启覆盖。并发启动在事务内二次读取，并由 MySQL 主键唯一约束与冲突后重读保证
 最终只有一条记录。
+
+资源创建、引用变更、运行启动与删除共享 `ResourceMutationGuard`，按员工、知识库和工作流键排序
+持锁；应用服务先在锁内重新检查引用，再提交本地事务或调用 RAGFlow，避免同一进程内出现“检查
+通过后新增引用”的竞态。该锁只覆盖当前单 FastAPI 进程，多实例互斥与跨 Worker 幂等由
+S10-05 的持久任务/事件边界交付，不能把进程锁当成分布式锁。
 
 ### 3.3 Domain 层
 
@@ -295,7 +301,7 @@ KnowledgeBaseRef
 real 模式下 RAGFlow 是知识库状态的权威来源。数字员工表只保存不透明的 `knowledge_base_id`，不直连
 RAGFlow 内部 MySQL，也不跨服务建立数据库外键。创建或修改绑定时，`EmployeeService` 必须
 通过正式 `KnowledgeService` 查询当前数据集并确认 ID 存在；RAGFlow 不可用或引用失效时
-关闭失败并拒绝写入。已绑定的数据集后来被删除时，员工定义保留原引用，由读取/会话链路
+关闭失败并拒绝写入。若数据集在平台之外被直接删除，员工定义保留原引用，由读取/会话链路
 返回稳定的“知识库不存在或已失效”错误，不能静默改成无知识库回答。展示缓存只有出现真实
 性能需要时才引入，缓存不得取代 RAGFlow 的权威状态。
 
@@ -403,11 +409,13 @@ GET    /api/v1/employees
 POST   /api/v1/employees
 GET    /api/v1/employees/{employee_id}
 PUT    /api/v1/employees/{employee_id}
+DELETE /api/v1/employees/{employee_id}
 
 GET    /api/v1/knowledge-bases
 POST   /api/v1/knowledge-bases
 GET    /api/v1/knowledge-bases/{dataset_id}/documents
 POST   /api/v1/knowledge-bases/{dataset_id}/documents
+DELETE /api/v1/knowledge-bases/{dataset_id}
 
 GET    /api/v1/conversations
 POST   /api/v1/conversations
@@ -415,12 +423,14 @@ GET    /api/v1/conversations/{conversation_id}/messages
 POST   /api/v1/conversations/{conversation_id}/messages
 GET    /api/v1/conversations/{conversation_id}/events
 POST   /api/v1/conversations/{conversation_id}/stop
+DELETE /api/v1/conversations/{conversation_id}
 POST   /api/v1/messages/{message_id}/retry
 
 GET    /api/v1/workflows
 POST   /api/v1/workflows
 GET    /api/v1/workflows/{workflow_id}
 PUT    /api/v1/workflows/{workflow_id}
+DELETE /api/v1/workflows/{workflow_id}
 POST   /api/v1/workflows/validate
 POST   /api/v1/workflows/{workflow_id}/runs
 GET    /api/v1/workflow-runs/{run_id}
@@ -428,9 +438,25 @@ POST   /api/v1/workflow-runs/{run_id}/stop
 GET    /api/v1/workflow-runs/{run_id}/events
 ```
 
-删除接口、批量操作、分页高级筛选和权限不进入第一版。
+四类删除是 MVP 后 U9-01 增加的正式能力；批量操作、分页高级筛选和权限不属于原 MVP，分页与
+搜索由 U9-03 交付，权限由 Wave 10 交付。
 
-### 7.1 日志、指标与追踪
+### 7.1 资源删除矩阵
+
+| 资源 | 删除前检查 | 成功后的子资源 | 阻断语义 |
+| --- | --- | --- | --- |
+| 会话 | 当前进程无活跃回复 | 消息、引用、由该会话触发的员工工作流运行级联删除 | 活跃回复返回 `conversation_busy` |
+| 数字员工 | 没有会话引用 | 员工记录删除 | 有会话返回 `employee_in_use_by_conversations` |
+| 知识库 | 没有员工绑定或工作流节点引用 | RAGFlow 数据集及其文档/索引由官方 API 删除；Demo 文档外键级联 | 分别返回 `knowledge_base_in_use_by_employees` / `knowledge_base_in_use_by_workflows` |
+| 工作流 | 不在员工 allowlist，且没有 `pending/running` 运行 | 定义、节点、边和已终止运行级联删除 | 分别返回 `workflow_in_use_by_employees` / `workflow_has_active_runs` |
+
+所有 DELETE 成功都返回 `204`，目标已经不存在时也返回 `204`，以便客户端安全重试。MySQL 删除
+在单事务内重新检查引用，并以外键约束兜底；知识库必须先完成本地引用检查，再调用 RAGFlow
+官方删除接口。连接中断、5xx、非法响应等无法确认远端结果的情况返回稳定且不可自动重放的
+`knowledge_base_delete_result_unknown`，客户端刷新权威列表确认后再由用户重试，避免重复外部
+副作用被伪装成确定成功。
+
+### 7.2 日志、指标与追踪
 
 正式应用统一向标准输出写单行 JSON 日志，固定包含 UTC 时间、级别、logger、稳定事件名和
 源码位置；HTTP 完成事件附带方法、路由模板、状态、耗时与稳定错误码。每个请求生成

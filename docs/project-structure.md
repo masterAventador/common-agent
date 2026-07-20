@@ -41,6 +41,7 @@ backend/
 │       │   │   ├── services.py            # 路由依赖解析
 │       │   │   ├── employees.py
 │       │   │   ├── knowledge.py
+│       │   │   ├── resource_deletion.py  # 删除依赖与稳定错误映射
 │       │   │   ├── workflows.py
 │       │   │   └── workflow_runs.py
 │       │   ├── schemas/           # 会话、工作流和运行 HTTP DTO
@@ -48,6 +49,8 @@ backend/
 │       │   ├── observability.py  # HTTP 关联、请求日志和进程内指标边界
 │       │   └── server.py         # Uvicorn 进程边界
 │       ├── application/         # 平台工作流用例编排
+│       │   ├── resource_deletion.py      # 四类资源引用安全删除
+│       │   ├── resource_locks.py         # 跨资源变更进程内串行区
 │       │   ├── workflow_service.py        # 稳定薄门面
 │       │   ├── workflow_catalog.py        # 定义校验/持久化
 │       │   ├── workflow_runs.py           # 运行协调
@@ -76,13 +79,13 @@ backend/
 │       │   ├── base.py
 │       │   ├── service.py
 │       │   └── retrieval.py
-│       ├── ports/               # 仓储、缓存、事件、对象存储与任务端口
+│       ├── ports/               # 仓储、资源删除、缓存、事件、对象存储与任务端口
 │       └── adapters/            # 数据库、模型及第三方外围适配
 │           ├── agent/           # Deep Agents 正式适配器
 │           ├── knowledge/       # RAGFlow 正式适配器
 │           ├── model/           # 阿里百炼转换与仅适配层可见的 LangChain 桥
 │           ├── workflow/        # LangGraph 编译、状态与节点框架转换
-│           └── persistence/     # MySQL 持久化适配器
+│           └── persistence/     # MySQL 持久化适配器，含资源引用检查/删除事务
 ├── migrations/                  # 当前正式数据库迁移
 ├── tests/
 │   ├── unit/

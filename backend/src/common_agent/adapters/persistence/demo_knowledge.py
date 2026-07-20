@@ -4,7 +4,8 @@ from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 from typing import cast
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
@@ -71,6 +72,15 @@ class SqlAlchemyDemoKnowledgeRepository:
             await self._session.flush()
         except IntegrityError:
             raise DemoKnowledgeBaseAlreadyExists from None
+
+    async def delete_knowledge_base(self, knowledge_base_id: str) -> bool:
+        result = cast(
+            CursorResult[object],
+            await self._session.execute(
+                delete(DemoKnowledgeBaseRow).where(DemoKnowledgeBaseRow.id == knowledge_base_id)
+            ),
+        )
+        return bool(result.rowcount)
 
     async def list_documents(
         self, knowledge_base_id: str

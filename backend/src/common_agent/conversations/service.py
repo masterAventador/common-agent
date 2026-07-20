@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
+from common_agent.application.resource_locks import (
+    ResourceMutationGuard,
+    employee_resource,
+)
 from common_agent.concurrency import KeyedLockPool
 from common_agent.conversations.contracts import (
     ConversationBusy,
@@ -35,11 +39,13 @@ class ConversationService:
         knowledge: KnowledgeResolver,
         runtime: EmployeeRuntime,
         events: ConversationEventBroker,
+        guard: ResourceMutationGuard | None = None,
     ) -> None:
         self._employees = employees
         self._persistence = ConversationPersistence(unit_of_work_factory)
         self._projector = ConversationMessageProjector(unit_of_work_factory, events)
         self._locks: KeyedLockPool[UUID] = KeyedLockPool()
+        self._guard = guard or ResourceMutationGuard()
         self._runs = ConversationRuntimeCoordinator(
             knowledge=knowledge,
             runtime=runtime,
@@ -58,15 +64,22 @@ class ConversationService:
         title: str,
         conversation_id: UUID | None = None,
     ) -> Conversation:
-        await self._employees.get(employee_id)
-        return await self._persistence.create(
-            employee_id=employee_id,
-            title=title,
-            conversation_id=conversation_id,
-        )
+        async with self._guard.hold(employee_resource(employee_id)):
+            await self._employees.get(employee_id)
+            return await self._persistence.create(
+                employee_id=employee_id,
+                title=title,
+                conversation_id=conversation_id,
+            )
 
     async def list_messages(self, conversation_id: UUID) -> tuple[Message, ...]:
         return await self._persistence.list_messages(conversation_id)
+
+    async def delete(self, conversation_id: UUID) -> bool:
+        async with self._locks.hold(conversation_id):
+            if self._runs.is_active(conversation_id):
+                raise ConversationBusy
+            return await self._persistence.delete(conversation_id)
 
     async def send(
         self,

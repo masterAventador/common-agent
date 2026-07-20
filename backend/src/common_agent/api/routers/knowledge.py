@@ -6,6 +6,11 @@ from fastapi import APIRouter, File, Request, UploadFile, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from common_agent.api.errors import AppError, ErrorEnvelope
+from common_agent.api.routers.resource_deletion import (
+    resource_deletion_error,
+    resource_deletion_service,
+)
+from common_agent.application.resource_deletion import ResourceDeletionError
 from common_agent.domain.knowledge import (
     KNOWLEDGE_BASE_DESCRIPTION_MAX_LENGTH,
     KNOWLEDGE_BASE_NAME_MAX_LENGTH,
@@ -16,6 +21,7 @@ from common_agent.domain.knowledge import (
     KnowledgeDocument,
 )
 from common_agent.knowledge.base import (
+    KnowledgeBaseDeleteResultUnknown,
     KnowledgeBaseNotFound,
     KnowledgeConfigurationMissing,
     KnowledgeDocumentUploadFailed,
@@ -117,6 +123,7 @@ def knowledge_error_to_app_error(error: KnowledgeServiceError | KnowledgeInputEr
     elif isinstance(
         error,
         (
+            KnowledgeBaseDeleteResultUnknown,
             KnowledgeDocumentUploadResultUnknown,
             KnowledgeProviderResponseInvalid,
             KnowledgeRequestRejected,
@@ -186,6 +193,25 @@ async def create_knowledge_base(
     except KnowledgeServiceError as error:
         raise knowledge_error_to_app_error(error) from error
     return _knowledge_base_response(created)
+
+
+@router.delete(
+    "/{knowledge_base_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        502: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def delete_knowledge_base(request: Request, knowledge_base_id: str) -> None:
+    try:
+        await resource_deletion_service(request).delete_knowledge_base(knowledge_base_id)
+    except ResourceDeletionError as error:
+        raise resource_deletion_error(error) from error
+    except KnowledgeServiceError as error:
+        raise knowledge_error_to_app_error(error) from error
 
 
 @router.get(

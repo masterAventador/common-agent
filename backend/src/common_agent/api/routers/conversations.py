@@ -70,6 +70,22 @@ async def list_conversations(
     return [conversation_response(conversation) for conversation in conversations]
 
 
+@router.delete(
+    "/api/v1/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def delete_conversation(request: Request, conversation_id: UUID) -> None:
+    try:
+        await conversation_service(request).delete(conversation_id)
+    except ConversationBusy as error:
+        raise conversation_error(error) from error
+
+
 @router.post(
     "/api/v1/conversations",
     status_code=status.HTTP_201_CREATED,

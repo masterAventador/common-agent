@@ -52,6 +52,10 @@ class _KnowledgeProbe:
         del request
         raise NotImplementedError
 
+    async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
+        del knowledge_base_id
+        raise NotImplementedError
+
     async def upload_document(
         self, knowledge_base_id: str, upload: DocumentUpload
     ) -> KnowledgeDocument:

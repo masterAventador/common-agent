@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from common_agent.application.resource_locks import (
+    ResourceMutationGuard,
+    knowledge_base_resource,
+    workflow_resource,
+)
 from common_agent.application.workflow_contracts import WorkflowNotFound
 from common_agent.domain.workflow import (
     KnowledgeRetrievalNodeConfig,
@@ -24,9 +29,12 @@ class WorkflowCatalog:
         self,
         unit_of_work_factory: WorkflowUnitOfWorkFactory,
         knowledge_bases: KnowledgeBaseService,
+        *,
+        guard: ResourceMutationGuard | None = None,
     ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
         self._knowledge_bases = knowledge_bases
+        self._guard = guard or ResourceMutationGuard()
 
     async def list(self) -> tuple[WorkflowDefinition, ...]:
         async with self._unit_of_work_factory() as unit_of_work:
@@ -69,16 +77,17 @@ class WorkflowCatalog:
         return tuple(issues)
 
     async def create(self, configuration: WorkflowConfiguration) -> WorkflowDefinition:
-        await self._ensure_valid(configuration)
-        workflow = WorkflowDefinition.create(
-            name=configuration.name,
-            description=configuration.description,
-            nodes=configuration.nodes,
-            edges=configuration.edges,
-        )
-        async with self._unit_of_work_factory() as unit_of_work:
-            await unit_of_work.workflows.add(workflow)
-            await unit_of_work.commit()
+        async with self._guard.hold(*_knowledge_resources(configuration)):
+            await self._ensure_valid(configuration)
+            workflow = WorkflowDefinition.create(
+                name=configuration.name,
+                description=configuration.description,
+                nodes=configuration.nodes,
+                edges=configuration.edges,
+            )
+            async with self._unit_of_work_factory() as unit_of_work:
+                await unit_of_work.workflows.add(workflow)
+                await unit_of_work.commit()
         return workflow
 
     async def update(
@@ -86,27 +95,39 @@ class WorkflowCatalog:
         workflow_id: UUID,
         configuration: WorkflowConfiguration,
     ) -> WorkflowDefinition:
-        await self.get(workflow_id)
-        await self._ensure_valid(configuration)
-        async with self._unit_of_work_factory() as unit_of_work:
-            current = await unit_of_work.workflows.get(workflow_id)
-            if current is None:
-                raise WorkflowNotFound
-            updated = current.reconfigure(
-                name=configuration.name,
-                description=configuration.description,
-                nodes=configuration.nodes,
-                edges=configuration.edges,
-            )
-            if not await unit_of_work.workflows.update(updated):
-                raise WorkflowNotFound
-            await unit_of_work.commit()
+        async with self._guard.hold(
+            workflow_resource(workflow_id),
+            *_knowledge_resources(configuration),
+        ):
+            await self.get(workflow_id)
+            await self._ensure_valid(configuration)
+            async with self._unit_of_work_factory() as unit_of_work:
+                current = await unit_of_work.workflows.get(workflow_id)
+                if current is None:
+                    raise WorkflowNotFound
+                updated = current.reconfigure(
+                    name=configuration.name,
+                    description=configuration.description,
+                    nodes=configuration.nodes,
+                    edges=configuration.edges,
+                )
+                if not await unit_of_work.workflows.update(updated):
+                    raise WorkflowNotFound
+                await unit_of_work.commit()
         return updated
 
     async def _ensure_valid(self, configuration: WorkflowConfiguration) -> None:
         issues = await self.validate(configuration)
         if issues:
             raise WorkflowGraphInvalid(issues)
+
+
+def _knowledge_resources(configuration: WorkflowConfiguration) -> tuple[str, ...]:
+    return tuple(
+        knowledge_base_resource(node.config.knowledge_base_id)
+        for node in configuration.nodes
+        if isinstance(node.config, KnowledgeRetrievalNodeConfig)
+    )
 
 
 __all__ = ["WorkflowCatalog"]

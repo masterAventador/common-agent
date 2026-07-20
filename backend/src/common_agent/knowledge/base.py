@@ -64,6 +64,12 @@ class KnowledgeDocumentUploadResultUnknown(KnowledgeServiceError):
     retryable = False
 
 
+class KnowledgeBaseDeleteResultUnknown(KnowledgeServiceError):
+    code = "knowledge_base_delete_result_unknown"
+    message = "知识库删除结果无法确认。请刷新列表后再次删除以完成核对"
+    retryable = False
+
+
 class KnowledgeProviderResponseInvalid(KnowledgeServiceError):
     code = "knowledge_service_invalid_response"
     message = "知识库服务返回了无法识别的数据"
@@ -84,6 +90,8 @@ class KnowledgeService(Protocol):
     async def create_knowledge_base(
         self, request: CreateKnowledgeBaseRequest
     ) -> KnowledgeBaseSummary: ...
+
+    async def delete_knowledge_base(self, knowledge_base_id: str) -> None: ...
 
     async def upload_document(
         self, knowledge_base_id: str, upload: DocumentUpload

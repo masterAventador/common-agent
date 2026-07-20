@@ -17,6 +17,7 @@ from common_agent.domain.knowledge import (
     KnowledgeServiceAvailability,
 )
 from common_agent.knowledge.base import (
+    KnowledgeBaseDeleteResultUnknown,
     KnowledgeBaseNotFound,
     KnowledgeConfigurationMissing,
     KnowledgeDocumentUploadFailed,
@@ -137,6 +138,9 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
                     },
                 },
             )
+        if path == "/api/v1/datasets" and request.method == "DELETE":
+            assert json.loads(request.content) == {"ids": ["kb-1"]}
+            return httpx.Response(200, json={"code": 0, "data": True})
         if path == "/api/v1/datasets/kb-1/documents" and request.method == "POST":
             assert b'filename="policy.md"' in request.content
             assert b"unsafe" not in request.content
@@ -237,6 +241,7 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
             retrieved = await contract.retrieve(
                 KnowledgeRetrievalRequest(knowledge_base_id=created.id, query="年假有几天")
             )
+            await contract.delete_knowledge_base(created.id)
 
         assert status.availability is KnowledgeServiceAvailability.AVAILABLE
         assert status.error_code is None
@@ -249,6 +254,33 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
 
     _run(scenario())
     assert all(request.headers["authorization"] == "Bearer test-key" for request in requests)
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        lambda request: httpx.Response(503, text="private upstream error"),
+        lambda request: httpx.Response(200, text="not-json"),
+        lambda request: (_ for _ in ()).throw(httpx.ReadTimeout("timed out", request=request)),
+    ],
+)
+def test_delete_result_unknown_never_invites_an_unsafe_automatic_retry(handler: object) -> None:
+    transport = httpx.MockTransport(handler)  # type: ignore[arg-type]
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(transport=transport, base_url="http://ragflow") as client:
+            service = RagFlowKnowledgeService(
+                base_url="http://ragflow",
+                api_key="test-key",
+                expected_version="v0.25.6",
+                client=client,
+            )
+            with pytest.raises(KnowledgeBaseDeleteResultUnknown) as captured:
+                await service.delete_knowledge_base("kb-1")
+        assert captured.value.retryable is False
+        assert "private upstream error" not in str(captured.value)
+
+    _run(scenario())
 
 
 def test_status_is_not_configured_without_calling_ragflow_when_key_is_missing() -> None:

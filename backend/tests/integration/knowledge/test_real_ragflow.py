@@ -214,6 +214,14 @@ def test_real_knowledge_http_lifecycle() -> None:
                 sleep(2)
             else:
                 pytest.fail("真实知识库 API 文档解析超时")
+
+            deleted = client.delete(f"/api/v1/knowledge-bases/{dataset_id}")
+            repeated = client.delete(f"/api/v1/knowledge-bases/{dataset_id}")
+            missing_documents = client.get(f"/api/v1/knowledge-bases/{dataset_id}/documents")
+            assert deleted.status_code == 204
+            assert repeated.status_code == 204
+            assert missing_documents.status_code == 404
+            dataset_id = None
     finally:
         if dataset_id is not None:
             asyncio.run(delete_dataset(base_url, api_key, dataset_id))

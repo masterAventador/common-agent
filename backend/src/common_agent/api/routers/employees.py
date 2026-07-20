@@ -9,6 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.routers.knowledge import knowledge_error_to_app_error
+from common_agent.api.routers.resource_deletion import (
+    resource_deletion_error,
+    resource_deletion_service,
+)
+from common_agent.application.resource_deletion import ResourceDeletionError
 from common_agent.application.workflow_service import WorkflowServiceError
 from common_agent.domain.employee import (
     EMPLOYEE_ALLOWED_WORKFLOWS_MAX_ITEMS,
@@ -125,6 +130,22 @@ def _employee_error_to_app_error(error: Exception) -> AppError:
 )
 async def list_employees(request: Request) -> list[EmployeeResponse]:
     return [_response(employee) for employee in await _application(request).list()]
+
+
+@router.delete(
+    "/{employee_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def delete_employee(request: Request, employee_id: UUID) -> None:
+    try:
+        await resource_deletion_service(request).delete_employee(employee_id)
+    except ResourceDeletionError as error:
+        raise resource_deletion_error(error) from error
 
 
 @router.post(

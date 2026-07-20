@@ -75,6 +75,13 @@ class ConversationPersistence:
         _, messages = await self.load(conversation_id)
         return messages
 
+    async def delete(self, conversation_id: UUID) -> bool:
+        async with self._unit_of_work_factory() as unit_of_work:
+            deleted = await unit_of_work.conversations.delete(conversation_id)
+            if deleted:
+                await unit_of_work.commit()
+        return deleted
+
     async def load(self, conversation_id: UUID) -> tuple[Conversation, tuple[Message, ...]]:
         async with self._unit_of_work_factory() as unit_of_work:
             conversation = await unit_of_work.conversations.get(conversation_id)
