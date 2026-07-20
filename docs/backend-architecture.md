@@ -546,8 +546,10 @@ RAGFlow 固定为官方 `v0.25.6` 及其 tag 提交
 重建和检索分别显式固定阿里百炼 `text-embedding-v4@Tongyi-Qianwen` 与
 `qwen3-rerank@Tongyi-Qianwen`，不启动或兜底到本地 embedding/rerank。稳定栈使用独立
 `common-agent-dev` Colima profile（8 CPU、32GiB 内存、100GiB 容器磁盘）和
-`colima-common-agent-dev` Docker context；32GiB 的长期峰值与 soak 结论仍由 R8-04 单独验收，
-不得裁剪 RAGFlow 必需服务、降低中文质量或占用其他项目的默认 context。
+`colima-common-agent-dev` Docker context。R8-04 已在完整冷启动、中文索引重建/检索、两轮会话、
+工作流和 30 分钟连续采样下确认 VM 峰值 6.91GiB、容器峰值 6.85GiB、Swap/重启/OOM 为 0，
+因此 32GiB 是长期 `real` 默认值；不得裁剪 RAGFlow 必需服务、降低中文质量或占用其他项目的默认
+context。
 
 ## 11. 官方能力依据
 

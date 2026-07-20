@@ -35,7 +35,7 @@ git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
 
 64 GiB 日常开发机默认使用项目专属的 `demo-light`：同一个 `common-agent-dev` Colima profile
 以 12 GiB 运行，只启动平台 MySQL、FastAPI 和 Vite，不启动 RAGFlow，也不会调用百炼
-embedding/rerank。真实知识库链路由 `real` 入口把同一 profile 重启到暂定 32 GiB 后验收，
+embedding/rerank。真实知识库链路由 `real` 入口把同一 profile 重启到已验收的 32 GiB 后运行，
 两种模式不会同时运行。
 
 ```bash
@@ -60,7 +60,7 @@ MySQL/RAGFlow 数据、依赖和官方镜像。
 ```bash
 scripts/real.sh doctor  # 脱敏检查工具、源码、模型/区域、端口、磁盘和当前栈
 scripts/real.sh setup   # 初始化 submodule 并按锁文件安装依赖
-scripts/real.sh up      # 按需切到暂定 32 GiB，启动完整稳定栈和前后端
+scripts/real.sh up      # 按需切到已验收的 32 GiB，启动完整稳定栈和前后端
 scripts/real.sh status  # 检查容器重启/OOM、模型绑定、Token 和平台依赖
 scripts/real.sh cost    # 显示调用/重试/数据边界、待迁移文档数和实时容器内存
 scripts/real.sh stop    # 停止并释放 Colima 内存，保留容器、数据、Token 和镜像
@@ -70,7 +70,9 @@ scripts/real.sh stop    # 停止并释放 Colima 内存，保留容器、数据�
 `text-embedding-v4` 与 `qwen3-rerank`。RAGFlow API Token 仅保存在 Git 忽略、权限 `0600` 的
 项目本地文件中，体检、日志和费用诊断只输出是否存在，不输出值。RAGFlow 状态数据使用项目专属
 Colima 原生 Volume，避免 macOS bind mount 在虚拟机重启后丢失容器 UID；旧 bind 数据首次迁移
-后仍保留作回退。当前 32 GiB 是 D8-03 可运行值，是否长期保持仍由 R8-04 峰值和 soak 验收决定。
+后仍保留作回退。32 GiB 已通过 R8-04 完整冷启动、真实业务链路和 30 分钟专项验收：VM
+峰值 6.91 GiB、容器合计峰值 6.85 GiB、Swap/重启/OOM 均为 0，因此确认为长期 `real`
+默认值；日常 Demo 仍使用 12 GiB `demo-light`。
 
 ## 项目文档
 
