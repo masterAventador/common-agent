@@ -5,10 +5,12 @@ import type { PropsWithChildren } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiClientError } from "../../api/errors";
 import { EmployeesPage } from "./EmployeesPage";
 
 const employeeApi = vi.hoisted(() => ({
   createEmployee: vi.fn(),
+  deleteEmployee: vi.fn(),
   fetchEmployees: vi.fn(),
   updateEmployee: vi.fn(),
 }));
@@ -228,5 +230,40 @@ describe("EmployeesPage", () => {
     await user.click(await screen.findByRole("button", { name: "与知识助理开始对话" }));
 
     expect(screen.getByText(`/chat?employee_id=${employee.id}`)).toBeInTheDocument();
+  });
+
+  it("keeps an employee visible and explains the conversation reference blocker", async () => {
+    employeeApi.deleteEmployee.mockRejectedValue(
+      new ApiClientError(
+        "数字员工仍被会话引用。请先删除相关会话",
+        "employee_in_use_by_conversations",
+        "request-1",
+        false,
+      ),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: `删除数字员工 ${employee.name}` }));
+    await user.click(screen.getByRole("button", { name: `确认删除数字员工 ${employee.name}` }));
+
+    expect(
+      await screen.findByText("该数字员工仍被会话引用，请先在 AI 会话页删除相关会话。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(employee.name)).toBeInTheDocument();
+  });
+
+  it("removes an employee from the list only after deletion succeeds", async () => {
+    employeeApi.fetchEmployees.mockResolvedValueOnce([employee]).mockResolvedValue([]);
+    employeeApi.deleteEmployee.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: `删除数字员工 ${employee.name}` }));
+    await user.click(screen.getByRole("button", { name: `确认删除数字员工 ${employee.name}` }));
+
+    await waitFor(() => expect(employeeApi.deleteEmployee).toHaveBeenCalledWith(employee.id));
+    expect(await screen.findByText(`数字员工“${employee.name}”已删除`)).toBeInTheDocument();
+    expect(await screen.findByText("还没有数字员工")).toBeInTheDocument();
   });
 });

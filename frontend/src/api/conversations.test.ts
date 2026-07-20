@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "./client";
 import {
   createConversation,
+  deleteConversation,
   fetchConversationMessages,
   fetchConversations,
   parseConversationEvent,
@@ -18,6 +19,7 @@ vi.mock("./client", () => ({
   apiClient: {
     get: vi.fn(),
     post: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -137,6 +139,7 @@ describe("conversation API and SSE boundary", () => {
       .mockResolvedValueOnce({ data: turn })
       .mockResolvedValueOnce({ data: { turn_id: turn.turn_id, assistant_message_id: assistantMessage.id } })
       .mockResolvedValueOnce({ data: { ...turn, retry: true } });
+    vi.mocked(apiClient.delete).mockResolvedValue({ data: undefined });
 
     await expect(fetchConversations(conversation.employee_id)).resolves.toEqual([conversation]);
     await expect(
@@ -164,6 +167,7 @@ describe("conversation API and SSE boundary", () => {
       ...turn,
       retry: true,
     });
+    await expect(deleteConversation(conversation.id)).resolves.toBeUndefined();
 
     expect(apiClient.get).toHaveBeenNthCalledWith(1, "/conversations", {
       params: { employee_id: conversation.employee_id },
@@ -190,6 +194,7 @@ describe("conversation API and SSE boundary", () => {
       4,
       `/messages/${assistantMessage.id}/retry`,
     );
+    expect(apiClient.delete).toHaveBeenCalledWith(`/conversations/${conversation.id}`);
   });
 
   it("parses named SSE events, reports malformed payloads, and closes explicitly", () => {

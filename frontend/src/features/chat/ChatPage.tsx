@@ -2,6 +2,7 @@ import { CommentOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Alert, Button, Empty, Flex, Select, Skeleton, Space, Typography } from "antd";
 
 import { getErrorMessage } from "../../api/errors";
+import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
 import { ChatWorkspace } from "./ChatWorkspace";
 import { useChatPageController } from "./useChatPageController";
 
@@ -73,7 +74,20 @@ export function ChatPage() {
           showIcon
           closable
           title="会话操作失败"
-          description={getErrorMessage(controller.operationError)}
+          description={
+            controller.deleteMutation.isError
+              ? getResourceDeletionErrorMessage(controller.deleteMutation.error)
+              : getErrorMessage(controller.operationError)
+          }
+          className="chat-inline-alert"
+        />
+      )}
+      {controller.deleteNotice && (
+        <Alert
+          type="success"
+          showIcon
+          closable
+          title={controller.deleteNotice}
           className="chat-inline-alert"
         />
       )}

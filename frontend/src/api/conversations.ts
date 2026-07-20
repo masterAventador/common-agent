@@ -114,6 +114,14 @@ export async function createConversation(
   }
 }
 
+export async function deleteConversation(conversationId: string): Promise<void> {
+  try {
+    await apiClient.delete(`/conversations/${encodeURIComponent(conversationId)}`);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
 export async function fetchConversationMessages(
   conversationId: string,
 ): Promise<ConversationMessage[]> {

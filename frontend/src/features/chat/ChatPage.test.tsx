@@ -12,6 +12,7 @@ const employeeApi = vi.hoisted(() => ({
 }));
 const chatApi = vi.hoisted(() => ({
   createConversation: vi.fn(),
+  deleteConversation: vi.fn(),
   fetchConversationMessages: vi.fn(),
   fetchConversations: vi.fn(),
   retryConversationMessage: vi.fn(),
@@ -218,6 +219,24 @@ describe("ChatPage", () => {
       }),
     );
     expect(await screen.findByRole("heading", { name: "知识问答" })).toBeInTheDocument();
+  });
+
+  it("confirms conversation deletion and moves to the empty state after the server succeeds", async () => {
+    chatApi.fetchConversations.mockResolvedValueOnce([conversation]).mockResolvedValue([]);
+    chatApi.deleteConversation.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole("button", { name: `删除会话 ${conversation.title}` }),
+    );
+    expect(screen.getAllByText(`删除会话“${conversation.title}”？`).length).toBeGreaterThan(0);
+    expect(screen.getByText("消息、引用和由该会话触发的工作流运行都会被永久删除。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: `确认删除会话 ${conversation.title}` }));
+
+    await waitFor(() => expect(chatApi.deleteConversation).toHaveBeenCalledWith(conversation.id));
+    expect(await screen.findByText(`会话“${conversation.title}”已删除`)).toBeInTheDocument();
+    expect(await screen.findByText("还没有会话")).toBeInTheDocument();
   });
 
   it("sends, stops, retries, applies monotonic SSE snapshots, and ignores late duplicates", async () => {

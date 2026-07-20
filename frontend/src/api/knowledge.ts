@@ -64,6 +64,14 @@ export async function createKnowledgeBase(
   }
 }
 
+export async function deleteKnowledgeBase(knowledgeBaseId: string): Promise<void> {
+  try {
+    await apiClient.delete(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
 export async function fetchKnowledgeDocuments(
   knowledgeBaseId: string,
 ): Promise<KnowledgeDocument[]> {

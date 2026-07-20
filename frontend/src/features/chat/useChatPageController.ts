@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   createConversation,
+  deleteConversation,
   fetchConversationMessages,
   fetchConversations,
   retryConversationMessage,
@@ -11,6 +12,7 @@ import {
   stopConversationGeneration,
   subscribeToConversationEvents,
   type ConversationEvent,
+  type Conversation,
   type ConversationMessage,
 } from "../../api/conversations";
 import { fetchEmployees } from "../../api/employees";
@@ -23,6 +25,7 @@ export function useChatPageController() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [draft, setDraft] = useState("");
+  const [deleteNotice, setDeleteNotice] = useState<string>();
   const [streamNotice, setStreamNotice] = useState<string>();
   const lastEventSequence = useRef(0);
   const requestedEmployeeId = searchParams.get("employee_id");
@@ -148,6 +151,40 @@ export function useChatPageController() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (conversation: Conversation) => {
+      setDeleteNotice(undefined);
+      await deleteConversation(conversation.id);
+      return conversation;
+    },
+    onSuccess: async (deleted) => {
+      const listKey = ["conversations", deleted.employee_id] as const;
+      const current = queryClient.getQueryData<Conversation[]>(listKey) ?? [];
+      const remaining = current.filter((item) => item.id !== deleted.id);
+      queryClient.setQueryData(listKey, remaining);
+      queryClient.removeQueries({
+        queryKey: ["conversation-messages", deleted.id],
+        exact: true,
+      });
+      queryClient.removeQueries({
+        queryKey: ["conversation-workflow-runs", deleted.id],
+        exact: true,
+      });
+      if (selectedConversation?.id === deleted.id) {
+        setStreamNotice(undefined);
+        const next = remaining[0];
+        setSearchParams(
+          next
+            ? { employee_id: deleted.employee_id, conversation_id: next.id }
+            : { employee_id: deleted.employee_id },
+          { replace: true },
+        );
+      }
+      setDeleteNotice(`会话“${deleted.title}”已删除`);
+      await queryClient.invalidateQueries({ queryKey: listKey });
+    },
+  });
+
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
       if (!selectedConversation) throw new Error("请先创建会话");
@@ -192,11 +229,17 @@ export function useChatPageController() {
     activeMessage,
     conversations,
     createMutation,
+    deleteMutation,
+    deleteNotice,
     draft,
     employees,
     messages,
     operationError:
-      createMutation.error ?? sendMutation.error ?? stopMutation.error ?? retryMutation.error,
+      deleteMutation.error ??
+      createMutation.error ??
+      sendMutation.error ??
+      stopMutation.error ??
+      retryMutation.error,
     retryMutation,
     runsByMessageId,
     selectedConversation,

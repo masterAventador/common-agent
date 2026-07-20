@@ -144,6 +144,14 @@ export async function createWorkflow(
   }
 }
 
+export async function deleteWorkflow(workflowId: string): Promise<void> {
+  try {
+    await apiClient.delete(`/workflows/${encodeURIComponent(workflowId)}`);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
 export async function updateWorkflow(
   workflowId: string,
   configuration: WorkflowConfigurationInput,

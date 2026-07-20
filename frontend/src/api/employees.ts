@@ -74,3 +74,11 @@ export async function updateEmployee(
     throw toApiClientError(error);
   }
 }
+
+export async function deleteEmployee(employeeId: string): Promise<void> {
+  try {
+    await apiClient.delete(`/employees/${encodeURIComponent(employeeId)}`);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}

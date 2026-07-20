@@ -332,12 +332,16 @@ select {
 }
 
 .chat-conversation-list-item {
+  display: flex;
   padding: 4px 0;
+  gap: 4px;
+  align-items: center;
 }
 
 .chat-conversation-button {
   display: grid;
-  width: 100%;
+  width: auto;
+  flex: 1;
   min-width: 0;
   padding: 11px 12px;
   gap: 5px;

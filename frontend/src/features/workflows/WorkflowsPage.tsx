@@ -1,18 +1,13 @@
-import {
-  ApartmentOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  SaveOutlined,
-} from "@ant-design/icons";
+import { ApartmentOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Alert, Button, Flex, Skeleton, Space, Tag, Typography } from "antd";
-
 import { getErrorMessage } from "../../api/errors";
+import { ResourceDeleteButton } from "../../components/ResourceDeleteButton";
+import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
 import { WorkflowCanvas } from "./WorkflowCanvas";
 import { WorkflowInspector } from "./WorkflowInspector";
 import { WorkflowSidebar } from "./WorkflowSidebar";
 import { useWorkflowDesigner } from "./useWorkflowDesigner";
-
 const { Paragraph, Title } = Typography;
 
 export function WorkflowsPage() {
@@ -62,6 +57,14 @@ export function WorkflowsPage() {
           </Paragraph>
         </div>
         <Space>
+          <ResourceDeleteButton
+            resourceKind="工作流"
+            resourceName={state.name || "未命名工作流"}
+            impact="工作流定义、节点、连线和已终止运行记录都会被永久删除。"
+            disabled={!state.workflowId || controller.activeRun || controller.deleteMutation.isPending}
+            loading={controller.deleteMutation.isPending}
+            onConfirm={controller.deleteSelectedWorkflow}
+          />
           <Button
             icon={<PlusOutlined />}
             aria-label="新建工作流"
@@ -82,6 +85,28 @@ export function WorkflowsPage() {
           </Button>
         </Space>
       </Flex>
+
+      {controller.deleteNotice && (
+        <Alert
+          type="success"
+          showIcon
+          closable
+          title={controller.deleteNotice}
+          className="workflows-alert"
+        />
+      )}
+
+      {controller.deleteMutation.isError && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          title="工作流删除失败"
+          description={getResourceDeletionErrorMessage(controller.deleteMutation.error)}
+          className="workflows-alert"
+          onClose={() => controller.deleteMutation.reset()}
+        />
+      )}
 
       {(controller.localValidationMessage || controller.saveMutation.isError) && (
         <Alert

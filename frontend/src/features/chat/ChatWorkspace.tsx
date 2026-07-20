@@ -3,6 +3,7 @@ import { Alert, Button, Empty, Flex, Input, Skeleton, Tag, Typography } from "an
 
 import type { Employee } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
+import { ResourceDeleteButton } from "../../components/ResourceDeleteButton";
 import { MessageBubble } from "./ChatMessages";
 import type { ChatPageController } from "./useChatPageController";
 
@@ -19,6 +20,7 @@ export function ChatWorkspace({
     activeMessage,
     conversations,
     createMutation,
+    deleteMutation,
     draft,
     messages,
     retryMutation,
@@ -75,6 +77,21 @@ export function ChatWorkspace({
                   <Text strong>{conversation.title}</Text>
                   <Text type="secondary">{formatConversationTime(conversation.updated_at)}</Text>
                 </button>
+                <ResourceDeleteButton
+                  resourceKind="会话"
+                  resourceName={conversation.title}
+                  impact="消息、引用和由该会话触发的工作流运行都会被永久删除。"
+                  compact
+                  size="small"
+                  disabled={
+                    deleteMutation.isPending ||
+                    (selectedConversation?.id === conversation.id && Boolean(activeMessage))
+                  }
+                  loading={
+                    deleteMutation.isPending && deleteMutation.variables?.id === conversation.id
+                  }
+                  onConfirm={() => deleteMutation.mutateAsync(conversation)}
+                />
               </div>
             ))}
           </div>

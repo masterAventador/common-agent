@@ -26,13 +26,19 @@ import { useMemo, useState } from "react";
 
 import {
   createKnowledgeBase,
+  deleteKnowledgeBase,
   fetchKnowledgeBases,
   fetchKnowledgeDocuments,
   uploadKnowledgeDocument,
   type CreateKnowledgeBaseInput,
+  type KnowledgeBase,
   type KnowledgeDocument,
 } from "../../api/knowledge";
 import { getErrorMessage } from "../../api/errors";
+import {
+  ResourceDeleteButton,
+} from "../../components/ResourceDeleteButton";
+import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
 
 const { Text, Title } = Typography;
 const ACCEPTED_DOCUMENTS =
@@ -89,6 +95,7 @@ const documentColumns: TableColumnsType<KnowledgeDocument> = [
 export function KnowledgeBasesPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [deleteNotice, setDeleteNotice] = useState<string>();
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedFile, setSelectedFile] = useState<File>();
   const [fileInputKey, setFileInputKey] = useState(0);
@@ -102,6 +109,7 @@ export function KnowledgeBasesPage() {
     const items = knowledgeBases.data ?? [];
     return items.some((item) => item.id === selectedId) ? selectedId : items[0]?.id;
   }, [knowledgeBases.data, selectedId]);
+  const activeKnowledgeBase = knowledgeBases.data?.find((item) => item.id === activeId);
 
   const documents = useQuery({
     queryKey: ["knowledge-bases", activeId, "documents"],
@@ -139,6 +147,28 @@ export function KnowledgeBasesPage() {
         queryClient.invalidateQueries({ queryKey: ["knowledge-bases"] }),
         queryClient.invalidateQueries({ queryKey: ["knowledge-bases", activeId, "documents"] }),
       ]);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (knowledgeBase: KnowledgeBase) => {
+      setDeleteNotice(undefined);
+      await deleteKnowledgeBase(knowledgeBase.id);
+      return knowledgeBase;
+    },
+    onSuccess: async (deleted) => {
+      const current = queryClient.getQueryData<KnowledgeBase[]>(["knowledge-bases"]) ?? [];
+      const remaining = current.filter((item) => item.id !== deleted.id);
+      queryClient.setQueryData(["knowledge-bases"], remaining);
+      queryClient.removeQueries({
+        queryKey: ["knowledge-bases", deleted.id, "documents"],
+        exact: true,
+      });
+      setSelectedId(remaining[0]?.id);
+      setSelectedFile(undefined);
+      setFileInputKey((value) => value + 1);
+      setDeleteNotice(`知识库“${deleted.name}”已删除`);
+      await queryClient.invalidateQueries({ queryKey: ["knowledge-bases"] });
     },
   });
 
@@ -196,6 +226,28 @@ export function KnowledgeBasesPage() {
         </Button>
       </Flex>
 
+      {deleteNotice && (
+        <Alert
+          type="success"
+          showIcon
+          closable
+          title={deleteNotice}
+          className="knowledge-inline-alert"
+        />
+      )}
+
+      {deleteMutation.isError && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          title="知识库删除失败"
+          description={getResourceDeletionErrorMessage(deleteMutation.error)}
+          className="knowledge-inline-alert"
+          onClose={() => deleteMutation.reset()}
+        />
+      )}
+
       {items.length === 0 ? (
         <Card className="knowledge-empty-card">
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有知识库">
@@ -230,13 +282,25 @@ export function KnowledgeBasesPage() {
             title="文档与解析状态"
             className="knowledge-documents-card"
             extra={
-              <Button
-                icon={<ReloadOutlined />}
-                loading={documents.isFetching}
-                onClick={() => void documents.refetch()}
-              >
-                刷新状态
-              </Button>
+              <Space>
+                {activeKnowledgeBase && (
+                  <ResourceDeleteButton
+                    resourceKind="知识库"
+                    resourceName={activeKnowledgeBase.name}
+                    impact="RAGFlow 中的文档、切片和索引都会被永久删除。"
+                    loading={deleteMutation.isPending}
+                    disabled={deleteMutation.isPending || uploadMutation.isPending}
+                    onConfirm={() => deleteMutation.mutateAsync(activeKnowledgeBase)}
+                  />
+                )}
+                <Button
+                  icon={<ReloadOutlined />}
+                  loading={documents.isFetching}
+                  onClick={() => void documents.refetch()}
+                >
+                  刷新状态
+                </Button>
+              </Space>
             }
           >
             <Flex gap={12} align="center" wrap className="knowledge-upload-row">

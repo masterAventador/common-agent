@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "./client";
 import {
   createEmployee,
+  deleteEmployee,
   fetchEmployee,
   fetchEmployees,
   parseEmployeeResponse,
@@ -15,6 +16,7 @@ vi.mock("./client", () => ({
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -63,15 +65,18 @@ describe("employee API boundary", () => {
       .mockResolvedValueOnce({ data: employee });
     vi.mocked(apiClient.post).mockResolvedValue({ data: employee });
     vi.mocked(apiClient.put).mockResolvedValue({ data: employee });
+    vi.mocked(apiClient.delete).mockResolvedValue({ data: undefined });
 
     await expect(fetchEmployees()).resolves.toEqual([employee]);
     await expect(fetchEmployee(employee.id)).resolves.toEqual(employee);
     await expect(createEmployee(input)).resolves.toEqual(employee);
     await expect(updateEmployee(employee.id, input)).resolves.toEqual(employee);
+    await expect(deleteEmployee(employee.id)).resolves.toBeUndefined();
 
     expect(apiClient.get).toHaveBeenNthCalledWith(1, "/employees");
     expect(apiClient.get).toHaveBeenNthCalledWith(2, `/employees/${employee.id}`);
     expect(apiClient.post).toHaveBeenCalledWith("/employees", input);
     expect(apiClient.put).toHaveBeenCalledWith(`/employees/${employee.id}`, input);
+    expect(apiClient.delete).toHaveBeenCalledWith(`/employees/${employee.id}`);
   });
 });

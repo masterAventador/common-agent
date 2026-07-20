@@ -6,6 +6,7 @@ import { getErrorMessage } from "../../api/errors";
 import { fetchKnowledgeBases } from "../../api/knowledge";
 import {
   createWorkflow,
+  deleteWorkflow,
   fetchWorkflows,
   updateWorkflow,
   validateWorkflow,
@@ -41,6 +42,7 @@ export function useWorkflowDesigner() {
     createNewWorkflowEditorState,
   );
   const [localValidationMessage, setLocalValidationMessage] = useState<string>();
+  const [deleteNotice, setDeleteNotice] = useState<string>();
   const runController = useWorkflowRun(state.workflowId, state.dirty);
   const activeRun = isWorkflowRunActive(runController.run);
   const visibleRun =
@@ -90,9 +92,31 @@ export function useWorkflowDesigner() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (workflow: Workflow) => {
+      setDeleteNotice(undefined);
+      await deleteWorkflow(workflow.id);
+      return workflow;
+    },
+    onSuccess: async (deleted) => {
+      const current = queryClient.getQueryData<Workflow[]>(["workflows"]) ?? [];
+      const remaining = current.filter((item) => item.id !== deleted.id);
+      queryClient.setQueryData(["workflows"], remaining);
+      runController.clear();
+      if (state.workflowId === deleted.id) {
+        const next = remaining[0];
+        dispatch(next ? { type: "workflow_loaded", workflow: next } : { type: "new_workflow" });
+      }
+      setDeleteNotice(`工作流“${deleted.name}”已删除`);
+      await queryClient.invalidateQueries({ queryKey: ["workflows"] });
+    },
+  });
+
   const selectWorkflow = (workflow: Workflow) => {
     const load = () => {
       saveMutation.reset();
+      deleteMutation.reset();
+      setDeleteNotice(undefined);
       setLocalValidationMessage(undefined);
       if (workflow.id !== state.workflowId) runController.clear();
       dispatch({ type: "workflow_loaded", workflow });
@@ -110,6 +134,8 @@ export function useWorkflowDesigner() {
   const createDraft = () => {
     const reset = () => {
       saveMutation.reset();
+      deleteMutation.reset();
+      setDeleteNotice(undefined);
       setLocalValidationMessage(undefined);
       runController.clear();
       dispatch({ type: "new_workflow" });
@@ -135,9 +161,18 @@ export function useWorkflowDesigner() {
     });
   };
 
+  const deleteSelectedWorkflow = async () => {
+    const selected = workflows.data?.find((workflow) => workflow.id === state.workflowId);
+    if (!selected) return;
+    await deleteMutation.mutateAsync(selected);
+  };
+
   return {
     activeRun,
     createDraft,
+    deleteMutation,
+    deleteNotice,
+    deleteSelectedWorkflow,
     dispatch,
     knowledgeBases,
     knowledgeError: knowledgeBases.isError ? getErrorMessage(knowledgeBases.error) : undefined,

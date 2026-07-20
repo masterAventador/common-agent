@@ -8,6 +8,7 @@ import { KnowledgeBasesPage } from "./KnowledgeBasesPage";
 
 const knowledgeApi = vi.hoisted(() => ({
   createKnowledgeBase: vi.fn(),
+  deleteKnowledgeBase: vi.fn(),
   fetchKnowledgeBases: vi.fn(),
   fetchKnowledgeDocuments: vi.fn(),
   uploadKnowledgeDocument: vi.fn(),
@@ -139,5 +140,27 @@ describe("KnowledgeBasesPage", () => {
 
     expect(await screen.findByText("还没有知识库")).toBeInTheDocument();
     expect(knowledgeApi.fetchKnowledgeBases).toHaveBeenCalledTimes(2);
+  });
+
+  it("confirms knowledge-base deletion and clears its documents only after success", async () => {
+    knowledgeApi.fetchKnowledgeBases
+      .mockResolvedValueOnce([knowledgeBase])
+      .mockResolvedValue([]);
+    knowledgeApi.fetchKnowledgeDocuments.mockResolvedValue(documents);
+    knowledgeApi.deleteKnowledgeBase.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<KnowledgeBasesPage />, { wrapper: TestProviders });
+
+    await user.click(
+      await screen.findByRole("button", { name: `删除知识库 ${knowledgeBase.name}` }),
+    );
+    expect(screen.getByText("RAGFlow 中的文档、切片和索引都会被永久删除。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: `确认删除知识库 ${knowledgeBase.name}` }));
+
+    await waitFor(() =>
+      expect(knowledgeApi.deleteKnowledgeBase).toHaveBeenCalledWith(knowledgeBase.id),
+    );
+    expect(await screen.findByText(`知识库“${knowledgeBase.name}”已删除`)).toBeInTheDocument();
+    expect(await screen.findByText("还没有知识库")).toBeInTheDocument();
   });
 });

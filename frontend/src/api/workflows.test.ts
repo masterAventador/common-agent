@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "./client";
 import {
   createWorkflow,
+  deleteWorkflow,
   fetchWorkflows,
   parseWorkflowResponse,
   parseWorkflowValidationResponse,
@@ -16,6 +17,7 @@ vi.mock("./client", () => ({
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -86,15 +88,18 @@ describe("workflow API boundary", () => {
       .mockResolvedValueOnce({ data: { valid: true, issues: [] } })
       .mockResolvedValueOnce({ data: workflow });
     vi.mocked(apiClient.put).mockResolvedValue({ data: workflow });
+    vi.mocked(apiClient.delete).mockResolvedValue({ data: undefined });
 
     await expect(fetchWorkflows()).resolves.toEqual([workflow]);
     await expect(validateWorkflow(configuration)).resolves.toEqual({ valid: true, issues: [] });
     await expect(createWorkflow(configuration)).resolves.toEqual(workflow);
     await expect(updateWorkflow(workflow.id, configuration)).resolves.toEqual(workflow);
+    await expect(deleteWorkflow(workflow.id)).resolves.toBeUndefined();
 
     expect(apiClient.get).toHaveBeenCalledWith("/workflows");
     expect(apiClient.post).toHaveBeenNthCalledWith(1, "/workflows/validate", configuration);
     expect(apiClient.post).toHaveBeenNthCalledWith(2, "/workflows", configuration);
     expect(apiClient.put).toHaveBeenCalledWith(`/workflows/${workflow.id}`, configuration);
+    expect(apiClient.delete).toHaveBeenCalledWith(`/workflows/${workflow.id}`);
   });
 });

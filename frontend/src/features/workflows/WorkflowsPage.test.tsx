@@ -4,10 +4,12 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiClientError } from "../../api/errors";
 import { WorkflowsPage } from "./WorkflowsPage";
 
 const workflowApi = vi.hoisted(() => ({
   createWorkflow: vi.fn(),
+  deleteWorkflow: vi.fn(),
   fetchWorkflows: vi.fn(),
   updateWorkflow: vi.fn(),
   validateWorkflow: vi.fn(),
@@ -370,5 +372,40 @@ describe("WorkflowsPage", () => {
     expect(await screen.findByText("请先保存工作流，再从正式定义启动运行。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "运行工作流" })).toBeDisabled();
     expect(workflowRunApi.startWorkflowRun).not.toHaveBeenCalled();
+  });
+
+  it("keeps the workflow and explains active-run deletion blocking", async () => {
+    workflowApi.deleteWorkflow.mockRejectedValue(
+      new ApiClientError(
+        "工作流仍有运行中的执行。请等待完成或停止后重试",
+        "workflow_has_active_runs",
+        "request-2",
+        true,
+      ),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: `删除工作流 ${workflow.name}` }));
+    await user.click(screen.getByRole("button", { name: `确认删除工作流 ${workflow.name}` }));
+
+    expect(
+      await screen.findByText("该工作流仍有活跃运行，请等待运行完成或停止后再重试。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: `选择工作流 ${workflow.name}` })).toBeEnabled();
+  });
+
+  it("clears the selected workflow only after deletion succeeds", async () => {
+    workflowApi.fetchWorkflows.mockResolvedValueOnce([workflow]).mockResolvedValue([]);
+    workflowApi.deleteWorkflow.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: `删除工作流 ${workflow.name}` }));
+    await user.click(screen.getByRole("button", { name: `确认删除工作流 ${workflow.name}` }));
+
+    await waitFor(() => expect(workflowApi.deleteWorkflow).toHaveBeenCalledWith(workflow.id));
+    expect(await screen.findByText(`工作流“${workflow.name}”已删除`)).toBeInTheDocument();
+    expect(await screen.findByText("还没有已保存工作流")).toBeInTheDocument();
   });
 });

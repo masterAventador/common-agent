@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "./client";
 import {
   createKnowledgeBase,
+  deleteKnowledgeBase,
   fetchKnowledgeBases,
   fetchKnowledgeDocuments,
   parseKnowledgeBasesResponse,
@@ -14,6 +15,7 @@ vi.mock("./client", () => ({
   apiClient: {
     get: vi.fn(),
     post: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -54,12 +56,14 @@ describe("knowledge API boundary", () => {
       .mockResolvedValueOnce({ data: [knowledgeBase] })
       .mockResolvedValueOnce({ data: [document] });
     vi.mocked(apiClient.post).mockResolvedValueOnce({ data: knowledgeBase });
+    vi.mocked(apiClient.delete).mockResolvedValue({ data: undefined });
 
     await expect(fetchKnowledgeBases()).resolves.toEqual([knowledgeBase]);
     await expect(createKnowledgeBase({ name: "产品手册", description: "通用产品资料" })).resolves.toEqual(
       knowledgeBase,
     );
     await expect(fetchKnowledgeDocuments("kb-1")).resolves.toEqual([document]);
+    await expect(deleteKnowledgeBase("kb/with space")).resolves.toBeUndefined();
 
     expect(apiClient.get).toHaveBeenNthCalledWith(1, "/knowledge-bases");
     expect(apiClient.post).toHaveBeenCalledWith("/knowledge-bases", {
@@ -67,6 +71,7 @@ describe("knowledge API boundary", () => {
       description: "通用产品资料",
     });
     expect(apiClient.get).toHaveBeenNthCalledWith(2, "/knowledge-bases/kb-1/documents");
+    expect(apiClient.delete).toHaveBeenCalledWith("/knowledge-bases/kb%2Fwith%20space");
   });
 
   it("uploads a multipart file through the platform API", async () => {

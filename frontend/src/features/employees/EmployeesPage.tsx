@@ -26,6 +26,7 @@ import { useNavigate } from "react-router-dom";
 
 import {
   createEmployee,
+  deleteEmployee,
   fetchEmployees,
   updateEmployee,
   type Employee,
@@ -34,6 +35,10 @@ import {
 import { getErrorMessage } from "../../api/errors";
 import { fetchKnowledgeBases } from "../../api/knowledge";
 import { fetchWorkflows } from "../../api/workflows";
+import {
+  ResourceDeleteButton,
+} from "../../components/ResourceDeleteButton";
+import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
 
 const { Text, Title } = Typography;
 
@@ -53,6 +58,7 @@ export function EmployeesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [editor, setEditor] = useState<EditorState>();
+  const [deleteNotice, setDeleteNotice] = useState<string>();
   const [form] = Form.useForm<EmployeeConfigurationInput>();
 
   const employees = useQuery({
@@ -106,6 +112,23 @@ export function EmployeesPage() {
     onSuccess: async () => {
       setEditor(undefined);
       form.resetFields();
+      await queryClient.invalidateQueries({ queryKey: ["employees"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (employee: Employee) => {
+      setDeleteNotice(undefined);
+      await deleteEmployee(employee.id);
+      return employee;
+    },
+    onSuccess: async (deleted) => {
+      const current = queryClient.getQueryData<Employee[]>(["employees"]) ?? [];
+      queryClient.setQueryData(
+        ["employees"],
+        current.filter((item) => item.id !== deleted.id),
+      );
+      setDeleteNotice(`数字员工“${deleted.name}”已删除`);
       await queryClient.invalidateQueries({ queryKey: ["employees"] });
     },
   });
@@ -214,6 +237,28 @@ export function EmployeesPage() {
         />
       )}
 
+      {deleteNotice && (
+        <Alert
+          type="success"
+          showIcon
+          closable
+          title={deleteNotice}
+          className="employees-inline-alert"
+        />
+      )}
+
+      {deleteMutation.isError && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          title="数字员工删除失败"
+          description={getResourceDeletionErrorMessage(deleteMutation.error)}
+          className="employees-inline-alert"
+          onClose={() => deleteMutation.reset()}
+        />
+      )}
+
       {items.length === 0 ? (
         <Card className="employees-empty-card">
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有数字员工">
@@ -241,6 +286,16 @@ export function EmployeesPage() {
                 <div>{workflowPermissionLabel(employee)}</div>
               </div>
               <Flex gap={8} justify="flex-end" wrap>
+                <ResourceDeleteButton
+                  resourceKind="数字员工"
+                  resourceName={employee.name}
+                  impact="数字员工配置会被永久删除；存在会话引用时平台会拒绝本次操作。"
+                  loading={
+                    deleteMutation.isPending && deleteMutation.variables?.id === employee.id
+                  }
+                  disabled={deleteMutation.isPending}
+                  onConfirm={() => deleteMutation.mutateAsync(employee)}
+                />
                 <Button
                   aria-label={`编辑 ${employee.name}`}
                   icon={<EditOutlined />}
