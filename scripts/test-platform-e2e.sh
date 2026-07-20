@@ -21,6 +21,9 @@ COMMON_AGENT_E2E_WORKFLOW_FAILURE_NAME="common-agent-w5-06-failure-${RUN_ID}"
 COMMON_AGENT_E2E_WORKFLOW_FAILURE_KNOWLEDGE_NAME="common-agent-w5-06-knowledge-${RUN_ID}"
 COMMON_AGENT_E2E_WORKFLOW_CHAT_NAME="common-agent-w5-08-workflow-${RUN_ID}"
 COMMON_AGENT_E2E_WORKFLOW_CHAT_EMPLOYEE_NAME="common-agent-w5-08-employee-${RUN_ID}"
+COMMON_AGENT_E2E_MVP_KNOWLEDGE_NAME="common-agent-q6-04-knowledge-${RUN_ID}"
+COMMON_AGENT_E2E_MVP_EMPLOYEE_NAME="common-agent-q6-04-employee-${RUN_ID}"
+COMMON_AGENT_E2E_MVP_WORKFLOW_NAME="common-agent-q6-04-workflow-${RUN_ID}"
 COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="common-agent-a4-08-employee-${RUN_ID}"
 COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="common-agent-a4-08-knowledge-${RUN_ID}"
 ARTIFACT_ROOT="${REPOSITORY_ROOT}/.local/test-artifacts/platform-e2e/${E2E_SUITE}-${RUN_ID}"
@@ -32,7 +35,7 @@ FRONTEND_PID=""
 RAGFLOW_API_KEY=""
 COMMON_AGENT_DATABASE_URL="mysql+asyncmy://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
 
-if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" ]]; then
+if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" ]]; then
   echo "不支持的 E2E suite：${E2E_SUITE}" >&2
   exit 2
 fi
@@ -120,6 +123,20 @@ cleanup() {
       echo "工作流对话 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
       cleanup_status=1
     fi
+  elif [[ "${E2E_SUITE}" == "mvp-acceptance" && -n "${RAGFLOW_API_KEY}" ]]; then
+    if ! (
+      cd "${BACKEND_ROOT}"
+      RAGFLOW_BASE_URL="${RAGFLOW_BASE_URL}" \
+      RAGFLOW_API_KEY="${RAGFLOW_API_KEY}" \
+      COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
+      COMMON_AGENT_E2E_MVP_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_MVP_KNOWLEDGE_NAME}" \
+      COMMON_AGENT_E2E_MVP_EMPLOYEE_NAME="${COMMON_AGENT_E2E_MVP_EMPLOYEE_NAME}" \
+      COMMON_AGENT_E2E_MVP_WORKFLOW_NAME="${COMMON_AGENT_E2E_MVP_WORKFLOW_NAME}" \
+        uv run --frozen python -m tests.support.mvp_acceptance_e2e_cleanup
+    ); then
+      echo "MVP 总验收数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
+      cleanup_status=1
+    fi
   elif [[ -n "${RAGFLOW_API_KEY}" ]]; then
     if ! (
       cd "${BACKEND_ROOT}"
@@ -192,6 +209,15 @@ if [[ "${E2E_SUITE}" != "demo-chat" ]]; then
   export RAGFLOW_BASE_URL
   export RAGFLOW_EXPECTED_VERSION="v0.25.6"
   export RAGFLOW_TIMEOUT_SECONDS="120"
+  if [[ "${E2E_SUITE}" == "mvp-acceptance" ]]; then
+    (
+      cd "${BACKEND_ROOT}"
+      COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
+      RAGFLOW_BASE_URL="${RAGFLOW_BASE_URL}" \
+      RAGFLOW_API_KEY="${RAGFLOW_API_KEY}" \
+        uv run --frozen python -m tests.support.mvp_acceptance_empty
+    )
+  fi
 else
   export COMMON_AGENT_INTEGRATION_MODE="demo"
 fi
@@ -243,6 +269,13 @@ wait_for_url "http://127.0.0.1:${FRONTEND_PORT}/knowledge-bases"
     COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
     COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
       exec pnpm exec playwright test e2e/workflow-chat-e2e.spec.ts --config playwright.config.ts
+  elif [[ "${E2E_SUITE}" == "mvp-acceptance" ]]; then
+    COMMON_AGENT_E2E_MVP_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_MVP_KNOWLEDGE_NAME}" \
+    COMMON_AGENT_E2E_MVP_EMPLOYEE_NAME="${COMMON_AGENT_E2E_MVP_EMPLOYEE_NAME}" \
+    COMMON_AGENT_E2E_MVP_WORKFLOW_NAME="${COMMON_AGENT_E2E_MVP_WORKFLOW_NAME}" \
+    COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
+      exec pnpm exec playwright test e2e/mvp-acceptance.spec.ts --config playwright.config.ts
   else
     COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="${COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME}" \
     COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME}" \
