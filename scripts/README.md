@@ -23,6 +23,8 @@
   诊断；不启动本地 embedding/rerank；
 - `test-real.sh`：检查 real 入口动作、32 GiB/context、官方 RAGFlow、原生数据卷、百炼绑定、
   Token 文件、费用脱敏和本地模型退场契约；
+- `test-ci.sh`：检查 PR/main GitHub CI 的冻结安装、固定 Action、后端/前端/契约/Demo/基础设施
+  门禁、缓存锁文件边界，以及 real 外部付费依赖不进入公共 Runner 的隔离契约；
 - `generate-contracts.sh`：从正式 FastAPI 应用导出 OpenAPI 并生成前端 TypeScript 类型；
 - `check-contracts.sh`：在隔离临时目录重建契约并检查已提交文件无漂移；
 - `test-platform-e2e.sh`：复用健康的稳定基础设施，以无窗口 `chromium-headless-shell` 编排正式
@@ -32,4 +34,5 @@
   服务端校验、真实知识库引用与 MySQL 保存/刷新回显；设置
   `COMMON_AGENT_E2E_SUITE=workflow-run-ui` 时通过正式页面验收真实百炼完成、协作停止、真实
   RAGFlow 失效失败和刷新摘要恢复。各套件都负责唯一测试数据、预置测试 Seed、本轮
-  Playwright/前后端进程和成功产物清理。
+  Playwright/前后端进程和成功产物清理；`COMMON_AGENT_E2E_DOCKER_CONTEXT` 可让同一脚本在
+  GitHub Runner 的 `default` Docker context 下运行 Demo 门禁。

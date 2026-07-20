@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANAGER="${SCRIPT_DIR}/manage.sh"
+TEST_DOCKER_CONTEXT="${COMMON_AGENT_TEST_DOCKER_CONTEXT:-colima}"
 
 fail() {
   echo "$1" >&2
@@ -28,7 +29,7 @@ if rg --color=never --quiet 'compose up -d --wait' "${MANAGER}"; then
   fail "平台 MySQL 不得依赖会被瞬态 unhealthy 提前打断的 Compose --wait"
 fi
 
-CONFIG="$(PLATFORM_DOCKER_CONTEXT=colima "${MANAGER}" config)"
+CONFIG="$(PLATFORM_DOCKER_CONTEXT="${TEST_DOCKER_CONTEXT}" "${MANAGER}" config)"
 rg --color=never --quiet '^name: common-agent-platform-dev$' <<< "${CONFIG}"
 rg --color=never --quiet 'container_name: common-agent-platform-mysql' <<< "${CONFIG}"
 rg --color=never --quiet 'image: mysql:8\.4\.10' <<< "${CONFIG}"

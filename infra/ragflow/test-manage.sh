@@ -7,6 +7,7 @@ MANAGER="${SCRIPT_DIR}/manage.sh"
 VERSION="$(tr -d '[:space:]' < "${SCRIPT_DIR}/VERSION")"
 SUBMODULE_ROOT="${REPOSITORY_ROOT}/third_party/ragflow"
 EXPECTED_COMMIT="$(tr -d '[:space:]' < "${SCRIPT_DIR}/UPSTREAM_COMMIT")"
+TEST_DOCKER_CONTEXT="${COMMON_AGENT_TEST_DOCKER_CONTEXT:-colima}"
 
 fail() {
   echo "$1" >&2
@@ -80,7 +81,7 @@ CONFIG="$(
   BAILIAN_API_KEY=fixture-bailian-secret \
     BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1 \
     BAILIAN_MODEL=qwen-plus \
-    RAGFLOW_DOCKER_CONTEXT=colima \
+    RAGFLOW_DOCKER_CONTEXT="${TEST_DOCKER_CONTEXT}" \
     "${MANAGER}" config
 )"
 

@@ -9,6 +9,7 @@ API_PORT=18200
 FRONTEND_PORT=18280
 RAGFLOW_BASE_URL="http://127.0.0.1:19380"
 E2E_SUITE="${COMMON_AGENT_E2E_SUITE:-platform}"
+DOCKER_CONTEXT_NAME="${COMMON_AGENT_E2E_DOCKER_CONTEXT:-colima-common-agent-dev}"
 RUN_ID="$(date -u +%Y%m%d%H%M%S)-$$"
 COMMON_AGENT_E2E_KNOWLEDGE_NAME="common-agent-k2-06-${RUN_ID}"
 COMMON_AGENT_E2E_EMPLOYEE_NAME="common-agent-e3-05-employee-${RUN_ID}"
@@ -189,10 +190,11 @@ mkdir -p "${ARTIFACT_ROOT}"
   cd "${FRONTEND_ROOT}"
   pnpm exec playwright install chromium-headless-shell
 )
-if [[ "$(docker --context colima-common-agent-dev inspect \
+if [[ "$(docker --context "${DOCKER_CONTEXT_NAME}" inspect \
   --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
   common-agent-platform-mysql 2>/dev/null || true)" != "running healthy" ]]; then
-  "${REPOSITORY_ROOT}/infra/platform/manage.sh" up
+  PLATFORM_DOCKER_CONTEXT="${DOCKER_CONTEXT_NAME}" \
+    "${REPOSITORY_ROOT}/infra/platform/manage.sh" up
 fi
 export COMMON_AGENT_DATABASE_URL
 if [[ "${E2E_SUITE}" != "demo-chat" ]]; then
