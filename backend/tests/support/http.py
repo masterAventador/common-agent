@@ -7,6 +7,8 @@ import sys
 import time
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from pathlib import Path
+from typing import IO
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 from uuid import UUID
@@ -34,16 +36,20 @@ def running_api(
     database_url: str,
     *,
     env_overrides: Mapping[str, str] | None = None,
+    log_path: Path | None = None,
 ) -> Iterator[str]:
     port = available_port()
-    process = _start_api(database_url, port, env_overrides)
+    log_file = log_path.open("w+", encoding="utf-8") if log_path is not None else None
+    process = _start_api(database_url, port, env_overrides, stdout=log_file)
     base_url = f"http://127.0.0.1:{port}"
 
     try:
-        _wait_for_api(process, base_url)
+        _wait_for_api(process, base_url, startup_log=log_file)
         yield base_url
     finally:
         _stop_api(process)
+        if log_file is not None:
+            log_file.close()
 
 
 @contextmanager
@@ -74,6 +80,8 @@ def _start_api(
     database_url: str,
     port: int,
     env_overrides: Mapping[str, str] | None,
+    *,
+    stdout: IO[str] | int | None = subprocess.PIPE,
 ) -> subprocess.Popen[str]:
     env = os.environ.copy()
     env["COMMON_AGENT_DATABASE_URL"] = database_url
@@ -91,18 +99,30 @@ def _start_api(
             "--port",
             str(port),
         ],
-        stdout=subprocess.PIPE,
+        stdout=stdout,
         stderr=subprocess.STDOUT,
         text=True,
         env=env,
     )
 
 
-def _wait_for_api(process: subprocess.Popen[str], base_url: str) -> None:
+def _wait_for_api(
+    process: subprocess.Popen[str],
+    base_url: str,
+    *,
+    startup_log: IO[str] | None = None,
+) -> None:
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            output = process.stdout.read() if process.stdout else ""
+            if process.stdout is not None:
+                output = process.stdout.read()
+            elif startup_log is not None:
+                startup_log.flush()
+                startup_log.seek(0)
+                output = startup_log.read()
+            else:
+                output = ""
             pytest.fail(f"Uvicorn exited before becoming ready:\n{output}")
         try:
             with urlopen(f"{base_url}/api/v1/system/health", timeout=0.25):

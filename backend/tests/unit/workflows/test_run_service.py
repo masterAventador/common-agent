@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 from collections.abc import AsyncIterator
+from io import StringIO
 from uuid import UUID, uuid4
 
 import pytest
@@ -31,6 +34,7 @@ from common_agent.models.base import (
     ModelStreamDelta,
     ModelStreamEvent,
 )
+from common_agent.observability import JsonLogFormatter
 from common_agent.workflows.events import WorkflowEventBroker, WorkflowEventKind
 from common_agent.workflows.execution import (
     CompiledWorkflow,
@@ -111,6 +115,14 @@ async def _terminal(service: WorkflowService, run_id: UUID) -> WorkflowRun:
 
 
 def test_manual_run_persists_each_node_then_completed_summary_and_events() -> None:
+    output = StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(JsonLogFormatter())
+    logger = logging.getLogger("common_agent.workflows")
+    previous_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
     async def exercise() -> None:
         service, units, broker, _ = _service()
         workflow = await service.create(workflow_configuration())
@@ -144,7 +156,21 @@ def test_manual_run_persists_each_node_then_completed_summary_and_events() -> No
         ]
         assert units.commit_count >= 6
 
-    asyncio.run(exercise())
+    try:
+        asyncio.run(exercise())
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+
+    records = [json.loads(line) for line in output.getvalue().splitlines()]
+    started = next(record for record in records if record["event"] == "workflow.run.started")
+    finished = next(record for record in records if record["event"] == "workflow.run.finished")
+    assert started["workflow_id"] == finished["workflow_id"]
+    assert started["run_id"] == finished["run_id"]
+    assert started["status"] == "running"
+    assert finished["status"] == "completed"
+    assert finished["error_code"] is None
+    assert finished["duration_ms"] >= 0
 
 
 def test_wait_for_run_rejects_unknown_run() -> None:

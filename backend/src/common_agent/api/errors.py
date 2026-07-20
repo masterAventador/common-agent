@@ -48,6 +48,7 @@ def _response(
     status_code: int,
     retryable: bool,
 ) -> JSONResponse:
+    request.state.error_code = code
     envelope = ErrorEnvelope(
         code=code,
         message=message,

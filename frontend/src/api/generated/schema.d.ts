@@ -180,6 +180,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Metrics */
+        get: operations["metrics_api_v1_system_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/status": {
         parameters: {
             query?: never;
@@ -628,6 +645,15 @@ export interface components {
             /** Version */
             version: string | null;
         };
+        /** LatencyMetricsResponse */
+        LatencyMetricsResponse: {
+            /** Count */
+            count: number;
+            /** Maximum */
+            maximum: number;
+            /** Total */
+            total: number;
+        };
         /** MessageResponse */
         MessageResponse: {
             /** Citations */
@@ -671,6 +697,24 @@ export interface components {
          * @enum {string}
          */
         MessageStatus: "pending" | "streaming" | "completed" | "failed" | "stopped";
+        /** MetricsResponse */
+        MetricsResponse: {
+            /** Errors By Code */
+            errors_by_code: {
+                [key: string]: number;
+            };
+            latency_ms: components["schemas"]["LatencyMetricsResponse"];
+            /** Requests In Flight */
+            requests_in_flight: number;
+            /** Requests Total */
+            requests_total: number;
+            /** Responses By Status */
+            responses_by_status: {
+                [key: string]: number;
+            };
+            /** Uptime Seconds */
+            uptime_seconds: number;
+        };
         /**
          * ModelConfigurationStatus
          * @enum {string}
@@ -1818,6 +1862,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    metrics_api_v1_system_metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricsResponse"];
                 };
             };
         };

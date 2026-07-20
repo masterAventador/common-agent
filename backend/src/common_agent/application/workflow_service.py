@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
+from time import monotonic
 from uuid import UUID
 
 from common_agent.domain.workflow import (
@@ -19,6 +21,7 @@ from common_agent.domain.workflow_run import (
 )
 from common_agent.knowledge.base import KnowledgeBaseNotFound
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.observability import bind_observation_context, log_event
 from common_agent.ports.workflows import WorkflowRunAlreadyExists, WorkflowUnitOfWorkFactory
 from common_agent.workflows.errors import WorkflowExecutionStopped
 from common_agent.workflows.events import WorkflowEventBroker, WorkflowEventKind
@@ -34,6 +37,8 @@ from common_agent.workflows.validator import (
     WorkflowValidationIssue,
     validate_workflow_graph,
 )
+
+_LOGGER = logging.getLogger("common_agent.workflows")
 
 
 class WorkflowServiceError(Exception):
@@ -305,25 +310,51 @@ class WorkflowService:
         run: WorkflowRun,
         stop: WorkflowExecutionStopToken,
     ) -> None:
-        try:
-            compiler = self._workflow_compiler
-            result = await compiler.compile(workflow).invoke(
-                run.input,
-                observer=_WorkflowRunObserver(self, run.id),
-                stop=stop,
-            )
-            await self._persist_completed(run.id, result)
-        except WorkflowExecutionStopped:
-            await self._persist_stopped(run.id)
-        except asyncio.CancelledError:
-            stop.request_stop()
-            await self._persist_stopped(run.id)
-            raise
-        except Exception as error:
-            await self._persist_failure(run.id, _safe_run_error_code(error))
-        finally:
-            async with self._run_locks[run.id]:
-                self._active_runs.pop(run.id, None)
+        started_at = monotonic()
+        outcome_status = "failed"
+        outcome_error: str | None = "workflow_execution_failed"
+        origin = run.origin
+        with bind_observation_context(
+            conversation_id=origin.conversation_id if origin is not None else None,
+            message_id=origin.assistant_message_id if origin is not None else None,
+            workflow_id=workflow.id,
+            run_id=run.id,
+        ):
+            log_event(_LOGGER, "workflow.run.started", status="running")
+            try:
+                compiler = self._workflow_compiler
+                result = await compiler.compile(workflow).invoke(
+                    run.input,
+                    observer=_WorkflowRunObserver(self, run.id),
+                    stop=stop,
+                )
+                await self._persist_completed(run.id, result)
+                outcome_status = "completed"
+                outcome_error = None
+            except WorkflowExecutionStopped:
+                outcome_status = "stopped"
+                outcome_error = None
+                await self._persist_stopped(run.id)
+            except asyncio.CancelledError:
+                outcome_status = "stopped"
+                outcome_error = None
+                stop.request_stop()
+                await self._persist_stopped(run.id)
+                raise
+            except Exception as error:
+                outcome_error = _safe_run_error_code(error)
+                await self._persist_failure(run.id, outcome_error)
+            finally:
+                log_event(
+                    _LOGGER,
+                    "workflow.run.finished",
+                    level=(logging.ERROR if outcome_status == "failed" else logging.INFO),
+                    status=outcome_status,
+                    error_code=outcome_error,
+                    duration_ms=max(0.0, (monotonic() - started_at) * 1000),
+                )
+                async with self._run_locks[run.id]:
+                    self._active_runs.pop(run.id, None)
 
     async def _persist_node_started(self, run_id: UUID, node_id: str) -> None:
         await self._transition_and_publish(

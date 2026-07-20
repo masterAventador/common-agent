@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from uuid import uuid4
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import RequestResponseEndpoint
 
 from common_agent import __version__
 from common_agent.adapters.agent.deep_agents import DeepAgentsEmployeeRuntime
@@ -29,6 +27,7 @@ from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeUnitOf
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.api.errors import error_handlers
+from common_agent.api.observability import observe_http_request
 from common_agent.api.routers import (
     conversation_router,
     employee_router,
@@ -52,6 +51,7 @@ from common_agent.employees.seeds import seed_default_employee
 from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.models.base import TextStreamingModel
+from common_agent.observability import MetricsRegistry, configure_json_logging
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
 
@@ -156,6 +156,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    configure_json_logging()
     database = Database(DatabaseSettings.from_env().url)
     cors = CorsSettings.from_env()
     integration_mode = IntegrationModeSettings.from_env()
@@ -166,6 +167,7 @@ def create_app() -> FastAPI:
         exception_handlers=error_handlers(),
     )
     app.state.database = database
+    app.state.metrics = MetricsRegistry()
     app.state.integration_mode = integration_mode
     app.state.ragflow_settings = (
         RagFlowSettings.from_env() if integration_mode.mode == "real" else None
@@ -178,13 +180,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.middleware("http")
-    async def add_request_id(request: Request, call_next: RequestResponseEndpoint) -> Response:
-        request_id = str(uuid4())
-        request.state.request_id = request_id
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+    app.middleware("http")(observe_http_request)
 
     app.include_router(system_router)
     app.include_router(knowledge_router)

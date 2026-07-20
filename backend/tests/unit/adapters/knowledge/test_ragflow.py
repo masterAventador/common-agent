@@ -26,6 +26,7 @@ from common_agent.knowledge.base import (
     KnowledgeService,
     KnowledgeServiceUnavailable,
 )
+from common_agent.observability import bind_observation_context
 
 
 def _run[Result](awaitable: Coroutine[Any, Any, Result]) -> Result:
@@ -48,6 +49,36 @@ def test_owned_ragflow_client_ignores_system_proxy(monkeypatch: pytest.MonkeyPat
     )
 
     assert client_options["trust_env"] is False
+
+
+def test_ragflow_requests_forward_trace_context_without_exposing_credentials() -> None:
+    captured: httpx.Request | None = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured
+        captured = request
+        return httpx.Response(200, json={"code": 0, "data": "v0.25.6"})
+
+    async def scenario() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://ragflow") as client:
+            service = RagFlowKnowledgeService(
+                base_url="http://ragflow",
+                api_key="private-ragflow-key",
+                expected_version="v0.25.6",
+                client=client,
+            )
+            with bind_observation_context(
+                request_id="request-1",
+                traceparent="00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            ):
+                await service.status()
+
+    _run(scenario())
+    assert captured is not None
+    assert captured.headers["traceparent"].startswith("00-4bf92f3577b34da6a3ce929d0e0e4736-")
+    assert captured.headers["x-request-id"] == "request-1"
+    assert captured.headers["authorization"] == "Bearer private-ragflow-key"
 
 
 def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:

@@ -28,6 +28,7 @@ from common_agent.knowledge.base import (
     KnowledgeServiceError,
     KnowledgeServiceUnavailable,
 )
+from common_agent.observability import outbound_trace_headers
 
 
 class _RagFlowEnvelope(BaseModel):
@@ -297,7 +298,7 @@ class RagFlowKnowledgeService:
             response = await self._client.request(
                 method,
                 path,
-                headers=self._headers,
+                headers={**self._headers, **outbound_trace_headers()},
                 **kwargs,
             )
         except httpx.HTTPError as error:

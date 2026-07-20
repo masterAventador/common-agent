@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
+from time import monotonic
 from typing import Protocol
 from uuid import UUID, uuid4
 
@@ -17,6 +19,7 @@ from common_agent.domain.conversation import (
 )
 from common_agent.domain.employee import Employee
 from common_agent.knowledge.retrieval import ResolvedKnowledgeContext
+from common_agent.observability import bind_observation_context, log_event
 from common_agent.ports.conversations import (
     ConversationAlreadyExists,
     ConversationUnitOfWorkFactory,
@@ -33,6 +36,8 @@ from common_agent.runtimes.base import (
     RuntimeEventKind,
     RuntimeStopToken,
 )
+
+_LOGGER = logging.getLogger("common_agent.conversations")
 
 
 class ConversationServiceError(Exception):
@@ -404,67 +409,97 @@ class ConversationService:
         assistant_message: Message,
         stop: RuntimeStopToken,
     ) -> None:
-        try:
-            resolved = await self._knowledge.resolve(employee, user_message)
-            request = EmployeeRuntimeRequest(
-                conversation_id=conversation.id,
-                employee_id=employee.id,
-                assistant_message_id=assistant_message.id,
-                assistant_sequence_number=assistant_message.sequence_number,
-                system_instruction=employee.system_prompt,
-                history=_runtime_history(history, assistant_message),
-                knowledge_base_id=resolved.knowledge_base_id,
-                knowledge_context=resolved.runtime_chunks,
-                allowed_workflow_ids=employee.allowed_workflow_ids,
-            )
-            last_sequence = 0
-            async for event in self._runtime.stream(request, stop=stop):
-                if stop.is_requested and event.kind is not RuntimeEventKind.STOPPED:
+        started_at = monotonic()
+        outcome_status = "failed"
+        outcome_error: str | None = "generation_failed"
+        with bind_observation_context(
+            conversation_id=conversation.id,
+            message_id=assistant_message.id,
+            turn_id=turn_id,
+        ):
+            log_event(_LOGGER, "conversation.turn.started", status="running")
+            try:
+                resolved = await self._knowledge.resolve(employee, user_message)
+                request = EmployeeRuntimeRequest(
+                    conversation_id=conversation.id,
+                    employee_id=employee.id,
+                    assistant_message_id=assistant_message.id,
+                    assistant_sequence_number=assistant_message.sequence_number,
+                    system_instruction=employee.system_prompt,
+                    history=_runtime_history(history, assistant_message),
+                    knowledge_base_id=resolved.knowledge_base_id,
+                    knowledge_context=resolved.runtime_chunks,
+                    allowed_workflow_ids=employee.allowed_workflow_ids,
+                )
+                last_sequence = 0
+                async for event in self._runtime.stream(request, stop=stop):
+                    if stop.is_requested and event.kind is not RuntimeEventKind.STOPPED:
+                        outcome_status = "stopped"
+                        outcome_error = None
+                        await self._persist_stopped(turn_id, assistant_message.id)
+                        return
+                    if (
+                        event.assistant_message_id != assistant_message.id
+                        or event.sequence <= last_sequence
+                    ):
+                        outcome_error = "runtime_response_invalid"
+                        await self._persist_failure(
+                            turn_id,
+                            assistant_message.id,
+                            outcome_error,
+                        )
+                        return
+                    last_sequence = event.sequence
+                    terminal_message = await self._persist_runtime_event(
+                        turn_id=turn_id,
+                        event=event,
+                        citations=resolved.citations,
+                    )
+                    if terminal_message is not None:
+                        outcome_status = terminal_message.status.value
+                        outcome_error = terminal_message.error_code
+                        return
+                if stop.is_requested:
+                    outcome_status = "stopped"
+                    outcome_error = None
                     await self._persist_stopped(turn_id, assistant_message.id)
-                    return
-                if (
-                    event.assistant_message_id != assistant_message.id
-                    or event.sequence <= last_sequence
-                ):
+                else:
+                    outcome_error = "runtime_stream_interrupted"
                     await self._persist_failure(
                         turn_id,
                         assistant_message.id,
-                        "runtime_response_invalid",
+                        outcome_error,
                     )
-                    return
-                last_sequence = event.sequence
-                terminal = await self._persist_runtime_event(
-                    turn_id=turn_id,
-                    event=event,
-                    citations=resolved.citations,
-                )
-                if terminal:
-                    return
-            if stop.is_requested:
+            except asyncio.CancelledError:
+                outcome_status = "stopped"
+                outcome_error = None
                 await self._persist_stopped(turn_id, assistant_message.id)
-            else:
-                await self._persist_failure(
-                    turn_id,
-                    assistant_message.id,
-                    "runtime_stream_interrupted",
+                raise
+            except Exception as error:
+                if stop.is_requested:
+                    outcome_status = "stopped"
+                    outcome_error = None
+                    await self._persist_stopped(turn_id, assistant_message.id)
+                else:
+                    outcome_error = _safe_error_code(error)
+                    await self._persist_failure(
+                        turn_id,
+                        assistant_message.id,
+                        outcome_error,
+                    )
+            finally:
+                log_event(
+                    _LOGGER,
+                    "conversation.turn.finished",
+                    level=(logging.ERROR if outcome_status == "failed" else logging.INFO),
+                    status=outcome_status,
+                    error_code=outcome_error,
+                    duration_ms=max(0.0, (monotonic() - started_at) * 1000),
                 )
-        except asyncio.CancelledError:
-            await self._persist_stopped(turn_id, assistant_message.id)
-            raise
-        except Exception as error:
-            if stop.is_requested:
-                await self._persist_stopped(turn_id, assistant_message.id)
-            else:
-                await self._persist_failure(
-                    turn_id,
-                    assistant_message.id,
-                    _safe_error_code(error),
-                )
-        finally:
-            async with self._locks[conversation.id]:
-                active = self._active.get(conversation.id)
-                if active is not None and active.turn_id == turn_id:
-                    self._active.pop(conversation.id, None)
+                async with self._locks[conversation.id]:
+                    active = self._active.get(conversation.id)
+                    if active is not None and active.turn_id == turn_id:
+                        self._active.pop(conversation.id, None)
 
     async def _persist_runtime_event(
         self,
@@ -472,13 +507,13 @@ class ConversationService:
         turn_id: UUID,
         event: RuntimeEvent,
         citations: tuple[Citation, ...],
-    ) -> bool:
+    ) -> Message | None:
         async with self._unit_of_work_factory() as unit_of_work:
             current = await unit_of_work.messages.get(event.assistant_message_id)
             if current is None:
                 raise MessageNotFound
             if current.is_terminal:
-                return True
+                return current
 
             if event.kind is RuntimeEventKind.DELTA:
                 updated = current.append_delta(event.delta or "")
@@ -503,7 +538,7 @@ class ConversationService:
             kind=kind,
             delta=event.delta if event.kind is RuntimeEventKind.DELTA else None,
         )
-        return event.kind is not RuntimeEventKind.DELTA
+        return updated if event.kind is not RuntimeEventKind.DELTA else None
 
     async def _persist_failure(
         self,

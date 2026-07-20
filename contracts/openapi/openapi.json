@@ -693,6 +693,30 @@
         "title": "KnowledgeStatusResponse",
         "type": "object"
       },
+      "LatencyMetricsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "maximum": {
+            "title": "Maximum",
+            "type": "number"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "count",
+          "total",
+          "maximum"
+        ],
+        "title": "LatencyMetricsResponse",
+        "type": "object"
+      },
       "MessageResponse": {
         "additionalProperties": false,
         "properties": {
@@ -782,6 +806,50 @@
         ],
         "title": "MessageStatus",
         "type": "string"
+      },
+      "MetricsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "errors_by_code": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Errors By Code",
+            "type": "object"
+          },
+          "latency_ms": {
+            "$ref": "#/components/schemas/LatencyMetricsResponse"
+          },
+          "requests_in_flight": {
+            "title": "Requests In Flight",
+            "type": "integer"
+          },
+          "requests_total": {
+            "title": "Requests Total",
+            "type": "integer"
+          },
+          "responses_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Responses By Status",
+            "type": "object"
+          },
+          "uptime_seconds": {
+            "title": "Uptime Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "uptime_seconds",
+          "requests_in_flight",
+          "requests_total",
+          "responses_by_status",
+          "errors_by_code",
+          "latency_ms"
+        ],
+        "title": "MetricsResponse",
+        "type": "object"
       },
       "ModelConfigurationStatus": {
         "enum": [
@@ -2628,6 +2696,27 @@
           }
         },
         "summary": "Health",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/system/metrics": {
+      "get": {
+        "operationId": "metrics_api_v1_system_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Metrics",
         "tags": [
           "system"
         ]

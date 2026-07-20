@@ -10,6 +10,7 @@ from common_agent.application.system_service import (
     SystemService,
 )
 from common_agent.domain.knowledge import KnowledgeServiceAvailability
+from common_agent.observability import MetricsRegistry
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
 
@@ -50,6 +51,25 @@ class SystemStatusResponse(BaseModel):
     knowledge: KnowledgeStatusResponse
 
 
+class LatencyMetricsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    count: int
+    total: float
+    maximum: float
+
+
+class MetricsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    uptime_seconds: float
+    requests_in_flight: int
+    requests_total: int
+    responses_by_status: dict[str, int]
+    errors_by_code: dict[str, int]
+    latency_ms: LatencyMetricsResponse
+
+
 def _ensure_ready(request: Request) -> None:
     if getattr(request.app.state, "ready", False):
         return
@@ -81,6 +101,20 @@ async def health(request: Request) -> HealthResponse:
         version=__version__,
         integration_mode=integration_mode,
     )
+
+
+@router.get("/metrics", response_model=MetricsResponse)
+async def metrics(request: Request) -> MetricsResponse:
+    registry = getattr(request.app.state, "metrics", None)
+    if not isinstance(registry, MetricsRegistry):
+        raise AppError(
+            code="service_unavailable",
+            message="指标服务尚未就绪",
+            status_code=503,
+            retryable=True,
+        )
+    snapshot = registry.snapshot()
+    return MetricsResponse.model_validate(snapshot, from_attributes=True)
 
 
 @router.get(

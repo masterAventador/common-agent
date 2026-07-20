@@ -22,6 +22,7 @@ from common_agent.models.base import (
     ModelStreamDelta,
     ModelStreamInterrupted,
 )
+from common_agent.observability import bind_observation_context
 
 _TEST_SECRET = "sk-a4-02-must-not-leak"
 
@@ -140,12 +141,16 @@ def test_adapter_uses_chat_openai_and_streams_incremental_text() -> None:
             assert adapter.langchain_chat_model.stream_chunk_timeout == 1
             assert adapter.langchain_chat_model.stream_usage is False
 
-            events = [
-                event
-                async for event in adapter.stream(
-                    _request("测试", system_text="简洁回答", assistant_text="历史回答")
-                )
-            ]
+            with bind_observation_context(
+                request_id="request-1",
+                traceparent="00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            ):
+                events = [
+                    event
+                    async for event in adapter.stream(
+                        _request("测试", system_text="简洁回答", assistant_text="历史回答")
+                    )
+                ]
             assert events == [
                 ModelStreamDelta(text="通"),
                 ModelStreamDelta(text="过"),
@@ -157,6 +162,8 @@ def test_adapter_uses_chat_openai_and_streams_incremental_text() -> None:
     assert len(requests) == 1
     assert requests[0].url.path == "/compatible-mode/v1/chat/completions"
     assert requests[0].headers["authorization"] == f"Bearer {_TEST_SECRET}"
+    assert requests[0].headers["x-request-id"] == "request-1"
+    assert requests[0].headers["traceparent"].startswith("00-4bf92f3577b34da6a3ce929d0e0e4736-")
     payload = json.loads(requests[0].content)
     assert payload["stream"] is True
     assert payload["model"] == "qwen-plus"

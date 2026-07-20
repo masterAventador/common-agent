@@ -284,7 +284,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 | H7-03 | 平台自有消息与模型协议 | 定义不依赖 LangChain 的平台消息、模型请求、增量、终态、错误和释放协议；会话与工作流节点只消费平台类型；百炼与 Deep Agents 适配器负责双向转换；真实百炼、会话和工作流回归全部通过 | H7-02 | ✅ 已完成 |
 | H7-04 | 平台自有图执行协议 | 定义不依赖 LangGraph 的编译、执行、节点观察、停止和结果协议；把 LangGraph 编译器、运行状态和节点框架转换移入 `adapters/workflow/langgraph/`；`WorkflowService` 只依赖平台端口，手动与员工触发语义不变 | H7-03 | ✅ 已完成 |
 | H7-05 | 第三方依赖边界门禁 | 增加可自动执行的 import/AST 架构测试；除 `api/` 的 FastAPI 边界和 `adapters/` 外，生产平台层不得导入 FastAPI、SQLAlchemy、HTTP SDK、LangChain、LangGraph、Deep Agents 或供应商类型；修正规则和架构文档与实现口径 | H7-04 | ✅ 已完成 |
-| H7-06 | 结构化日志、指标与追踪 | 统一 JSON 日志和关联上下文，覆盖 request/conversation/message/turn/workflow/run ID、耗时、状态与稳定错误码；提供本机最小健康/指标入口和跨服务 trace context；默认脱敏提示词、知识正文、Key、密码和上游响应，故障测试证明可定位且不泄密 | H7-05 | ⬜ 未开始 |
+| H7-06 | 结构化日志、指标与追踪 | 统一 JSON 日志和关联上下文，覆盖 request/conversation/message/turn/workflow/run ID、耗时、状态与稳定错误码；提供本机最小健康/指标入口和跨服务 trace context；默认脱敏提示词、知识正文、Key、密码和上游响应，故障测试证明可定位且不泄密 | H7-05 | ✅ 已完成 |
 | H7-07 | 事件与锁状态生命周期 | 为会话/工作流 Broker 历史、订阅者、per-ID 锁和终态状态增加有界容量、TTL/LRU 与安全回收；保留允许的 SSE 回放窗口，慢消费者和历史缺口语义不变；通过大量短会话/运行及长时间 soak 证明内存最终回落且无活跃状态误删 | H7-06 | ⬜ 未开始 |
 | H7-08 | 核心大文件按职责拆分 | 在既有行为测试保护下拆分 ChatPage、WorkflowsPage、ConversationService、WorkflowService 和大型路由；页面容器只做编排，消息/运行/设计器状态与协议映射独立；服务按用例/运行协调/持久化投影分责，禁止循环依赖和跨 Feature 私有导入 | H7-07 | ⬜ 未开始 |
 | H7-09 | 前端包体与加载性能 | 建立 bundle 分析和预算门禁，路由与稳定 vendor 合理拆分；任何初始或异步单 chunk 不超过 500 kB，四入口真实浏览器首屏、交互和缓存复用无回归；不得仅调高 warning 阈值 | H7-08 | ⬜ 未开始 |
@@ -337,14 +337,15 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 ## 18. 当前下一步
 
-R8-00、D8-01、D8-02、D8-03、H7-01、H7-02、H7-03、H7-04、H7-05 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
+R8-00、D8-01、D8-02、D8-03、H7-01、H7-02、H7-03、H7-04、H7-05、H7-06 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
 embedding/rerank 统一使用阿里百炼，本地模型退场；全新克隆可由统一入口进入 12 GiB
 `demo-light`，Demo 知识、员工绑定与会话引用在后端重启后保持一致；`real` 可按需切到暂定
 32 GiB，完成脱敏体检、费用诊断、真实纵向门禁和跨 Colima 重启恢复；本机质量门禁已经冻结，
 GitHub Hosted Runner 只作可选镜像、不作为验收依赖；前后端行/分支覆盖率已建立本机不回退门禁；
 平台消息/模型/图执行协议不再暴露 LangChain、OpenAI、Deep Agents 或 LangGraph 类型，生产
-第三方 import 和平台内部依赖方向由关闭失败的统一 AST 门禁约束。下一任务进入 H7-06，建立
-结构化日志、指标、关联上下文和脱敏追踪；R8-04 仍独立负责 32 GiB 的峰值
+第三方 import 和平台内部依赖方向由关闭失败的统一 AST 门禁约束；正式 API、会话、工作流及
+RAGFlow/百炼出站已具备脱敏 JSON 日志、有界进程指标和关联追踪。下一任务进入 H7-07，治理
+事件历史、订阅者、per-ID 锁与终态状态的有界生命周期；R8-04 仍独立负责 32 GiB 的峰值
 与 30 分钟 soak，不用 D8-03 的功能通过冒充长期资源验收。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
 
@@ -1229,3 +1230,18 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - 清理：Demo 和 real 用例 finally 已删除唯一会话、员工、知识库和工作流数据；无头浏览器、Vite、Uvicorn、平台/RAGFlow 容器和项目专属 Colima 已停止，18200/18280 无监听。前端 dist/覆盖率/tsbuildinfo、后端覆盖率数据已精确删除；稳定数据、0600 Token、冻结依赖和官方镜像保留
 - 文档：`docs/backend-architecture.md` 与 `docs/project-structure.md` 同步唯一依赖矩阵、装配根、启动边界和架构测试归属；进度、命令、真实边界和清理只写入本路线图，产品范围没有变化
 - 遗留：无；下一任务 H7-06 统一 JSON 日志、关联上下文、健康/指标和跨服务 trace context，并用故障测试证明可定位且不泄漏提示词、知识正文、Key、密码或上游响应
+
+### H7-06 结构化日志、指标与追踪
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增平台关联、JSON 脱敏和有界指标单元测试，首次收集因 `common_agent.observability` 不存在按预期失败；再启动正式 Uvicorn/MySQL，首轮在健康响应缺少 `traceparent` 处按预期失败，证明既有中间件只有随机请求 ID，没有追踪、指标或结构化请求完成事件
+- 关联上下文：平台标准库模块实现可嵌套 ContextVar 上下文，接受合法 W3C `00` 版 `traceparent`、拒绝全零/非法值并安全生成本地 trace/span；响应同时返回 UUID `X-Request-ID` 与当前 `traceparent`。HTTP 路由模板和会话/消息/轮次/工作流/运行 ID 按白名单关联，异步后台任务继承请求 trace；RAGFlow 与百炼正式 HTTP 请求派生子 span 并透传 trace/request ID，认证 header 保持适配层私有
+- 日志与故障：Uvicorn、应用和应用内 Alembic 统一单行 JSON，包含 UTC 时间、级别、logger、稳定事件、源码、状态、耗时与稳定错误码；会话和工作流各写 started/finished 生命周期。字段与自由文本共同脱敏 prompt、query/content/body、知识/文档正文、Key、Authorization/Token、密码、Secret 和上游响应；未知异常只写异常类型，并由观测中间件返回带同一请求/trace ID 的稳定 `internal_error`。末次在已停止 MySQL 上复验真实发现 Uvicorn 把启动 traceback 当作普通多行 message，虽然保持 JSON 却暴露本机路径；新增关闭失败测试后把多行 traceback 收敛为安全占位并只保留异常类型，不输出异常消息、堆栈正文或路径
+- 指标：新增 `GET /api/v1/system/metrics` 进程内 JSON 快照，提供 uptime、in-flight、请求总数、2xx-5xx 桶、稳定错误码与延迟 count/total/maximum；错误码集合有固定容量，未知/非法或超限归入 `other`，并发更新在同一锁内完成。指标入口自身不污染快照，高基数业务 ID 和任何正文/凭据不进入标签；OpenAPI 与前端生成类型同步
+- GREEN：H7-06 关键路径定向批次分别 `62 passed`、`10 passed` 和补强后的 `24 passed`；traceback 脱敏补强后最终权威覆盖率全量 `428 passed, 12 skipped in 125.73s`。总体行 `91.18%`、分支 `73.54%`、核心行 `93.19%`、核心分支 `74.63%`，均高于冻结阈值；Ruff 与严格 Mypy 170 个源/测试文件通过，uv lock 和 83 包安全审计通过。前端 14 files/61 tests、行 `86.17%`、分支 `75.00%`，ESLint、TypeScript、Build、pnpm audit 与契约漂移通过；既有 602.76 kB chunk 警告留给 H7-09，未调高阈值
+- 生产同路径：12 GiB demo-light 正式 React/FastAPI/MySQL 两轮引用会话与中断恢复 `1 passed in 6.2s`，并由正式 Uvicorn 日志测试证明所有非空日志行均为 JSON、请求/会话/消息/轮次可关联且请求正文不泄漏。临时 32 GiB real 复用官方 RAGFlow v0.25.6 镜像，embedding/rerank 均为百炼 ready、本地模型 absent；显式真实百炼、Deep Agents、会话 SSE、RAGFlow+百炼编译、手动运行与员工工具共 `6 passed in 38.57s`，没有使用 GitHub Runner 结果
+- 失败矩阵：覆盖非法 traceparent、嵌套上下文恢复、出站子 span、内部异常、422 稳定错误、敏感结构字段与自由文本、错误码基数上限、指标并发安全、正式日志纯 JSON、会话/工作流完成关联，以及既有认证、超时、断流、停止和真实供应商链路；测试不把提示词、知识正文、Key、密码或上游响应写入失败输出
+- 清理与边界：Demo/real 用例 finally 已清理本轮会话、员工、知识库和工作流数据；前后端、Playwright、平台/RAGFlow 容器和项目专属 Colima 已停止，18200/18280 无监听，稳定数据、固定镜像、冻结依赖与 0600 Token 保留。RAGFlow 官方 submodule 与源码未修改；指标是本机进程诊断而非持久审计/跨实例聚合，审计与生产指标仍由 Wave 10 对应任务交付
+- 遗留：无；下一任务 H7-07 为事件历史、订阅者、per-ID 锁和终态状态增加有界容量、TTL/LRU 与安全回收，并以压力/soak 证明内存回落且不误删活跃状态

@@ -22,6 +22,7 @@ from common_agent.models.base import (
     ModelStreamEvent,
     ModelStreamInterrupted,
 )
+from common_agent.observability import outbound_trace_headers
 
 
 class BailianChatModelAdapter:
@@ -36,11 +37,16 @@ class BailianChatModelAdapter:
         self._owns_async_client = http_async_client is None
         self._closed = False
         active_async_client = (
-            http_async_client if http_async_client is not None else httpx.AsyncClient()
+            http_async_client
+            if http_async_client is not None
+            else httpx.AsyncClient(
+                event_hooks={"request": [_inject_async_trace_context]},
+            )
         )
         self._chat_model = _create_chat_model(
             settings,
             http_async_client=active_async_client,
+            http_client=httpx.Client(event_hooks={"request": [_inject_trace_context]}),
         )
 
     @property
@@ -59,7 +65,10 @@ class BailianChatModelAdapter:
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         emitted: list[str] = []
         try:
-            async for chunk in self._chat_model.astream(_langchain_messages(request)):
+            async for chunk in self._chat_model.astream(
+                _langchain_messages(request),
+                extra_headers=outbound_trace_headers(),
+            ):
                 text = _text_content(chunk.content)
                 if text:
                     emitted.append(text)
@@ -120,6 +129,7 @@ def _create_chat_model(
     settings: ModelSettings,
     *,
     http_async_client: httpx.AsyncClient,
+    http_client: httpx.Client,
 ) -> ChatOpenAI:
     return ChatOpenAI(
         model=settings.model,
@@ -131,9 +141,17 @@ def _create_chat_model(
         streaming=True,
         stream_usage=False,
         use_responses_api=False,
-        http_client=httpx.Client(),
+        http_client=http_client,
         http_async_client=http_async_client,
     )
+
+
+def _inject_trace_context(request: httpx.Request) -> None:
+    request.headers.update(outbound_trace_headers())
+
+
+async def _inject_async_trace_context(request: httpx.Request) -> None:
+    request.headers.update(outbound_trace_headers())
 
 
 def _known_model_error(error: Exception) -> ModelServiceError | None:

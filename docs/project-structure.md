@@ -42,6 +42,7 @@ backend/
 │       │   │   ├── workflows.py
 │       │   │   └── workflow_runs.py
 │       │   ├── app.py            # FastAPI 组合根
+│       │   ├── observability.py  # HTTP 关联、请求日志和进程内指标边界
 │       │   └── server.py         # Uvicorn 进程边界
 │       ├── application/         # 平台用例编排
 │       │   └── workflow_service.py
@@ -56,6 +57,7 @@ backend/
 │       ├── models/              # 平台自有消息、模型流、错误和释放协议
 │       │   ├── base.py
 │       │   └── prompts.py
+│       ├── observability/       # 平台 JSON 日志、关联上下文和有界指标
 │       ├── runtimes/            # EmployeeRuntime 协议
 │       │   └── base.py
 │       ├── workflows/           # 平台工作流协议、校验、节点与事件
@@ -98,7 +100,9 @@ api -> application -> domain
           +-> knowledge-+
 ```
 
-- `api/` 只负责 HTTP/SSE、参数校验和错误转换；
+- `api/` 只负责 HTTP/SSE、参数校验、错误转换和 HTTP 可观测边界；
+- `observability/` 只用标准库定义 JSON 日志、W3C trace context 与进程内有界指标；业务服务
+  绑定平台会话/工作流 ID，外围 HTTP 适配器负责把 trace context 传给 RAGFlow 与百炼；
 - `application/` 分别负责“发送消息并生成回复”和“触发工作流”用例；
 - `domain/` 不导入 FastAPI、Deep Agents、LangGraph 或 RAGFlow；
 - `models/` 定义平台自有 system/user/assistant 消息、请求、增量、完成终态、安全错误和释放协议，

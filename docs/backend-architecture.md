@@ -114,7 +114,7 @@ application --------------+
 - HTTP、multipart 上传和 SSE 边界；
 - Pydantic 请求/响应校验；
 - 应用错误到稳定错误信封的转换；
-- 请求 ID、超时和资源释放。
+- 请求 ID、W3C trace context、进程内指标、超时和资源释放。
 
 知识库上传入口只接收 TXT、Markdown、PDF、DOCX，单文件上限 20 MiB；API 分块读取到
 上限后一字节并在所有终态关闭 `UploadFile`，应用服务统一校验扩展名、MIME、空文件和大小，
@@ -383,7 +383,9 @@ LangGraph 自己的编译检查是第二道门禁，不能替代平台校验。`
 ## 7. API 基线
 
 ```text
+GET    /api/v1/system/health
 GET    /api/v1/system/status
+GET    /api/v1/system/metrics
 
 GET    /api/v1/employees
 POST   /api/v1/employees
@@ -415,6 +417,25 @@ GET    /api/v1/workflow-runs/{run_id}/events
 ```
 
 删除接口、批量操作、分页高级筛选和权限不进入第一版。
+
+### 7.1 日志、指标与追踪
+
+正式应用统一向标准输出写单行 JSON 日志，固定包含 UTC 时间、级别、logger、稳定事件名和
+源码位置；HTTP 完成事件附带方法、路由模板、状态、耗时与稳定错误码。每个请求生成
+`X-Request-ID`，接受合法 W3C `traceparent` 并建立本地 span；非法或缺失 header 安全替换，
+响应返回当前 `traceparent`。RAGFlow 与百炼外围适配器从平台上下文派生子 span 并透传
+`traceparent`/请求 ID，不把供应商 HTTP 类型带入平台层。
+
+会话后台运行绑定 `conversation_id/message_id/turn_id`，工作流绑定
+`workflow_id/run_id`，员工触发工作流同时继承会话来源；started/finished 事件只记录状态、
+耗时和稳定错误码。日志默认按字段和文本模式脱敏提示词、知识/文档正文、请求/响应正文、
+API Key、Authorization、Token、密码和 Secret；未知异常只记录异常类型，不记录异常消息或
+堆栈正文。应用内 Alembic 迁移复用同一 JSON logger，独立 Alembic CLI 仍保留其工程输出。
+
+`GET /api/v1/system/metrics` 返回当前进程启动时间、请求进行中/总数、2xx-5xx 状态桶、
+有容量上限的稳定错误码计数和延迟 count/total/maximum；指标入口自身不计入快照，避免读取
+改变所读数值。该入口是本机最小诊断面，不是持久审计、跨实例聚合或 Prometheus 兼容承诺，
+进程重启后重置；不得以高基数业务 ID、提示词、知识正文或凭据作为指标标签。
 
 ## 8. 会话与工作流事件
 
