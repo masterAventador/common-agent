@@ -11,6 +11,7 @@ from common_agent.domain.knowledge import (
     KnowledgeServiceStatus,
 )
 from common_agent.knowledge.base import KnowledgeBaseNotFound
+from common_agent.pagination import PageAnchor, PageSlice
 from common_agent.ports.knowledge import (
     DemoKnowledgeBaseAlreadyExists,
     DemoKnowledgeRepository,
@@ -40,6 +41,30 @@ class _MemoryDemoKnowledgeRepository:
             reverse=True,
         )
         return tuple(self._with_counts(value) for value in values)
+
+    async def page_knowledge_bases(
+        self,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[PersistedDemoKnowledgeBase]:
+        values = await self.list_knowledge_bases()
+        if search:
+            normalized = search.casefold()
+            values = tuple(
+                value
+                for value in values
+                if normalized
+                in f"{value.summary.id} {value.summary.name} {value.summary.description}".casefold()
+            )
+        if after is not None:
+            values = tuple(
+                value
+                for value in values
+                if (value.created_at, value.summary.id) < (after.created_at, after.id)
+            )
+        return PageSlice(items=values[:limit], has_more=len(values) > limit)
 
     async def get_knowledge_base(self, knowledge_base_id: str) -> PersistedDemoKnowledgeBase | None:
         value = self._state.bases.get(knowledge_base_id)

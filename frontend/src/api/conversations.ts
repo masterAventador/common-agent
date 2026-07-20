@@ -3,6 +3,12 @@ import { z } from "zod";
 import type { components } from "./generated/schema";
 import { apiBaseUrl, apiClient } from "./client";
 import { toApiClientError } from "./errors";
+import {
+  cursorPageSchema,
+  listPageParams,
+  type CursorPage,
+  type ListPageRequest,
+} from "./pagination";
 
 export type Conversation = components["schemas"]["ConversationResponse"];
 export type ConversationMessage = components["schemas"]["MessageResponse"];
@@ -70,7 +76,7 @@ const conversationEventSchema = z.strictObject({
   occurred_at: timestampSchema,
 });
 
-const conversationsSchema = z.array(conversationSchema);
+const conversationsSchema = cursorPageSchema(conversationSchema);
 const messagesSchema = z.array(messageSchema);
 const conversationEventTypes = [
   "assistant.started",
@@ -80,7 +86,7 @@ const conversationEventTypes = [
   "assistant.stopped",
 ] as const;
 
-export function parseConversationsResponse(data: unknown): Conversation[] {
+export function parseConversationsResponse(data: unknown): CursorPage<Conversation> {
   return conversationsSchema.parse(data);
 }
 
@@ -92,10 +98,16 @@ export function parseConversationEvent(data: unknown): ConversationEvent {
   return conversationEventSchema.parse(data);
 }
 
-export async function fetchConversations(employeeId?: string): Promise<Conversation[]> {
+export async function fetchConversations(
+  employeeId?: string,
+  page: ListPageRequest = {},
+): Promise<CursorPage<Conversation>> {
   try {
     const response = await apiClient.get<unknown>("/conversations", {
-      params: employeeId ? { employee_id: employeeId } : undefined,
+      params: {
+        ...listPageParams(page),
+        ...(employeeId ? { employee_id: employeeId } : {}),
+      },
     });
     return parseConversationsResponse(response.data);
   } catch (error) {

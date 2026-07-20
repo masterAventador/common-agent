@@ -4,7 +4,7 @@ import {
   PlayCircleOutlined,
   RobotOutlined,
 } from "@ant-design/icons";
-import { Empty, Typography } from "antd";
+import { Button, Empty, Input, Typography } from "antd";
 import type { Dispatch, DragEvent, ReactNode } from "react";
 
 import type { Workflow, WorkflowNodeType } from "../../api/workflows";
@@ -31,12 +31,22 @@ export function WorkflowSidebar({
   workflows,
   state,
   editingLocked,
+  search,
+  onSearch,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   onSelectWorkflow,
   dispatch,
 }: {
   workflows: Workflow[];
   state: WorkflowEditorState;
   editingLocked: boolean;
+  search: string;
+  onSearch: (value: string) => void;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   onSelectWorkflow: (workflow: Workflow) => void;
   dispatch: Dispatch<WorkflowEditorAction>;
 }) {
@@ -46,6 +56,13 @@ export function WorkflowSidebar({
         <Text strong>工作流列表</Text>
         <Text type="secondary">{workflows.length} 个</Text>
       </div>
+      <Input.Search
+        aria-label="搜索工作流"
+        allowClear
+        value={search}
+        placeholder="搜索工作流"
+        onChange={(event) => onSearch(event.target.value)}
+      />
       <div className="workflow-list">
         {workflows.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有已保存工作流" />
@@ -65,6 +82,11 @@ export function WorkflowSidebar({
               </Text>
             </button>
           ))
+        )}
+        {hasMore && (
+          <Button block loading={loadingMore} onClick={onLoadMore}>
+            加载更多工作流
+          </Button>
         )}
       </div>
 

@@ -48,8 +48,8 @@ def test_conversation_crud_and_errors_use_formal_uvicorn_mysql_path() -> None:
 
         assert created.status_code == 201
         assert created.json()["title"] == "正式会话"
-        assert str(conversation_id) in {item["id"] for item in listed.json()}
-        assert str(conversation_id) in {item["id"] for item in filtered.json()}
+        assert str(conversation_id) in {item["id"] for item in listed.json()["items"]}
+        assert str(conversation_id) in {item["id"] for item in filtered.json()["items"]}
         assert messages.status_code == 200
         assert messages.json() == []
         assert_error_response(duplicate, status=409, code="conversation_request_conflict")

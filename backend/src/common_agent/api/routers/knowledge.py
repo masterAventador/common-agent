@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, Request, UploadFile, status
+from fastapi import APIRouter, File, Query, Request, UploadFile, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from common_agent.api.errors import AppError, ErrorEnvelope
@@ -10,6 +10,7 @@ from common_agent.api.routers.resource_deletion import (
     resource_deletion_error,
     resource_deletion_service,
 )
+from common_agent.api.schemas.pagination import CursorPageResponse
 from common_agent.application.resource_deletion import ResourceDeletionError
 from common_agent.domain.knowledge import (
     KNOWLEDGE_BASE_DESCRIPTION_MAX_LENGTH,
@@ -36,6 +37,14 @@ from common_agent.knowledge.service import (
     MAX_DOCUMENT_SIZE_BYTES,
     KnowledgeBaseService,
     KnowledgeInputError,
+)
+from common_agent.pagination import (
+    DEFAULT_PAGE_LIMIT,
+    MAX_PAGE_CURSOR_LENGTH,
+    MAX_PAGE_LIMIT,
+    MAX_PAGE_SEARCH_LENGTH,
+    InvalidPageCursor,
+    ListPageRequest,
 )
 
 router = APIRouter(prefix="/api/v1/knowledge-bases", tags=["knowledge-bases"])
@@ -161,15 +170,31 @@ async def _read_upload(file: UploadFile) -> bytes:
 
 @router.get(
     "",
-    response_model=list[KnowledgeBaseResponse],
-    responses={503: {"model": ErrorEnvelope}, 502: {"model": ErrorEnvelope}},
+    response_model=CursorPageResponse[KnowledgeBaseResponse],
+    responses={
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+        502: {"model": ErrorEnvelope},
+    },
 )
-async def list_knowledge_bases(request: Request) -> list[KnowledgeBaseResponse]:
+async def list_knowledge_bases(
+    request: Request,
+    search: Annotated[str, Query(max_length=MAX_PAGE_SEARCH_LENGTH)] = "",
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
+    cursor: Annotated[str | None, Query(max_length=MAX_PAGE_CURSOR_LENGTH)] = None,
+) -> CursorPageResponse[KnowledgeBaseResponse]:
     try:
-        items = await _application(request).list_knowledge_bases()
+        page = await _application(request).page_knowledge_bases(
+            ListPageRequest(limit=limit, search=search, cursor=cursor)
+        )
+    except InvalidPageCursor as error:
+        raise AppError(error.code, error.message, 422, error.retryable) from error
     except KnowledgeServiceError as error:
         raise knowledge_error_to_app_error(error) from error
-    return [_knowledge_base_response(item) for item in items]
+    return CursorPageResponse(
+        items=[_knowledge_base_response(item) for item in page.items],
+        next_cursor=page.next_cursor,
+    )
 
 
 @router.post(

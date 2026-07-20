@@ -26,6 +26,7 @@ from common_agent.conversations.persistence import ConversationPersistence
 from common_agent.conversations.projection import ConversationMessageProjector
 from common_agent.conversations.runtime import ConversationRuntimeCoordinator
 from common_agent.domain.conversation import Conversation, Message
+from common_agent.pagination import CursorPage, ListPageRequest
 from common_agent.ports.conversations import ConversationUnitOfWorkFactory
 from common_agent.runtimes.base import EmployeeRuntime
 
@@ -56,6 +57,14 @@ class ConversationService:
 
     async def list(self, *, employee_id: UUID | None = None) -> tuple[Conversation, ...]:
         return await self._persistence.list(employee_id=employee_id)
+
+    async def page(
+        self,
+        page: ListPageRequest,
+        *,
+        employee_id: UUID | None = None,
+    ) -> CursorPage[Conversation]:
+        return await self._persistence.page(page, employee_id=employee_id)
 
     async def create(
         self,

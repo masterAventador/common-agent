@@ -1,9 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Modal } from "antd";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { getErrorMessage } from "../../api/errors";
 import { fetchKnowledgeBases } from "../../api/knowledge";
+import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 import {
   createWorkflow,
   deleteWorkflow,
@@ -43,21 +49,39 @@ export function useWorkflowDesigner() {
   );
   const [localValidationMessage, setLocalValidationMessage] = useState<string>();
   const [deleteNotice, setDeleteNotice] = useState<string>();
+  const [workflowSearch, setWorkflowSearch] = useState("");
+  const [knowledgeSearch, setKnowledgeSearch] = useState("");
   const runController = useWorkflowRun(state.workflowId, state.dirty);
   const activeRun = isWorkflowRunActive(runController.run);
   const visibleRun =
     runController.run?.workflow_id === state.workflowId ? runController.run : undefined;
-  const workflows = useQuery({ queryKey: ["workflows"], queryFn: fetchWorkflows });
-  const knowledgeBases = useQuery({
-    queryKey: ["knowledge-bases"],
-    queryFn: fetchKnowledgeBases,
+  const workflows = useInfiniteQuery({
+    queryKey: ["workflows", workflowSearch],
+    queryFn: ({ pageParam }) =>
+      fetchWorkflows({ search: workflowSearch, limit: 20, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+    placeholderData: keepPreviousData,
   });
+  const knowledgeBases = useInfiniteQuery({
+    queryKey: ["knowledge-bases", knowledgeSearch],
+    queryFn: ({ pageParam }) =>
+      fetchKnowledgeBases({ search: knowledgeSearch, limit: 50, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+    placeholderData: keepPreviousData,
+  });
+  const workflowItems = useMemo(() => flattenCursorPages(workflows.data), [workflows.data]);
+  const knowledgeItems = useMemo(
+    () => flattenCursorPages(knowledgeBases.data),
+    [knowledgeBases.data],
+  );
 
   useEffect(() => {
     if (initialized.current || !workflows.data) return;
     initialized.current = true;
-    if (workflows.data[0]) dispatch({ type: "workflow_loaded", workflow: workflows.data[0] });
-  }, [workflows.data]);
+    if (workflowItems[0]) dispatch({ type: "workflow_loaded", workflow: workflowItems[0] });
+  }, [workflowItems, workflows.data]);
 
   useEffect(() => {
     const restoredRun = runController.run;
@@ -71,9 +95,9 @@ export function useWorkflowDesigner() {
     }
     synchronizedRunId.current = restoredRun.id;
     if (state.workflowId === restoredRun.workflow_id) return;
-    const workflow = workflows.data.find((item) => item.id === restoredRun.workflow_id);
+    const workflow = workflowItems.find((item) => item.id === restoredRun.workflow_id);
     if (workflow) dispatch({ type: "workflow_loaded", workflow });
-  }, [runController.run, state.dirty, state.workflowId, workflows.data]);
+  }, [runController.run, state.dirty, state.workflowId, workflowItems, workflows.data]);
 
   const saveMutation = useMutation({
     mutationFn: async ({ workflowId, configuration }: SaveRequest): Promise<SaveResult> => {
@@ -88,7 +112,7 @@ export function useWorkflowDesigner() {
       dispatch({ type: "validation_received", issues: result.validation.issues });
       if (!result.workflow) return;
       dispatch({ type: "saved", workflow: result.workflow });
-      await queryClient.invalidateQueries({ queryKey: ["workflows"] });
+      await queryClient.resetQueries({ queryKey: ["workflows"] });
     },
   });
 
@@ -99,16 +123,14 @@ export function useWorkflowDesigner() {
       return workflow;
     },
     onSuccess: async (deleted) => {
-      const current = queryClient.getQueryData<Workflow[]>(["workflows"]) ?? [];
-      const remaining = current.filter((item) => item.id !== deleted.id);
-      queryClient.setQueryData(["workflows"], remaining);
+      const remaining = workflowItems.filter((item) => item.id !== deleted.id);
       runController.clear();
       if (state.workflowId === deleted.id) {
         const next = remaining[0];
         dispatch(next ? { type: "workflow_loaded", workflow: next } : { type: "new_workflow" });
       }
       setDeleteNotice(`工作流“${deleted.name}”已删除`);
-      await queryClient.invalidateQueries({ queryKey: ["workflows"] });
+      await queryClient.resetQueries({ queryKey: ["workflows"] });
     },
   });
 
@@ -162,7 +184,7 @@ export function useWorkflowDesigner() {
   };
 
   const deleteSelectedWorkflow = async () => {
-    const selected = workflows.data?.find((workflow) => workflow.id === state.workflowId);
+    const selected = workflowItems.find((workflow) => workflow.id === state.workflowId);
     if (!selected) return;
     await deleteMutation.mutateAsync(selected);
   };
@@ -175,6 +197,8 @@ export function useWorkflowDesigner() {
     deleteSelectedWorkflow,
     dispatch,
     knowledgeBases,
+    knowledgeItems,
+    knowledgeSearch,
     knowledgeError: knowledgeBases.isError ? getErrorMessage(knowledgeBases.error) : undefined,
     localValidationMessage,
     runController,
@@ -184,6 +208,10 @@ export function useWorkflowDesigner() {
     state,
     visibleRun,
     workflows,
+    workflowItems,
+    workflowSearch,
+    setKnowledgeSearch,
+    setWorkflowSearch,
   };
 }
 

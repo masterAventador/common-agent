@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.exc import DBAPIError
 
 from common_agent.adapters.persistence.database import Database
@@ -133,6 +133,51 @@ def test_workflow_repository_lists_and_atomically_replaces_graph() -> None:
     assert changed in workflows
     assert second not in workflows
     assert missing is None
+
+
+def test_workflow_page_batches_graph_loading_without_n_plus_one_queries() -> None:
+    workflows = tuple(_workflow(f"page-batch-{index}-{uuid4().hex}") for index in range(25))
+
+    async def exercise() -> tuple[int, int, bool]:
+        async with _database() as database:
+            try:
+                async with database.session() as session:
+                    repository = SqlAlchemyWorkflowRepository(session)
+                    for workflow in workflows:
+                        await repository.add(workflow)
+                    await session.commit()
+
+                async with database.session() as session:
+                    statements: list[str] = []
+
+                    def record_statement(
+                        _connection: object,
+                        _cursor: object,
+                        statement: str,
+                        _parameters: object,
+                        _context: object,
+                        _executemany: object,
+                    ) -> None:
+                        statements.append(statement)
+
+                    bind = session.get_bind()
+                    event.listen(bind, "before_cursor_execute", record_statement)
+                    try:
+                        page = await SqlAlchemyWorkflowRepository(session).page(
+                            limit=20,
+                            search="page-batch",
+                            after=None,
+                        )
+                    finally:
+                        event.remove(bind, "before_cursor_execute", record_statement)
+                    return len(page.items), len(statements), page.has_more
+            finally:
+                await delete_workflows(database, *(workflow.id for workflow in workflows))
+
+    item_count, statement_count, has_more = asyncio.run(exercise())
+    assert item_count == 20
+    assert statement_count == 3
+    assert has_more is True
 
 
 def test_workflow_repository_rollback_does_not_persist_definition_or_graph() -> None:

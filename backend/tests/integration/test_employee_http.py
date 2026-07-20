@@ -70,7 +70,7 @@ def test_employee_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
             )
 
             assert listed.status_code == 200
-            assert employee_id in {item["id"] for item in listed.json()}
+            assert employee_id in {item["id"] for item in listed.json()["items"]}
             assert detailed.status_code == 200
             assert detailed.json()["system_prompt"] == "根据用户问题提供帮助。"
             assert updated.status_code == 200
@@ -89,6 +89,77 @@ def test_employee_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
             asyncio.run(delete_employees_from_database_url(TEST_DATABASE_URL, employee_id))
         if workflow_id is not None:
             asyncio.run(delete_workflows_from_database_url(TEST_DATABASE_URL, workflow_id))
+
+
+def test_employee_http_cursor_is_stable_across_concurrent_insert_and_anchor_delete() -> None:
+    token = f"page-{uuid4().hex}"
+    employee_ids: list[str] = []
+    try:
+        with (
+            running_api(TEST_DATABASE_URL) as api_url,
+            httpx.Client(base_url=api_url, timeout=5) as client,
+        ):
+            for index in range(4):
+                created = client.post(
+                    "/api/v1/employees",
+                    json={**_body(), "name": f"{token}-{index}"},
+                )
+                assert created.status_code == 201
+                employee_ids.append(created.json()["id"])
+
+            first = client.get(
+                "/api/v1/employees",
+                params={"search": token, "limit": 2},
+            )
+            assert first.status_code == 200
+            first_payload = first.json()
+            first_ids = [item["id"] for item in first_payload["items"]]
+            assert first_ids == employee_ids[3:1:-1]
+            assert isinstance(first_payload["next_cursor"], str)
+
+            anchor_id = first_ids[-1]
+            assert client.delete(f"/api/v1/employees/{anchor_id}").status_code == 204
+
+            newer = client.post(
+                "/api/v1/employees",
+                json={**_body(), "name": f"{token}-newer"},
+            )
+            assert newer.status_code == 201
+            newer_id = newer.json()["id"]
+            employee_ids.append(newer_id)
+
+            second = client.get(
+                "/api/v1/employees",
+                params={
+                    "search": token,
+                    "limit": 2,
+                    "cursor": first_payload["next_cursor"],
+                },
+            )
+            assert second.status_code == 200
+            second_payload = second.json()
+            second_ids = [item["id"] for item in second_payload["items"]]
+            assert second_ids == employee_ids[1::-1]
+            assert second_payload["next_cursor"] is None
+            assert len(set(first_ids + second_ids)) == 4
+            assert newer_id not in first_ids + second_ids
+
+            mismatched = client.get(
+                "/api/v1/employees",
+                params={
+                    "search": f"{token}-changed",
+                    "limit": 2,
+                    "cursor": first_payload["next_cursor"],
+                },
+            )
+            assert_error_response(
+                mismatched,
+                status=422,
+                code="invalid_page_cursor",
+            )
+    finally:
+        for employee_id in employee_ids:
+            asyncio.run(delete_employees_from_database_url(TEST_DATABASE_URL, employee_id))
 
 
 def test_employee_validation_and_missing_resources_use_stable_errors() -> None:
@@ -133,7 +204,7 @@ def test_binding_without_knowledge_configuration_fails_closed_without_write() ->
         listed = client.get("/api/v1/employees")
 
     assert_error_response(rejected, status=503, code="configuration_missing")
-    assert name not in {item["name"] for item in listed.json()}
+    assert name not in {item["name"] for item in listed.json()["items"]}
 
 
 def test_binding_when_knowledge_service_is_unavailable_fails_closed_without_write() -> None:
@@ -158,4 +229,4 @@ def test_binding_when_knowledge_service_is_unavailable_fails_closed_without_writ
 
     assert_error_response(rejected, status=503, code="knowledge_service_unavailable")
     assert rejected.json()["retryable"] is True
-    assert name not in {item["name"] for item in listed.json()}
+    assert name not in {item["name"] for item in listed.json()["items"]}

@@ -154,11 +154,11 @@ describe("ChatPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chatApi.streamOptions = undefined;
-    employeeApi.fetchEmployees.mockResolvedValue([employee]);
-    chatApi.fetchConversations.mockResolvedValue([conversation]);
+    employeeApi.fetchEmployees.mockResolvedValue({ items: [employee], next_cursor: null });
+    chatApi.fetchConversations.mockResolvedValue({ items: [conversation], next_cursor: null });
     chatApi.fetchConversationMessages.mockResolvedValue([userMessage, assistantMessage]);
-    workflowRunApi.fetchConversationWorkflowRuns.mockResolvedValue([]);
-    workflowApi.fetchWorkflows.mockResolvedValue([workflow]);
+    workflowRunApi.fetchConversationWorkflowRuns.mockResolvedValue({ items: [], next_cursor: null });
+    workflowApi.fetchWorkflows.mockResolvedValue({ items: [workflow], next_cursor: null });
     chatApi.subscribeToConversationEvents.mockImplementation(
       (_conversationId: string, options: typeof chatApi.streamOptions) => {
         chatApi.streamOptions = options;
@@ -189,13 +189,73 @@ describe("ChatPage", () => {
     expect(within(employeeRegion).getByText("已绑定知识库")).toBeInTheDocument();
   });
 
+  it("loads additional conversation and run pages while preserving remote search", async () => {
+    const secondConversation = {
+      ...conversation,
+      id: "866c5d4d-1c64-4ff8-98df-778aa7569461",
+      title: "第二个知识问答",
+    };
+    const secondRun = {
+      ...employeeRun,
+      id: "5262373b-10ea-4377-a75c-8242e90f3e63",
+      input: "第二次执行",
+      output: "第二次工作流已完成",
+    };
+    chatApi.fetchConversations.mockImplementation(
+      (_employeeId: string, { cursor, search }: { cursor?: string; search?: string }) => {
+        if (search) return Promise.resolve({ items: [conversation], next_cursor: null });
+        if (cursor === "conversation-next") {
+          return Promise.resolve({ items: [secondConversation], next_cursor: null });
+        }
+        return Promise.resolve({ items: [conversation], next_cursor: "conversation-next" });
+      },
+    );
+    workflowRunApi.fetchConversationWorkflowRuns.mockImplementation(
+      (_conversationId: string, { cursor }: { cursor?: string }) =>
+        Promise.resolve(
+          cursor === "run-next"
+            ? { items: [secondRun], next_cursor: null }
+            : { items: [employeeRun], next_cursor: "run-next" },
+        ),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "加载更多会话" }));
+    expect(
+      await screen.findByRole("button", { name: `打开会话 ${secondConversation.title}` }),
+    ).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "加载更多运行记录" }));
+    await waitFor(() =>
+      expect(workflowRunApi.fetchConversationWorkflowRuns).toHaveBeenCalledWith(conversation.id, {
+        cursor: "run-next",
+        limit: 50,
+      }),
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "搜索会话" }), "知识");
+    await waitFor(() =>
+      expect(chatApi.fetchConversations).toHaveBeenCalledWith(employee.id, {
+        cursor: undefined,
+        limit: 20,
+        search: "知识",
+      }),
+    );
+  });
+
   it("restores an expandable employee workflow summary and opens the formal run detail route", async () => {
-    workflowRunApi.fetchConversationWorkflowRuns.mockResolvedValue([employeeRun]);
+    workflowRunApi.fetchConversationWorkflowRuns.mockResolvedValue({
+      items: [employeeRun],
+      next_cursor: null,
+    });
     const user = userEvent.setup();
     renderPage();
 
     expect(await screen.findByText("会话摘要工作流")).toBeInTheDocument();
-    expect(workflowRunApi.fetchConversationWorkflowRuns).toHaveBeenCalledWith(conversation.id);
+    expect(workflowRunApi.fetchConversationWorkflowRuns).toHaveBeenCalledWith(conversation.id, {
+      cursor: undefined,
+      limit: 50,
+    });
     await user.click(screen.getByText("会话摘要工作流"));
     expect(await screen.findByText("工作流已完成")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "查看运行详情" }));
@@ -203,7 +263,9 @@ describe("ChatPage", () => {
   });
 
   it("creates a conversation from the selected employee", async () => {
-    chatApi.fetchConversations.mockResolvedValueOnce([]).mockResolvedValue([conversation]);
+    chatApi.fetchConversations
+      .mockResolvedValueOnce({ items: [], next_cursor: null })
+      .mockResolvedValue({ items: [conversation], next_cursor: null });
     chatApi.fetchConversationMessages.mockResolvedValue([]);
     chatApi.createConversation.mockResolvedValue(conversation);
     const user = userEvent.setup();
@@ -222,7 +284,9 @@ describe("ChatPage", () => {
   });
 
   it("confirms conversation deletion and moves to the empty state after the server succeeds", async () => {
-    chatApi.fetchConversations.mockResolvedValueOnce([conversation]).mockResolvedValue([]);
+    chatApi.fetchConversations
+      .mockResolvedValueOnce({ items: [conversation], next_cursor: null })
+      .mockResolvedValue({ items: [], next_cursor: null });
     chatApi.deleteConversation.mockResolvedValue(undefined);
     const user = userEvent.setup();
     renderPage();
@@ -273,8 +337,12 @@ describe("ChatPage", () => {
 
     const input = await screen.findByRole("textbox", { name: "消息输入" });
     await screen.findByRole("heading", { name: "知识问答" });
+    await user.type(input, "保留换行");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+    expect(chatApi.sendConversationMessage).not.toHaveBeenCalled();
+    await user.clear(input);
     await user.type(input, userMessage.content);
-    await user.click(screen.getByRole("button", { name: "发送消息" }));
+    await user.keyboard("{Enter}");
     await waitFor(() =>
       expect(chatApi.sendConversationMessage).toHaveBeenCalledWith(
         conversation.id,

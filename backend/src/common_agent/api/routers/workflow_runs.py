@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.routers.services import workflow_event_broker, workflow_service
+from common_agent.api.schemas.pagination import CursorPageResponse
 from common_agent.api.schemas.workflow_runs import (
     StartWorkflowRunBody,
     WorkflowRunEventResponse,
@@ -28,6 +29,14 @@ from common_agent.application.workflow_service import (
     WorkflowServiceError,
 )
 from common_agent.domain.workflow_run import WorkflowRunTrigger, WorkflowRunValidationError
+from common_agent.pagination import (
+    DEFAULT_PAGE_LIMIT,
+    MAX_PAGE_CURSOR_LENGTH,
+    MAX_PAGE_LIMIT,
+    MAX_PAGE_SEARCH_LENGTH,
+    InvalidPageCursor,
+    ListPageRequest,
+)
 from common_agent.workflows.events import (
     WorkflowEventBroker,
     WorkflowEventHistoryUnavailable,
@@ -45,6 +54,8 @@ def workflow_run_error(error: Exception) -> AppError:
         return AppError(error.code, str(error), 503, error.retryable)
     if isinstance(error, WorkflowRunValidationError):
         return AppError("validation_error", "请求参数不合法", 422, False)
+    if isinstance(error, InvalidPageCursor):
+        return AppError(error.code, error.message, 422, error.retryable)
     raise TypeError("unsupported workflow run application error")
 
 
@@ -78,15 +89,27 @@ async def start_workflow_run(
 
 @router.get(
     "/api/v1/workflow-runs",
-    response_model=list[WorkflowRunResponse],
+    response_model=CursorPageResponse[WorkflowRunResponse],
     responses={422: {"model": ErrorEnvelope}, 503: {"model": ErrorEnvelope}},
 )
 async def list_workflow_runs_for_conversation(
     request: Request,
     conversation_id: Annotated[UUID, Query()],
-) -> list[WorkflowRunResponse]:
-    runs = await workflow_service(request).list_runs_for_conversation(conversation_id)
-    return [workflow_run_response(run) for run in runs]
+    search: Annotated[str, Query(max_length=MAX_PAGE_SEARCH_LENGTH)] = "",
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
+    cursor: Annotated[str | None, Query(max_length=MAX_PAGE_CURSOR_LENGTH)] = None,
+) -> CursorPageResponse[WorkflowRunResponse]:
+    try:
+        page = await workflow_service(request).page_runs_for_conversation(
+            conversation_id,
+            ListPageRequest(limit=limit, search=search, cursor=cursor),
+        )
+    except InvalidPageCursor as error:
+        raise workflow_run_error(error) from error
+    return CursorPageResponse(
+        items=[workflow_run_response(item) for item in page.items],
+        next_cursor=page.next_cursor,
+    )
 
 
 @router.get(

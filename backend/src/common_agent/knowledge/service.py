@@ -16,7 +16,9 @@ from common_agent.knowledge.base import (
     KnowledgeService,
     KnowledgeServiceUnavailable,
     KnowledgeServiceVersionMismatch,
+    PageableKnowledgeService,
 )
+from common_agent.pagination import CursorPage, ListPageRequest
 
 MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024
 
@@ -63,6 +65,15 @@ class KnowledgeBaseService:
     async def list_knowledge_bases(self) -> tuple[KnowledgeBaseSummary, ...]:
         await self._ensure_available()
         return await self._knowledge.list_knowledge_bases()
+
+    async def page_knowledge_bases(
+        self,
+        page: ListPageRequest,
+    ) -> CursorPage[KnowledgeBaseSummary]:
+        await self._ensure_available()
+        if not isinstance(self._knowledge, PageableKnowledgeService):
+            raise KnowledgeServiceUnavailable()
+        return await self._knowledge.page_knowledge_bases(page)
 
     async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
         await self._ensure_available()

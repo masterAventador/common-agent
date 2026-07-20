@@ -6,7 +6,7 @@ from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +28,7 @@ from common_agent.domain.conversation import (
     MessageRole,
     MessageStatus,
 )
+from common_agent.pagination import PageAnchor, PageSlice, canonical_uuid_search
 from common_agent.ports.conversations import (
     ConversationAlreadyExists,
     ConversationRepository,
@@ -57,6 +58,48 @@ class SqlAlchemyConversationRepository:
             .order_by(ConversationRow.updated_at.desc(), ConversationRow.id)
         )
         return tuple(_to_conversation(row) for row in result)
+
+    async def page(
+        self,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+        employee_id: UUID | None,
+    ) -> PageSlice[Conversation]:
+        statement = select(ConversationRow)
+        if employee_id is not None:
+            statement = statement.where(ConversationRow.employee_id == str(employee_id))
+        if search:
+            searched_id = canonical_uuid_search(search)
+            statement = statement.where(
+                ConversationRow.id == searched_id
+                if searched_id is not None
+                else ConversationRow.title.startswith(search, autoescape=True)
+            )
+        if after is not None:
+            after_time = to_database_datetime(after.created_at)
+            statement = statement.where(
+                or_(
+                    ConversationRow.created_at < after_time,
+                    and_(
+                        ConversationRow.created_at == after_time,
+                        ConversationRow.id < after.id,
+                    ),
+                )
+            )
+        rows = tuple(
+            await self._session.scalars(
+                statement.order_by(
+                    ConversationRow.created_at.desc(),
+                    ConversationRow.id.desc(),
+                ).limit(limit + 1)
+            )
+        )
+        return PageSlice(
+            items=tuple(_to_conversation(row) for row in rows[:limit]),
+            has_more=len(rows) > limit,
+        )
 
     async def get(self, conversation_id: UUID) -> Conversation | None:
         row = await self._session.get(ConversationRow, str(conversation_id))

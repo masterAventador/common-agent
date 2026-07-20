@@ -27,6 +27,7 @@ from common_agent.domain.workflow_run import (
     WorkflowRunTrigger,
 )
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.pagination import CursorPage, ListPageRequest
 from common_agent.ports.workflows import WorkflowUnitOfWorkFactory
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.execution import WorkflowCompiler
@@ -62,6 +63,9 @@ class WorkflowService:
     async def list(self) -> tuple[WorkflowDefinition, ...]:
         return await self._catalog.list()
 
+    async def page(self, page: ListPageRequest) -> CursorPage[WorkflowDefinition]:
+        return await self._catalog.page(page)
+
     async def get(self, workflow_id: UUID) -> WorkflowDefinition:
         return await self._catalog.get(workflow_id)
 
@@ -86,6 +90,13 @@ class WorkflowService:
 
     async def list_runs_for_conversation(self, conversation_id: UUID) -> tuple[WorkflowRun, ...]:
         return await self._runs.list_for_conversation(conversation_id)
+
+    async def page_runs_for_conversation(
+        self,
+        conversation_id: UUID,
+        page: ListPageRequest,
+    ) -> CursorPage[WorkflowRun]:
+        return await self._runs.page_for_conversation(conversation_id, page)
 
     async def start_run(
         self,

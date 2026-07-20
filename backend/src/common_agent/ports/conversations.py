@@ -5,6 +5,7 @@ from typing import Protocol
 from uuid import UUID
 
 from common_agent.domain.conversation import Conversation, Message
+from common_agent.pagination import PageAnchor, PageSlice
 
 
 class ConversationAlreadyExists(Exception):
@@ -23,6 +24,15 @@ class ConversationRepository(Protocol):
     async def list(self) -> tuple[Conversation, ...]: ...
 
     async def list_for_employee(self, employee_id: UUID) -> tuple[Conversation, ...]: ...
+
+    async def page(
+        self,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+        employee_id: UUID | None,
+    ) -> PageSlice[Conversation]: ...
 
     async def get(self, conversation_id: UUID) -> Conversation | None: ...
 

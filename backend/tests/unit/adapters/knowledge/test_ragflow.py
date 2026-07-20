@@ -28,6 +28,7 @@ from common_agent.knowledge.base import (
     KnowledgeServiceUnavailable,
 )
 from common_agent.observability import bind_observation_context
+from common_agent.pagination import InvalidPageCursor, ListPageRequest
 
 
 def _run[Result](awaitable: Coroutine[Any, Any, Result]) -> Result:
@@ -254,6 +255,61 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
 
     _run(scenario())
     assert all(request.headers["authorization"] == "Bearer test-key" for request in requests)
+
+
+def test_ragflow_dataset_pagination_translates_opaque_cursor_and_server_search() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.url.path == "/api/v1/datasets"
+        page = int(request.url.params["page"])
+        assert request.url.params["page_size"] == "2"
+        assert request.url.params["orderby"] == "create_time"
+        assert request.url.params["desc"] == "true"
+        assert json.loads(request.url.params["ext"]) == {"keywords": "制度"}
+        ids = ("kb-3", "kb-2") if page == 1 else ("kb-1",)
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": [
+                    {
+                        "id": item_id,
+                        "name": f"制度-{item_id}",
+                        "description": "",
+                        "document_count": 0,
+                    }
+                    for item_id in ids
+                ],
+                "total_datasets": 3,
+            },
+        )
+
+    async def scenario() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://ragflow") as client:
+            service = RagFlowKnowledgeService(
+                base_url="http://ragflow",
+                api_key="test-key",
+                expected_version="v0.25.6",
+                client=client,
+            )
+            first = await service.page_knowledge_bases(ListPageRequest(limit=2, search="制度"))
+            assert [item.id for item in first.items] == ["kb-3", "kb-2"]
+            assert first.next_cursor is not None
+            second = await service.page_knowledge_bases(
+                ListPageRequest(limit=2, search="制度", cursor=first.next_cursor)
+            )
+            assert [item.id for item in second.items] == ["kb-1"]
+            assert second.next_cursor is None
+            with pytest.raises(InvalidPageCursor):
+                await service.page_knowledge_bases(
+                    ListPageRequest(limit=2, search="别的筛选", cursor=first.next_cursor)
+                )
+
+    _run(scenario())
+    assert [request.url.params["page"] for request in requests] == ["1", "2"]
 
 
 @pytest.mark.parametrize(

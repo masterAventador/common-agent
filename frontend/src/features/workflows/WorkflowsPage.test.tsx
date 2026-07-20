@@ -107,19 +107,20 @@ describe("WorkflowsPage", () => {
     vi.clearAllMocks();
     workflowRunApi.streamOptions = undefined;
     workflowRunApi.streamClose = vi.fn();
-    workflowApi.fetchWorkflows.mockResolvedValue([workflow]);
+    workflowApi.fetchWorkflows.mockResolvedValue({ items: [workflow], next_cursor: null });
     workflowApi.validateWorkflow.mockResolvedValue({ valid: true, issues: [] });
     workflowApi.updateWorkflow.mockResolvedValue(workflow);
     workflowApi.createWorkflow.mockResolvedValue(workflow);
-    knowledgeApi.fetchKnowledgeBases.mockResolvedValue([
-      {
+    knowledgeApi.fetchKnowledgeBases.mockResolvedValue({
+      items: [{
         id: "kb-1",
         name: "通用产品手册",
         description: "公共资料",
         document_count: 1,
         parsing_count: 0,
-      },
-    ]);
+      }],
+      next_cursor: null,
+    });
     workflowRunApi.fetchWorkflowRun.mockResolvedValue(completedRun);
     workflowRunApi.startWorkflowRun.mockResolvedValue(runningRun);
     workflowRunApi.stopWorkflowRun.mockResolvedValue({ run_id: runningRun.id });
@@ -141,6 +142,42 @@ describe("WorkflowsPage", () => {
     expect(screen.getByText("AI 对话", { selector: ".workflow-node-title" })).toBeInTheDocument();
     expect(screen.getByText("结束", { selector: ".workflow-node-title" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "工作流名称" })).toHaveValue("知识问答流程");
+  });
+
+  it("searches remotely and loads the next workflow cursor page", async () => {
+    const second = {
+      ...workflow,
+      id: "3e3f02bf-40e5-4801-a7df-ea087d65e39b",
+      name: "第二个知识流程",
+    };
+    workflowApi.fetchWorkflows.mockImplementation(
+      ({ cursor, search }: { cursor?: string; search?: string }) => {
+        if (search) return Promise.resolve({ items: [workflow], next_cursor: null });
+        if (cursor === "workflow-next") {
+          return Promise.resolve({ items: [second], next_cursor: null });
+        }
+        return Promise.resolve({ items: [workflow], next_cursor: "workflow-next" });
+      },
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "加载更多工作流" }));
+    expect(await screen.findByRole("button", { name: `选择工作流 ${second.name}` })).toBeEnabled();
+    expect(workflowApi.fetchWorkflows).toHaveBeenCalledWith({
+      cursor: "workflow-next",
+      limit: 20,
+      search: "",
+    });
+
+    await user.type(screen.getByRole("searchbox", { name: "搜索工作流" }), "知识");
+    await waitFor(() =>
+      expect(workflowApi.fetchWorkflows).toHaveBeenCalledWith({
+        cursor: undefined,
+        limit: 20,
+        search: "知识",
+      }),
+    );
   });
 
   it("edits node configuration and validates before updating", async () => {
@@ -184,7 +221,7 @@ describe("WorkflowsPage", () => {
   });
 
   it("creates a keyboard-operable draft and adds every supported node type", async () => {
-    workflowApi.fetchWorkflows.mockResolvedValue([]);
+    workflowApi.fetchWorkflows.mockResolvedValue({ items: [], next_cursor: null });
     const user = userEvent.setup();
     renderPage();
 
@@ -208,7 +245,7 @@ describe("WorkflowsPage", () => {
   it("shows a safe list failure and retries the formal query", async () => {
     workflowApi.fetchWorkflows
       .mockRejectedValueOnce(new Error("无法连接后端服务"))
-      .mockResolvedValueOnce([workflow]);
+      .mockResolvedValueOnce({ items: [workflow], next_cursor: null });
     const user = userEvent.setup();
     renderPage();
 
@@ -354,7 +391,10 @@ describe("WorkflowsPage", () => {
       id: "77e15fa0-7e51-47c1-9458-547c9f53a4ae",
       name: "第二个工作流",
     };
-    workflowApi.fetchWorkflows.mockResolvedValue([workflow, otherWorkflow]);
+    workflowApi.fetchWorkflows.mockResolvedValue({
+      items: [workflow, otherWorkflow],
+      next_cursor: null,
+    });
     const user = userEvent.setup();
     renderPage(`/workflows?run_id=${completedRun.id}`);
 
@@ -366,7 +406,7 @@ describe("WorkflowsPage", () => {
   });
 
   it("does not run an unsaved workflow draft", async () => {
-    workflowApi.fetchWorkflows.mockResolvedValue([]);
+    workflowApi.fetchWorkflows.mockResolvedValue({ items: [], next_cursor: null });
     renderPage();
 
     expect(await screen.findByText("请先保存工作流，再从正式定义启动运行。")).toBeInTheDocument();
@@ -396,7 +436,9 @@ describe("WorkflowsPage", () => {
   });
 
   it("clears the selected workflow only after deletion succeeds", async () => {
-    workflowApi.fetchWorkflows.mockResolvedValueOnce([workflow]).mockResolvedValue([]);
+    workflowApi.fetchWorkflows
+      .mockResolvedValueOnce({ items: [workflow], next_cursor: null })
+      .mockResolvedValue({ items: [], next_cursor: null });
     workflowApi.deleteWorkflow.mockResolvedValue(undefined);
     const user = userEvent.setup();
     renderPage();

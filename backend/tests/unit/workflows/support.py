@@ -18,6 +18,7 @@ from common_agent.domain.workflow import (
 )
 from common_agent.domain.workflow_run import WorkflowRun, WorkflowRunStatus
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.pagination import PageAnchor, PageSlice
 from common_agent.ports.workflows import WorkflowAlreadyExists, WorkflowRunAlreadyExists
 from tests.support.knowledge import KnowledgeProbe
 
@@ -28,6 +29,33 @@ class WorkflowRepositoryProbe:
 
     async def list(self) -> tuple[WorkflowDefinition, ...]:
         return tuple(self.values.values())
+
+    async def page(
+        self,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[WorkflowDefinition]:
+        values = sorted(
+            self.values.values(),
+            key=lambda item: (item.created_at, str(item.id)),
+            reverse=True,
+        )
+        if search:
+            normalized = search.casefold()
+            values = [
+                item
+                for item in values
+                if normalized in f"{item.id} {item.name} {item.description}".casefold()
+            ]
+        if after is not None:
+            values = [
+                item
+                for item in values
+                if (item.created_at, str(item.id)) < (after.created_at, after.id)
+            ]
+        return PageSlice(items=tuple(values[:limit]), has_more=len(values) > limit)
 
     async def get(self, workflow_id: UUID) -> WorkflowDefinition | None:
         return self.values.get(workflow_id)
@@ -64,6 +92,35 @@ class WorkflowRunRepositoryProbe:
             for run in self.values.values()
             if run.origin is not None and run.origin.conversation_id == conversation_id
         )
+
+    async def page_for_conversation(
+        self,
+        conversation_id: UUID,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[WorkflowRun]:
+        values = list(await self.list_for_conversation(conversation_id))
+        values.sort(
+            key=lambda item: (item.created_at, str(item.id)),
+            reverse=True,
+        )
+        if search:
+            normalized = search.casefold()
+            values = [
+                item
+                for item in values
+                if normalized
+                in (f"{item.id} {item.status.value} {item.input} {item.output}").casefold()
+            ]
+        if after is not None:
+            values = [
+                item
+                for item in values
+                if (item.created_at, str(item.id)) < (after.created_at, after.id)
+            ]
+        return PageSlice(items=tuple(values[:limit]), has_more=len(values) > limit)
 
     async def add(self, run: WorkflowRun) -> None:
         if run.id in self.values:

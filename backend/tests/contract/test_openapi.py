@@ -199,8 +199,9 @@ def test_openapi_exposes_workflow_run_start_summary_stop_and_sse() -> None:
     conversation_schema = conversation_runs["responses"]["200"]["content"]["application/json"][
         "schema"
     ]
-    assert conversation_schema["type"] == "array"
-    assert conversation_schema["items"] == {"$ref": "#/components/schemas/WorkflowRunResponse"}
+    assert conversation_schema == {
+        "$ref": "#/components/schemas/CursorPageResponse_WorkflowRunResponse_"
+    }
     assert conversation_runs["parameters"][0]["name"] == "conversation_id"
     assert conversation_runs["parameters"][0]["required"] is True
     assert stop["responses"]["202"]["content"]["application/json"]["schema"] == {
@@ -215,6 +216,34 @@ def test_openapi_exposes_workflow_run_start_summary_stop_and_sse() -> None:
     run = schema["components"]["schemas"]["WorkflowRunResponse"]
     assert "origin" in run["required"]
     assert "WorkflowRunOriginResponse" in str(run["properties"]["origin"])
+
+
+def test_openapi_exposes_one_bounded_cursor_contract_for_all_resource_lists() -> None:
+    schema = _schema()
+    collections = {
+        "/api/v1/conversations": "ConversationResponse",
+        "/api/v1/employees": "EmployeeResponse",
+        "/api/v1/knowledge-bases": "KnowledgeBaseResponse",
+        "/api/v1/workflows": "WorkflowResponse",
+        "/api/v1/workflow-runs": "WorkflowRunResponse",
+    }
+
+    for path, item_schema in collections.items():
+        operation = schema["paths"][path]["get"]
+        response_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+        assert response_schema == {
+            "$ref": f"#/components/schemas/CursorPageResponse_{item_schema}_"
+        }
+        parameters = {parameter["name"]: parameter for parameter in operation["parameters"]}
+        assert parameters["search"]["schema"]["maxLength"] == 128
+        assert parameters["limit"]["schema"]["minimum"] == 1
+        assert parameters["limit"]["schema"]["maximum"] == 100
+        assert parameters["limit"]["schema"]["default"] == 20
+        assert parameters["cursor"]["schema"]["anyOf"][0]["maxLength"] == 1024
+
+        page_schema = schema["components"]["schemas"][f"CursorPageResponse_{item_schema}_"]
+        assert set(page_schema["required"]) == {"items", "next_cursor"}
+        assert page_schema["additionalProperties"] is False
 
 
 def test_committed_workflow_run_event_schema_matches_sse_payload_model() -> None:

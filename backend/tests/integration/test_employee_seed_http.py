@@ -30,7 +30,7 @@ def test_formal_startup_seeds_once_and_preserves_api_edits_after_restart() -> No
             assert seeded.json()["knowledge_base_id"] is None
             assert [
                 item["id"]
-                for item in listed.json()
+                for item in listed.json()["items"]
                 if item["id"] == str(DEFAULT_KNOWLEDGE_ASSISTANT_ID)
             ] == [str(DEFAULT_KNOWLEDGE_ASSISTANT_ID)]
 
@@ -60,7 +60,7 @@ def test_formal_startup_seeds_once_and_preserves_api_edits_after_restart() -> No
             assert restored.json()["created_at"] == created_at
             assert [
                 item["id"]
-                for item in listed_again.json()
+                for item in listed_again.json()["items"]
                 if item["id"] == str(DEFAULT_KNOWLEDGE_ASSISTANT_ID)
             ] == [str(DEFAULT_KNOWLEDGE_ASSISTANT_ID)]
     finally:
@@ -89,7 +89,7 @@ def test_concurrent_formal_startups_converge_on_one_default_employee() -> None:
         for response in responses:
             assert [
                 item["id"]
-                for item in response.json()
+                for item in response.json()["items"]
                 if item["id"] == str(DEFAULT_KNOWLEDGE_ASSISTANT_ID)
             ] == [str(DEFAULT_KNOWLEDGE_ASSISTANT_ID)]
     finally:

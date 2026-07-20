@@ -523,6 +523,41 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** CursorPageResponse[ConversationResponse] */
+        CursorPageResponse_ConversationResponse_: {
+            /** Items */
+            items: components["schemas"]["ConversationResponse"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPageResponse[EmployeeResponse] */
+        CursorPageResponse_EmployeeResponse_: {
+            /** Items */
+            items: components["schemas"]["EmployeeResponse"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPageResponse[KnowledgeBaseResponse] */
+        CursorPageResponse_KnowledgeBaseResponse_: {
+            /** Items */
+            items: components["schemas"]["KnowledgeBaseResponse"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPageResponse[WorkflowResponse] */
+        CursorPageResponse_WorkflowResponse_: {
+            /** Items */
+            items: components["schemas"]["WorkflowResponse"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPageResponse[WorkflowRunResponse] */
+        CursorPageResponse_WorkflowRunResponse_: {
+            /** Items */
+            items: components["schemas"]["WorkflowRunResponse"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
         /**
          * DocumentParsingStatus
          * @enum {string}
@@ -596,11 +631,6 @@ export interface components {
             request_id: string;
             /** Retryable */
             retryable: boolean;
-        };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
         };
         /** HealthResponse */
         HealthResponse: {
@@ -843,19 +873,6 @@ export interface components {
             turn_id: string;
             user_message: components["schemas"]["MessageResponse"];
         };
-        /** ValidationError */
-        ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
-            msg: string;
-            /** Error Type */
-            type: string;
-        };
         /** WorkflowConfigurationBody */
         WorkflowConfigurationBody: {
             /**
@@ -1061,6 +1078,9 @@ export interface operations {
         parameters: {
             query?: {
                 employee_id?: string | null;
+                search?: string;
+                limit?: number;
+                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -1074,16 +1094,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConversationResponse"][];
+                    "application/json": components["schemas"]["CursorPageResponse_ConversationResponse_"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Entity */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Service Unavailable */
@@ -1428,7 +1448,11 @@ export interface operations {
     };
     list_employees_api_v1_employees_get: {
         parameters: {
-            query?: never;
+            query?: {
+                search?: string;
+                limit?: number;
+                cursor?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1441,7 +1465,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EmployeeResponse"][];
+                    "application/json": components["schemas"]["CursorPageResponse_EmployeeResponse_"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Service Unavailable */
@@ -1684,7 +1717,11 @@ export interface operations {
     };
     list_knowledge_bases_api_v1_knowledge_bases_get: {
         parameters: {
-            query?: never;
+            query?: {
+                search?: string;
+                limit?: number;
+                cursor?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1697,7 +1734,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KnowledgeBaseResponse"][];
+                    "application/json": components["schemas"]["CursorPageResponse_KnowledgeBaseResponse_"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Bad Gateway */
@@ -2105,6 +2151,9 @@ export interface operations {
         parameters: {
             query: {
                 conversation_id: string;
+                search?: string;
+                limit?: number;
+                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -2118,7 +2167,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkflowRunResponse"][];
+                    "application/json": components["schemas"]["CursorPageResponse_WorkflowRunResponse_"];
                 };
             };
             /** @description Unprocessable Entity */
@@ -2312,7 +2361,11 @@ export interface operations {
     };
     list_workflows_api_v1_workflows_get: {
         parameters: {
-            query?: never;
+            query?: {
+                search?: string;
+                limit?: number;
+                cursor?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2325,7 +2378,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkflowResponse"][];
+                    "application/json": components["schemas"]["CursorPageResponse_WorkflowResponse_"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Service Unavailable */

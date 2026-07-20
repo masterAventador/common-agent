@@ -22,15 +22,15 @@ vi.mock("../api/system", () => ({
 }));
 
 vi.mock("../api/knowledge", () => ({
-  fetchKnowledgeBases: vi.fn().mockResolvedValue([]),
+  fetchKnowledgeBases: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
   fetchKnowledgeDocuments: vi.fn().mockResolvedValue([]),
   createKnowledgeBase: vi.fn(),
   uploadKnowledgeDocument: vi.fn(),
 }));
 
 vi.mock("../api/employees", () => ({
-  fetchEmployees: vi.fn().mockResolvedValue([
-    {
+  fetchEmployees: vi.fn().mockResolvedValue({
+    items: [{
       id: "6f3d43e0-6f6d-5a67-9f25-756a0b9ed2ab",
       name: "知识助理",
       description: "通用知识问答",
@@ -39,8 +39,9 @@ vi.mock("../api/employees", () => ({
       allowed_workflow_ids: [],
       created_at: "2026-07-20T02:00:00Z",
       updated_at: "2026-07-20T02:00:00Z",
-    },
-  ]),
+    }],
+    next_cursor: null,
+  }),
   createEmployee: vi.fn(),
   updateEmployee: vi.fn(),
 }));
@@ -48,7 +49,7 @@ vi.mock("../api/employees", () => ({
 vi.mock("../api/conversations", () => ({
   createConversation: vi.fn(),
   fetchConversationMessages: vi.fn().mockResolvedValue([]),
-  fetchConversations: vi.fn().mockResolvedValue([]),
+  fetchConversations: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
   retryConversationMessage: vi.fn(),
   sendConversationMessage: vi.fn(),
   stopConversationGeneration: vi.fn(),
@@ -57,7 +58,7 @@ vi.mock("../api/conversations", () => ({
 
 vi.mock("../api/workflows", () => ({
   createWorkflow: vi.fn(),
-  fetchWorkflows: vi.fn().mockResolvedValue([]),
+  fetchWorkflows: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
   updateWorkflow: vi.fn(),
   validateWorkflow: vi.fn(),
 }));

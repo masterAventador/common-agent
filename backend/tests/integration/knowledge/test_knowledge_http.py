@@ -186,15 +186,18 @@ def test_knowledge_routes_use_formal_uvicorn_and_ragflow_adapter() -> None:
         documents = client.get("/api/v1/knowledge-bases/kb-1/documents")
 
     assert listed.status_code == 200
-    assert listed.json() == [
-        {
-            "id": "kb-1",
-            "name": "制度库",
-            "description": "内部制度",
-            "document_count": 1,
-            "parsing_count": 0,
-        }
-    ]
+    assert listed.json() == {
+        "items": [
+            {
+                "id": "kb-1",
+                "name": "制度库",
+                "description": "内部制度",
+                "document_count": 1,
+                "parsing_count": 0,
+            }
+        ],
+        "next_cursor": None,
+    }
     assert created.status_code == 201
     assert created.json()["id"] == "kb-2"
     assert uploaded.status_code == 202

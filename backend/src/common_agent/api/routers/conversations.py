@@ -21,6 +21,7 @@ from common_agent.api.schemas.conversations import (
     stop_response,
     turn_response,
 )
+from common_agent.api.schemas.pagination import CursorPageResponse
 from common_agent.conversations.service import (
     ConversationBusy,
     ConversationNotFound,
@@ -33,6 +34,14 @@ from common_agent.conversations.service import (
 )
 from common_agent.domain.conversation import ConversationValidationError
 from common_agent.employees.service import EmployeeNotFound
+from common_agent.pagination import (
+    DEFAULT_PAGE_LIMIT,
+    MAX_PAGE_CURSOR_LENGTH,
+    MAX_PAGE_LIMIT,
+    MAX_PAGE_SEARCH_LENGTH,
+    InvalidPageCursor,
+    ListPageRequest,
+)
 
 router = APIRouter(tags=["conversations"])
 router.include_router(event_router)
@@ -54,20 +63,34 @@ def conversation_error(error: Exception) -> AppError:
         return AppError(error.code, str(error), 409, error.retryable)
     if isinstance(error, ConversationValidationError):
         return AppError("validation_error", "请求参数不合法", 422, False)
+    if isinstance(error, InvalidPageCursor):
+        return AppError(error.code, error.message, 422, error.retryable)
     raise TypeError("unsupported conversation application error")
 
 
 @router.get(
     "/api/v1/conversations",
-    response_model=list[ConversationResponse],
-    responses={503: {"model": ErrorEnvelope}},
+    response_model=CursorPageResponse[ConversationResponse],
+    responses={422: {"model": ErrorEnvelope}, 503: {"model": ErrorEnvelope}},
 )
 async def list_conversations(
     request: Request,
     employee_id: Annotated[UUID | None, Query()] = None,
-) -> list[ConversationResponse]:
-    conversations = await conversation_service(request).list(employee_id=employee_id)
-    return [conversation_response(conversation) for conversation in conversations]
+    search: Annotated[str, Query(max_length=MAX_PAGE_SEARCH_LENGTH)] = "",
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
+    cursor: Annotated[str | None, Query(max_length=MAX_PAGE_CURSOR_LENGTH)] = None,
+) -> CursorPageResponse[ConversationResponse]:
+    try:
+        page = await conversation_service(request).page(
+            ListPageRequest(limit=limit, search=search, cursor=cursor),
+            employee_id=employee_id,
+        )
+    except InvalidPageCursor as error:
+        raise conversation_error(error) from error
+    return CursorPageResponse(
+        items=[conversation_response(item) for item in page.items],
+        next_cursor=page.next_cursor,
+    )
 
 
 @router.delete(

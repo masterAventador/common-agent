@@ -10,7 +10,7 @@ const { Title } = Typography;
 
 export function ChatPage() {
   const controller = useChatPageController();
-  const { employees, selectedEmployee } = controller;
+  const { employeeItems, employees, selectedEmployee } = controller;
 
   if (employees.isPending) {
     return (
@@ -59,10 +59,24 @@ export function ChatPage() {
         <Select
           aria-label="选择数字员工"
           value={selectedEmployee.id}
-          options={employees.data?.map((employee) => ({
+          showSearch
+          filterOption={false}
+          searchValue={controller.employeeSearch}
+          options={employeeItems.map((employee) => ({
             value: employee.id,
             label: employee.name,
           }))}
+          onSearch={controller.setEmployeeSearch}
+          onPopupScroll={(event) => {
+            const target = event.currentTarget;
+            if (
+              employees.hasNextPage &&
+              !employees.isFetchingNextPage &&
+              target.scrollTop + target.clientHeight >= target.scrollHeight - 16
+            ) {
+              void employees.fetchNextPage();
+            }
+          }}
           onChange={controller.selectEmployee}
           className="chat-employee-select"
         />

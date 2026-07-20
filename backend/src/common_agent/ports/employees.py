@@ -5,6 +5,7 @@ from typing import Protocol
 from uuid import UUID
 
 from common_agent.domain.employee import Employee
+from common_agent.pagination import PageAnchor, PageSlice
 
 
 class EmployeeAlreadyExists(Exception):
@@ -13,6 +14,14 @@ class EmployeeAlreadyExists(Exception):
 
 class EmployeeRepository(Protocol):
     async def list(self) -> tuple[Employee, ...]: ...
+
+    async def page(
+        self,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[Employee]: ...
 
     async def get(self, employee_id: UUID) -> Employee | None: ...
 

@@ -7,7 +7,7 @@ from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +43,7 @@ from common_agent.domain.workflow_run import (
     WorkflowRunTrigger,
     WorkflowRunValidationError,
 )
+from common_agent.pagination import PageAnchor, PageSlice, canonical_uuid_search
 from common_agent.ports.workflows import (
     WorkflowAlreadyExists,
     WorkflowRepository,
@@ -65,6 +66,51 @@ class SqlAlchemyWorkflowRepository:
             return ()
         node_rows, edge_rows = await self._load_graph_rows(tuple(row.id for row in rows))
         return tuple(_to_domain(row, node_rows[row.id], edge_rows[row.id]) for row in rows)
+
+    async def page(
+        self,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[WorkflowDefinition]:
+        statement = select(WorkflowRow)
+        if search:
+            searched_id = canonical_uuid_search(search)
+            statement = statement.where(
+                WorkflowRow.id == searched_id
+                if searched_id is not None
+                else WorkflowRow.name.startswith(search, autoescape=True)
+            )
+        if after is not None:
+            after_time = to_database_datetime(after.created_at)
+            statement = statement.where(
+                or_(
+                    WorkflowRow.created_at < after_time,
+                    and_(
+                        WorkflowRow.created_at == after_time,
+                        WorkflowRow.id < after.id,
+                    ),
+                )
+            )
+        rows = tuple(
+            await self._session.scalars(
+                statement.order_by(
+                    WorkflowRow.created_at.desc(),
+                    WorkflowRow.id.desc(),
+                ).limit(limit + 1)
+            )
+        )
+        visible_rows = rows[:limit]
+        if not visible_rows:
+            return PageSlice(items=(), has_more=False)
+        node_rows, edge_rows = await self._load_graph_rows(tuple(row.id for row in visible_rows))
+        return PageSlice(
+            items=tuple(
+                _to_domain(row, node_rows[row.id], edge_rows[row.id]) for row in visible_rows
+            ),
+            has_more=len(rows) > limit,
+        )
 
     async def get(self, workflow_id: UUID) -> WorkflowDefinition | None:
         row = await self._session.get(WorkflowRow, str(workflow_id))
@@ -166,6 +212,51 @@ class SqlAlchemyWorkflowRunRepository:
             .order_by(WorkflowRunRow.created_at, WorkflowRunRow.id)
         )
         return tuple(_run_to_domain(row) for row in rows)
+
+    async def page_for_conversation(
+        self,
+        conversation_id: UUID,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[WorkflowRun]:
+        statement = select(WorkflowRunRow).where(
+            WorkflowRunRow.conversation_id == str(conversation_id)
+        )
+        if search:
+            searched_id = canonical_uuid_search(search)
+            if searched_id is not None:
+                statement = statement.where(WorkflowRunRow.id == searched_id)
+            elif search in {status.value for status in WorkflowRunStatus}:
+                statement = statement.where(WorkflowRunRow.status == search)
+            else:
+                statement = statement.where(
+                    WorkflowRunRow.input.startswith(search, autoescape=True)
+                )
+        if after is not None:
+            after_time = to_database_datetime(after.created_at)
+            statement = statement.where(
+                or_(
+                    WorkflowRunRow.created_at < after_time,
+                    and_(
+                        WorkflowRunRow.created_at == after_time,
+                        WorkflowRunRow.id < after.id,
+                    ),
+                )
+            )
+        rows = tuple(
+            await self._session.scalars(
+                statement.order_by(
+                    WorkflowRunRow.created_at.desc(),
+                    WorkflowRunRow.id.desc(),
+                ).limit(limit + 1)
+            )
+        )
+        return PageSlice(
+            items=tuple(_run_to_domain(row) for row in rows[:limit]),
+            has_more=len(rows) > limit,
+        )
 
     async def add(self, run: WorkflowRun) -> None:
         self._session.add(WorkflowRunRow(**_run_values(run)))

@@ -19,6 +19,8 @@ export function ChatWorkspace({
   const {
     activeMessage,
     conversations,
+    conversationItems,
+    conversationSearch,
     createMutation,
     deleteMutation,
     draft,
@@ -30,8 +32,12 @@ export function ChatWorkspace({
     sendDraft,
     sendMutation,
     setDraft,
+    setConversationSearch,
     stopMutation,
     workflowsById,
+    hasMoreRuns,
+    loadMoreRuns,
+    loadingMoreRuns,
     openWorkflowRun,
   } = controller;
 
@@ -51,6 +57,13 @@ export function ChatWorkspace({
             新建
           </Button>
         </Flex>
+        <Input.Search
+          aria-label="搜索会话"
+          allowClear
+          value={conversationSearch}
+          placeholder="搜索会话"
+          onChange={(event) => setConversationSearch(event.target.value)}
+        />
         {conversations.isPending ? (
           <Skeleton active paragraph={{ rows: 6 }} />
         ) : conversations.isError ? (
@@ -60,11 +73,11 @@ export function ChatWorkspace({
             title="会话列表加载失败"
             action={<Button onClick={() => void conversations.refetch()}>重试</Button>}
           />
-        ) : conversations.data.length === 0 ? (
+        ) : conversationItems.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有会话" />
         ) : (
           <div className="chat-conversation-list">
-            {conversations.data.map((conversation) => (
+            {conversationItems.map((conversation) => (
               <div key={conversation.id} className="chat-conversation-list-item">
                 <button
                   type="button"
@@ -94,6 +107,15 @@ export function ChatWorkspace({
                 />
               </div>
             ))}
+            {conversations.hasNextPage && (
+              <Button
+                block
+                loading={conversations.isFetchingNextPage}
+                onClick={() => void conversations.fetchNextPage()}
+              >
+                加载更多会话
+              </Button>
+            )}
           </div>
         )}
       </aside>
@@ -133,6 +155,11 @@ export function ChatWorkspace({
                 onRetry={(messageId) => retryMutation.mutate(messageId)}
               />
             ))
+          )}
+          {hasMoreRuns && (
+            <Button loading={loadingMoreRuns} onClick={() => void loadMoreRuns()}>
+              加载更多运行记录
+            </Button>
           )}
         </div>
         <div className="chat-composer">

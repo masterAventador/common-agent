@@ -29,6 +29,7 @@ COMMON_AGENT_E2E_MVP_WORKFLOW_NAME="common-agent-q6-04-workflow-${RUN_ID}"
 COMMON_AGENT_E2E_DELETE_KNOWLEDGE_NAME="common-agent-u9-02-knowledge-${RUN_ID}"
 COMMON_AGENT_E2E_DELETE_EMPLOYEE_NAME="common-agent-u9-02-employee-${RUN_ID}"
 COMMON_AGENT_E2E_DELETE_WORKFLOW_NAME="common-agent-u9-02-workflow-${RUN_ID}"
+COMMON_AGENT_E2E_LIST_PREFIX="common-agent-u9-03-${RUN_ID}"
 COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="common-agent-a4-08-employee-${RUN_ID}"
 COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="common-agent-a4-08-knowledge-${RUN_ID}"
 ARTIFACT_ROOT="${REPOSITORY_ROOT}/.local/test-artifacts/platform-e2e/${E2E_SUITE}-${RUN_ID}"
@@ -41,7 +42,7 @@ FRONTEND_PID=""
 RAGFLOW_API_KEY=""
 COMMON_AGENT_DATABASE_URL="mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
 
-if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" && "${E2E_SUITE}" != "resource-deletion" ]]; then
+if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" && "${E2E_SUITE}" != "resource-deletion" && "${E2E_SUITE}" != "list-pagination" ]]; then
   echo "不支持的 E2E suite：${E2E_SUITE}" >&2
   exit 2
 fi
@@ -56,7 +57,7 @@ ensure_colima_profile() {
   if colima status --profile common-agent-dev >/dev/null 2>&1; then
     return
   fi
-  if [[ "${E2E_SUITE}" == "demo-chat" || "${E2E_SUITE}" == "frontend-loading" ]]; then
+  if [[ "${E2E_SUITE}" == "demo-chat" || "${E2E_SUITE}" == "frontend-loading" || "${E2E_SUITE}" == "list-pagination" ]]; then
     cpus=4
     memory_gib=12
   fi
@@ -265,7 +266,7 @@ if [[ "$(docker --context "${DOCKER_CONTEXT_NAME}" inspect \
     "${REPOSITORY_ROOT}/infra/platform/manage.sh" up
 fi
 export COMMON_AGENT_DATABASE_URL
-if [[ "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" ]]; then
+if [[ "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "list-pagination" ]]; then
   export COMMON_AGENT_INTEGRATION_MODE="real"
   if ! curl --fail --silent --show-error \
     "${RAGFLOW_BASE_URL}/api/v1/system/version" >/dev/null 2>&1; then
@@ -358,6 +359,12 @@ wait_for_url "http://127.0.0.1:${FRONTEND_PORT}/knowledge-bases"
     COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
     COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
       exec pnpm exec playwright test e2e/resource-deletion.spec.ts --config playwright.config.ts
+  elif [[ "${E2E_SUITE}" == "list-pagination" ]]; then
+    COMMON_AGENT_E2E_LIST_PREFIX="${COMMON_AGENT_E2E_LIST_PREFIX}" \
+    COMMON_AGENT_E2E_API_URL="http://127.0.0.1:${API_PORT}/api/v1" \
+    COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
+      exec pnpm exec playwright test e2e/list-pagination.spec.ts --config playwright.config.ts
   else
     COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="${COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME}" \
     COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME}" \

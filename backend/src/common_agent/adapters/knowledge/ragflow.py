@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import PurePosixPath
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, TypeAdapter, ValidationError
@@ -30,6 +31,13 @@ from common_agent.knowledge.base import (
     KnowledgeServiceUnavailable,
 )
 from common_agent.observability import outbound_trace_headers
+from common_agent.pagination import (
+    CursorPage,
+    InvalidPageCursor,
+    ListPageRequest,
+    decode_offset_cursor,
+    encode_offset_cursor,
+)
 
 
 class _RagFlowEnvelope(BaseModel):
@@ -37,6 +45,7 @@ class _RagFlowEnvelope(BaseModel):
 
     code: int
     data: Any = None
+    total_datasets: int | None = Field(default=None, ge=0)
 
 
 class _RagFlowDataset(BaseModel):
@@ -175,6 +184,64 @@ class RagFlowKnowledgeService:
         payload = _validate(_DATASET_LIST_ADAPTER, data)
         return tuple(self._knowledge_base(item) for item in payload)
 
+    async def page_knowledge_bases(
+        self,
+        page: ListPageRequest,
+    ) -> CursorPage[KnowledgeBaseSummary]:
+        scope = "knowledge-bases"
+        offset = (
+            0
+            if page.cursor is None
+            else decode_offset_cursor(
+                page.cursor,
+                scope=scope,
+                search=page.search,
+                limit=page.limit,
+            )
+        )
+        if offset % page.limit != 0:
+            raise InvalidPageCursor
+        params: dict[str, str | int] = {
+            "page": offset // page.limit + 1,
+            "page_size": page.limit,
+            "orderby": "create_time",
+            "desc": "true",
+        }
+        if page.search:
+            params["ext"] = json.dumps(
+                {"keywords": page.search},
+                ensure_ascii=True,
+                separators=(",", ":"),
+            )
+        response = cast(
+            tuple[Any, int | None],
+            await self._request(
+                "GET",
+                "/api/v1/datasets",
+                params=params,
+                include_total=True,
+            ),
+        )
+        data, total = response
+        payload = _validate(_DATASET_LIST_ADAPTER, data)
+        has_more = (
+            offset + len(payload) < total if total is not None else len(payload) == page.limit
+        )
+        next_cursor = (
+            encode_offset_cursor(
+                scope=scope,
+                search=page.search,
+                limit=page.limit,
+                offset=offset + len(payload),
+            )
+            if has_more
+            else None
+        )
+        return CursorPage(
+            items=tuple(self._knowledge_base(item) for item in payload),
+            next_cursor=next_cursor,
+        )
+
     async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
         data = await self._request(
             "GET",
@@ -300,6 +367,7 @@ class RagFlowKnowledgeService:
         *,
         dataset_scoped: bool = False,
         failure_mode: Literal["standard", "upload", "post_upload", "delete"] = "standard",
+        include_total: bool = False,
         **kwargs: Any,
     ) -> Any:
         self._require_configured()
@@ -358,6 +426,8 @@ class RagFlowKnowledgeService:
             if dataset_scoped and envelope.code == 102:
                 raise KnowledgeBaseNotFound()
             raise KnowledgeRequestRejected()
+        if include_total:
+            return envelope.data, envelope.total_datasets
         return envelope.data
 
     def _require_configured(self) -> None:

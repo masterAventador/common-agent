@@ -17,6 +17,13 @@ from common_agent.domain.conversation import (
     MessageRole,
     MessageStatus,
 )
+from common_agent.pagination import (
+    CursorPage,
+    ListPageRequest,
+    PageAnchor,
+    decode_keyset_cursor,
+    encode_keyset_cursor,
+)
 from common_agent.ports.conversations import (
     ConversationAlreadyExists,
     ConversationUnitOfWorkFactory,
@@ -50,6 +57,41 @@ class ConversationPersistence:
             if employee_id is None:
                 return await unit_of_work.conversations.list()
             return await unit_of_work.conversations.list_for_employee(employee_id)
+
+    async def page(
+        self,
+        page: ListPageRequest,
+        *,
+        employee_id: UUID | None = None,
+    ) -> CursorPage[Conversation]:
+        scope = "conversations" if employee_id is None else f"conversations-{employee_id}"
+        after = (
+            None
+            if page.cursor is None
+            else decode_keyset_cursor(
+                page.cursor,
+                scope=scope,
+                search=page.search,
+                limit=page.limit,
+            )
+        )
+        async with self._unit_of_work_factory() as unit_of_work:
+            result = await unit_of_work.conversations.page(
+                limit=page.limit,
+                search=page.search,
+                after=after,
+                employee_id=employee_id,
+            )
+        next_cursor = None
+        if result.has_more:
+            last = result.items[-1]
+            next_cursor = encode_keyset_cursor(
+                scope=scope,
+                search=page.search,
+                limit=page.limit,
+                anchor=PageAnchor(created_at=last.created_at, id=str(last.id)),
+            )
+        return CursorPage(items=result.items, next_cursor=next_cursor)
 
     async def create(
         self,

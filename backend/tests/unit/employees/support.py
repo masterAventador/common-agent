@@ -6,6 +6,7 @@ from uuid import UUID
 from common_agent.domain.employee import Employee, EmployeeConfiguration
 from common_agent.employees.service import EmployeeService
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.pagination import PageAnchor, PageSlice
 from common_agent.ports.employees import EmployeeAlreadyExists
 from tests.support.knowledge import KnowledgeProbe
 
@@ -30,6 +31,33 @@ class EmployeeRepositoryProbe:
 
     async def list(self) -> tuple[Employee, ...]:
         return tuple(self.values.values())
+
+    async def page(
+        self,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[Employee]:
+        values = sorted(
+            self.values.values(),
+            key=lambda item: (item.created_at, str(item.id)),
+            reverse=True,
+        )
+        if search:
+            normalized = search.casefold()
+            values = [
+                item
+                for item in values
+                if normalized in f"{item.id} {item.name} {item.description}".casefold()
+            ]
+        if after is not None:
+            values = [
+                item
+                for item in values
+                if (item.created_at, str(item.id)) < (after.created_at, after.id)
+            ]
+        return PageSlice(items=tuple(values[:limit]), has_more=len(values) > limit)
 
     async def get(self, employee_id: UUID) -> Employee | None:
         return self.values.get(employee_id)

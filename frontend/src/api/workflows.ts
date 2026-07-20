@@ -3,6 +3,12 @@ import { z } from "zod";
 import type { components } from "./generated/schema";
 import { apiClient } from "./client";
 import { toApiClientError } from "./errors";
+import {
+  cursorPageSchema,
+  listPageParams,
+  type CursorPage,
+  type ListPageRequest,
+} from "./pagination";
 
 export type Workflow = components["schemas"]["WorkflowResponse"];
 export type WorkflowConfigurationInput = components["schemas"]["WorkflowConfigurationBody"];
@@ -99,13 +105,13 @@ const workflowValidationSchema = z.strictObject({
   ),
 });
 
-const workflowsSchema = z.array(workflowSchema);
+const workflowsSchema = cursorPageSchema(workflowSchema);
 
 export function parseWorkflowResponse(data: unknown): Workflow {
   return workflowSchema.parse(data);
 }
 
-export function parseWorkflowsResponse(data: unknown): Workflow[] {
+export function parseWorkflowsResponse(data: unknown): CursorPage<Workflow> {
   return workflowsSchema.parse(data);
 }
 
@@ -113,9 +119,13 @@ export function parseWorkflowValidationResponse(data: unknown): WorkflowValidati
   return workflowValidationSchema.parse(data);
 }
 
-export async function fetchWorkflows(): Promise<Workflow[]> {
+export async function fetchWorkflows(
+  page: ListPageRequest = {},
+): Promise<CursorPage<Workflow>> {
   try {
-    const response = await apiClient.get<unknown>("/workflows");
+    const response = await apiClient.get<unknown>("/workflows", {
+      params: listPageParams(page),
+    });
     return parseWorkflowsResponse(response.data);
   } catch (error) {
     throw toApiClientError(error);

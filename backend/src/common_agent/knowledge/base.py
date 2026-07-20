@@ -11,6 +11,7 @@ from common_agent.domain.knowledge import (
     KnowledgeRetrievalResult,
     KnowledgeServiceStatus,
 )
+from common_agent.pagination import CursorPage, ListPageRequest
 
 
 class KnowledgeServiceError(Exception):
@@ -100,3 +101,10 @@ class KnowledgeService(Protocol):
     async def list_documents(self, knowledge_base_id: str) -> tuple[KnowledgeDocument, ...]: ...
 
     async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult: ...
+
+
+@runtime_checkable
+class PageableKnowledgeService(Protocol):
+    async def page_knowledge_bases(
+        self, page: ListPageRequest
+    ) -> CursorPage[KnowledgeBaseSummary]: ...

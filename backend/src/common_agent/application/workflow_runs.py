@@ -22,6 +22,7 @@ from common_agent.domain.workflow_run import (
     WorkflowRunTrigger,
 )
 from common_agent.observability import bind_observation_context, log_event
+from common_agent.pagination import CursorPage, ListPageRequest
 from common_agent.workflows.errors import WorkflowExecutionStopped
 from common_agent.workflows.events import WorkflowEventBroker, WorkflowEventKind
 from common_agent.workflows.execution import (
@@ -78,6 +79,13 @@ class WorkflowRunCoordinator:
 
     async def list_for_conversation(self, conversation_id: UUID) -> tuple[WorkflowRun, ...]:
         return await self._run_projection.list_for_conversation(conversation_id)
+
+    async def page_for_conversation(
+        self,
+        conversation_id: UUID,
+        page: ListPageRequest,
+    ) -> CursorPage[WorkflowRun]:
+        return await self._run_projection.page_for_conversation(conversation_id, page)
 
     async def start(
         self,

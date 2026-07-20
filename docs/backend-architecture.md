@@ -438,8 +438,8 @@ POST   /api/v1/workflow-runs/{run_id}/stop
 GET    /api/v1/workflow-runs/{run_id}/events
 ```
 
-四类删除是 MVP 后 U9-01 增加的正式能力；批量操作、分页高级筛选和权限不属于原 MVP，分页与
-搜索由 U9-03 交付，权限由 Wave 10 交付。
+四类删除是 MVP 后 U9-01 增加的正式能力；U9-03 为五类列表交付统一游标与基础服务端搜索。
+批量操作、分页高级筛选和权限不属于原 MVP，权限由 Wave 10 交付。
 
 ### 7.1 资源删除矩阵
 
@@ -456,7 +456,25 @@ GET    /api/v1/workflow-runs/{run_id}/events
 `knowledge_base_delete_result_unknown`，客户端刷新权威列表确认后再由用户重试，避免重复外部
 副作用被伪装成确定成功。
 
-### 7.2 日志、指标与追踪
+### 7.2 列表分页、搜索与排序
+
+会话、数字员工、知识库、工作流和会话内运行摘要的公开列表统一接受 `search`、`limit`、
+`cursor`，统一返回 `items` 与可空 `next_cursor`。`limit` 为 `1-100`，搜索词最多 128 字符，
+游标最多 1024 字符；游标使用 URL-safe 的规范 JSON、上下文指纹和校验和封装，绑定资源作用域、
+搜索词和页大小，被修改或跨筛选复用时以 `invalid_page_cursor` 关闭失败，不包含凭据或业务正文。
+
+平台 MySQL 查询按不可变的 `created_at DESC, id DESC` 做 keyset seek，并用组合索引覆盖无筛选
+翻页；每次只读取 `limit + 1` 条判断下一页，不先物化全表。工作流列表先读取一页定义，再分别以
+两条批量查询装载节点和边，因此非空页固定为 3 条 SQL，不按工作流数量增长。名称、标题和运行
+输入采用可命中 B-tree 组合索引的前缀搜索，完整 UUID 与状态走等值索引；不使用 `%关键词%`
+全表扫描，也不把全表拉入应用进程。会话员工筛选和运行会话筛选均保留在组合索引首列。
+
+RAGFlow v0.25.6 数据集列表只走官方 `page/page_size/orderby/desc` 与 `ext.keywords` 能力；其页码
+和总数在 `RagflowKnowledgeService` 内转换为平台 opaque offset cursor，第三方分页类型不越过
+适配层。平台不修改 RAGFlow 源码，也不直连其 MySQL。创建或删除后客户端必须废弃旧页链；在同一
+页链内新增的更靠前记录不会插入后续 keyset 页，删除游标锚点也不会使读取失效。
+
+### 7.3 日志、指标与追踪
 
 正式应用统一向标准输出写单行 JSON 日志，固定包含 UTC 时间、级别、logger、稳定事件名和
 源码位置；HTTP 完成事件附带方法、路由模板、状态、耗时与稳定错误码。每个请求生成

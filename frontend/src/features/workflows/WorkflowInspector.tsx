@@ -1,6 +1,6 @@
 import { DeleteOutlined } from "@ant-design/icons";
 import { Button, Card, Empty, Flex, Input, Select, Tag, Typography } from "antd";
-import type { Dispatch } from "react";
+import type { Dispatch, UIEvent } from "react";
 
 import { WorkflowRunPanel } from "./WorkflowRunPanel";
 import type { WorkflowEditorAction, WorkflowEditorState } from "./workflowEditor";
@@ -13,6 +13,9 @@ export function WorkflowInspector({
   knowledgeBases,
   knowledgeLoading,
   knowledgeError,
+  knowledgeSearch,
+  onKnowledgeSearch,
+  onKnowledgePopupScroll,
   editingLocked,
   runController,
   dispatch,
@@ -21,6 +24,9 @@ export function WorkflowInspector({
   knowledgeBases: Array<{ id: string; name: string }>;
   knowledgeLoading: boolean;
   knowledgeError?: string;
+  knowledgeSearch: string;
+  onKnowledgeSearch: (value: string) => void;
+  onKnowledgePopupScroll: (event: UIEvent<HTMLDivElement>) => void;
   editingLocked: boolean;
   runController: ReturnType<typeof useWorkflowRun>;
   dispatch: Dispatch<WorkflowEditorAction>;
@@ -128,7 +134,12 @@ export function WorkflowInspector({
                 loading={knowledgeLoading}
                 disabled={editingLocked || Boolean(knowledgeError)}
                 placeholder={knowledgeError ? "知识库暂时不可用" : "选择知识库"}
+                showSearch
+                filterOption={false}
+                searchValue={knowledgeSearch}
                 options={knowledgeBases.map((item) => ({ value: item.id, label: item.name }))}
+                onSearch={onKnowledgeSearch}
+                onPopupScroll={onKnowledgePopupScroll}
                 onChange={(value) =>
                   dispatch({
                     type: "node_config_changed",

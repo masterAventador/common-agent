@@ -180,6 +180,8 @@ class EmployeeRow(PersistenceBase):
             name="ck_employees_allowed_workflow_ids",
         ),
         CheckConstraint("updated_at >= created_at", name="ck_employees_timestamps"),
+        Index("ix_employees_created", "created_at", "id"),
+        Index("ix_employees_name_created", "name", "created_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -210,6 +212,16 @@ class ConversationRow(PersistenceBase):
             name="ck_conversations_title",
         ),
         CheckConstraint("updated_at >= created_at", name="ck_conversations_timestamps"),
+        Index("ix_conversations_created", "created_at", "id"),
+        Index("ix_conversations_employee_created", "employee_id", "created_at", "id"),
+        Index("ix_conversations_title_created", "title", "created_at", "id"),
+        Index(
+            "ix_conversations_employee_title_created",
+            "employee_id",
+            "title",
+            "created_at",
+            "id",
+        ),
         Index("ix_conversations_employee_updated", "employee_id", "updated_at", "id"),
     )
 
@@ -347,6 +359,8 @@ class WorkflowRow(PersistenceBase):
             name="ck_workflows_description",
         ),
         CheckConstraint("updated_at >= created_at", name="ck_workflows_timestamps"),
+        Index("ix_workflows_created", "created_at", "id"),
+        Index("ix_workflows_name_created", "name", "created_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -504,7 +518,27 @@ class WorkflowRunRow(PersistenceBase):
             name="ck_workflow_runs_state",
         ),
         Index("ix_workflow_runs_workflow_created", "workflow_id", "created_at"),
-        Index("ix_workflow_runs_conversation_created", "conversation_id", "created_at"),
+        Index(
+            "ix_workflow_runs_conversation_created",
+            "conversation_id",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_workflow_runs_conversation_input_created",
+            "conversation_id",
+            "input",
+            "created_at",
+            "id",
+            mysql_length={"input": 191},
+        ),
+        Index(
+            "ix_workflow_runs_conversation_status_created",
+            "conversation_id",
+            "status",
+            "created_at",
+            "id",
+        ),
         Index("ix_workflow_runs_status", "status"),
     )
 

@@ -11,6 +11,13 @@ from common_agent.application.workflow_contracts import (
 )
 from common_agent.concurrency import KeyedLockPool
 from common_agent.domain.workflow_run import WorkflowRun
+from common_agent.pagination import (
+    CursorPage,
+    ListPageRequest,
+    PageAnchor,
+    decode_keyset_cursor,
+    encode_keyset_cursor,
+)
 from common_agent.ports.workflows import WorkflowRunAlreadyExists, WorkflowUnitOfWorkFactory
 from common_agent.workflows.errors import WorkflowExecutionStopped
 from common_agent.workflows.events import WorkflowEventBroker, WorkflowEventKind
@@ -38,6 +45,40 @@ class WorkflowRunProjection:
     async def list_for_conversation(self, conversation_id: UUID) -> tuple[WorkflowRun, ...]:
         async with self._unit_of_work_factory() as unit_of_work:
             return await unit_of_work.workflow_runs.list_for_conversation(conversation_id)
+
+    async def page_for_conversation(
+        self,
+        conversation_id: UUID,
+        page: ListPageRequest,
+    ) -> CursorPage[WorkflowRun]:
+        scope = f"workflow-runs-{conversation_id}"
+        after = (
+            None
+            if page.cursor is None
+            else decode_keyset_cursor(
+                page.cursor,
+                scope=scope,
+                search=page.search,
+                limit=page.limit,
+            )
+        )
+        async with self._unit_of_work_factory() as unit_of_work:
+            result = await unit_of_work.workflow_runs.page_for_conversation(
+                conversation_id,
+                limit=page.limit,
+                search=page.search,
+                after=after,
+            )
+        next_cursor = None
+        if result.has_more:
+            last = result.items[-1]
+            next_cursor = encode_keyset_cursor(
+                scope=scope,
+                search=page.search,
+                limit=page.limit,
+                anchor=PageAnchor(created_at=last.created_at, id=str(last.id)),
+            )
+        return CursorPage(items=result.items, next_cursor=next_cursor)
 
     async def create(self, run: WorkflowRun) -> None:
         try:

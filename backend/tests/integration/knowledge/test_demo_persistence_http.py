@@ -113,7 +113,7 @@ async def _assert_state_and_second_turn_after_restart(
     async with httpx.AsyncClient(base_url=api_url, timeout=30) as client:
         knowledge_bases = await client.get("/api/v1/knowledge-bases")
         assert knowledge_bases.status_code == 200
-        assert knowledge_base_id in {str(item["id"]) for item in knowledge_bases.json()}
+        assert knowledge_base_id in {str(item["id"]) for item in knowledge_bases.json()["items"]}
 
         documents = await client.get(f"/api/v1/knowledge-bases/{knowledge_base_id}/documents")
         assert documents.status_code == 200

@@ -83,20 +83,22 @@ describe("workflow API boundary", () => {
   });
 
   it("uses only the platform workflow CRUD and validation endpoints", async () => {
-    vi.mocked(apiClient.get).mockResolvedValue({ data: [workflow] });
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { items: [workflow], next_cursor: null },
+    });
     vi.mocked(apiClient.post)
       .mockResolvedValueOnce({ data: { valid: true, issues: [] } })
       .mockResolvedValueOnce({ data: workflow });
     vi.mocked(apiClient.put).mockResolvedValue({ data: workflow });
     vi.mocked(apiClient.delete).mockResolvedValue({ data: undefined });
 
-    await expect(fetchWorkflows()).resolves.toEqual([workflow]);
+    await expect(fetchWorkflows()).resolves.toEqual({ items: [workflow], next_cursor: null });
     await expect(validateWorkflow(configuration)).resolves.toEqual({ valid: true, issues: [] });
     await expect(createWorkflow(configuration)).resolves.toEqual(workflow);
     await expect(updateWorkflow(workflow.id, configuration)).resolves.toEqual(workflow);
     await expect(deleteWorkflow(workflow.id)).resolves.toBeUndefined();
 
-    expect(apiClient.get).toHaveBeenCalledWith("/workflows");
+    expect(apiClient.get).toHaveBeenCalledWith("/workflows", { params: {} });
     expect(apiClient.post).toHaveBeenNthCalledWith(1, "/workflows/validate", configuration);
     expect(apiClient.post).toHaveBeenNthCalledWith(2, "/workflows", configuration);
     expect(apiClient.put).toHaveBeenCalledWith(`/workflows/${workflow.id}`, configuration);

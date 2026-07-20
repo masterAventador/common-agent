@@ -42,10 +42,18 @@ describe("knowledge API boundary", () => {
   });
 
   it("accepts the generated knowledge snapshots and rejects schema drift", () => {
-    expect(parseKnowledgeBasesResponse([knowledgeBase])).toEqual([knowledgeBase]);
+    expect(parseKnowledgeBasesResponse({ items: [knowledgeBase], next_cursor: null })).toEqual({
+      items: [knowledgeBase],
+      next_cursor: null,
+    });
     expect(parseKnowledgeDocumentsResponse([document])).toEqual([document]);
 
-    expect(() => parseKnowledgeBasesResponse([{ ...knowledgeBase, private_token: "secret" }])).toThrow();
+    expect(() =>
+      parseKnowledgeBasesResponse({
+        items: [{ ...knowledgeBase, private_token: "secret" }],
+        next_cursor: null,
+      }),
+    ).toThrow();
     expect(() =>
       parseKnowledgeDocumentsResponse([{ ...document, parsing_status: "unknown" }]),
     ).toThrow();
@@ -53,19 +61,22 @@ describe("knowledge API boundary", () => {
 
   it("uses only the platform API for list and create operations", async () => {
     vi.mocked(apiClient.get)
-      .mockResolvedValueOnce({ data: [knowledgeBase] })
+      .mockResolvedValueOnce({ data: { items: [knowledgeBase], next_cursor: null } })
       .mockResolvedValueOnce({ data: [document] });
     vi.mocked(apiClient.post).mockResolvedValueOnce({ data: knowledgeBase });
     vi.mocked(apiClient.delete).mockResolvedValue({ data: undefined });
 
-    await expect(fetchKnowledgeBases()).resolves.toEqual([knowledgeBase]);
+    await expect(fetchKnowledgeBases()).resolves.toEqual({
+      items: [knowledgeBase],
+      next_cursor: null,
+    });
     await expect(createKnowledgeBase({ name: "产品手册", description: "通用产品资料" })).resolves.toEqual(
       knowledgeBase,
     );
     await expect(fetchKnowledgeDocuments("kb-1")).resolves.toEqual([document]);
     await expect(deleteKnowledgeBase("kb/with space")).resolves.toBeUndefined();
 
-    expect(apiClient.get).toHaveBeenNthCalledWith(1, "/knowledge-bases");
+    expect(apiClient.get).toHaveBeenNthCalledWith(1, "/knowledge-bases", { params: {} });
     expect(apiClient.post).toHaveBeenCalledWith("/knowledge-bases", {
       name: "产品手册",
       description: "通用产品资料",

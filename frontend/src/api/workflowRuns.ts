@@ -3,6 +3,12 @@ import { z } from "zod";
 import type { components } from "./generated/schema";
 import { apiBaseUrl, apiClient } from "./client";
 import { toApiClientError } from "./errors";
+import {
+  cursorPageSchema,
+  listPageParams,
+  type CursorPage,
+  type ListPageRequest,
+} from "./pagination";
 
 export type WorkflowRun = components["schemas"]["WorkflowRunResponse"];
 export type WorkflowRunEvent = components["schemas"]["WorkflowRunEventResponse"];
@@ -52,7 +58,7 @@ const workflowRunSchema = z
       });
     }
   });
-const workflowRunsSchema = z.array(workflowRunSchema);
+const workflowRunsSchema = cursorPageSchema(workflowRunSchema);
 const workflowRunEventTypes = [
   "workflow.run.started",
   "workflow.node.started",
@@ -93,10 +99,11 @@ export function parseWorkflowRunEvent(data: unknown): WorkflowRunEvent {
 
 export async function fetchConversationWorkflowRuns(
   conversationId: string,
-): Promise<WorkflowRun[]> {
+  page: ListPageRequest = {},
+): Promise<CursorPage<WorkflowRun>> {
   try {
     const response = await apiClient.get<unknown>("/workflow-runs", {
-      params: { conversation_id: conversationId },
+      params: { conversation_id: conversationId, ...listPageParams(page) },
     });
     return workflowRunsSchema.parse(response.data);
   } catch (error) {

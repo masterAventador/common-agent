@@ -146,7 +146,7 @@ def test_workflow_run_http_and_sse_persist_summary_across_restart() -> None:
                 params={"conversation_id": str(uuid4())},
             )
             assert unrelated_runs.status_code == 200
-            assert unrelated_runs.json() == []
+            assert unrelated_runs.json() == {"items": [], "next_cursor": None}
             invalid_conversation = client.get(
                 "/api/v1/workflow-runs",
                 params={"conversation_id": "not-a-uuid"},

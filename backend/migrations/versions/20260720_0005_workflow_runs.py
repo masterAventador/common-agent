@@ -48,8 +48,7 @@ def upgrade() -> None:
             name="ck_workflow_runs_input",
         ),
         sa.CheckConstraint(
-            "CHAR_LENGTH(output) <= 200000 "
-            "AND (output = '' OR CHAR_LENGTH(TRIM(output)) >= 1)",
+            "CHAR_LENGTH(output) <= 200000 AND (output = '' OR CHAR_LENGTH(TRIM(output)) >= 1)",
             name="ck_workflow_runs_output",
         ),
         sa.CheckConstraint(

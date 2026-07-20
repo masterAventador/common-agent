@@ -84,9 +84,12 @@ function renderPage() {
 describe("EmployeesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    employeeApi.fetchEmployees.mockResolvedValue([employee]);
-    knowledgeApi.fetchKnowledgeBases.mockResolvedValue([knowledgeBase]);
-    workflowApi.fetchWorkflows.mockResolvedValue([workflow]);
+    employeeApi.fetchEmployees.mockResolvedValue({ items: [employee], next_cursor: null });
+    knowledgeApi.fetchKnowledgeBases.mockResolvedValue({
+      items: [knowledgeBase],
+      next_cursor: null,
+    });
+    workflowApi.fetchWorkflows.mockResolvedValue({ items: [workflow], next_cursor: null });
   });
 
   it("lists generic employees and resolves their bound knowledge base names", async () => {
@@ -100,6 +103,42 @@ describe("EmployeesPage", () => {
     expect(screen.getByRole("button", { name: "与知识助理开始对话" })).toBeEnabled();
   });
 
+  it("keeps search in the query key and loads the next employee cursor page", async () => {
+    const second = {
+      ...employee,
+      id: "f48cbd21-0b4e-4d76-b0c2-f7bb26ef62bf",
+      name: "知识助理二号",
+    };
+    employeeApi.fetchEmployees.mockImplementation(
+      ({ cursor, search }: { cursor?: string; search?: string }) => {
+        if (search) return Promise.resolve({ items: [employee], next_cursor: null });
+        if (cursor === "employee-next") {
+          return Promise.resolve({ items: [second], next_cursor: null });
+        }
+        return Promise.resolve({ items: [employee], next_cursor: "employee-next" });
+      },
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "加载更多数字员工" }));
+    expect(await screen.findByText(second.name)).toBeInTheDocument();
+    expect(employeeApi.fetchEmployees).toHaveBeenCalledWith({
+      cursor: "employee-next",
+      limit: 20,
+      search: "",
+    });
+
+    await user.type(screen.getByRole("searchbox", { name: "搜索数字员工" }), "知识");
+    await waitFor(() =>
+      expect(employeeApi.fetchEmployees).toHaveBeenCalledWith({
+        cursor: undefined,
+        limit: 20,
+        search: "知识",
+      }),
+    );
+  });
+
   it("creates an employee with an optional knowledge-base binding", async () => {
     const created = {
       ...employee,
@@ -107,8 +146,8 @@ describe("EmployeesPage", () => {
       name: "制度问答助理",
     };
     employeeApi.fetchEmployees
-      .mockResolvedValueOnce([employee])
-      .mockResolvedValue([employee, created]);
+      .mockResolvedValueOnce({ items: [employee], next_cursor: null })
+      .mockResolvedValue({ items: [employee, created], next_cursor: null });
     employeeApi.createEmployee.mockResolvedValue(created);
     const user = userEvent.setup();
     renderPage();
@@ -140,7 +179,9 @@ describe("EmployeesPage", () => {
 
   it("edits an existing employee without losing the knowledge-base binding", async () => {
     const updated = { ...employee, description: "更新后的说明" };
-    employeeApi.fetchEmployees.mockResolvedValueOnce([employee]).mockResolvedValue([updated]);
+    employeeApi.fetchEmployees
+      .mockResolvedValueOnce({ items: [employee], next_cursor: null })
+      .mockResolvedValue({ items: [updated], next_cursor: null });
     employeeApi.updateEmployee.mockResolvedValue(updated);
     const user = userEvent.setup();
     renderPage();
@@ -181,7 +222,10 @@ describe("EmployeesPage", () => {
   });
 
   it("shows existing workflow permissions and disables only that field when workflows fail", async () => {
-    employeeApi.fetchEmployees.mockResolvedValue([{ ...employee, allowed_workflow_ids: [workflow.id] }]);
+    employeeApi.fetchEmployees.mockResolvedValue({
+      items: [{ ...employee, allowed_workflow_ids: [workflow.id] }],
+      next_cursor: null,
+    });
     workflowApi.fetchWorkflows.mockRejectedValue(new Error("工作流服务暂时不可用"));
     const user = userEvent.setup();
     renderPage();
@@ -211,7 +255,7 @@ describe("EmployeesPage", () => {
   it("shows a safe employee-list error and retries the same query", async () => {
     employeeApi.fetchEmployees
       .mockRejectedValueOnce(new Error("无法连接后端服务"))
-      .mockResolvedValueOnce([employee]);
+      .mockResolvedValueOnce({ items: [employee], next_cursor: null });
     const user = userEvent.setup();
     renderPage();
 
@@ -254,7 +298,9 @@ describe("EmployeesPage", () => {
   });
 
   it("removes an employee from the list only after deletion succeeds", async () => {
-    employeeApi.fetchEmployees.mockResolvedValueOnce([employee]).mockResolvedValue([]);
+    employeeApi.fetchEmployees
+      .mockResolvedValueOnce({ items: [employee], next_cursor: null })
+      .mockResolvedValue({ items: [], next_cursor: null });
     employeeApi.deleteEmployee.mockResolvedValue(undefined);
     const user = userEvent.setup();
     renderPage();

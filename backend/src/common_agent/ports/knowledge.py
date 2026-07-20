@@ -6,6 +6,7 @@ from types import TracebackType
 from typing import Protocol
 
 from common_agent.domain.knowledge import KnowledgeBaseSummary, KnowledgeDocument
+from common_agent.pagination import PageAnchor, PageSlice
 
 
 class DemoKnowledgeBaseAlreadyExists(Exception):
@@ -31,6 +32,14 @@ class PersistedDemoKnowledgeDocument:
 
 class DemoKnowledgeRepository(Protocol):
     async def list_knowledge_bases(self) -> tuple[PersistedDemoKnowledgeBase, ...]: ...
+
+    async def page_knowledge_bases(
+        self,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[PersistedDemoKnowledgeBase]: ...
 
     async def get_knowledge_base(
         self, knowledge_base_id: str

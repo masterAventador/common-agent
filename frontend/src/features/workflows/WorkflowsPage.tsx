@@ -1,14 +1,13 @@
-import { ApartmentOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
+import { ReloadOutlined } from "@ant-design/icons";
 import { ReactFlowProvider } from "@xyflow/react";
-import { Alert, Button, Flex, Skeleton, Space, Tag, Typography } from "antd";
+import { Alert, Button, Skeleton } from "antd";
 import { getErrorMessage } from "../../api/errors";
-import { ResourceDeleteButton } from "../../components/ResourceDeleteButton";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
 import { WorkflowCanvas } from "./WorkflowCanvas";
 import { WorkflowInspector } from "./WorkflowInspector";
+import { WorkflowPageHeader } from "./WorkflowPageHeader";
 import { WorkflowSidebar } from "./WorkflowSidebar";
 import { useWorkflowDesigner } from "./useWorkflowDesigner";
-const { Paragraph, Title } = Typography;
 
 export function WorkflowsPage() {
   const controller = useWorkflowDesigner();
@@ -45,46 +44,7 @@ export function WorkflowsPage() {
 
   return (
     <section className="workflows-page">
-      <Flex justify="space-between" align="flex-start" gap={24} className="workflows-heading">
-        <div>
-          <Space align="center">
-            <ApartmentOutlined className="workflows-title-icon" />
-            <Title level={2}>工作流</Title>
-            {state.dirty ? <Tag color="gold">有未保存修改</Tag> : <Tag>已保存</Tag>}
-          </Space>
-          <Paragraph type="secondary">
-            拖入节点并通过连接点编排流程，保存前由服务端执行最终校验。
-          </Paragraph>
-        </div>
-        <Space>
-          <ResourceDeleteButton
-            resourceKind="工作流"
-            resourceName={state.name || "未命名工作流"}
-            impact="工作流定义、节点、连线和已终止运行记录都会被永久删除。"
-            disabled={!state.workflowId || controller.activeRun || controller.deleteMutation.isPending}
-            loading={controller.deleteMutation.isPending}
-            onConfirm={controller.deleteSelectedWorkflow}
-          />
-          <Button
-            icon={<PlusOutlined />}
-            aria-label="新建工作流"
-            disabled={controller.activeRun}
-            onClick={controller.createDraft}
-          >
-            新建工作流
-          </Button>
-          <Button
-            type="primary"
-            icon={<SaveOutlined />}
-            aria-label="保存工作流"
-            loading={controller.saveMutation.isPending}
-            disabled={controller.activeRun}
-            onClick={controller.save}
-          >
-            校验并保存
-          </Button>
-        </Space>
-      </Flex>
+      <WorkflowPageHeader controller={controller} />
 
       {controller.deleteNotice && (
         <Alert
@@ -151,9 +111,14 @@ export function WorkflowsPage() {
 
       <div className="workflow-designer">
         <WorkflowSidebar
-          workflows={workflows.data}
+          workflows={controller.workflowItems}
           state={state}
           editingLocked={controller.activeRun}
+          search={controller.workflowSearch}
+          onSearch={controller.setWorkflowSearch}
+          hasMore={Boolean(workflows.hasNextPage)}
+          loadingMore={workflows.isFetchingNextPage}
+          onLoadMore={() => void workflows.fetchNextPage()}
           onSelectWorkflow={controller.selectWorkflow}
           dispatch={controller.dispatch}
         />
@@ -167,9 +132,21 @@ export function WorkflowsPage() {
         </ReactFlowProvider>
         <WorkflowInspector
           state={state}
-          knowledgeBases={controller.knowledgeBases.data ?? []}
+          knowledgeBases={controller.knowledgeItems}
           knowledgeLoading={controller.knowledgeBases.isPending}
           knowledgeError={controller.knowledgeError}
+          knowledgeSearch={controller.knowledgeSearch}
+          onKnowledgeSearch={controller.setKnowledgeSearch}
+          onKnowledgePopupScroll={(event) => {
+            const target = event.currentTarget;
+            if (
+              controller.knowledgeBases.hasNextPage &&
+              !controller.knowledgeBases.isFetchingNextPage &&
+              target.scrollTop + target.clientHeight >= target.scrollHeight - 16
+            ) {
+              void controller.knowledgeBases.fetchNextPage();
+            }
+          }}
           editingLocked={controller.activeRun}
           runController={controller.runController}
           dispatch={controller.dispatch}

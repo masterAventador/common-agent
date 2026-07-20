@@ -15,6 +15,13 @@ from common_agent.domain.workflow import (
 )
 from common_agent.knowledge.base import KnowledgeBaseNotFound
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.pagination import (
+    CursorPage,
+    ListPageRequest,
+    PageAnchor,
+    decode_keyset_cursor,
+    encode_keyset_cursor,
+)
 from common_agent.ports.workflows import WorkflowUnitOfWorkFactory
 from common_agent.workflows.validator import (
     WorkflowGraphInvalid,
@@ -39,6 +46,35 @@ class WorkflowCatalog:
     async def list(self) -> tuple[WorkflowDefinition, ...]:
         async with self._unit_of_work_factory() as unit_of_work:
             return await unit_of_work.workflows.list()
+
+    async def page(self, page: ListPageRequest) -> CursorPage[WorkflowDefinition]:
+        scope = "workflows"
+        after = (
+            None
+            if page.cursor is None
+            else decode_keyset_cursor(
+                page.cursor,
+                scope=scope,
+                search=page.search,
+                limit=page.limit,
+            )
+        )
+        async with self._unit_of_work_factory() as unit_of_work:
+            result = await unit_of_work.workflows.page(
+                limit=page.limit,
+                search=page.search,
+                after=after,
+            )
+        next_cursor = None
+        if result.has_more:
+            last = result.items[-1]
+            next_cursor = encode_keyset_cursor(
+                scope=scope,
+                search=page.search,
+                limit=page.limit,
+                anchor=PageAnchor(created_at=last.created_at, id=str(last.id)),
+            )
+        return CursorPage(items=result.items, next_cursor=next_cursor)
 
     async def get(self, workflow_id: UUID) -> WorkflowDefinition:
         async with self._unit_of_work_factory() as unit_of_work:

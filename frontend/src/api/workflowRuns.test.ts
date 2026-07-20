@@ -134,14 +134,14 @@ describe("workflow run API and SSE boundary", () => {
       .mockResolvedValueOnce({ data: run })
       .mockResolvedValueOnce({ data: { run_id: run.id } });
     vi.mocked(apiClient.get)
-      .mockResolvedValueOnce({ data: [run] })
+      .mockResolvedValueOnce({ data: { items: [run], next_cursor: null } })
       .mockResolvedValueOnce({ data: run });
 
     await expect(
       startWorkflowRun(run.workflow_id, { run_id: run.id, input: run.input }),
     ).resolves.toEqual(run);
     await expect(fetchConversationWorkflowRuns("4feb17bd-684e-4160-a2a0-ca8ac91a6817"))
-      .resolves.toEqual([run]);
+      .resolves.toEqual({ items: [run], next_cursor: null });
     await expect(fetchWorkflowRun(run.id)).resolves.toEqual(run);
     await expect(stopWorkflowRun(run.id)).resolves.toEqual({ run_id: run.id });
 

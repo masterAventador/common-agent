@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from common_agent.api.errors import AppError, ErrorEnvelope
@@ -13,6 +13,7 @@ from common_agent.api.routers.resource_deletion import (
     resource_deletion_error,
     resource_deletion_service,
 )
+from common_agent.api.schemas.pagination import CursorPageResponse
 from common_agent.application.resource_deletion import ResourceDeletionError
 from common_agent.application.workflow_service import WorkflowServiceError
 from common_agent.domain.employee import (
@@ -27,6 +28,14 @@ from common_agent.domain.employee import (
 )
 from common_agent.employees.service import EmployeeNotFound, EmployeeService
 from common_agent.knowledge.base import KnowledgeServiceError
+from common_agent.pagination import (
+    DEFAULT_PAGE_LIMIT,
+    MAX_PAGE_CURSOR_LENGTH,
+    MAX_PAGE_LIMIT,
+    MAX_PAGE_SEARCH_LENGTH,
+    InvalidPageCursor,
+    ListPageRequest,
+)
 from common_agent.ports.employees import EmployeeAlreadyExists
 
 router = APIRouter(prefix="/api/v1/employees", tags=["employees"])
@@ -120,16 +129,32 @@ def _employee_error_to_app_error(error: Exception) -> AppError:
         return AppError("employee_conflict", "数字员工已存在", 409, False)
     if isinstance(error, EmployeeValidationError):
         return AppError("validation_error", "请求参数不合法", 422, False)
+    if isinstance(error, InvalidPageCursor):
+        return AppError(error.code, error.message, 422, error.retryable)
     raise TypeError("unsupported employee application error")
 
 
 @router.get(
     "",
-    response_model=list[EmployeeResponse],
-    responses={503: {"model": ErrorEnvelope}},
+    response_model=CursorPageResponse[EmployeeResponse],
+    responses={422: {"model": ErrorEnvelope}, 503: {"model": ErrorEnvelope}},
 )
-async def list_employees(request: Request) -> list[EmployeeResponse]:
-    return [_response(employee) for employee in await _application(request).list()]
+async def list_employees(
+    request: Request,
+    search: Annotated[str, Query(max_length=MAX_PAGE_SEARCH_LENGTH)] = "",
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
+    cursor: Annotated[str | None, Query(max_length=MAX_PAGE_CURSOR_LENGTH)] = None,
+) -> CursorPageResponse[EmployeeResponse]:
+    try:
+        page = await _application(request).page(
+            ListPageRequest(limit=limit, search=search, cursor=cursor)
+        )
+    except InvalidPageCursor as error:
+        raise _employee_error_to_app_error(error) from error
+    return CursorPageResponse(
+        items=[_response(item) for item in page.items],
+        next_cursor=page.next_cursor,
+    )
 
 
 @router.delete(

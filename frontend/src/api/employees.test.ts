@@ -46,7 +46,10 @@ describe("employee API boundary", () => {
 
   it("accepts generated employee snapshots and rejects response drift", () => {
     expect(parseEmployeeResponse(employee)).toEqual(employee);
-    expect(parseEmployeesResponse([employee])).toEqual([employee]);
+    expect(parseEmployeesResponse({ items: [employee], next_cursor: null })).toEqual({
+      items: [employee],
+      next_cursor: null,
+    });
 
     expect(() => parseEmployeeResponse({ ...employee, private_prompt: "secret" })).toThrow();
     expect(() => parseEmployeeResponse({ ...employee, id: "not-a-uuid" })).toThrow();
@@ -61,19 +64,19 @@ describe("employee API boundary", () => {
 
   it("uses only platform employee endpoints for list, detail, create, and update", async () => {
     vi.mocked(apiClient.get)
-      .mockResolvedValueOnce({ data: [employee] })
+      .mockResolvedValueOnce({ data: { items: [employee], next_cursor: null } })
       .mockResolvedValueOnce({ data: employee });
     vi.mocked(apiClient.post).mockResolvedValue({ data: employee });
     vi.mocked(apiClient.put).mockResolvedValue({ data: employee });
     vi.mocked(apiClient.delete).mockResolvedValue({ data: undefined });
 
-    await expect(fetchEmployees()).resolves.toEqual([employee]);
+    await expect(fetchEmployees()).resolves.toEqual({ items: [employee], next_cursor: null });
     await expect(fetchEmployee(employee.id)).resolves.toEqual(employee);
     await expect(createEmployee(input)).resolves.toEqual(employee);
     await expect(updateEmployee(employee.id, input)).resolves.toEqual(employee);
     await expect(deleteEmployee(employee.id)).resolves.toBeUndefined();
 
-    expect(apiClient.get).toHaveBeenNthCalledWith(1, "/employees");
+    expect(apiClient.get).toHaveBeenNthCalledWith(1, "/employees", { params: {} });
     expect(apiClient.get).toHaveBeenNthCalledWith(2, `/employees/${employee.id}`);
     expect(apiClient.post).toHaveBeenCalledWith("/employees", input);
     expect(apiClient.put).toHaveBeenCalledWith(`/employees/${employee.id}`, input);

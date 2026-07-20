@@ -118,7 +118,7 @@ async def _exercise_employee_trigger(
             params={"conversation_id": str(authorized_conversation)},
         )
         assert conversation_runs.status_code == 200
-        assert [item["id"] for item in conversation_runs.json()] == [run_id]
+        assert [item["id"] for item in conversation_runs.json()["items"]] == [run_id]
 
         unauthorized = await client.post(
             "/api/v1/employees",

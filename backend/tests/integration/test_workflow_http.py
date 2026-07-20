@@ -78,7 +78,7 @@ def test_workflow_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
             updated = client.put(f"/api/v1/workflows/{workflow_id}", json=updated_body)
 
             assert listed.status_code == 200
-            assert workflow_id in {item["id"] for item in listed.json()}
+            assert workflow_id in {item["id"] for item in listed.json()["items"]}
             assert detailed.status_code == 200
             assert detailed.json()["description"] == "正式 API 验收"
             assert updated.status_code == 200
@@ -113,7 +113,7 @@ def test_workflow_validate_returns_complete_graph_issues_without_writing() -> No
     assert invalid.status_code == 200
     assert invalid.json()["valid"] is False
     assert "missing_end" in {issue["code"] for issue in invalid.json()["issues"]}
-    assert not any(item["name"] == "通用工作流" for item in listed.json())
+    assert not any(item["name"] == "通用工作流" for item in listed.json()["items"])
 
 
 def test_workflow_schema_and_missing_resources_use_stable_errors() -> None:
@@ -161,4 +161,6 @@ def test_invalid_graph_and_missing_knowledge_configuration_fail_without_write() 
 
     assert_error_response(rejected_graph, status=422, code="workflow_invalid")
     assert_error_response(rejected_knowledge, status=503, code="configuration_missing")
-    assert {invalid_name, knowledge_name}.isdisjoint({item["name"] for item in listed.json()})
+    assert {invalid_name, knowledge_name}.isdisjoint(
+        {item["name"] for item in listed.json()["items"]}
+    )

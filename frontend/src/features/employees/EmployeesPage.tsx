@@ -5,7 +5,12 @@ import {
   ReloadOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -34,6 +39,7 @@ import {
 } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
 import { fetchKnowledgeBases } from "../../api/knowledge";
+import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 import { fetchWorkflows } from "../../api/workflows";
 import {
   ResourceDeleteButton,
@@ -59,28 +65,49 @@ export function EmployeesPage() {
   const queryClient = useQueryClient();
   const [editor, setEditor] = useState<EditorState>();
   const [deleteNotice, setDeleteNotice] = useState<string>();
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [knowledgeSearch, setKnowledgeSearch] = useState("");
+  const [workflowSearch, setWorkflowSearch] = useState("");
   const [form] = Form.useForm<EmployeeConfigurationInput>();
 
-  const employees = useQuery({
-    queryKey: ["employees"],
-    queryFn: fetchEmployees,
+  const employees = useInfiniteQuery({
+    queryKey: ["employees", employeeSearch],
+    queryFn: ({ pageParam }) =>
+      fetchEmployees({ search: employeeSearch, limit: 20, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+    placeholderData: keepPreviousData,
   });
-  const knowledgeBases = useQuery({
-    queryKey: ["knowledge-bases"],
-    queryFn: fetchKnowledgeBases,
+  const knowledgeBases = useInfiniteQuery({
+    queryKey: ["knowledge-bases", knowledgeSearch],
+    queryFn: ({ pageParam }) =>
+      fetchKnowledgeBases({ search: knowledgeSearch, limit: 50, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+    placeholderData: keepPreviousData,
   });
-  const workflows = useQuery({
-    queryKey: ["workflows"],
-    queryFn: fetchWorkflows,
+  const workflows = useInfiniteQuery({
+    queryKey: ["workflows", workflowSearch],
+    queryFn: ({ pageParam }) =>
+      fetchWorkflows({ search: workflowSearch, limit: 50, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+    placeholderData: keepPreviousData,
   });
-
-  const knowledgeBaseNames = useMemo(
-    () => new Map(knowledgeBases.data?.map((item) => [item.id, item.name]) ?? []),
+  const items = useMemo(() => flattenCursorPages(employees.data), [employees.data]);
+  const knowledgeItems = useMemo(
+    () => flattenCursorPages(knowledgeBases.data),
     [knowledgeBases.data],
   );
+  const workflowItems = useMemo(() => flattenCursorPages(workflows.data), [workflows.data]);
+
+  const knowledgeBaseNames = useMemo(
+    () => new Map(knowledgeItems.map((item) => [item.id, item.name])),
+    [knowledgeItems],
+  );
   const workflowNames = useMemo(
-    () => new Map(workflows.data?.map((item) => [item.id, item.name]) ?? []),
-    [workflows.data],
+    () => new Map(workflowItems.map((item) => [item.id, item.name])),
+    [workflowItems],
   );
 
   useEffect(() => {
@@ -112,7 +139,7 @@ export function EmployeesPage() {
     onSuccess: async () => {
       setEditor(undefined);
       form.resetFields();
-      await queryClient.invalidateQueries({ queryKey: ["employees"] });
+      await queryClient.resetQueries({ queryKey: ["employees"] });
     },
   });
 
@@ -123,13 +150,8 @@ export function EmployeesPage() {
       return employee;
     },
     onSuccess: async (deleted) => {
-      const current = queryClient.getQueryData<Employee[]>(["employees"]) ?? [];
-      queryClient.setQueryData(
-        ["employees"],
-        current.filter((item) => item.id !== deleted.id),
-      );
       setDeleteNotice(`数字员工“${deleted.name}”已删除`);
-      await queryClient.invalidateQueries({ queryKey: ["employees"] });
+      await queryClient.resetQueries({ queryKey: ["employees"] });
     },
   });
 
@@ -191,8 +213,6 @@ export function EmployeesPage() {
     );
   }
 
-  const items = employees.data;
-
   return (
     <section className="employees-page">
       <Flex justify="space-between" align="flex-start" gap={24} className="employees-page-heading">
@@ -214,6 +234,14 @@ export function EmployeesPage() {
           创建数字员工
         </Button>
       </Flex>
+
+      <Input.Search
+        aria-label="搜索数字员工"
+        allowClear
+        value={employeeSearch}
+        placeholder="搜索名称前缀或完整 ID"
+        onChange={(event) => setEmployeeSearch(event.target.value)}
+      />
 
       {knowledgeBases.isError && (
         <Alert
@@ -316,6 +344,14 @@ export function EmployeesPage() {
               </Flex>
             </Card>
           ))}
+          {employees.hasNextPage && (
+            <Button
+              loading={employees.isFetchingNextPage}
+              onClick={() => void employees.fetchNextPage()}
+            >
+              加载更多数字员工
+            </Button>
+          )}
         </div>
       )}
 
@@ -367,7 +403,21 @@ export function EmployeesPage() {
               disabled={knowledgeBases.isError}
               loading={knowledgeBases.isPending}
               placeholder={knowledgeBases.isError ? "知识库暂时不可用" : "不绑定知识库"}
-              options={knowledgeBases.data?.map((item) => ({ value: item.id, label: item.name }))}
+              showSearch
+              filterOption={false}
+              searchValue={knowledgeSearch}
+              options={knowledgeItems.map((item) => ({ value: item.id, label: item.name }))}
+              onSearch={setKnowledgeSearch}
+              onPopupScroll={(event) => {
+                const target = event.currentTarget;
+                if (
+                  knowledgeBases.hasNextPage &&
+                  !knowledgeBases.isFetchingNextPage &&
+                  target.scrollTop + target.clientHeight >= target.scrollHeight - 16
+                ) {
+                  void knowledgeBases.fetchNextPage();
+                }
+              }}
             />
           </Form.Item>
           <Form.Item label="允许工作流" name="allowed_workflow_ids">
@@ -377,8 +427,21 @@ export function EmployeesPage() {
               disabled={workflows.isError}
               loading={workflows.isPending}
               placeholder={workflows.isError ? "工作流暂时不可用" : "不授权工作流"}
-              options={workflows.data?.map((item) => ({ value: item.id, label: item.name }))}
-              optionFilterProp="label"
+              showSearch
+              filterOption={false}
+              searchValue={workflowSearch}
+              options={workflowItems.map((item) => ({ value: item.id, label: item.name }))}
+              onSearch={setWorkflowSearch}
+              onPopupScroll={(event) => {
+                const target = event.currentTarget;
+                if (
+                  workflows.hasNextPage &&
+                  !workflows.isFetchingNextPage &&
+                  target.scrollTop + target.clientHeight >= target.scrollHeight - 16
+                ) {
+                  void workflows.fetchNextPage();
+                }
+              }}
               maxTagCount="responsive"
             />
           </Form.Item>

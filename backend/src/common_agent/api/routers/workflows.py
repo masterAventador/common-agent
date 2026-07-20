@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Query, Request, status
 
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.routers.knowledge import knowledge_error_to_app_error
@@ -11,6 +12,7 @@ from common_agent.api.routers.resource_deletion import (
     resource_deletion_service,
 )
 from common_agent.api.routers.services import workflow_service
+from common_agent.api.schemas.pagination import CursorPageResponse
 from common_agent.api.schemas.workflows import (
     WorkflowConfigurationBody,
     WorkflowResponse,
@@ -23,6 +25,14 @@ from common_agent.application.resource_deletion import ResourceDeletionError
 from common_agent.application.workflow_service import WorkflowNotFound
 from common_agent.domain.workflow import WorkflowValidationError
 from common_agent.knowledge.base import KnowledgeServiceError
+from common_agent.pagination import (
+    DEFAULT_PAGE_LIMIT,
+    MAX_PAGE_CURSOR_LENGTH,
+    MAX_PAGE_LIMIT,
+    MAX_PAGE_SEARCH_LENGTH,
+    InvalidPageCursor,
+    ListPageRequest,
+)
 from common_agent.ports.workflows import WorkflowAlreadyExists
 from common_agent.workflows.validator import WorkflowGraphInvalid
 
@@ -40,16 +50,32 @@ def workflow_error(error: Exception) -> AppError:
         return AppError("workflow_invalid", "工作流图校验失败", 422, False)
     if isinstance(error, WorkflowValidationError):
         return AppError("validation_error", "请求参数不合法", 422, False)
+    if isinstance(error, InvalidPageCursor):
+        return AppError(error.code, error.message, 422, error.retryable)
     raise TypeError("unsupported workflow application error")
 
 
 @router.get(
     "",
-    response_model=list[WorkflowResponse],
-    responses={503: {"model": ErrorEnvelope}},
+    response_model=CursorPageResponse[WorkflowResponse],
+    responses={422: {"model": ErrorEnvelope}, 503: {"model": ErrorEnvelope}},
 )
-async def list_workflows(request: Request) -> list[WorkflowResponse]:
-    return [workflow_response(workflow) for workflow in await workflow_service(request).list()]
+async def list_workflows(
+    request: Request,
+    search: Annotated[str, Query(max_length=MAX_PAGE_SEARCH_LENGTH)] = "",
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
+    cursor: Annotated[str | None, Query(max_length=MAX_PAGE_CURSOR_LENGTH)] = None,
+) -> CursorPageResponse[WorkflowResponse]:
+    try:
+        page = await workflow_service(request).page(
+            ListPageRequest(limit=limit, search=search, cursor=cursor)
+        )
+    except InvalidPageCursor as error:
+        raise workflow_error(error) from error
+    return CursorPageResponse(
+        items=[workflow_response(item) for item in page.items],
+        next_cursor=page.next_cursor,
+    )
 
 
 @router.delete(

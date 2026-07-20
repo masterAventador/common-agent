@@ -6,6 +6,7 @@ from uuid import UUID
 
 from common_agent.domain.workflow import WorkflowDefinition
 from common_agent.domain.workflow_run import WorkflowRun
+from common_agent.pagination import PageAnchor, PageSlice
 
 
 class WorkflowAlreadyExists(Exception):
@@ -18,6 +19,14 @@ class WorkflowRunAlreadyExists(Exception):
 
 class WorkflowRepository(Protocol):
     async def list(self) -> tuple[WorkflowDefinition, ...]: ...
+
+    async def page(
+        self,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[WorkflowDefinition]: ...
 
     async def get(self, workflow_id: UUID) -> WorkflowDefinition | None: ...
 
@@ -32,6 +41,15 @@ class WorkflowRunRepository(Protocol):
     async def list_active(self) -> tuple[WorkflowRun, ...]: ...
 
     async def list_for_conversation(self, conversation_id: UUID) -> tuple[WorkflowRun, ...]: ...
+
+    async def page_for_conversation(
+        self,
+        conversation_id: UUID,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[WorkflowRun]: ...
 
     async def add(self, run: WorkflowRun) -> None: ...
 

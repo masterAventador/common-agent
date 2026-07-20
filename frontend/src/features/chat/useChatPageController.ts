@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -16,6 +22,7 @@ import {
   type ConversationMessage,
 } from "../../api/conversations";
 import { fetchEmployees } from "../../api/employees";
+import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 import { fetchConversationWorkflowRuns } from "../../api/workflowRuns";
 import { fetchWorkflows } from "../../api/workflows";
 import { groupWorkflowRunsByMessage, mergeAcceptedTurn, replaceMessage } from "./chatState";
@@ -27,23 +34,44 @@ export function useChatPageController() {
   const [draft, setDraft] = useState("");
   const [deleteNotice, setDeleteNotice] = useState<string>();
   const [streamNotice, setStreamNotice] = useState<string>();
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [conversationSearch, setConversationSearch] = useState("");
   const lastEventSequence = useRef(0);
   const requestedEmployeeId = searchParams.get("employee_id");
   const requestedConversationId = searchParams.get("conversation_id");
 
-  const employees = useQuery({ queryKey: ["employees"], queryFn: fetchEmployees });
+  const employees = useInfiniteQuery({
+    queryKey: ["employees", employeeSearch],
+    queryFn: ({ pageParam }) =>
+      fetchEmployees({ search: employeeSearch, limit: 50, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+    placeholderData: keepPreviousData,
+  });
+  const employeeItems = useMemo(() => flattenCursorPages(employees.data), [employees.data]);
   const selectedEmployee = useMemo(
     () =>
-      employees.data?.find((employee) => employee.id === requestedEmployeeId) ??
-      employees.data?.[0],
-    [employees.data, requestedEmployeeId],
+      employeeItems.find((employee) => employee.id === requestedEmployeeId) ?? employeeItems[0],
+    [employeeItems, requestedEmployeeId],
   );
-  const conversations = useQuery({
-    queryKey: ["conversations", selectedEmployee?.id],
-    queryFn: () => fetchConversations(selectedEmployee?.id),
+  const conversations = useInfiniteQuery({
+    queryKey: ["conversations", selectedEmployee?.id, conversationSearch],
+    queryFn: ({ pageParam }) =>
+      fetchConversations(selectedEmployee?.id, {
+        search: conversationSearch,
+        limit: 20,
+        cursor: pageParam,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+    placeholderData: keepPreviousData,
     enabled: Boolean(selectedEmployee),
   });
-  const selectedConversation = conversations.data?.find(
+  const conversationItems = useMemo(
+    () => flattenCursorPages(conversations.data),
+    [conversations.data],
+  );
+  const selectedConversation = conversationItems.find(
     (conversation) => conversation.id === requestedConversationId,
   );
   const selectedConversationId = selectedConversation?.id;
@@ -56,43 +84,56 @@ export function useChatPageController() {
     (message) =>
       message.role === "assistant" && ["pending", "streaming"].includes(message.status),
   );
-  const workflowRuns = useQuery({
+  const workflowRuns = useInfiniteQuery({
     queryKey: ["conversation-workflow-runs", selectedConversationId],
-    queryFn: () => fetchConversationWorkflowRuns(selectedConversationId ?? ""),
+    queryFn: ({ pageParam }) =>
+      fetchConversationWorkflowRuns(selectedConversationId ?? "", {
+        limit: 50,
+        cursor: pageParam,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
     enabled: Boolean(selectedConversationId),
     refetchInterval: activeMessage ? 1_000 : false,
   });
-  const workflows = useQuery({
+  const workflows = useInfiniteQuery({
     queryKey: ["workflows"],
-    queryFn: fetchWorkflows,
+    queryFn: ({ pageParam }) => fetchWorkflows({ limit: 100, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
     enabled: Boolean(selectedConversationId),
   });
+  const workflowItems = useMemo(() => flattenCursorPages(workflows.data), [workflows.data]);
+  const workflowRunItems = useMemo(
+    () => flattenCursorPages(workflowRuns.data),
+    [workflowRuns.data],
+  );
   const workflowsById = useMemo(
-    () => new Map((workflows.data ?? []).map((workflow) => [workflow.id, workflow])),
-    [workflows.data],
+    () => new Map(workflowItems.map((workflow) => [workflow.id, workflow])),
+    [workflowItems],
   );
   const runsByMessageId = useMemo(
-    () => groupWorkflowRunsByMessage(workflowRuns.data ?? []),
-    [workflowRuns.data],
+    () => groupWorkflowRunsByMessage(workflowRunItems),
+    [workflowRunItems],
   );
 
   useEffect(() => {
-    if (!employees.data?.length || !selectedEmployee || selectedEmployee.id === requestedEmployeeId) {
+    if (!employeeItems.length || !selectedEmployee || selectedEmployee.id === requestedEmployeeId) {
       return;
     }
     setSearchParams({ employee_id: selectedEmployee.id }, { replace: true });
-  }, [employees.data, requestedEmployeeId, selectedEmployee, setSearchParams]);
+  }, [employeeItems, requestedEmployeeId, selectedEmployee, setSearchParams]);
 
   useEffect(() => {
-    if (!selectedEmployee || !conversations.data?.length || selectedConversation) return;
+    if (!selectedEmployee || !conversationItems.length || selectedConversation) return;
     setSearchParams(
       {
         employee_id: selectedEmployee.id,
-        conversation_id: conversations.data[0].id,
+        conversation_id: conversationItems[0].id,
       },
       { replace: true },
     );
-  }, [conversations.data, selectedConversation, selectedEmployee, setSearchParams]);
+  }, [conversationItems, selectedConversation, selectedEmployee, setSearchParams]);
 
   useEffect(() => {
     if (!selectedConversationId) return;
@@ -142,11 +183,8 @@ export function useChatPageController() {
         title: "新会话",
       });
     },
-    onSuccess: (created) => {
-      queryClient.setQueryData<typeof conversations.data>(
-        ["conversations", created.employee_id],
-        (current) => [created, ...(current ?? []).filter((item) => item.id !== created.id)],
-      );
+    onSuccess: async (created) => {
+      await queryClient.resetQueries({ queryKey: ["conversations", created.employee_id] });
       selectConversation(created.id);
     },
   });
@@ -159,9 +197,7 @@ export function useChatPageController() {
     },
     onSuccess: async (deleted) => {
       const listKey = ["conversations", deleted.employee_id] as const;
-      const current = queryClient.getQueryData<Conversation[]>(listKey) ?? [];
-      const remaining = current.filter((item) => item.id !== deleted.id);
-      queryClient.setQueryData(listKey, remaining);
+      const remaining = conversationItems.filter((item) => item.id !== deleted.id);
       queryClient.removeQueries({
         queryKey: ["conversation-messages", deleted.id],
         exact: true,
@@ -181,7 +217,7 @@ export function useChatPageController() {
         );
       }
       setDeleteNotice(`会话“${deleted.title}”已删除`);
-      await queryClient.invalidateQueries({ queryKey: listKey });
+      await queryClient.resetQueries({ queryKey: listKey });
     },
   });
 
@@ -228,11 +264,15 @@ export function useChatPageController() {
   return {
     activeMessage,
     conversations,
+    conversationItems,
+    conversationSearch,
     createMutation,
     deleteMutation,
     deleteNotice,
     draft,
     employees,
+    employeeItems,
+    employeeSearch,
     messages,
     operationError:
       deleteMutation.error ??
@@ -249,9 +289,14 @@ export function useChatPageController() {
     sendDraft,
     sendMutation,
     setDraft,
+    setConversationSearch,
+    setEmployeeSearch,
     stopMutation,
     streamNotice,
     workflowsById,
+    loadMoreRuns: () => workflowRuns.fetchNextPage(),
+    loadingMoreRuns: workflowRuns.isFetchingNextPage,
+    hasMoreRuns: workflowRuns.hasNextPage,
     openWorkflowRun: (runId: string) => navigate(`/workflows?run_id=${runId}`),
   };
 }

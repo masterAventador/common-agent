@@ -3,6 +3,12 @@ import { z } from "zod";
 import type { components } from "./generated/schema";
 import { apiClient } from "./client";
 import { toApiClientError } from "./errors";
+import {
+  cursorPageSchema,
+  listPageParams,
+  type CursorPage,
+  type ListPageRequest,
+} from "./pagination";
 
 export type Employee = components["schemas"]["EmployeeResponse"];
 export type EmployeeConfigurationInput = components["schemas"]["EmployeeConfigurationBody"];
@@ -21,19 +27,23 @@ const employeeSchema = z.strictObject({
   updated_at: z.iso.datetime({ offset: true }),
 });
 
-const employeesSchema = z.array(employeeSchema);
+const employeesSchema = cursorPageSchema(employeeSchema);
 
 export function parseEmployeeResponse(data: unknown): Employee {
   return employeeSchema.parse(data);
 }
 
-export function parseEmployeesResponse(data: unknown): Employee[] {
+export function parseEmployeesResponse(data: unknown): CursorPage<Employee> {
   return employeesSchema.parse(data);
 }
 
-export async function fetchEmployees(): Promise<Employee[]> {
+export async function fetchEmployees(
+  page: ListPageRequest = {},
+): Promise<CursorPage<Employee>> {
   try {
-    const response = await apiClient.get<unknown>("/employees");
+    const response = await apiClient.get<unknown>("/employees", {
+      params: listPageParams(page),
+    });
     return parseEmployeesResponse(response.data);
   } catch (error) {
     throw toApiClientError(error);

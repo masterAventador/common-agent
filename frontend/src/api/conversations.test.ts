@@ -132,7 +132,7 @@ describe("conversation API and SSE boundary", () => {
 
   it("uses only formal conversation list, history, send, stop, and retry endpoints", async () => {
     vi.mocked(apiClient.get)
-      .mockResolvedValueOnce({ data: [conversation] })
+      .mockResolvedValueOnce({ data: { items: [conversation], next_cursor: null } })
       .mockResolvedValueOnce({ data: [userMessage, assistantMessage] });
     vi.mocked(apiClient.post)
       .mockResolvedValueOnce({ data: conversation })
@@ -141,7 +141,10 @@ describe("conversation API and SSE boundary", () => {
       .mockResolvedValueOnce({ data: { ...turn, retry: true } });
     vi.mocked(apiClient.delete).mockResolvedValue({ data: undefined });
 
-    await expect(fetchConversations(conversation.employee_id)).resolves.toEqual([conversation]);
+    await expect(fetchConversations(conversation.employee_id)).resolves.toEqual({
+      items: [conversation],
+      next_cursor: null,
+    });
     await expect(
       createConversation({
         conversation_id: conversation.id,

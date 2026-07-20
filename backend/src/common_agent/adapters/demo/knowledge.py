@@ -23,6 +23,13 @@ from common_agent.knowledge.base import (
     KnowledgeDocumentUploadFailed,
     KnowledgeRequestRejected,
 )
+from common_agent.pagination import (
+    CursorPage,
+    ListPageRequest,
+    PageAnchor,
+    decode_keyset_cursor,
+    encode_keyset_cursor,
+)
 from common_agent.ports.knowledge import (
     DemoKnowledgeBaseAlreadyExists,
     DemoKnowledgeUnitOfWorkFactory,
@@ -52,6 +59,45 @@ class DemoKnowledgeService:
         async with self._unit_of_work() as unit_of_work:
             values = await unit_of_work.knowledge.list_knowledge_bases()
         return tuple(value.summary for value in values)
+
+    async def page_knowledge_bases(
+        self,
+        page: ListPageRequest,
+    ) -> CursorPage[KnowledgeBaseSummary]:
+        self._ensure_open()
+        scope = "knowledge-bases"
+        after = (
+            None
+            if page.cursor is None
+            else decode_keyset_cursor(
+                page.cursor,
+                scope=scope,
+                search=page.search,
+                limit=page.limit,
+            )
+        )
+        async with self._unit_of_work() as unit_of_work:
+            result = await unit_of_work.knowledge.page_knowledge_bases(
+                limit=page.limit,
+                search=page.search,
+                after=after,
+            )
+        next_cursor = None
+        if result.has_more:
+            last = result.items[-1]
+            next_cursor = encode_keyset_cursor(
+                scope=scope,
+                search=page.search,
+                limit=page.limit,
+                anchor=PageAnchor(
+                    created_at=last.created_at,
+                    id=last.summary.id,
+                ),
+            )
+        return CursorPage(
+            items=tuple(item.summary for item in result.items),
+            next_cursor=next_cursor,
+        )
 
     async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
         self._ensure_open()

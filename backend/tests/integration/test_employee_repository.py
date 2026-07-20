@@ -4,7 +4,8 @@ import asyncio
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from uuid import uuid4
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -13,6 +14,7 @@ from sqlalchemy.exc import DBAPIError
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeRepository
 from common_agent.domain.employee import Employee
+from common_agent.pagination import PageAnchor
 from common_agent.ports.employees import EmployeeAlreadyExists
 from tests.support.employees import delete_employees
 from tests.support.settings import TEST_DATABASE_URL
@@ -96,6 +98,80 @@ def test_employee_repository_lists_and_updates_without_owning_transactions() -> 
     assert changed in employees
     assert second not in employees
     assert missing is None
+
+
+def test_employee_repository_keyset_page_survives_concurrent_insert_and_anchor_delete() -> None:
+    created_at = datetime(2026, 7, 21, 1, tzinfo=UTC)
+    employees = tuple(
+        Employee.create(
+            employee_id=UUID(int=index),
+            name=f"page-needle-{index}",
+            system_prompt="分页测试",
+            now=created_at,
+        )
+        for index in range(1, 6)
+    )
+    newer = Employee.create(
+        employee_id=UUID(int=6),
+        name="page-needle-newer",
+        system_prompt="分页测试",
+        now=created_at + timedelta(seconds=1),
+    )
+
+    async def exercise() -> tuple[tuple[UUID, ...], tuple[UUID, ...], tuple[UUID, ...]]:
+        async with _database() as database:
+            try:
+                async with database.session() as session:
+                    repository = SqlAlchemyEmployeeRepository(session)
+                    for employee in employees:
+                        await repository.add(employee)
+                    await session.commit()
+
+                async with database.session() as session:
+                    first = await SqlAlchemyEmployeeRepository(session).page(
+                        limit=2,
+                        search="page-needle",
+                        after=None,
+                    )
+
+                first_anchor = first.items[-1]
+                await delete_employees(database, first_anchor.id)
+                async with database.session() as session:
+                    await SqlAlchemyEmployeeRepository(session).add(newer)
+                    await session.commit()
+
+                async with database.session() as session:
+                    repository = SqlAlchemyEmployeeRepository(session)
+                    second = await repository.page(
+                        limit=2,
+                        search="page-needle",
+                        after=PageAnchor(
+                            created_at=first_anchor.created_at,
+                            id=str(first_anchor.id),
+                        ),
+                    )
+                    second_anchor = second.items[-1]
+                    third = await repository.page(
+                        limit=2,
+                        search="page-needle",
+                        after=PageAnchor(
+                            created_at=second_anchor.created_at,
+                            id=str(second_anchor.id),
+                        ),
+                    )
+                return (
+                    tuple(item.id for item in first.items),
+                    tuple(item.id for item in second.items),
+                    tuple(item.id for item in third.items),
+                )
+            finally:
+                await delete_employees(database, *(employee.id for employee in employees), newer.id)
+
+    first_ids, second_ids, third_ids = asyncio.run(exercise())
+    assert first_ids == (UUID(int=5), UUID(int=4))
+    assert second_ids == (UUID(int=3), UUID(int=2))
+    assert third_ids == (UUID(int=1),)
+    assert UUID(int=6) not in first_ids + second_ids + third_ids
 
 
 def test_employee_repository_rollback_does_not_persist_pending_employee() -> None:

@@ -4,7 +4,7 @@ from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 from typing import cast
 
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,7 @@ from common_agent.domain.knowledge import (
     KnowledgeBaseSummary,
     KnowledgeDocument,
 )
+from common_agent.pagination import PageAnchor, PageSlice
 from common_agent.ports.knowledge import (
     DemoKnowledgeBaseAlreadyExists,
     DemoKnowledgeRepository,
@@ -47,6 +48,44 @@ class SqlAlchemyDemoKnowledgeRepository:
         return tuple(
             _to_knowledge_base(row, int(document_count), int(parsing_count))
             for row, document_count, parsing_count in result.all()
+        )
+
+    async def page_knowledge_bases(
+        self,
+        *,
+        limit: int,
+        search: str,
+        after: PageAnchor | None,
+    ) -> PageSlice[PersistedDemoKnowledgeBase]:
+        statement = _knowledge_base_statement()
+        if search:
+            statement = statement.where(
+                DemoKnowledgeBaseRow.name.startswith(search, autoescape=True)
+            )
+        if after is not None:
+            after_time = to_database_datetime(after.created_at)
+            statement = statement.where(
+                or_(
+                    DemoKnowledgeBaseRow.created_at < after_time,
+                    and_(
+                        DemoKnowledgeBaseRow.created_at == after_time,
+                        DemoKnowledgeBaseRow.id < after.id,
+                    ),
+                )
+            )
+        result = await self._session.execute(
+            statement.order_by(
+                DemoKnowledgeBaseRow.created_at.desc(),
+                DemoKnowledgeBaseRow.id.desc(),
+            ).limit(limit + 1)
+        )
+        rows = result.all()
+        return PageSlice(
+            items=tuple(
+                _to_knowledge_base(row, int(document_count), int(parsing_count))
+                for row, document_count, parsing_count in rows[:limit]
+            ),
+            has_more=len(rows) > limit,
         )
 
     async def get_knowledge_base(self, knowledge_base_id: str) -> PersistedDemoKnowledgeBase | None:

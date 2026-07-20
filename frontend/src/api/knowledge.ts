@@ -3,6 +3,12 @@ import { z } from "zod";
 import type { components } from "./generated/schema";
 import { apiClient } from "./client";
 import { toApiClientError } from "./errors";
+import {
+  cursorPageSchema,
+  listPageParams,
+  type CursorPage,
+  type ListPageRequest,
+} from "./pagination";
 
 export type KnowledgeBase = components["schemas"]["KnowledgeBaseResponse"];
 export type KnowledgeDocument = components["schemas"]["KnowledgeDocumentResponse"];
@@ -25,10 +31,10 @@ const knowledgeDocumentSchema = z.strictObject({
   error_code: z.string().min(1).nullable(),
 });
 
-const knowledgeBasesSchema = z.array(knowledgeBaseSchema);
+const knowledgeBasesSchema = cursorPageSchema(knowledgeBaseSchema);
 const knowledgeDocumentsSchema = z.array(knowledgeDocumentSchema);
 
-export function parseKnowledgeBasesResponse(data: unknown): KnowledgeBase[] {
+export function parseKnowledgeBasesResponse(data: unknown): CursorPage<KnowledgeBase> {
   return knowledgeBasesSchema.parse(data);
 }
 
@@ -44,9 +50,13 @@ function parseKnowledgeDocumentResponse(data: unknown): KnowledgeDocument {
   return knowledgeDocumentSchema.parse(data);
 }
 
-export async function fetchKnowledgeBases(): Promise<KnowledgeBase[]> {
+export async function fetchKnowledgeBases(
+  page: ListPageRequest = {},
+): Promise<CursorPage<KnowledgeBase>> {
   try {
-    const response = await apiClient.get<unknown>("/knowledge-bases");
+    const response = await apiClient.get<unknown>("/knowledge-bases", {
+      params: listPageParams(page),
+    });
     return parseKnowledgeBasesResponse(response.data);
   } catch (error) {
     throw toApiClientError(error);

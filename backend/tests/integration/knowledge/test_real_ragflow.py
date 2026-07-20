@@ -18,6 +18,7 @@ from common_agent.domain.knowledge import (
     KnowledgeRetrievalRequest,
     KnowledgeServiceAvailability,
 )
+from common_agent.pagination import ListPageRequest
 from tests.support.employees import delete_employees
 from tests.support.http import running_api
 from tests.support.ragflow import delete_dataset, provision_api_key
@@ -35,6 +36,54 @@ def test_real_ragflow_adapter_lifecycle() -> None:
         api_key = asyncio.run(provision_api_key(base_url))
 
     asyncio.run(_real_lifecycle(base_url, api_key, expected_version))
+
+
+def test_real_ragflow_official_list_search_and_cursor_pagination() -> None:
+    base_url = os.environ.get("TEST_RAGFLOW_BASE_URL")
+    api_key = os.environ.get("TEST_RAGFLOW_API_KEY")
+    expected_version = os.environ.get("TEST_RAGFLOW_EXPECTED_VERSION")
+    if not base_url or not expected_version:
+        pytest.skip("真实 RAGFlow 地址或期望版本未配置")
+    if not api_key:
+        api_key = asyncio.run(provision_api_key(base_url))
+
+    asyncio.run(_real_list_pagination(base_url, api_key, expected_version))
+
+
+async def _real_list_pagination(base_url: str, api_key: str, expected_version: str) -> None:
+    service = RagFlowKnowledgeService(
+        base_url=base_url,
+        api_key=api_key,
+        expected_version=expected_version,
+        timeout_seconds=120.0,
+    )
+    dataset_ids: list[str] = []
+    prefix = f"common-agent-u9-03-{uuid4().hex}"
+    try:
+        for index in range(3):
+            created = await service.create_knowledge_base(
+                CreateKnowledgeBaseRequest(
+                    name=f"{prefix}-{index}",
+                    description="U9-03 RAGFlow 官方列表分页验收",
+                )
+            )
+            dataset_ids.append(created.id)
+
+        first = await service.page_knowledge_bases(ListPageRequest(limit=2, search=prefix))
+        assert len(first.items) == 2
+        assert first.next_cursor is not None
+        second = await service.page_knowledge_bases(
+            ListPageRequest(limit=2, search=prefix, cursor=first.next_cursor)
+        )
+        assert len(second.items) == 1
+        assert second.next_cursor is None
+        listed_ids = [item.id for item in first.items + second.items]
+        assert len(set(listed_ids)) == 3
+        assert set(listed_ids) == set(dataset_ids)
+    finally:
+        await service.aclose()
+        for dataset_id in dataset_ids:
+            await delete_dataset(base_url, api_key, dataset_id)
 
 
 async def _real_lifecycle(base_url: str, api_key: str, expected_version: str) -> None:
@@ -184,7 +233,7 @@ def test_real_knowledge_http_lifecycle() -> None:
 
             listed_response = client.get("/api/v1/knowledge-bases")
             assert listed_response.status_code == 200
-            assert dataset_id in {item["id"] for item in listed_response.json()}
+            assert dataset_id in {item["id"] for item in listed_response.json()["items"]}
 
             uploaded_response = client.post(
                 f"/api/v1/knowledge-bases/{dataset_id}/documents",
@@ -294,7 +343,9 @@ def test_real_employee_http_binding_lifecycle() -> None:
             assert unchanged.json()["description"] == "E3-02 真实绑定验收"
             listed = client.get("/api/v1/employees")
             assert listed.status_code == 200
-            assert [item["id"] for item in listed.json() if item["name"] == name] == [employee_id]
+            assert [item["id"] for item in listed.json()["items"] if item["name"] == name] == [
+                employee_id
+            ]
 
         with (
             running_api(TEST_DATABASE_URL, env_overrides=environment) as restarted_url,

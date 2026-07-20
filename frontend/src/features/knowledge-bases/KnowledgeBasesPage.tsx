@@ -5,7 +5,13 @@ import {
   PlusOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -35,6 +41,7 @@ import {
   type KnowledgeDocument,
 } from "../../api/knowledge";
 import { getErrorMessage } from "../../api/errors";
+import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 import {
   ResourceDeleteButton,
 } from "../../components/ResourceDeleteButton";
@@ -96,20 +103,25 @@ export function KnowledgeBasesPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteNotice, setDeleteNotice] = useState<string>();
+  const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedFile, setSelectedFile] = useState<File>();
   const [fileInputKey, setFileInputKey] = useState(0);
   const [form] = Form.useForm<CreateKnowledgeBaseInput>();
 
-  const knowledgeBases = useQuery({
-    queryKey: ["knowledge-bases"],
-    queryFn: fetchKnowledgeBases,
+  const knowledgeBases = useInfiniteQuery({
+    queryKey: ["knowledge-bases", search],
+    queryFn: ({ pageParam }) =>
+      fetchKnowledgeBases({ search, limit: 20, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+    placeholderData: keepPreviousData,
   });
+  const items = useMemo(() => flattenCursorPages(knowledgeBases.data), [knowledgeBases.data]);
   const activeId = useMemo(() => {
-    const items = knowledgeBases.data ?? [];
     return items.some((item) => item.id === selectedId) ? selectedId : items[0]?.id;
-  }, [knowledgeBases.data, selectedId]);
-  const activeKnowledgeBase = knowledgeBases.data?.find((item) => item.id === activeId);
+  }, [items, selectedId]);
+  const activeKnowledgeBase = items.find((item) => item.id === activeId);
 
   const documents = useQuery({
     queryKey: ["knowledge-bases", activeId, "documents"],
@@ -131,7 +143,7 @@ export function KnowledgeBasesPage() {
       setSelectedId(created.id);
       setCreateOpen(false);
       form.resetFields();
-      await queryClient.invalidateQueries({ queryKey: ["knowledge-bases"] });
+      await queryClient.resetQueries({ queryKey: ["knowledge-bases"] });
     },
   });
 
@@ -157,9 +169,7 @@ export function KnowledgeBasesPage() {
       return knowledgeBase;
     },
     onSuccess: async (deleted) => {
-      const current = queryClient.getQueryData<KnowledgeBase[]>(["knowledge-bases"]) ?? [];
-      const remaining = current.filter((item) => item.id !== deleted.id);
-      queryClient.setQueryData(["knowledge-bases"], remaining);
+      const remaining = items.filter((item) => item.id !== deleted.id);
       queryClient.removeQueries({
         queryKey: ["knowledge-bases", deleted.id, "documents"],
         exact: true,
@@ -168,7 +178,7 @@ export function KnowledgeBasesPage() {
       setSelectedFile(undefined);
       setFileInputKey((value) => value + 1);
       setDeleteNotice(`知识库“${deleted.name}”已删除`);
-      await queryClient.invalidateQueries({ queryKey: ["knowledge-bases"] });
+      await queryClient.resetQueries({ queryKey: ["knowledge-bases"] });
     },
   });
 
@@ -202,8 +212,6 @@ export function KnowledgeBasesPage() {
     );
   }
 
-  const items = knowledgeBases.data;
-
   return (
     <section className="knowledge-page">
       <Flex justify="space-between" align="flex-start" gap={24} className="knowledge-page-heading">
@@ -225,6 +233,14 @@ export function KnowledgeBasesPage() {
           创建知识库
         </Button>
       </Flex>
+
+      <Input.Search
+        aria-label="搜索知识库"
+        allowClear
+        value={search}
+        placeholder="搜索知识库名称"
+        onChange={(event) => setSearch(event.target.value)}
+      />
 
       {deleteNotice && (
         <Alert
@@ -275,6 +291,15 @@ export function KnowledgeBasesPage() {
                   <Text type="secondary">{item.document_count} 个文档</Text>
                 </button>
               ))}
+              {knowledgeBases.hasNextPage && (
+                <Button
+                  block
+                  loading={knowledgeBases.isFetchingNextPage}
+                  onClick={() => void knowledgeBases.fetchNextPage()}
+                >
+                  加载更多知识库
+                </Button>
+              )}
             </div>
           </Card>
 
