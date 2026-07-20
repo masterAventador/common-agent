@@ -66,6 +66,8 @@ test("completes the whole MVP from empty business data through one real user jou
   await page.goto("/knowledge-bases");
   await expect(page.getByRole("heading", { name: "知识库" })).toBeVisible();
   await expect(page.getByText("后端正常")).toBeVisible();
+  await expect(page.getByText("百炼已配置")).toBeVisible();
+  await expect(page.getByText("RAGFlow 正常")).toBeVisible();
   await expect(page.getByText("还没有知识库")).toBeVisible();
 
   await page.getByRole("button", { name: "创建知识库" }).click();

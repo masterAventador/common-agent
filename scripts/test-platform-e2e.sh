@@ -33,7 +33,7 @@ PLAYWRIGHT_PID=""
 BACKEND_PID=""
 FRONTEND_PID=""
 RAGFLOW_API_KEY=""
-COMMON_AGENT_DATABASE_URL="mysql+asyncmy://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
+COMMON_AGENT_DATABASE_URL="mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
 
 if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" ]]; then
   echo "不支持的 E2E suite：${E2E_SUITE}" >&2

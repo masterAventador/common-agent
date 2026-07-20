@@ -55,12 +55,12 @@ class DatabaseSettings:
     def from_mapping(cls, values: Mapping[str, str]) -> DatabaseSettings:
         configured = values.get(
             "COMMON_AGENT_DATABASE_URL",
-            "mysql+asyncmy://common_agent:common_agent_dev@127.0.0.1:19506/"
+            "mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/"
             "common_agent?charset=utf8mb4",
         ).strip()
         parsed = urlparse(configured)
-        if parsed.scheme != "mysql+asyncmy":
-            raise ConfigurationError("COMMON_AGENT_DATABASE_URL must use mysql+asyncmy")
+        if parsed.scheme != "mysql+aiomysql":
+            raise ConfigurationError("COMMON_AGENT_DATABASE_URL must use mysql+aiomysql")
         if parsed.hostname not in {"127.0.0.1", "::1", "localhost"}:
             raise ConfigurationError("COMMON_AGENT_DATABASE_URL must use a loopback host")
         try:

@@ -1,7 +1,7 @@
 import { AxiosError, type AxiosResponse } from "axios";
 import { describe, expect, it } from "vitest";
 
-import { parseHealthResponse, toApiClientError } from "./system";
+import { parseHealthResponse, parseSystemStatusResponse, toApiClientError } from "./system";
 
 describe("system API boundary", () => {
   it("accepts the generated health contract", () => {
@@ -26,6 +26,47 @@ describe("system API boundary", () => {
         status: "healthy",
         service: "common-agent-api",
         version: "0.1.0",
+      }),
+    ).toThrow();
+  });
+
+  it("accepts explicit model configuration and knowledge availability", () => {
+    expect(
+      parseSystemStatusResponse({
+        backend: "available",
+        service: "common-agent-api",
+        version: "0.1.0",
+        integration_mode: "real",
+        model: { provider: "bailian", status: "configured" },
+        knowledge: {
+          provider: "ragflow",
+          availability: "available",
+          version: "v0.25.6",
+          error_code: null,
+        },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        model: { provider: "bailian", status: "configured" },
+        knowledge: expect.objectContaining({ availability: "available" }),
+      }),
+    );
+  });
+
+  it("rejects a dependency status that claims an unknown state", () => {
+    expect(() =>
+      parseSystemStatusResponse({
+        backend: "available",
+        service: "common-agent-api",
+        version: "0.1.0",
+        integration_mode: "real",
+        model: { provider: "bailian", status: "healthy" },
+        knowledge: {
+          provider: "ragflow",
+          availability: "perfect",
+          version: "v0.25.6",
+          error_code: null,
+        },
       }),
     ).toThrow();
   });

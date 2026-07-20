@@ -44,12 +44,12 @@ def test_database_settings_default_to_project_local_mysql() -> None:
     settings = DatabaseSettings.from_mapping({})
 
     assert settings.url == (
-        "mysql+asyncmy://common_agent:common_agent_dev@127.0.0.1:19506/common_agent?charset=utf8mb4"
+        "mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/common_agent?charset=utf8mb4"
     )
 
 
 def test_database_settings_allow_formal_adapter_override() -> None:
-    url = "mysql+asyncmy://common_agent:secret@127.0.0.1:19507/common_agent"
+    url = "mysql+aiomysql://common_agent:secret@127.0.0.1:19507/common_agent"
 
     settings = DatabaseSettings.from_mapping({"COMMON_AGENT_DATABASE_URL": url})
 
@@ -61,10 +61,11 @@ def test_database_settings_allow_formal_adapter_override() -> None:
     [
         "sqlite+aiosqlite:////tmp/common-agent.db",
         "postgresql+asyncpg://common_agent:secret@127.0.0.1:19432/common_agent",
+        "mysql+asyncmy://common_agent:secret@127.0.0.1:19506/common_agent",
     ],
 )
 def test_database_settings_reject_non_mysql_formal_adapters(url: str) -> None:
-    with pytest.raises(ConfigurationError, match=r"mysql\+asyncmy"):
+    with pytest.raises(ConfigurationError, match=r"mysql\+aiomysql"):
         DatabaseSettings.from_mapping({"COMMON_AGENT_DATABASE_URL": url})
 
 
@@ -73,7 +74,7 @@ def test_database_settings_reject_remote_mysql_host() -> None:
         DatabaseSettings.from_mapping(
             {
                 "COMMON_AGENT_DATABASE_URL": (
-                    "mysql+asyncmy://common_agent:secret@db.example.com:3306/common_agent"
+                    "mysql+aiomysql://common_agent:secret@db.example.com:3306/common_agent"
                 )
             }
         )
@@ -82,11 +83,11 @@ def test_database_settings_reject_remote_mysql_host() -> None:
 @pytest.mark.parametrize(
     "url",
     [
-        "mysql+asyncmy://:secret@127.0.0.1:19506/common_agent",
-        "mysql+asyncmy://common_agent@127.0.0.1:19506/common_agent",
-        "mysql+asyncmy://common_agent:@127.0.0.1:19506/common_agent",
-        "mysql+asyncmy://common_agent:secret@127.0.0.1/common_agent",
-        "mysql+asyncmy://common_agent:secret@127.0.0.1:19506/",
+        "mysql+aiomysql://:secret@127.0.0.1:19506/common_agent",
+        "mysql+aiomysql://common_agent@127.0.0.1:19506/common_agent",
+        "mysql+aiomysql://common_agent:@127.0.0.1:19506/common_agent",
+        "mysql+aiomysql://common_agent:secret@127.0.0.1/common_agent",
+        "mysql+aiomysql://common_agent:secret@127.0.0.1:19506/",
     ],
 )
 def test_database_settings_require_all_connection_fields(url: str) -> None:
@@ -98,7 +99,7 @@ def test_database_settings_does_not_leak_password_in_repr() -> None:
     settings = DatabaseSettings.from_mapping(
         {
             "COMMON_AGENT_DATABASE_URL": (
-                "mysql+asyncmy://common_agent:do-not-leak@127.0.0.1:19506/common_agent"
+                "mysql+aiomysql://common_agent:do-not-leak@127.0.0.1:19506/common_agent"
             )
         }
     )

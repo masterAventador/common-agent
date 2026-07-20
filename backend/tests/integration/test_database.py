@@ -108,7 +108,7 @@ def test_mysql_unique_conflict_rolls_back_and_keeps_committed_row() -> None:
 
 
 def test_unavailable_mysql_fails_without_leaking_url() -> None:
-    url = "mysql+asyncmy://common_agent:do-not-leak@127.0.0.1:1/common_agent"
+    url = "mysql+aiomysql://common_agent:do-not-leak@127.0.0.1:1/common_agent"
 
     async def exercise() -> None:
         database = Database(url)
@@ -123,7 +123,7 @@ def test_unavailable_mysql_fails_without_leaking_url() -> None:
 
 def test_mysql_authentication_failure_does_not_leak_password() -> None:
     url = (
-        "mysql+asyncmy://common_agent:wrong-password-must-not-leak@127.0.0.1:19506/"
+        "mysql+aiomysql://common_agent:wrong-password-must-not-leak@127.0.0.1:19506/"
         "common_agent?charset=utf8mb4"
     )
 

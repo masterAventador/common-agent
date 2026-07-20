@@ -642,6 +642,57 @@
         "title": "KnowledgeRetrievalWorkflowNodeBody",
         "type": "object"
       },
+      "KnowledgeServiceAvailability": {
+        "enum": [
+          "not_configured",
+          "available",
+          "unavailable"
+        ],
+        "title": "KnowledgeServiceAvailability",
+        "type": "string"
+      },
+      "KnowledgeStatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/KnowledgeServiceAvailability"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "provider",
+          "availability",
+          "version",
+          "error_code"
+        ],
+        "title": "KnowledgeStatusResponse",
+        "type": "object"
+      },
       "MessageResponse": {
         "additionalProperties": false,
         "properties": {
@@ -731,6 +782,32 @@
         ],
         "title": "MessageStatus",
         "type": "string"
+      },
+      "ModelConfigurationStatus": {
+        "enum": [
+          "configured",
+          "demo"
+        ],
+        "title": "ModelConfigurationStatus",
+        "type": "string"
+      },
+      "ModelStatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ModelConfigurationStatus"
+          }
+        },
+        "required": [
+          "provider",
+          "status"
+        ],
+        "title": "ModelStatusResponse",
+        "type": "object"
       },
       "SendMessageBody": {
         "additionalProperties": false,
@@ -831,6 +908,49 @@
           "assistant_message_id"
         ],
         "title": "StopAcceptedResponse",
+        "type": "object"
+      },
+      "SystemStatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "const": "available",
+            "title": "Backend",
+            "type": "string"
+          },
+          "integration_mode": {
+            "enum": [
+              "real",
+              "demo"
+            ],
+            "title": "Integration Mode",
+            "type": "string"
+          },
+          "knowledge": {
+            "$ref": "#/components/schemas/KnowledgeStatusResponse"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelStatusResponse"
+          },
+          "service": {
+            "const": "common-agent-api",
+            "title": "Service",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "service",
+          "version",
+          "integration_mode",
+          "model",
+          "knowledge"
+        ],
+        "title": "SystemStatusResponse",
         "type": "object"
       },
       "TurnAcceptedResponse": {
@@ -2508,6 +2628,37 @@
           }
         },
         "summary": "Health",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/system/status": {
+      "get": {
+        "operationId": "status_api_v1_system_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "API 或正式依赖尚未装配"
+          }
+        },
+        "summary": "Status",
         "tags": [
           "system"
         ]

@@ -180,6 +180,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_v1_system_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflow-runs": {
         parameters: {
             query?: never;
@@ -596,6 +613,21 @@ export interface components {
              */
             type: "knowledge_retrieval";
         };
+        /**
+         * KnowledgeServiceAvailability
+         * @enum {string}
+         */
+        KnowledgeServiceAvailability: "not_configured" | "available" | "unavailable";
+        /** KnowledgeStatusResponse */
+        KnowledgeStatusResponse: {
+            availability: components["schemas"]["KnowledgeServiceAvailability"];
+            /** Error Code */
+            error_code: string | null;
+            /** Provider */
+            provider: string;
+            /** Version */
+            version: string | null;
+        };
         /** MessageResponse */
         MessageResponse: {
             /** Citations */
@@ -639,6 +671,17 @@ export interface components {
          * @enum {string}
          */
         MessageStatus: "pending" | "streaming" | "completed" | "failed" | "stopped";
+        /**
+         * ModelConfigurationStatus
+         * @enum {string}
+         */
+        ModelConfigurationStatus: "configured" | "demo";
+        /** ModelStatusResponse */
+        ModelStatusResponse: {
+            /** Provider */
+            provider: string;
+            status: components["schemas"]["ModelConfigurationStatus"];
+        };
         /** SendMessageBody */
         SendMessageBody: {
             /** Content */
@@ -685,6 +728,28 @@ export interface components {
              * Format: uuid
              */
             turn_id: string;
+        };
+        /** SystemStatusResponse */
+        SystemStatusResponse: {
+            /**
+             * Backend
+             * @constant
+             */
+            backend: "available";
+            /**
+             * Integration Mode
+             * @enum {string}
+             */
+            integration_mode: "real" | "demo";
+            knowledge: components["schemas"]["KnowledgeStatusResponse"];
+            model: components["schemas"]["ModelStatusResponse"];
+            /**
+             * Service
+             * @constant
+             */
+            service: "common-agent-api";
+            /** Version */
+            version: string;
         };
         /** TurnAcceptedResponse */
         TurnAcceptedResponse: {
@@ -1747,6 +1812,35 @@ export interface operations {
                 };
             };
             /** @description API 或正式依赖尚未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    status_api_v1_system_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStatusResponse"];
+                };
+            };
+            /** @description API 或正式依赖尚未装配 */
             503: {
                 headers: {
                     [name: string]: unknown;

@@ -78,7 +78,7 @@ React
 - 工作流定义和运行摘要；
 - RAGFlow 知识库的稳定引用和展示缓存。
 
-平台正式持久化使用独立 MySQL 8.4 LTS，通过 SQLAlchemy async、`asyncmy` 与 Alembic 接入，固定开发入口为 `127.0.0.1:19506/common_agent`。领域与应用层只依赖仓储端口；平台 MySQL 使用专属容器、端口、Volume 和资源限制，与 RAGFlow 内部 MySQL 完全隔离。SQLite 和其他数据库不能替代当前正式 MySQL 的完成验收。
+平台正式持久化使用独立 MySQL 8.4 LTS，通过 SQLAlchemy async、`aiomysql`、PyMySQL `>=1.1.1` 与 Alembic 接入，固定开发入口为 `127.0.0.1:19506/common_agent`。领域与应用层只依赖仓储端口；平台 MySQL 使用专属容器、端口、Volume 和资源限制，与 RAGFlow 内部 MySQL 完全隔离。SQLite 和其他数据库不能替代当前正式 MySQL 的完成验收。
 
 任何外围技术依赖都按当前用例需要通过职责清晰的端口接入；`Cache`、`EventBus`、`ObjectStore`、`JobQueue` 以及 Redis、消息队列、对象存储和 Worker 只是示例。只要被正式调用链采用，就必须补齐适用于该技术的健康、失败、恢复、隔离、安全、资源和清理门禁。知识文档、切片、向量和解析产物仍由 RAGFlow 管理。
 

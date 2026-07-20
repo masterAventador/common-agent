@@ -24,6 +24,7 @@ def test_openapi_exposes_health_and_stable_error_envelope() -> None:
 
     assert schema["info"]["version"] == "0.1.0"
     assert "get" in schema["paths"]["/api/v1/system/health"]
+    assert "get" in schema["paths"]["/api/v1/system/status"]
     error_schema = schema["components"]["schemas"]["ErrorEnvelope"]
     assert error_schema["additionalProperties"] is False
     assert set(error_schema["required"]) == {"code", "message", "request_id", "retryable"}

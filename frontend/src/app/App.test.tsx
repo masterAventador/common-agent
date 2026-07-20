@@ -6,11 +6,18 @@ import { AppProviders } from "./AppProviders";
 import { App } from "./App";
 
 vi.mock("../api/system", () => ({
-  fetchHealth: vi.fn().mockResolvedValue({
-    status: "ok",
+  fetchSystemStatus: vi.fn().mockResolvedValue({
+    backend: "available",
     service: "common-agent-api",
     version: "0.1.0",
     integration_mode: "real",
+    model: { provider: "bailian", status: "configured" },
+    knowledge: {
+      provider: "ragflow",
+      availability: "available",
+      version: "v0.25.6",
+      error_code: null,
+    },
   }),
 }));
 

@@ -2,7 +2,7 @@
 
 > 文档性质：项目开发进度唯一执行台账  
 > 建立日期：2026-07-19  
-> 当前阶段：Wave 4 连续 AI 会话与自动检索
+> 当前阶段：MVP 已完成生产同路径验收
 > MVP 顺序：知识库 → 数字员工绑定 → AI 会话 → 可视化工作流
 
 本文件是任务进度、状态、完成定义和验证证据的唯一核对源。`product-scope.md` 只描述产品功能和边界，不承担进度同步；普通任务完成只更新本路线图。
@@ -51,13 +51,13 @@
 | 项目规则/架构 | `✅` 主规则、产品边界、工程架构和任务级路线图已建立并校验 |
 | 工程骨架 | `✅` frontend/backend/contracts/infra/scripts 已按目标边界建立，未混入临时 Sites 或空业务模块 |
 | 后端入口 | `✅` FastAPI app factory、lifespan、请求 ID、统一错误和真实 loopback Health 已跑通 |
-| 平台持久化 | `✅` 独立 MySQL 8.4.10、asyncmy、SQLAlchemy async、Alembic、隔离测试库、事务回滚和容器/进程重启恢复已跑通；SQLite 不再是正式验收依赖 |
+| 平台持久化 | `✅` 独立 MySQL 8.4.10、aiomysql、PyMySQL >=1.1.1、SQLAlchemy async、Alembic、隔离测试库、事务回滚和容器/进程重启恢复已跑通；SQLite 不再是正式验收依赖 |
 | 百炼配置 | `✅` 已从 agent-platform 的 Git 跟踪配置迁移 Demo 模型/Base URL/Key，Key 仅存在于获准的私有配置文件 |
 | 前端入口 | `✅` React/Vite/Ant Design 四入口壳层已通过组件、构建和真实浏览器导航验收 |
 | 跨端契约 | `✅` FastAPI OpenAPI、前端生成 DTO 和隔离漂移检查已形成单一来源闭环 |
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
-| 产品代码 | `🚧` 知识库、数字员工、连续会话及工作流定义/编译/运行正式链路已完成；进入工作流设计器 |
+| 产品代码 | `✅` 知识库、数字员工、连续会话、工作流设计/运行及两类触发的 MVP 正式链路已完成 |
 | 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与 RAGFlow 六服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
 
 ## 4. 全局完成门禁
@@ -210,7 +210,7 @@
 | Q6-02 | Docker 资源与清理验收 | 记录峰值/稳定内存、48GiB 独立 profile 建议、端口/context 隔离；证明稳定栈复用、按影响重建，并清理重复任务镜像和悬空层 | Q6-01 | ✅ 已完成 |
 | Q6-03 | 全量自动化 | 后端、前端、契约、构建和 Playwright 全量通过 | Q6-02 | ✅ 已完成 |
 | Q6-04 | 本机 MVP 验收 | 从空平台完成知识库→员工→两轮对话→工作流，全部走正式入口 | Q6-03 | ✅ 已完成 |
-| Q6-05 | 规格与质量复审 | 核对范围、假绿、泄密、资源泄漏、残留进程和无用代码 | Q6-04 | ⬜ 未开始 |
+| Q6-05 | 规格与质量复审 | 核对范围、假绿、泄密、资源泄漏、残留进程和无用代码 | Q6-04 | ✅ 已完成 |
 
 ## 13. 高冲突与唯一写入区域
 
@@ -944,8 +944,22 @@
 - 清理：成功或失败均先关闭无头浏览器、Vite 和 Uvicorn，再按会话→员工→工作流→RAGFlow 数据集顺序精确清理本轮唯一名称。最终测试库只保留 Seed 员工 1 条，其余业务表为 0，18200/18280 无监听，无 Uvicorn/Vite/Playwright/Chromium 残留；首轮错误断言的截图/Trace 在人工核对并完成第二轮全链路 GREEN 后删除，成功产物、dist、tsbuildinfo 和项目缓存同样删除，稳定 MySQL/RAGFlow 继续复用
 - 遗留：无；下一任务 Q6-05 做最终规格、假绿、泄密、无用代码、资源和残留进程复审，在没有真实证据的地方不得把 MVP 标为交付
 
+### Q6-05 规格与质量复审
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- 规格 RED：逐项核对 `product-scope.md` 时发现 4.5 已要求工作台显示后端、模型、RAGFlow 和运行模式，但现有公开入口只有 `/system/health`，前端只显示后端/模式，既不能看到百炼配置状态也不能区分 RAGFlow 未配置与不可用。先写正式 Uvicorn/OpenAPI 测试得到 2 failed、14 passed，公开 `/api/v1/system/status` 实际 404；前端先要求严格解析和三项状态展示，得到 5 failed，证明不是在已有实现上补绿断言
+- 状态链路：新增 `SystemService` 和严格 `/api/v1/system/status` 契约；后端始终报告自身可用，real 模式只把百炼标为“已配置”而不伪造无副作用健康探测，RAGFlow 则经正式 `KnowledgeService.status()` 返回 provider、available/unconfigured/unavailable、版本和稳定错误码，未知异常关闭失败且不泄漏 detail；Demo 明确显示三项演示状态。React 顶栏改走新入口并展示“后端正常 / 百炼已配置 / RAGFlow 正常”或对应真实降级状态，总验收同时断言三项 real 标签
+- 供应链 RED 与修复：`uv audit --frozen` 发现 `asyncmy 0.2.11` 的同一 SQL 注入漏洞以 GHSA/PYSEC 两个别名报告，且上游尚无修复版本。先把正式 URL 门禁改为 `mysql+aiomysql` 期望，真实得到 12 failed、24 passed；随后把 SQLAlchemy async 驱动切换到官方支持的 `aiomysql 0.3.2`，直接约束 PyMySQL `>=1.1.1`，锁文件实际解析为 PyMySQL 1.2.0，并同步配置、测试、正式 E2E 与当前架构规则。驱动切换后配置/真实 MySQL 边界 42 passed，`uv audit --frozen` 为 81 个包无已知漏洞/不良项目状态，前端 `pnpm audit --prod` 同样无已知漏洞
+- 最终自动化：显式启用真实 RAGFlow v0.25.6、Deep Agents 和阿里百炼后，后端全量 401 passed in 100.24s、没有 skip；Ruff、排除已应用不可变 0005 后的 155 个文件格式、严格 Mypy 149 个源/测试文件、uv lock 全部通过。前端 14 个 Vitest 文件 61 passed，ESLint、TypeScript、生产 Build、OpenAPI/双 SSE/生成 DTO 逐字节漂移均通过；平台/RAGFlow 管理脚本、ShellCheck、`git diff --check` 通过。开发库和测试库都为 `20260720_0006 (head)`，两次 `alembic check` 均无新操作
+- 生产同路径复验：切换数据库驱动和状态入口后，重新从空业务数据执行唯一 `pnpm test:e2e:mvp`，固定 `chromium-headless-shell`、单 worker、零重试，最终 1 passed in 21.2s；同一真实浏览器旅程完整经过知识库创建/上传/解析、员工绑定、两轮检索对话与引用、工作流拖拽/连线/保存/手动运行、员工授权/工具触发及刷新恢复，同时看到真实三项系统状态。测试后再次通过正式 MySQL 和 RAGFlow 空数据门禁，证明不是用上一轮残留状态假绿
+- 范围与无用代码：前端正式路由只保留聊天、知识库、数字员工和工作流四个入口；公开 OpenAPI 只包含这四类 MVP API、运行记录及系统状态，没有登录/注册/RBAC、Skill、LiteLLM、多模型、任务中心、桌面壳/自动更新或远程部署实现。生产源码没有 TODO/FIXME/HACK、`NotImplementedError` 或空业务函数；扫描命中的 placeholder 是正常输入框/助手预留消息术语，`pass` 是无状态异常类、SQLAlchemy Base 或无资源可关的 Demo `aclose`，测试 support 中的 `NotImplementedError` 只用于协议最小桩和失败定位
+- 安全与仓库：`masterAventador/common-agent` 复核为 PRIVATE、默认分支 main；版本化环境文件只有公开样例和用户批准的后端 `.env.demo`。逐 revision 用授权 Demo Key 精确扫描，Key 未出现在例外文件之外，也未进入前端生产产物；通用高风险模式只命中一处明确的 `sk-a4-02-must-not-leak` 失败测试夹具。错误、repr、HTTP 契约和浏览器端继续不暴露模型 Key、数据库密码或 RAGFlow 凭据
+- 资源与清理：最终 18200/18280 无监听，无 Uvicorn、Vite、Playwright 或 Chromium 进程；测试库及 RAGFlow 回到空业务基线。精确删除 dist、tsbuildinfo、pytest/Ruff/Mypy/Python 缓存和空验收目录；独立 Docker context 的平台 MySQL 与 RAGFlow 六服务共七个稳定容器保持复用，五个声明健康检查的容器 healthy，dangling 镜像与 Build Cache 都为 0，没有重复任务镜像可删，宿主磁盘约 3.3 TiB 可用
+- 已知非阻塞项：生产构建仍如实报告 `errors` chunk 602.76 kB 超过 500 kB 的性能提示，但不影响正确性或 MVP 交付；百炼状态刻意表达“配置已就绪”而不是用额外模型请求伪造实时健康，实际可用性继续由每次真实会话和稳定错误码判断
+- 文档边界：规格核对未改变产品功能或边界，因此没有修改 `docs/product-scope.md`；所有任务状态、RED/GREEN、真实证据和遗留只写入本路线图
+
 ## 15. 当前下一步
 
-严格按顺序：
-
-1. 完成 `Q6-05`：复审规格、质量、泄密、资源和残留进程。
+MVP 路线图任务已全部完成并通过本机生产同路径验收。后续不预设扩展任务，等待真实使用反馈后再按同样完成门禁新增路线图条目。

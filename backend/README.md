@@ -34,12 +34,12 @@ uv run python -m common_agent
 “演示模式”，不得把固定回答冒充真实外部服务。Demo 知识数据仅保存在当前后端进程内，员工、
 会话、消息和引用仍写入正式配置的 MySQL。
 
-启动时会通过 Alembic 把平台正式 MySQL 升级到 `head` 并执行连接探测。默认连接为 `127.0.0.1:19506/common_agent`，使用 SQLAlchemy async、`asyncmy` 和 MySQL 8.4 LTS；该实例、端口和 Volume 与 RAGFlow 内部 MySQL 完全隔离。配置只接受带用户名、密码、端口和数据库名的 loopback `mysql+asyncmy` URL。
+启动时会通过 Alembic 把平台正式 MySQL 升级到 `head` 并执行连接探测。默认连接为 `127.0.0.1:19506/common_agent`，使用 SQLAlchemy async、`aiomysql`、PyMySQL `>=1.1.1` 和 MySQL 8.4 LTS；该实例、端口和 Volume 与 RAGFlow 内部 MySQL 完全隔离。配置只接受带用户名、密码、端口和数据库名的 loopback `mysql+aiomysql` URL。
 
 单独运行迁移时必须显式指定目标，避免误建占位数据库：
 
 ```bash
-COMMON_AGENT_DATABASE_URL='mysql+asyncmy://common_agent:common_agent_dev@127.0.0.1:19506/common_agent?charset=utf8mb4' \
+COMMON_AGENT_DATABASE_URL='mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/common_agent?charset=utf8mb4' \
   uv run alembic upgrade head
 ```
 

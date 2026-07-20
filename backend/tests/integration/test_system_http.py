@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from common_agent.adapters.persistence.database import Database
 from tests.support.http import available_port, running_api
+from tests.support.ragflow import provision_api_key
 from tests.support.settings import TEST_DATABASE_URL
 
 
@@ -64,6 +65,66 @@ def test_health_exposes_explicit_demo_mode_over_formal_uvicorn() -> None:
 
     assert response.status == 200
     assert body["integration_mode"] == "demo"
+
+
+def test_status_exposes_demo_dependencies_without_presenting_them_as_real() -> None:
+    with (
+        running_api(
+            _database_url(),
+            env_overrides={"COMMON_AGENT_INTEGRATION_MODE": "demo"},
+        ) as base_url,
+        urlopen(f"{base_url}/api/v1/system/status", timeout=2) as response,
+    ):
+        body = _read_json(response)
+
+    assert response.status == 200
+    assert body == {
+        "backend": "available",
+        "service": "common-agent-api",
+        "version": "0.1.0",
+        "integration_mode": "demo",
+        "model": {"provider": "demo", "status": "demo"},
+        "knowledge": {
+            "provider": "demo",
+            "availability": "available",
+            "version": "demo-1",
+            "error_code": None,
+        },
+    }
+
+
+def test_status_exposes_real_ragflow_and_configured_bailian_over_formal_uvicorn() -> None:
+    base_url = os.environ.get("TEST_RAGFLOW_BASE_URL")
+    expected_version = os.environ.get("TEST_RAGFLOW_EXPECTED_VERSION")
+    api_key = os.environ.get("TEST_RAGFLOW_API_KEY")
+    if not base_url or not expected_version:
+        pytest.skip("真实 RAGFlow 地址或期望版本未配置")
+    if not api_key:
+        api_key = asyncio.run(provision_api_key(base_url))
+
+    with (
+        running_api(
+            _database_url(),
+            env_overrides={
+                "COMMON_AGENT_INTEGRATION_MODE": "real",
+                "RAGFLOW_BASE_URL": base_url,
+                "RAGFLOW_API_KEY": api_key,
+                "RAGFLOW_EXPECTED_VERSION": expected_version,
+            },
+        ) as api_url,
+        urlopen(f"{api_url}/api/v1/system/status", timeout=5) as response,
+    ):
+        body = _read_json(response)
+
+    assert response.status == 200
+    assert body["integration_mode"] == "real"
+    assert body["model"] == {"provider": "bailian", "status": "configured"}
+    assert body["knowledge"] == {
+        "provider": "ragflow",
+        "availability": "available",
+        "version": expected_version,
+        "error_code": None,
+    }
 
 
 def test_unknown_route_uses_stable_error_envelope_over_real_http() -> None:
@@ -126,7 +187,7 @@ def test_formal_api_fails_closed_when_mysql_authentication_fails() -> None:
     port = available_port()
     secret = "api-startup-secret-must-not-leak"
     database_url = (
-        f"mysql+asyncmy://common_agent:{secret}@127.0.0.1:19506/common_agent?charset=utf8mb4"
+        f"mysql+aiomysql://common_agent:{secret}@127.0.0.1:19506/common_agent?charset=utf8mb4"
     )
     env = os.environ.copy()
     env["COMMON_AGENT_DATABASE_URL"] = database_url
