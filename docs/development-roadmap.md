@@ -279,7 +279,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
-| H7-01 | GitHub CI 基线 | 新增 PR/main CI；冻结安装后执行后端 pytest/Ruff/Mypy/uv lock/audit、前端 Vitest/ESLint/Typecheck/Build/pnpm audit、契约漂移、ShellCheck 和 Demo 链路；缓存不得绕过锁文件，失败不得吞掉；真实外部依赖门禁保留显式入口 | D8-03 | ⬜ 未开始 |
+| H7-01 | 本地质量门禁与可选 GitHub CI 镜像 | 以本机冻结安装和可复现命令为权威，执行后端 pytest/Ruff/Mypy/uv lock/audit、前端 Vitest/ESLint/Typecheck/Build/pnpm audit、契约漂移、ShellCheck 和 Demo 链路；PR/main workflow 只镜像同一组门禁，不依赖付费 Hosted Runner，也不作为完成前提；缓存不得绕过锁文件，失败不得吞掉；真实外部依赖门禁保留显式入口 | D8-03 | ✅ 已完成 |
 | H7-02 | 自动化覆盖率门禁 | 后端、前端分别生成行/分支覆盖率；先记录真实基线并补足缺口，最终后端总体行覆盖率不低于 85%、核心领域/应用不低于 90%，前端总体行覆盖率不低于 80%，新增改动不得降低；报告不进入 Git | H7-01 | ⬜ 未开始 |
 | H7-03 | 平台自有消息与模型协议 | 定义不依赖 LangChain 的平台消息、模型请求、增量、终态、错误和释放协议；会话与工作流节点只消费平台类型；百炼与 Deep Agents 适配器负责双向转换；真实百炼、会话和工作流回归全部通过 | H7-02 | ⬜ 未开始 |
 | H7-04 | 平台自有图执行协议 | 定义不依赖 LangGraph 的编译、执行、节点观察、停止和结果协议；把 LangGraph 编译器、运行状态和节点框架转换移入 `adapters/workflow/langgraph/`；`WorkflowService` 只依赖平台端口，手动与员工触发语义不变 | H7-03 | ⬜ 未开始 |
@@ -337,11 +337,12 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 ## 18. 当前下一步
 
-R8-00、D8-01、D8-02、D8-03 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
+R8-00、D8-01、D8-02、D8-03、H7-01 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
 embedding/rerank 统一使用阿里百炼，本地模型退场；全新克隆可由统一入口进入 12 GiB
 `demo-light`，Demo 知识、员工绑定与会话引用在后端重启后保持一致；`real` 可按需切到暂定
-32 GiB，完成脱敏体检、费用诊断、真实纵向门禁和跨 Colima 重启恢复。下一任务进入 H7-01，
-并按依赖顺序完成 CI、覆盖率、平台自有协议和第三方边界收口；R8-04 仍独立负责 32 GiB 的峰值
+32 GiB，完成脱敏体检、费用诊断、真实纵向门禁和跨 Colima 重启恢复；本机质量门禁已经冻结，
+GitHub Hosted Runner 只作可选镜像、不作为验收依赖。下一任务进入 H7-02，并按依赖顺序完成
+覆盖率、平台自有协议和第三方边界收口；R8-04 仍独立负责 32 GiB 的峰值
 与 30 分钟 soak，不用 D8-03 的功能通过冒充长期资源验收。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
 
@@ -1151,3 +1152,16 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - GREEN：后端全量 `407 passed, 12 skipped in 64.99s`，12 项仍是需显式外部开关的分层真实测试，本任务已由唯一完整 MVP real 浏览器门禁解除纵向链路风险；Ruff lint、排除已应用不可变 0005 后 162 个 Python 文件格式、严格 Mypy 155 个源/测试文件、uv 82 包锁通过。前端 14 files/61 tests、ESLint、TypeScript、Build、OpenAPI/生成 DTO 漂移和 pnpm frozen lock 通过；`test-real.sh`、两类 `test-manage.sh`、`test-dev.sh`、项目全部 ShellCheck、Alembic 无漂移、Bash 语法、`git diff --check` 和 RAGFlow submodule 完整性通过
 - 清理：真实 E2E 产物和业务数据已由 finally 删除，RAGFlow 迁移计划回到 0 知识库/0 文档；最终 real launchd 前后端、平台/RAGFlow 容器和 32 GiB Colima 已停止，释放当前 64 GiB 电脑内存。稳定原生 Volume、旧卷/迁移快照、0600 Token、冻结依赖和官方镜像保留，未删除用户数据；无临时 MySQL 探针或迁移容器残留
 - 遗留：32 GiB 只证明当前功能链路和跨重启可用，完整峰值不高于 25 GiB、30 分钟 soak、持续 Swap 和中文质量/费用基线仍由 R8-04 保持未开始；下一任务 H7-01 建立 CI 基线，之后按路线图进入覆盖率、平台自有消息/模型/图执行协议与第三方类型边界
+
+### H7-01 本地质量门禁与可选 GitHub CI 镜像
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- 权威边界：项目验收只依赖本机可复现命令和实际运行结果，不依赖 GitHub Hosted Runner、付费额度或 `gh` 查询结果。`.github/workflows/ci.yml` 只是同一组命令的 PR/main 可选镜像；Hosted Runner 不可用时不降级、不伪造通过，也不阻断按本机证据完成任务。真实 RAGFlow/百炼门禁继续由 `scripts/real.sh up` 与 `pnpm test:e2e:mvp` 显式执行，公共 CI 不自动产生外部费用
+- RED：新增 `scripts/test-ci.sh` 后首次按预期以“缺少 PR/main GitHub CI workflow”失败。实现推送后 GitHub 创建了三个 Check Run，但均在执行任何 Step 前被账户级 `recent account payments have failed or your spending limit needs to be increased` 拒绝；该结果证明 Hosted Runner 服务不可用，不是代码或测试失败，按用户明确边界不付款、不提高额度，也不把远端状态纳入项目验收
+- 门禁实现：新增后端、前端、Demo/契约/基础设施三组隔离任务，Action 固定到不可变提交，uv 0.11.16、Python 3.12、Node 22、pnpm 11.9.0 固定；缓存分别绑定 `backend/uv.lock` 和 `frontend/pnpm-lock.yaml`，所有安装均 frozen，禁止 `continue-on-error` 或管道吞错。Demo 只运行显式固定适配器；RAGFlow 官方 submodule 递归检出但不修改源码
+- 跨平台复用：平台和 RAGFlow 管理脚本测试新增可覆盖的测试 Docker context，浏览器 E2E 新增 `COMMON_AGENT_E2E_DOCKER_CONTEXT`；macOS 默认仍使用项目专属 `colima-common-agent-dev`，Linux 可使用 `default`，没有复制或维护第二套验收逻辑。`scripts/test-ci.sh` 固定检查触发器、任务、版本、锁文件缓存、Action 提交、不可变迁移排除、ShellCheck、Demo 和 real 隔离契约
+- 本机 GREEN：CI 锁定的 uv 0.11.16 完成 frozen sync、Ruff lint、排除已应用不可变 0005 后 162 个文件格式、严格 Mypy 155 个源/测试文件、uv lock 和 81 个包安全审计；后端全量 `407 passed, 12 skipped in 65.93s`，12 项均为需显式 real 开关的既有真实门禁。锁定 pnpm 11.9.0 完成 frozen install、前端 14 files/61 tests、ESLint、TypeScript、生产 Build、契约漂移和依赖审计且无已知漏洞；两类基础设施管理脚本、`test-dev.sh`、`test-real.sh`、`test-ci.sh`、全部项目 ShellCheck、Bash/YAML 语法与 `git diff --check` 通过
+- Demo 验收与清理：项目专属 Colima 仅以 12 GiB demo-light 启动；无头 Chromium 经正式 React/FastAPI/MySQL 和 Demo 适配器完成两轮带引用会话及中断恢复，`1 passed (6.0s)`，finally 清理唯一会话、员工、知识库和固定 Seed。随后平台容器、网络与 Colima 已停止，18200/18280 无项目进程；MySQL/RAGFlow 数据、冻结依赖和官方镜像保留
+- 遗留：无；下一任务 H7-02 在同一本机权威门禁上记录真实行/分支覆盖率基线并补足缺口，GitHub Hosted Runner 仍只作可选镜像

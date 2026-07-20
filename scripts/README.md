@@ -23,8 +23,9 @@
   诊断；不启动本地 embedding/rerank；
 - `test-real.sh`：检查 real 入口动作、32 GiB/context、官方 RAGFlow、原生数据卷、百炼绑定、
   Token 文件、费用脱敏和本地模型退场契约；
-- `test-ci.sh`：检查 PR/main GitHub CI 的冻结安装、固定 Action、后端/前端/契约/Demo/基础设施
-  门禁、缓存锁文件边界，以及 real 外部付费依赖不进入公共 Runner 的隔离契约；
+- `test-ci.sh`：检查本机权威命令在 PR/main GitHub CI 可选镜像中的冻结安装、固定 Action、
+  后端/前端/契约/Demo/基础设施门禁、缓存锁文件边界，以及 real 外部付费依赖不进入公共
+  Runner 的隔离契约；项目验收不依赖 Hosted Runner、付费额度或远端执行结果；
 - `generate-contracts.sh`：从正式 FastAPI 应用导出 OpenAPI 并生成前端 TypeScript 类型；
 - `check-contracts.sh`：在隔离临时目录重建契约并检查已提交文件无漂移；
 - `test-platform-e2e.sh`：复用健康的稳定基础设施，以无窗口 `chromium-headless-shell` 编排正式
