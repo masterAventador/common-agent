@@ -10,7 +10,7 @@ from deepagents.backends.protocol import SandboxBackendProtocol
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool, tool
 
@@ -18,10 +18,13 @@ from common_agent.adapters.agent.deep_agents import (
     DeepAgentsEmployeeRuntime,
     DeepAgentToolRegistry,
 )
+from common_agent.adapters.model.langchain import LangChainChatModelProvider
 from common_agent.models.base import (
     ModelConfigurationInvalid,
+    ModelRequest,
     ModelServiceError,
-    StreamingChatModel,
+    ModelStreamCompleted,
+    ModelStreamEvent,
 )
 from common_agent.runtimes.base import RuntimeEvent, RuntimeEventKind, RuntimeStopToken
 from tests.support.runtime import ASSISTANT_MESSAGE_ID, WORKFLOW_ID, runtime_request
@@ -35,15 +38,15 @@ class _Gateway:
         self.closed = False
 
     @property
-    def chat_model(self) -> BaseChatModel:
+    def langchain_chat_model(self) -> BaseChatModel:
         return self._model
 
-    def stream_text(self, messages: Sequence[BaseMessage]) -> AsyncIterator[str]:
-        del messages
+    def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        del request
 
-        async def iterate() -> AsyncIterator[str]:
+        async def iterate() -> AsyncIterator[ModelStreamEvent]:
             if False:
-                yield ""
+                yield ModelStreamCompleted()
 
         return iterate()
 
@@ -117,7 +120,7 @@ def test_runtime_builds_safe_agent_and_projects_only_platform_events() -> None:
         return graph
 
     gateway = _Gateway(_ToolBindingFakeChatModel(messages=iter(["unused"])))
-    assert isinstance(gateway, StreamingChatModel)
+    assert isinstance(gateway, LangChainChatModelProvider)
     runtime = DeepAgentsEmployeeRuntime(
         gateway,
         tools=DeepAgentToolRegistry({WORKFLOW_ID: allowed_workflow}),
@@ -140,7 +143,7 @@ def test_runtime_builds_safe_agent_and_projects_only_platform_events() -> None:
     assert "".join(event.delta or "" for event in events) == "契约通过"
     assert [event.sequence for event in events] == [1, 2, 3]
     assert all(event.assistant_message_id == ASSISTANT_MESSAGE_ID for event in events)
-    assert captured["model"] is gateway.chat_model
+    assert captured["model"] is gateway.langchain_chat_model
     assert captured["tools"] == (allowed_workflow,)
     assert isinstance(captured["backend"], StateBackend)
     assert not isinstance(captured["backend"], SandboxBackendProtocol)

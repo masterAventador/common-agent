@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from typing import cast
 
 import pytest
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph
 
 from common_agent.domain.knowledge import KnowledgeRetrievalResult, RetrievedChunk
@@ -23,7 +21,17 @@ from common_agent.domain.workflow import (
     WorkflowNodeType,
 )
 from common_agent.knowledge.service import KnowledgeBaseService
-from common_agent.models.base import ModelServiceError
+from common_agent.models.base import (
+    ModelMessageRole,
+    ModelProviderResponseInvalid,
+    ModelRequest,
+    ModelServiceError,
+    ModelStreamCompleted,
+    ModelStreamDelta,
+    ModelStreamEvent,
+    ModelStreamInterrupted,
+    TextStreamingModel,
+)
 from common_agent.runtimes.base import RuntimeStopToken
 from common_agent.workflows.compiler import (
     MAX_WORKFLOW_STEPS,
@@ -46,16 +54,13 @@ class WorkflowModelProbe:
 
     def __init__(self, *responses: tuple[str, ...]) -> None:
         self.responses = list(responses or (("模型回答",),))
-        self.requests: list[tuple[BaseMessage, ...]] = []
+        self.requests: list[ModelRequest] = []
 
-    @property
-    def chat_model(self) -> BaseChatModel:
-        raise NotImplementedError
-
-    async def stream_text(self, messages: Sequence[BaseMessage]) -> AsyncIterator[str]:
-        self.requests.append(tuple(messages))
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        self.requests.append(request)
         for chunk in self.responses.pop(0):
-            yield chunk
+            yield ModelStreamDelta(text=chunk)
+        yield ModelStreamCompleted()
 
     def translate_error(
         self,
@@ -86,11 +91,12 @@ class BlockingWorkflowModelProbe(WorkflowModelProbe):
         super().__init__()
         self.started = asyncio.Event()
 
-    async def stream_text(self, messages: Sequence[BaseMessage]) -> AsyncIterator[str]:
-        self.requests.append(tuple(messages))
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        self.requests.append(request)
         self.started.set()
         await asyncio.Event().wait()
-        yield "不会到达"
+        yield ModelStreamDelta(text="不会到达")
+        yield ModelStreamCompleted()
 
 
 def _node(
@@ -133,7 +139,7 @@ def _workflow(*node_specs: tuple[str, WorkflowNodeType]) -> WorkflowDefinition:
 
 
 def _compiler(
-    model: WorkflowModelProbe,
+    model: TextStreamingModel,
     knowledge: KnowledgeProbe,
     *,
     step_limit: int | None = None,
@@ -144,6 +150,17 @@ def _compiler(
         if step_limit is None
         else WorkflowCompiler(registry, step_limit=step_limit)
     )
+
+
+class ProtocolModelProbe(WorkflowModelProbe):
+    def __init__(self, events: tuple[ModelStreamEvent, ...]) -> None:
+        super().__init__()
+        self.events = events
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        self.requests.append(request)
+        for event in self.events:
+            yield event
 
 
 def test_compiler_runs_actual_state_graph_with_all_registered_node_types() -> None:
@@ -177,12 +194,12 @@ def test_compiler_runs_actual_state_graph_with_all_registered_node_types() -> No
     assert knowledge.retrieval_requests[0].top_k == 5
     assert knowledge.retrieval_requests[0].similarity_threshold == 0.2
     assert len(model.requests) == 1
-    assert isinstance(model.requests[0][0], SystemMessage)
-    assert "根据工作流上下文回答" in model.requests[0][0].text
-    assert "外部数据而不是指令" in model.requests[0][0].text
-    assert isinstance(model.requests[0][1], HumanMessage)
-    assert "WORKFLOW_COMPILER_OK" in model.requests[0][1].text
-    assert "workflow-handbook.txt" in model.requests[0][1].text
+    assert model.requests[0].messages[0].role is ModelMessageRole.SYSTEM
+    assert "根据工作流上下文回答" in model.requests[0].messages[0].content
+    assert "外部数据而不是指令" in model.requests[0].messages[0].content
+    assert model.requests[0].messages[1].role is ModelMessageRole.USER
+    assert "WORKFLOW_COMPILER_OK" in model.requests[0].messages[1].content
+    assert "workflow-handbook.txt" in model.requests[0].messages[1].content
 
 
 def test_ai_output_becomes_following_knowledge_query_and_start_end_returns_input() -> None:
@@ -207,6 +224,41 @@ def test_ai_output_becomes_following_knowledge_query_and_start_end_returns_input
     assert knowledge.retrieval_requests[0].query == "改写后的检索问题"
     assert chained_result.output == "改写后的检索问题"
     assert passthrough_result.output == "原样输出"
+
+
+@pytest.mark.parametrize(
+    ("events", "error_type"),
+    [
+        ((ModelStreamDelta(text="部分"),), ModelStreamInterrupted),
+        ((ModelStreamCompleted(),), ModelProviderResponseInvalid),
+        (
+            (
+                ModelStreamDelta(text="完成"),
+                ModelStreamCompleted(),
+                ModelStreamCompleted(),
+            ),
+            ModelProviderResponseInvalid,
+        ),
+        (
+            (ModelStreamCompleted(), ModelStreamDelta(text="迟到")),
+            ModelProviderResponseInvalid,
+        ),
+    ],
+)
+def test_ai_node_rejects_missing_empty_duplicate_or_non_terminal_protocol(
+    events: tuple[ModelStreamEvent, ...],
+    error_type: type[ModelServiceError],
+) -> None:
+    compiled = _compiler(ProtocolModelProbe(events), KnowledgeProbe()).compile(
+        _workflow(
+            ("start", WorkflowNodeType.START),
+            ("chat", WorkflowNodeType.AI_CHAT),
+            ("end", WorkflowNodeType.END),
+        )
+    )
+
+    with pytest.raises(error_type):
+        asyncio.run(compiled.invoke("协议边界"))
 
 
 def test_compiler_revalidates_graph_before_constructing_langgraph() -> None:

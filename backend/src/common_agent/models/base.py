@@ -1,10 +1,55 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import ClassVar, Protocol, runtime_checkable
 
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage
+
+class ModelMessageRole(StrEnum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+@dataclass(frozen=True, slots=True)
+class ModelMessage:
+    role: ModelMessageRole
+    content: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.role, ModelMessageRole):
+            raise ValueError("模型消息角色无效")
+        if not isinstance(self.content, str) or not self.content.strip():
+            raise ValueError("模型消息正文不能为空")
+
+
+@dataclass(frozen=True, slots=True)
+class ModelRequest:
+    messages: tuple[ModelMessage, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.messages, tuple) or not self.messages:
+            raise ValueError("模型请求必须包含消息")
+        if any(not isinstance(message, ModelMessage) for message in self.messages):
+            raise ValueError("模型请求包含无效消息")
+
+
+@dataclass(frozen=True, slots=True)
+class ModelStreamDelta:
+    text: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text, str) or not self.text:
+            raise ValueError("模型增量不能为空")
+
+
+@dataclass(frozen=True, slots=True)
+class ModelStreamCompleted:
+    pass
+
+
+type ModelStreamEvent = ModelStreamDelta | ModelStreamCompleted
 
 
 class ModelServiceError(Exception):
@@ -51,7 +96,7 @@ class TextStreamingModel(Protocol):
     @property
     def provider_name(self) -> str: ...
 
-    def stream_text(self, messages: Sequence[BaseMessage]) -> AsyncIterator[str]: ...
+    def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]: ...
 
     def translate_error(
         self,
@@ -61,9 +106,3 @@ class TextStreamingModel(Protocol):
     ) -> ModelServiceError | None: ...
 
     async def aclose(self) -> None: ...
-
-
-@runtime_checkable
-class StreamingChatModel(TextStreamingModel, Protocol):
-    @property
-    def chat_model(self) -> BaseChatModel: ...

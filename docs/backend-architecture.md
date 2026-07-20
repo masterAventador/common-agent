@@ -45,13 +45,18 @@ React
   会话不得关闭其他适配器的共享默认客户端；
 - `ChatOpenAI` 总请求超时和异步流逐块超时默认均为 60 秒、最大 300 秒；SDK 重试默认
   2 次、最大 3 次，429/5xx/连接失败最多只重放到该上限，已输出文本后的异常不重新生成；
-- 平台只投影增量文本；认证/权限、请求拒绝、限流、超时、5xx、空输出和已开始流的中断
+- 平台模型端口只接受自有 `ModelRequest/ModelMessage`，并只返回自有增量与完成终态；百炼适配器
+  负责把 system/user/assistant 消息双向转换为 LangChain 类型，LangChain/OpenAI 类型不得进入
+  工作流、会话、领域或应用层；
+- 平台只投影增量文本和唯一完成终态；认证/权限、请求拒绝、限流、超时、5xx、空输出和已开始流的中断
   转换成稳定安全错误，不透传供应商响应体、提示词或凭据。
 
 ### 2.3 Deep Agents 负责数字员工
 
 - 固定使用官方 `deepagents==0.6.12` 和公开 `create_deep_agent` API；
-- 向 Deep Agents 传入配置好的 `ChatOpenAI` 模型实例、系统指令和受控工具；
+- Deep Agents 适配器通过 `adapters/model/langchain.py` 的适配层内部桥取得配置好的
+  `ChatOpenAI`，再传入系统指令和受控工具；该桥不是平台端口，不能被 application、domain、
+  conversations、workflows 或 runtimes 消费；
 - 第一版使用非 Sandbox 的 `StateBackend`；通过公开 Harness Profile 禁用默认通用子代理，
   从模型工具面排除 Todo、文件、Shell 和 `task` 全部内置工具，同时用 deny 规则拒绝所有
   文件读写，不能只依赖提示词声明安全边界；
@@ -92,6 +97,7 @@ api
 application --------------+
  |                         |
  +-> domain                |
+ +-> models -------------->+ adapters/bailian
  +-> runtimes ------------>+ adapters/deep_agents
  +-> knowledge ----------->+ adapters/ragflow
  +-> workflows ----------->+ langgraph
@@ -141,6 +147,12 @@ application --------------+
 ### 3.3 Domain 层
 
 只定义平台模型和协议，不导入第三方框架。
+
+平台模型协议由不可变 `ModelMessage(role, content)`、非空 `ModelRequest(messages)`、
+`ModelStreamDelta(text)`、唯一 `ModelStreamCompleted`、稳定 `ModelServiceError` 家族及幂等
+`aclose()` 组成。工作流节点必须看到完成终态后才接受输出：缺少终态、空输出、重复终态或终态
+之后继续输出都关闭失败；已出现增量后缺终态映射为可重试流中断。供应商消息、Chunk、响应、
+异常和客户端释放都由外围适配器转换，平台协议不暴露 LangChain、OpenAI 或 Deep Agents 类型。
 
 ## 4. 核心模型
 

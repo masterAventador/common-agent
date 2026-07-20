@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
 
 import pytest
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage
 
 from common_agent.application.workflow_service import (
     WorkflowNotFound,
@@ -22,7 +20,14 @@ from common_agent.domain.workflow_run import (
     WorkflowRunTrigger,
 )
 from common_agent.knowledge.service import KnowledgeBaseService
-from common_agent.models.base import ModelServiceError, ModelServiceUnavailable
+from common_agent.models.base import (
+    ModelRequest,
+    ModelServiceError,
+    ModelServiceUnavailable,
+    ModelStreamCompleted,
+    ModelStreamDelta,
+    ModelStreamEvent,
+)
 from common_agent.runtimes.base import RuntimeStopSignal
 from common_agent.workflows.compiler import CompiledWorkflow, WorkflowCompiler
 from common_agent.workflows.events import WorkflowEventBroker, WorkflowEventKind
@@ -40,18 +45,15 @@ class RunModelProbe:
         self.fail = fail
         self.started = asyncio.Event()
 
-    @property
-    def chat_model(self) -> BaseChatModel:
-        raise NotImplementedError
-
-    async def stream_text(self, messages: Sequence[BaseMessage]) -> AsyncIterator[str]:
-        del messages
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        del request
         self.started.set()
         if self.fail:
             raise ModelServiceUnavailable
         if self.block:
             await asyncio.Event().wait()
-        yield "工作流结果"
+        yield ModelStreamDelta(text="工作流结果")
+        yield ModelStreamCompleted()
 
     def translate_error(
         self,

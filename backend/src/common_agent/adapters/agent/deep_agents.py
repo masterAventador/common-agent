@@ -17,13 +17,13 @@ from deepagents.middleware.filesystem import FilesystemPermission
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langchain_core.tools import BaseTool
 
+from common_agent.adapters.model.langchain import LangChainChatModelProvider
 from common_agent.domain.conversation import MessageRole
 from common_agent.domain.workflow_run import WorkflowRunOrigin
 from common_agent.models.base import (
     ModelProviderResponseInvalid,
     ModelServiceError,
     ModelStreamInterrupted,
-    StreamingChatModel,
 )
 from common_agent.models.prompts import KNOWLEDGE_SAFETY_INSTRUCTION
 from common_agent.runtimes.base import (
@@ -122,7 +122,7 @@ AgentBuilder = Callable[..., object]
 class DeepAgentsEmployeeRuntime:
     def __init__(
         self,
-        model: StreamingChatModel,
+        model: LangChainChatModelProvider,
         *,
         tools: DeepAgentToolResolver | None = None,
         harness_profile_key: str = "openai",
@@ -170,7 +170,7 @@ class DeepAgentsEmployeeRuntime:
             graph = cast(
                 "_AgentGraph",
                 self._agent_builder(
-                    model=self._model.chat_model,
+                    model=self._model.langchain_chat_model,
                     tools=allowed_tools,
                     system_prompt=_system_prompt(request),
                     backend=StateBackend(),
@@ -306,7 +306,7 @@ def _agent_text(item: object) -> str:
 
 
 def _safe_error_code(
-    model: StreamingChatModel,
+    model: LangChainChatModelProvider,
     error: Exception,
     *,
     emitted_delta: bool,

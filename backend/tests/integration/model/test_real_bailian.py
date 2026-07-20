@@ -4,11 +4,16 @@ import asyncio
 import os
 
 import pytest
-from langchain_core.messages import HumanMessage, SystemMessage
 
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.bootstrap.settings import ModelSettings
-from common_agent.models.base import ModelConfigurationInvalid
+from common_agent.models.base import (
+    ModelConfigurationInvalid,
+    ModelMessage,
+    ModelMessageRole,
+    ModelRequest,
+    ModelStreamDelta,
+)
 
 
 def test_real_bailian_stream_and_invalid_key_boundary() -> None:
@@ -23,13 +28,22 @@ async def _exercise_real_bailian() -> None:
     adapter = BailianChatModelAdapter(settings)
     try:
         chunks = [
-            chunk
-            async for chunk in adapter.stream_text(
-                [
-                    SystemMessage(content="严格遵循用户要求。只输出指定文本。"),
-                    HumanMessage(content="只回复 COMMON_AGENT_A4_02_OK。不要添加其他内容。"),
-                ]
+            event.text
+            async for event in adapter.stream(
+                ModelRequest(
+                    messages=(
+                        ModelMessage(
+                            role=ModelMessageRole.SYSTEM,
+                            content="严格遵循用户要求。只输出指定文本。",
+                        ),
+                        ModelMessage(
+                            role=ModelMessageRole.USER,
+                            content="只回复 COMMON_AGENT_A4_02_OK。不要添加其他内容。",
+                        ),
+                    )
+                )
             )
+            if isinstance(event, ModelStreamDelta)
         ]
     finally:
         await adapter.aclose()
@@ -49,7 +63,11 @@ async def _exercise_real_bailian() -> None:
     invalid_adapter = BailianChatModelAdapter(invalid_settings)
     try:
         with pytest.raises(ModelConfigurationInvalid) as captured:
-            async for _ in invalid_adapter.stream_text([HumanMessage(content="测试无效 Key")]):
+            async for _ in invalid_adapter.stream(
+                ModelRequest(
+                    messages=(ModelMessage(role=ModelMessageRole.USER, content="测试无效 Key"),)
+                )
+            ):
                 pass
     finally:
         await invalid_adapter.aclose()

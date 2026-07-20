@@ -281,7 +281,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 | --- | --- | --- | --- | --- |
 | H7-01 | 本地质量门禁与可选 GitHub CI 镜像 | 以本机冻结安装和可复现命令为权威，执行后端 pytest/Ruff/Mypy/uv lock/audit、前端 Vitest/ESLint/Typecheck/Build/pnpm audit、契约漂移、ShellCheck 和 Demo 链路；PR/main workflow 只镜像同一组门禁，不依赖付费 Hosted Runner，也不作为完成前提；缓存不得绕过锁文件，失败不得吞掉；真实外部依赖门禁保留显式入口 | D8-03 | ✅ 已完成 |
 | H7-02 | 自动化覆盖率门禁 | 后端、前端分别生成行/分支覆盖率；先记录真实基线并补足缺口，最终后端总体行覆盖率不低于 85%、核心领域/应用不低于 90%，前端总体行覆盖率不低于 80%，新增改动不得降低；报告不进入 Git | H7-01 | ✅ 已完成 |
-| H7-03 | 平台自有消息与模型协议 | 定义不依赖 LangChain 的平台消息、模型请求、增量、终态、错误和释放协议；会话与工作流节点只消费平台类型；百炼与 Deep Agents 适配器负责双向转换；真实百炼、会话和工作流回归全部通过 | H7-02 | ⬜ 未开始 |
+| H7-03 | 平台自有消息与模型协议 | 定义不依赖 LangChain 的平台消息、模型请求、增量、终态、错误和释放协议；会话与工作流节点只消费平台类型；百炼与 Deep Agents 适配器负责双向转换；真实百炼、会话和工作流回归全部通过 | H7-02 | ✅ 已完成 |
 | H7-04 | 平台自有图执行协议 | 定义不依赖 LangGraph 的编译、执行、节点观察、停止和结果协议；把 LangGraph 编译器、运行状态和节点框架转换移入 `adapters/workflow/langgraph/`；`WorkflowService` 只依赖平台端口，手动与员工触发语义不变 | H7-03 | ⬜ 未开始 |
 | H7-05 | 第三方依赖边界门禁 | 增加可自动执行的 import/AST 架构测试；除 `api/` 的 FastAPI 边界和 `adapters/` 外，生产平台层不得导入 FastAPI、SQLAlchemy、HTTP SDK、LangChain、LangGraph、Deep Agents 或供应商类型；修正规则和架构文档与实现口径 | H7-04 | ⬜ 未开始 |
 | H7-06 | 结构化日志、指标与追踪 | 统一 JSON 日志和关联上下文，覆盖 request/conversation/message/turn/workflow/run ID、耗时、状态与稳定错误码；提供本机最小健康/指标入口和跨服务 trace context；默认脱敏提示词、知识正文、Key、密码和上游响应，故障测试证明可定位且不泄密 | H7-05 | ⬜ 未开始 |
@@ -337,12 +337,13 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 ## 18. 当前下一步
 
-R8-00、D8-01、D8-02、D8-03、H7-01、H7-02 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
+R8-00、D8-01、D8-02、D8-03、H7-01、H7-02、H7-03 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
 embedding/rerank 统一使用阿里百炼，本地模型退场；全新克隆可由统一入口进入 12 GiB
 `demo-light`，Demo 知识、员工绑定与会话引用在后端重启后保持一致；`real` 可按需切到暂定
 32 GiB，完成脱敏体检、费用诊断、真实纵向门禁和跨 Colima 重启恢复；本机质量门禁已经冻结，
-GitHub Hosted Runner 只作可选镜像、不作为验收依赖；前后端行/分支覆盖率已建立本机不回退门禁。
-下一任务进入 H7-03，并按依赖顺序完成平台自有消息/模型/图执行协议和第三方边界收口；R8-04 仍独立负责 32 GiB 的峰值
+GitHub Hosted Runner 只作可选镜像、不作为验收依赖；前后端行/分支覆盖率已建立本机不回退门禁；
+平台消息与模型协议不再暴露 LangChain/OpenAI/Deep Agents 类型。下一任务进入 H7-04，收回
+LangGraph 图执行协议，之后继续第三方边界门禁；R8-04 仍独立负责 32 GiB 的峰值
 与 30 分钟 soak，不用 D8-03 的功能通过冒充长期资源验收。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
 
@@ -1179,3 +1180,19 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - GREEN：唯一入口最终后端 `407 passed, 12 skipped in 127.99s`，12 项均为需显式 real 开关的既有外部门禁；总体行 90.92%、分支 72.20%，核心行 93.18%、分支 74.26%。前端 14 files/61 tests，行 86.17%、分支 75.00%。新增解析器和后端通过 Ruff lint、163 个文件格式及严格 Mypy 156 个源/测试文件；uv lock、83 包审计、前端 ESLint/TypeScript/Build/pnpm audit、ShellCheck、CI/覆盖率契约和 `git diff --check` 全部通过
 - 报告与清理：后端 JSON/XML 只写入 Git 忽略的 `.local/coverage/backend`，前端 summary 只写入已忽略的 `frontend/coverage`，`git check-ignore` 已实证且没有报告进入暂存范围。覆盖率使用的项目专属 12 GiB demo-light、平台 MySQL、网络和前后端 launchd 进程最终全部停止，释放内存；稳定数据、冻结依赖和官方镜像保留
 - 遗留：无；下一任务 H7-03 定义平台自有消息与模型协议，把 LangChain/供应商类型完整收回适配层
+
+### H7-03 平台自有消息与模型协议
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：在既有模型契约测试中先要求 `ModelMessage/ModelRequest/ModelStreamEvent`，首次定向执行因平台模块无法导入这些类型而在收集阶段按预期失败；实现最小协议后 3 项转绿。迁移工作流时再增加缺少终态、空终态、重复终态和终态后增量四种协议失败，证明平台节点不会把不完整供应商流误写为成功
+- 平台协议：`models/base.py` 只用标准库定义不可变 system/user/assistant `ModelMessage`、非空 `ModelRequest`、非空 `ModelStreamDelta`、唯一 `ModelStreamCompleted`、增量/终态联合类型、稳定安全错误家族、错误翻译和幂等异步释放；不导入 LangChain、OpenAI、Deep Agents 或供应商 SDK。运行时协议检查和构造边界拒绝空消息、非法角色、空请求及空增量
+- 百炼转换：`BailianChatModelAdapter` 的正式端口只接受平台请求并返回平台事件；在适配器内部把三种平台角色转换为 LangChain System/Human/AI Message，把供应商 Chunk 正文转换为平台增量，并且只有非空流正常结束才发完成终态。认证/权限、请求拒绝、限流/连接/超时/5xx、空响应和首个增量后的中断继续转换为原稳定错误码，错误与事件不携带上游响应、Key 或提示词
+- Deep Agents 边界：移除平台 `StreamingChatModel.chat_model: BaseChatModel` 泄漏；新增 `adapters/model/langchain.py` 的适配层内部 `LangChainChatModelProvider`，只允许百炼与 Deep Agents 两个外围适配器传递 Deep Agents 官方 API 当前必需的 `BaseChatModel`。Deep Agents 继续在适配层把平台历史转换为 Human/AI Message、把 AIMessage/Chunk 转为平台 Runtime delta/终态，并翻译错误、停止与释放；application/domain/conversations/workflows/runtimes 不消费该桥
+- 工作流消费：AI 节点现在构造平台 system/user 请求，只累计平台增量；必须恰好看到一个完成终态且正文非空才提交节点输出。已有增量后无终态映射为可重试 `model_stream_interrupted`，无增量完成、重复完成、完成后输出或未知事件映射为 `model_response_invalid`。Demo 模型同样实现平台增量和终态，不保留 LangChain 类型捷径
+- 自动边界：模型契约增加 AST 扫描，生产 `adapters/` 之外禁止导入 `langchain/langchain_core/langchain_openai/openai/deepagents`；最终扫描只剩百炼、Deep Agents 和工具适配器内部第三方导入。架构文档明确平台协议、唯一完成终态和适配层内部桥，产品范围没有变化，RAGFlow 官方 submodule 与源码未修改
+- GREEN：平台协议/工作流定向 28 passed，百炼/Deep Agents/Demo/工作流适配定向 41 passed；后端全量 `414 passed, 12 skipped in 64.05s`，12 项为显式 real 分层门禁。覆盖率全量 `414 passed, 12 skipped in 130.26s`，总体行 90.98%、分支 72.58%、核心行 93.18%、核心分支 74.26%，未降低 H7-02。Ruff lint、排除不可变 0005 后 163 个文件格式及严格 Mypy 156 个源/测试文件通过；Demo 正式浏览器两轮会话与恢复 `1 passed (6.2s)`
+- 真实回归：在项目专属 32 GiB real 栈上显式启用而非依赖默认 skip，一次执行真实百炼适配、Deep Agents 流/协作停止/错误、会话 HTTP/SSE、RAGFlow+百炼工作流编译、手动工作流运行和员工 allowlist 工具触发共 `6 passed in 37.54s`。六项均经正式适配器/API/MySQL/RAGFlow/百炼路径完成并由 finally 删除唯一数据，没有 Mock/Fake 或 GitHub Runner 结果
+- 清理：Demo 与 real 测试 finally 已删除会话、员工、知识库和工作流唯一数据；real 前后端、平台/RAGFlow 容器及项目专属 32 GiB Colima 最终停止，释放当前电脑内存。稳定数据、0600 Token、冻结依赖和官方镜像保留；覆盖率报告只在 Git 忽略目录生成并在提交前精确删除
+- 遗留：无；下一任务 H7-04 定义平台自有图编译、执行、节点观察、停止与结果协议，把 LangGraph 类型和运行状态收回 `adapters/workflow/langgraph/`

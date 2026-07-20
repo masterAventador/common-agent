@@ -1,20 +1,25 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 
 import httpx
 import openai
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from common_agent.bootstrap.settings import ModelSettings
 from common_agent.models.base import (
     ModelConfigurationInvalid,
+    ModelMessageRole,
     ModelProviderResponseInvalid,
+    ModelRequest,
     ModelRequestRejected,
     ModelServiceError,
     ModelServiceUnavailable,
+    ModelStreamCompleted,
+    ModelStreamDelta,
+    ModelStreamEvent,
     ModelStreamInterrupted,
 )
 
@@ -39,7 +44,7 @@ class BailianChatModelAdapter:
         )
 
     @property
-    def chat_model(self) -> BaseChatModel:
+    def langchain_chat_model(self) -> BaseChatModel:
         return self._chat_model
 
     async def aclose(self) -> None:
@@ -51,14 +56,14 @@ class BailianChatModelAdapter:
         if self._owns_async_client and self._chat_model.root_async_client is not None:
             await self._chat_model.root_async_client.close()
 
-    async def stream_text(self, messages: Sequence[BaseMessage]) -> AsyncIterator[str]:
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         emitted: list[str] = []
         try:
-            async for chunk in self._chat_model.astream(messages):
+            async for chunk in self._chat_model.astream(_langchain_messages(request)):
                 text = _text_content(chunk.content)
                 if text:
                     emitted.append(text)
-                    yield text
+                    yield ModelStreamDelta(text=text)
         except ModelServiceError:
             raise
         except Exception as error:
@@ -67,6 +72,7 @@ class BailianChatModelAdapter:
 
         if not "".join(emitted).strip():
             raise ModelProviderResponseInvalid()
+        yield ModelStreamCompleted()
 
     @staticmethod
     def translate_error(
@@ -96,6 +102,18 @@ def _text_content(content: object) -> str:
             if isinstance(text, str):
                 text_parts.append(text)
     return "".join(text_parts)
+
+
+def _langchain_messages(request: ModelRequest) -> tuple[BaseMessage, ...]:
+    messages: list[BaseMessage] = []
+    for message in request.messages:
+        if message.role is ModelMessageRole.SYSTEM:
+            messages.append(SystemMessage(content=message.content))
+        elif message.role is ModelMessageRole.USER:
+            messages.append(HumanMessage(content=message.content))
+        else:
+            messages.append(AIMessage(content=message.content))
+    return tuple(messages)
 
 
 def _create_chat_model(

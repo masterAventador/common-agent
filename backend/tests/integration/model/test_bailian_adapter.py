@@ -6,20 +6,39 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.bootstrap.settings import ModelSettings
 from common_agent.models.base import (
     ModelConfigurationInvalid,
+    ModelMessage,
+    ModelMessageRole,
     ModelProviderResponseInvalid,
+    ModelRequest,
     ModelRequestRejected,
     ModelServiceUnavailable,
+    ModelStreamCompleted,
+    ModelStreamDelta,
     ModelStreamInterrupted,
 )
 
 _TEST_SECRET = "sk-a4-02-must-not-leak"
+
+
+def _request(
+    user_text: str,
+    *,
+    system_text: str | None = None,
+    assistant_text: str | None = None,
+) -> ModelRequest:
+    messages = []
+    if system_text is not None:
+        messages.append(ModelMessage(role=ModelMessageRole.SYSTEM, content=system_text))
+    if assistant_text is not None:
+        messages.append(ModelMessage(role=ModelMessageRole.ASSISTANT, content=assistant_text))
+    messages.append(ModelMessage(role=ModelMessageRole.USER, content=user_text))
+    return ModelRequest(messages=tuple(messages))
 
 
 def _settings(
@@ -114,20 +133,24 @@ def test_adapter_uses_chat_openai_and_streams_incremental_text() -> None:
     async def exercise() -> None:
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
             adapter = BailianChatModelAdapter(_settings(), http_async_client=client)
-            assert isinstance(adapter.chat_model, ChatOpenAI)
-            assert adapter.chat_model.model_name == "qwen-plus"
-            assert adapter.chat_model.max_retries == 2
-            assert adapter.chat_model.request_timeout == 1
-            assert adapter.chat_model.stream_chunk_timeout == 1
-            assert adapter.chat_model.stream_usage is False
+            assert isinstance(adapter.langchain_chat_model, ChatOpenAI)
+            assert adapter.langchain_chat_model.model_name == "qwen-plus"
+            assert adapter.langchain_chat_model.max_retries == 2
+            assert adapter.langchain_chat_model.request_timeout == 1
+            assert adapter.langchain_chat_model.stream_chunk_timeout == 1
+            assert adapter.langchain_chat_model.stream_usage is False
 
-            chunks = [
-                chunk
-                async for chunk in adapter.stream_text(
-                    [SystemMessage(content="简洁回答"), HumanMessage(content="测试")]
+            events = [
+                event
+                async for event in adapter.stream(
+                    _request("测试", system_text="简洁回答", assistant_text="历史回答")
                 )
             ]
-            assert chunks == ["通", "过"]
+            assert events == [
+                ModelStreamDelta(text="通"),
+                ModelStreamDelta(text="过"),
+                ModelStreamCompleted(),
+            ]
 
     asyncio.run(exercise())
 
@@ -139,6 +162,7 @@ def test_adapter_uses_chat_openai_and_streams_incremental_text() -> None:
     assert payload["model"] == "qwen-plus"
     assert payload["messages"] == [
         {"role": "system", "content": "简洁回答"},
+        {"role": "assistant", "content": "历史回答"},
         {"role": "user", "content": "测试"},
     ]
 
@@ -159,8 +183,9 @@ def test_adapter_retries_only_to_configured_limit_before_success() -> None:
             assert (
                 "".join(
                     [
-                        chunk
-                        async for chunk in adapter.stream_text([HumanMessage(content="测试重试")])
+                        event.text
+                        async for event in adapter.stream(_request("测试重试"))
+                        if isinstance(event, ModelStreamDelta)
                     ]
                 )
                 == "恢复"
@@ -186,7 +211,7 @@ def test_adapter_stops_retrying_and_redacts_exhausted_transient_errors(
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
             adapter = BailianChatModelAdapter(_settings(max_retries="1"), http_async_client=client)
             with pytest.raises(ModelServiceUnavailable) as captured:
-                async for _ in adapter.stream_text([HumanMessage(content="耗尽重试")]):
+                async for _ in adapter.stream(_request("耗尽重试")):
                     pass
             assert provider_detail not in str(captured.value)
 
@@ -206,7 +231,7 @@ def test_adapter_does_not_retry_a_rejected_request() -> None:
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
             adapter = BailianChatModelAdapter(_settings(max_retries="2"), http_async_client=client)
             with pytest.raises(ModelRequestRejected):
-                async for _ in adapter.stream_text([HumanMessage(content="非法请求")]):
+                async for _ in adapter.stream(_request("非法请求")):
                     pass
 
     asyncio.run(exercise())
@@ -223,7 +248,7 @@ def test_adapter_maps_authentication_failure_without_leaking_provider_details() 
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
             adapter = BailianChatModelAdapter(_settings(max_retries="0"), http_async_client=client)
             try:
-                async for _ in adapter.stream_text([HumanMessage(content="认证失败")]):
+                async for _ in adapter.stream(_request("认证失败")):
                     pass
             except ModelConfigurationInvalid as error:
                 rendered = f"{error!r}\n{error}"
@@ -244,7 +269,7 @@ def test_adapter_maps_timeout_to_retryable_safe_error() -> None:
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
             adapter = BailianChatModelAdapter(_settings(max_retries="0"), http_async_client=client)
             try:
-                async for _ in adapter.stream_text([HumanMessage(content="超时")]):
+                async for _ in adapter.stream(_request("超时")):
                     pass
             except ModelServiceUnavailable as error:
                 assert error.retryable is True
@@ -278,12 +303,12 @@ def test_adapter_marks_failure_after_first_delta_as_stream_interrupted() -> None
     async def exercise() -> None:
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
             adapter = BailianChatModelAdapter(_settings(max_retries="0"), http_async_client=client)
-            emitted: list[str] = []
+            emitted: list[ModelStreamDelta | ModelStreamCompleted] = []
             try:
-                async for chunk in adapter.stream_text([HumanMessage(content="断流")]):
-                    emitted.append(chunk)
+                async for event in adapter.stream(_request("断流")):
+                    emitted.append(event)
             except ModelStreamInterrupted as error:
-                assert emitted == ["部分"]
+                assert emitted == [ModelStreamDelta(text="部分")]
                 assert "stream detail" not in str(error)
             else:
                 raise AssertionError("首个增量后的连接失败必须标记为流中断")
@@ -306,7 +331,7 @@ def test_adapter_applies_per_chunk_timeout_to_an_open_stream() -> None:
                 http_async_client=client,
             )
             with pytest.raises(ModelServiceUnavailable):
-                async for _ in adapter.stream_text([HumanMessage(content="逐块超时")]):
+                async for _ in adapter.stream(_request("逐块超时")):
                     pass
 
     asyncio.run(exercise())
@@ -319,7 +344,7 @@ def test_adapter_rejects_an_empty_successful_stream() -> None:
         ) as client:
             adapter = BailianChatModelAdapter(_settings(max_retries="0"), http_async_client=client)
             try:
-                async for _ in adapter.stream_text([HumanMessage(content="空输出")]):
+                async for _ in adapter.stream(_request("空输出")):
                     pass
             except ModelProviderResponseInvalid as error:
                 assert error.retryable is False
@@ -332,7 +357,7 @@ def test_adapter_rejects_an_empty_successful_stream() -> None:
 def test_adapter_explicitly_closes_owned_sync_and_async_clients() -> None:
     async def exercise() -> None:
         adapter = BailianChatModelAdapter(_settings())
-        model = adapter.chat_model
+        model = adapter.langchain_chat_model
         assert isinstance(model, ChatOpenAI)
         assert model.root_client is not None
         assert model.root_async_client is not None
@@ -352,8 +377,8 @@ def test_owned_clients_are_isolated_between_adapter_instances() -> None:
     async def exercise() -> None:
         first = BailianChatModelAdapter(_settings())
         second = BailianChatModelAdapter(_settings())
-        first_model = first.chat_model
-        second_model = second.chat_model
+        first_model = first.langchain_chat_model
+        second_model = second.langchain_chat_model
         assert isinstance(first_model, ChatOpenAI)
         assert isinstance(second_model, ChatOpenAI)
         assert first_model.root_client is not None

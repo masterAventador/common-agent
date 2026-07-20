@@ -52,7 +52,9 @@ backend/
 │       │   ├── knowledge.py
 │       │   ├── workflow.py
 │       │   └── workflow_run.py
-│       │   └── knowledge.py
+│       ├── models/              # 平台自有消息、模型流、错误和释放协议
+│       │   ├── base.py
+│       │   └── prompts.py
 │       ├── runtimes/            # EmployeeRuntime 协议
 │       │   └── base.py
 │       ├── workflows/           # 独立工作流校验与 LangGraph 运行时
@@ -68,7 +70,7 @@ backend/
 │       └── adapters/            # 数据库、模型及第三方外围适配
 │           ├── agent/           # Deep Agents 正式适配器
 │           ├── knowledge/       # RAGFlow 正式适配器
-│           ├── model/           # 阿里百炼模型适配器
+│           ├── model/           # 阿里百炼转换与仅适配层可见的 LangChain 桥
 │           └── persistence/     # MySQL 持久化适配器
 ├── migrations/                  # 当前正式数据库迁移
 ├── tests/
@@ -96,8 +98,12 @@ api -> application -> domain
 - `api/` 只负责 HTTP/SSE、参数校验和错误转换；
 - `application/` 分别负责“发送消息并生成回复”和“触发工作流”用例；
 - `domain/` 不导入 FastAPI、Deep Agents、LangGraph 或 RAGFlow；
+- `models/` 定义平台自有 system/user/assistant 消息、请求、增量、完成终态、安全错误和释放协议，
+  不导入 LangChain、OpenAI、Deep Agents 或供应商 SDK；
 - `workflows/` 只接收平台节点/边定义，先验证再编译为 LangGraph；数字员工通过 `WorkflowService` 调用工作流，禁止直接导入工作流图；
-- 第三方 SDK 类型不得越过适配层；
+- 第三方 SDK 类型不得越过适配层；百炼负责平台消息与 LangChain 消息转换，Deep Agents 负责
+  平台运行请求/事件与 LangChain/Deep Agents 类型转换，二者共享的 `BaseChatModel` 只能经
+  `adapters/model/langchain.py` 的适配层内部桥传递；
 - 员工、会话、消息、工作流和知识库绑定必须经过仓储端口；正式实现使用平台独立 MySQL、SQLAlchemy async 和 Alembic，不改变领域模型依赖方向；
 - 任何第三方技术依赖都通过与其职责相符的应用端口和外围适配器接入；Redis、消息队列、对象存储和 Worker 只是示例，不构成白名单；只实现当前用例实际调用的端口，不创建没有调用方的空实现；
 - RAGFlow 保存知识文档和索引，平台不直连其内部数据库、缓存、检索引擎或对象存储。

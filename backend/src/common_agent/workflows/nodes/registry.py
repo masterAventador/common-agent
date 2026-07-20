@@ -3,8 +3,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
-
 from common_agent.domain.knowledge import (
     DEFAULT_KNOWLEDGE_SIMILARITY_THRESHOLD,
     DEFAULT_KNOWLEDGE_TOP_K,
@@ -26,7 +24,18 @@ from common_agent.knowledge.base import (
     KnowledgeServiceUnavailable,
 )
 from common_agent.knowledge.service import KnowledgeBaseService
-from common_agent.models.base import ModelServiceError, ModelServiceUnavailable, TextStreamingModel
+from common_agent.models.base import (
+    ModelMessage,
+    ModelMessageRole,
+    ModelProviderResponseInvalid,
+    ModelRequest,
+    ModelServiceError,
+    ModelServiceUnavailable,
+    ModelStreamCompleted,
+    ModelStreamDelta,
+    ModelStreamInterrupted,
+    TextStreamingModel,
+)
 from common_agent.models.prompts import KNOWLEDGE_SAFETY_INSTRUCTION
 from common_agent.runtimes.base import RuntimeKnowledgeChunk
 from common_agent.workflows.errors import WorkflowNodeConfigurationInvalid
@@ -81,11 +90,21 @@ def _ai_chat_factory(model: TextStreamingModel) -> WorkflowNodeFactory:
             raise WorkflowNodeConfigurationInvalid()
 
         async def run(state: WorkflowGraphState) -> WorkflowStateUpdate:
-            messages = _model_messages(config.prompt, state)
+            request = _model_request(config.prompt, state)
             chunks: list[str] = []
+            completed = False
             try:
-                async for chunk in model.stream_text(messages):
-                    chunks.append(chunk)
+                async for event in model.stream(request):
+                    if isinstance(event, ModelStreamDelta):
+                        if completed:
+                            raise ModelProviderResponseInvalid()
+                        chunks.append(event.text)
+                    elif isinstance(event, ModelStreamCompleted):
+                        if completed:
+                            raise ModelProviderResponseInvalid()
+                        completed = True
+                    else:
+                        raise ModelProviderResponseInvalid()
             except ModelServiceError:
                 raise
             except Exception as error:
@@ -94,9 +113,13 @@ def _ai_chat_factory(model: TextStreamingModel) -> WorkflowNodeFactory:
                 except Exception:
                     translated = None
                 raise (translated or ModelServiceUnavailable()) from None
+            if not completed:
+                if chunks:
+                    raise ModelStreamInterrupted()
+                raise ModelProviderResponseInvalid()
             output = "".join(chunks)
             if not output.strip():
-                raise ModelServiceUnavailable()
+                raise ModelProviderResponseInvalid()
             return _completed_update(state, node, output=output)
 
         return run
@@ -148,13 +171,18 @@ def _end_factory(node: WorkflowNode) -> WorkflowNodeRunner:
     return run
 
 
-def _model_messages(prompt: str, state: WorkflowGraphState) -> tuple[BaseMessage, ...]:
+def _model_request(prompt: str, state: WorkflowGraphState) -> ModelRequest:
     system_prompt = f"{prompt}\n\n{KNOWLEDGE_SAFETY_INSTRUCTION}"
     context = state.get("output") or state["input"]
     knowledge = _knowledge_text(state.get("knowledge", ()))
     if knowledge:
         context = f"用户输入:\n{context}\n\n检索到的知识片段:\n{knowledge}"
-    return SystemMessage(content=system_prompt), HumanMessage(content=context)
+    return ModelRequest(
+        messages=(
+            ModelMessage(role=ModelMessageRole.SYSTEM, content=system_prompt),
+            ModelMessage(role=ModelMessageRole.USER, content=context),
+        )
+    )
 
 
 def _knowledge_text(chunks: Sequence[RuntimeKnowledgeChunk]) -> str:
