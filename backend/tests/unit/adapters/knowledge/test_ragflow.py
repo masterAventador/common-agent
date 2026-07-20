@@ -382,9 +382,22 @@ def test_missing_dataset_maps_to_stable_not_found(
     _run(scenario())
 
 
-def test_known_upload_rejection_is_not_reported_as_safe_to_retry() -> None:
+@pytest.mark.parametrize(
+    ("status_code", "provider_message"),
+    [
+        (400, "secret detail"),
+        (200, "duplicated document name: policy.md"),
+    ],
+)
+def test_known_or_duplicate_upload_rejection_is_not_reported_as_safe_to_retry(
+    status_code: int,
+    provider_message: str,
+) -> None:
     transport = httpx.MockTransport(
-        lambda request: httpx.Response(400, json={"code": 101, "message": "secret detail"})
+        lambda request: httpx.Response(
+            status_code,
+            json={"code": 101, "message": provider_message},
+        )
     )
 
     async def scenario() -> None:
@@ -401,7 +414,7 @@ def test_known_upload_rejection_is_not_reported_as_safe_to_retry() -> None:
                     DocumentUpload("policy.md", "text/markdown", b"policy"),
                 )
         assert captured.value.retryable is False
-        assert "secret detail" not in str(captured.value)
+        assert provider_message not in str(captured.value)
 
     _run(scenario())
 
@@ -493,5 +506,62 @@ def test_empty_retrieval_is_a_successful_empty_result() -> None:
                 KnowledgeRetrievalRequest(knowledge_base_id="kb-1", query="没有答案")
             )
         assert result.chunks == ()
+
+    _run(scenario())
+
+
+def test_retrieval_defensively_drops_low_relevance_chunks_and_caps_top_k() -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "total": 3,
+                    "chunks": [
+                        {
+                            "id": "below-threshold",
+                            "document_id": "doc-1",
+                            "document_keyword": "低相关.md",
+                            "content": "不应进入模型上下文",
+                            "similarity": 0.19,
+                        },
+                        {
+                            "id": "accepted",
+                            "document_id": "doc-2",
+                            "document_keyword": "可靠.md",
+                            "content": "应进入模型上下文",
+                            "similarity": 0.91,
+                        },
+                        {
+                            "id": "over-limit",
+                            "document_id": "doc-3",
+                            "document_keyword": "额外.md",
+                            "content": "超过 top_k 不应进入",
+                            "similarity": 0.88,
+                        },
+                    ],
+                },
+            },
+        )
+    )
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(transport=transport, base_url="http://ragflow") as client:
+            service = RagFlowKnowledgeService(
+                base_url="http://ragflow",
+                api_key="test-key",
+                expected_version="v0.25.6",
+                client=client,
+            )
+            result = await service.retrieve(
+                KnowledgeRetrievalRequest(
+                    knowledge_base_id="kb-1",
+                    query="只要最相关的一条",
+                    top_k=1,
+                    similarity_threshold=0.2,
+                )
+            )
+        assert [chunk.id for chunk in result.chunks] == ["accepted"]
 
     _run(scenario())

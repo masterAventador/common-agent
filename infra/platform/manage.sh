@@ -61,7 +61,14 @@ wait_for_healthy() {
   local container_id
   local state
   local healthy_since=-1
-  local deadline=$((SECONDS + 60))
+  local timeout_seconds="${PLATFORM_HEALTH_TIMEOUT_SECONDS:-60}"
+  local deadline
+
+  if [[ ! "${timeout_seconds}" =~ ^[0-9]+$ ]] || ((timeout_seconds < 1 || timeout_seconds > 600)); then
+    echo "平台 MySQL 健康等待必须是 1-600 的整数秒：${timeout_seconds}" >&2
+    exit 2
+  fi
+  deadline=$((SECONDS + timeout_seconds))
 
   container_id="$(compose ps -q mysql)"
   if [[ -z "${container_id}" ]]; then
@@ -85,7 +92,7 @@ wait_for_healthy() {
     sleep 1
   done
 
-  echo "平台 MySQL 未在 60 秒内恢复健康" >&2
+  echo "平台 MySQL 未在 ${timeout_seconds} 秒内恢复健康" >&2
   compose ps >&2
   return 1
 }
@@ -108,6 +115,7 @@ case "${1:-}" in
   prepare) prepare ;;
   pull-image) pull_image ;;
   check-ports) check_ports ;;
+  check-health) wait_for_healthy ;;
   up)
     if ! stack_has_containers; then
       check_ports
@@ -122,7 +130,7 @@ case "${1:-}" in
   config) compose config ;;
   logs) compose logs -f mysql ;;
   *)
-    echo "用法: $0 {prepare|pull-image|check-ports|up|stop|down|status|config|logs}" >&2
+    echo "用法: $0 {prepare|pull-image|check-ports|check-health|up|stop|down|status|config|logs}" >&2
     exit 2
     ;;
 esac

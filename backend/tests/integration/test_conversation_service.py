@@ -156,6 +156,28 @@ class _LateEventRuntime:
         return None
 
 
+class _CompletionAfterStopRuntime:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.release_completion = asyncio.Event()
+
+    async def stream(
+        self,
+        request: EmployeeRuntimeRequest,
+        *,
+        stop: RuntimeStopSignal,
+    ) -> AsyncIterator[RuntimeEvent]:
+        del stop
+        emitter = RuntimeEventEmitter(request.assistant_message_id)
+        yield emitter.delta("停止前内容")
+        self.started.set()
+        await self.release_completion.wait()
+        yield emitter.complete()
+
+    async def aclose(self) -> None:
+        return None
+
+
 async def _events_until_terminal(
     broker: ConversationEventBroker,
     conversation_id: UUID,
@@ -307,6 +329,55 @@ def test_service_stops_active_turn_retries_same_message_and_rejects_duplicates()
                         content="重复提交",
                     )
             finally:
+                await service.aclose()
+                await delete_conversations(database, conversation_id)
+                await delete_employees(database, employee.id)
+
+    asyncio.run(exercise())
+
+
+def test_stop_accepted_before_a_late_completion_wins_with_one_persisted_terminal() -> None:
+    employee = Employee.create(name=f"service-race-{uuid4().hex}", system_prompt="直接回答问题")
+    conversation_id = uuid4()
+
+    async def exercise() -> None:
+        async with _database() as database:
+            runtime = _CompletionAfterStopRuntime()
+            events = ConversationEventBroker()
+            service = ConversationService(
+                SqlAlchemyConversationUnitOfWorkFactory(database),
+                employees=_Employees(employee),
+                knowledge=_NoKnowledge(),
+                runtime=runtime,
+                events=events,
+            )
+            try:
+                async with database.session() as session:
+                    await SqlAlchemyEmployeeRepository(session).add(employee)
+                    await session.commit()
+                await service.create(
+                    employee_id=employee.id,
+                    title="停止完成竞态",
+                    conversation_id=conversation_id,
+                )
+                accepted = await service.send(
+                    conversation_id,
+                    user_message_id=uuid4(),
+                    content="在完成前停止",
+                )
+                await asyncio.wait_for(runtime.started.wait(), timeout=1)
+                stopped = await service.stop(conversation_id)
+                runtime.release_completion.set()
+
+                delivered = await _events_until_terminal(events, conversation_id)
+                stored = await service.list_messages(conversation_id)
+
+                assert stopped.assistant_message_id == accepted.assistant_message.id
+                assert stored[-1].status is MessageStatus.STOPPED
+                assert delivered[-1].message == stored[-1]
+                assert sum(event.message.is_terminal for event in delivered) == 1
+            finally:
+                runtime.release_completion.set()
                 await service.aclose()
                 await delete_conversations(database, conversation_id)
                 await delete_employees(database, employee.id)

@@ -167,6 +167,27 @@ def test_empty_retrieval_keeps_bound_knowledge_base_semantics() -> None:
     assert resolved.citations == ()
 
 
+def test_each_turn_uses_the_employee_current_knowledge_binding_without_stale_cache() -> None:
+    first = RetrievedChunk("chunk-a", "doc-a", "A.md", "A 库内容", 0.9)
+    second = RetrievedChunk("chunk-b", "doc-b", "B.md", "B 库内容", 0.9)
+    knowledge = _KnowledgeProbe([_result(first), _result(second)])
+    resolver = ConversationKnowledgeResolver(knowledge)  # type: ignore[arg-type]
+
+    async def exercise() -> tuple[ResolvedKnowledgeContext, ResolvedKnowledgeContext]:
+        return (
+            await resolver.resolve(_employee(knowledge_base_id="kb-a"), _user_message()),
+            await resolver.resolve(_employee(knowledge_base_id="kb-b"), _user_message()),
+        )
+
+    first_resolved, second_resolved = asyncio.run(exercise())
+
+    assert [request.knowledge_base_id for request in knowledge.requests] == ["kb-a", "kb-b"]
+    assert first_resolved.knowledge_base_id == "kb-a"
+    assert second_resolved.knowledge_base_id == "kb-b"
+    assert first_resolved.citations[0].chunk_id == "chunk-a"
+    assert second_resolved.citations[0].chunk_id == "chunk-b"
+
+
 @pytest.mark.parametrize(
     "failure",
     [

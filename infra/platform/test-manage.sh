@@ -16,6 +16,10 @@ rg --color=never --quiet '^wait_for_healthy\(\)' "${MANAGER}" || \
   fail "平台 MySQL 管理脚本缺少重启瞬态后的显式健康等待"
 rg --color=never --quiet 'healthy_since' "${MANAGER}" || \
   fail "平台 MySQL 管理脚本没有要求健康状态稳定后再返回"
+rg --color=never --quiet 'PLATFORM_HEALTH_TIMEOUT_SECONDS:-60' "${MANAGER}" || \
+  fail "平台 MySQL 健康等待没有可故障注入的有限超时"
+rg --color=never --fixed-strings --quiet 'check-health) wait_for_healthy' "${MANAGER}" || \
+  fail "平台 MySQL 管理脚本缺少复用正式健康等待的诊断入口"
 rg --color=never --quiet '^ensure_test_database\(\)' "${MANAGER}" || \
   fail "平台 MySQL 管理脚本缺少隔离测试数据库的幂等准备"
 rg --color=never --quiet 'common_agent_test' "${MANAGER}" || \
@@ -65,5 +69,20 @@ if PLATFORM_MYSQL_PORT=29506 "${MANAGER}" check-ports > "${PORT_TEST_OUTPUT}" 2>
   fail "平台 MySQL 端口冲突时管理脚本仍然放行"
 fi
 rg --color=never --quiet '29506' "${PORT_TEST_OUTPUT}"
+
+HEALTH_TEST_ROOT="$(mktemp -d)"
+HEALTH_TEST_OUTPUT="$(mktemp)"
+if PATH="${SCRIPT_DIR}/../test-fixtures:${PATH}" \
+  COMMON_AGENT_TEST_DOCKER_SCENARIO=platform-unhealthy \
+  PLATFORM_MYSQL_DATA_ROOT="${HEALTH_TEST_ROOT}" \
+  PLATFORM_HEALTH_TIMEOUT_SECONDS=1 \
+  "${MANAGER}" check-health > "${HEALTH_TEST_OUTPUT}" 2>&1; then
+  rm -rf "${HEALTH_TEST_ROOT}"
+  rm -f "${HEALTH_TEST_OUTPUT}"
+  fail "持续 unhealthy 的平台 MySQL 仍然被健康门禁放行"
+fi
+rg --color=never --quiet '未在 1 秒内恢复健康' "${HEALTH_TEST_OUTPUT}"
+rm -rf "${HEALTH_TEST_ROOT}"
+rm -f "${HEALTH_TEST_OUTPUT}"
 
 echo "平台 MySQL 固定版本、context、端口、Volume 与资源门禁通过"

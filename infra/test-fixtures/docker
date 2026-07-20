@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${COMMON_AGENT_TEST_DOCKER_SCENARIO:-}" == "platform-unhealthy" ]]; then
+  if [[ " $* " == *" compose "* && " $* " == *" ps -q mysql "* ]]; then
+    printf '%s\n' "fake-platform-mysql"
+    exit 0
+  fi
+  if [[ " $* " == *" inspect "* ]]; then
+    printf '%s\n' "running unhealthy"
+    exit 0
+  fi
+  if [[ " $* " == *" compose "* && " $* " == *" ps "* ]]; then
+    printf '%s\n' "common-agent-platform-mysql running unhealthy"
+    exit 0
+  fi
+fi
+
+if [[ "${COMMON_AGENT_TEST_DOCKER_SCENARIO:-}" == "ragflow-unhealthy" ]]; then
+  if [[ " $* " == *" compose "* && " $* " == *" ps -aq "* ]]; then
+    printf '%s\n' "fake-ragflow-container"
+    exit 0
+  fi
+  if [[ " $* " == *" compose "* && " $* " == *" up -d --wait "* ]]; then
+    if [[ " $* " != *" --wait-timeout 1 "* ]]; then
+      echo "RAGFlow 健康超时没有传给 Docker Compose：$*" >&2
+      exit 96
+    fi
+    echo "模拟 RAGFlow 健康检查失败" >&2
+    exit 1
+  fi
+fi
+
+if [[ " $* " == *" info "* && " $* " == *"{{.MemTotal}}"* ]]; then
+  printf '%s\n' "${COMMON_AGENT_TEST_DOCKER_MEMORY_BYTES:?missing test memory bytes}"
+  exit 0
+fi
+
+echo "unsupported fake docker invocation: $*" >&2
+exit 97

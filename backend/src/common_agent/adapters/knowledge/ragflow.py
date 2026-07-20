@@ -258,6 +258,11 @@ class RagFlowKnowledgeService:
             },
         )
         payload = _validate(_RETRIEVAL_ADAPTER, data)
+        accepted = tuple(
+            item
+            for item in payload.chunks
+            if float(item.similarity) >= request.similarity_threshold
+        )[: request.top_k]
         return KnowledgeRetrievalResult(
             chunks=tuple(
                 RetrievedChunk(
@@ -267,7 +272,7 @@ class RagFlowKnowledgeService:
                     content=item.content,
                     score=float(item.similarity),
                 )
-                for item in payload.chunks
+                for item in accepted
             )
         )
 

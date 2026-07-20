@@ -18,6 +18,16 @@ ENV_VERSION_LINE="$(rg --color=never --only-matching '^RAGFLOW_EXPECTED_VERSION=
 [[ "${ENV_VERSION_LINE#*=}" == "${VERSION}" ]] || fail "后端期望的 RAGFlow 版本与基础设施版本不一致"
 
 rg --color=never --quiet 'RAGFLOW_DOCKER_CONTEXT:-colima-common-agent-dev' "${MANAGER}"
+rg --color=never --quiet '^check_resources\(\)' "${MANAGER}" || \
+  fail "RAGFlow 管理脚本缺少 Docker 内存预检"
+rg --color=never --quiet 'RAGFLOW_MIN_DOCKER_MEMORY_GIB:-40' "${MANAGER}" || \
+  fail "RAGFlow 管理脚本没有拒绝低于 40 GiB 的 Docker profile"
+rg --color=never --quiet '建议为 common-agent-dev 分配 48 GiB' "${MANAGER}" || \
+  fail "RAGFlow 内存不足错误没有给出项目独立 48 GiB profile 建议"
+rg --color=never --quiet 'RAGFLOW_HEALTH_TIMEOUT_SECONDS:-180' "${MANAGER}" || \
+  fail "RAGFlow 正式 up 入口缺少可故障注入的有限健康超时"
+rg --color=never --fixed-strings --quiet -- '--wait-timeout "${health_timeout_seconds}"' "${MANAGER}" || \
+  fail "RAGFlow 正式 up 入口没有把健康超时交给 Docker Compose"
 CONFIG="$(RAGFLOW_DOCKER_CONTEXT=colima ${MANAGER} config)"
 
 rg --color=never --quiet '^name: common-agent-dev$' <<< "${CONFIG}"
@@ -58,6 +68,52 @@ touch "${MODEL_TEST_ROOT}/BAAI/bge-m3/config.json"
 touch "${MODEL_TEST_ROOT}/BAAI/bge-m3/model.safetensors"
 RAGFLOW_MODEL_ROOT="${MODEL_TEST_ROOT}" "${MANAGER}" check-model
 rm -rf "${MODEL_TEST_ROOT}"
+
+FAKE_DOCKER_PATH="${REPOSITORY_ROOT}/infra/test-fixtures:${PATH}"
+LOW_MEMORY_OUTPUT="$(mktemp)"
+if PATH="${FAKE_DOCKER_PATH}" \
+  COMMON_AGENT_TEST_DOCKER_MEMORY_BYTES="$((32 * 1024 * 1024 * 1024))" \
+  "${MANAGER}" check-resources > "${LOW_MEMORY_OUTPUT}" 2>&1; then
+  rm -f "${LOW_MEMORY_OUTPUT}"
+  fail "32 GiB Docker profile 仍然被 RAGFlow 资源预检放行"
+fi
+rg --color=never --quiet '内存不足' "${LOW_MEMORY_OUTPUT}"
+rg --color=never --quiet '48 GiB' "${LOW_MEMORY_OUTPUT}"
+rm -f "${LOW_MEMORY_OUTPUT}"
+
+PATH="${FAKE_DOCKER_PATH}" \
+COMMON_AGENT_TEST_DOCKER_MEMORY_BYTES="$((48 * 1024 * 1024 * 1024))" \
+  "${MANAGER}" check-resources
+
+INVALID_MEMORY_OUTPUT="$(mktemp)"
+if PATH="${FAKE_DOCKER_PATH}" \
+  RAGFLOW_MIN_DOCKER_MEMORY_GIB=invalid \
+  COMMON_AGENT_TEST_DOCKER_MEMORY_BYTES="$((48 * 1024 * 1024 * 1024))" \
+  "${MANAGER}" check-resources > "${INVALID_MEMORY_OUTPUT}" 2>&1; then
+  rm -f "${INVALID_MEMORY_OUTPUT}"
+  fail "非法最低内存值仍然被 RAGFlow 资源预检放行"
+fi
+rg --color=never --quiet '1-128' "${INVALID_MEMORY_OUTPUT}"
+rm -f "${INVALID_MEMORY_OUTPUT}"
+
+HEALTH_MODEL_ROOT="$(mktemp -d)"
+HEALTH_TEST_OUTPUT="$(mktemp)"
+mkdir -p "${HEALTH_MODEL_ROOT}/BAAI/bge-m3"
+touch "${HEALTH_MODEL_ROOT}/BAAI/bge-m3/config.json"
+touch "${HEALTH_MODEL_ROOT}/BAAI/bge-m3/model.safetensors"
+if PATH="${FAKE_DOCKER_PATH}" \
+  COMMON_AGENT_TEST_DOCKER_SCENARIO=ragflow-unhealthy \
+  COMMON_AGENT_TEST_DOCKER_MEMORY_BYTES="$((48 * 1024 * 1024 * 1024))" \
+  RAGFLOW_MODEL_ROOT="${HEALTH_MODEL_ROOT}" \
+  RAGFLOW_HEALTH_TIMEOUT_SECONDS=1 \
+  "${MANAGER}" up > "${HEALTH_TEST_OUTPUT}" 2>&1; then
+  rm -rf "${HEALTH_MODEL_ROOT}"
+  rm -f "${HEALTH_TEST_OUTPUT}"
+  fail "RAGFlow 健康失败时正式 up 入口仍然成功返回"
+fi
+rg --color=never --quiet '模拟 RAGFlow 健康检查失败' "${HEALTH_TEST_OUTPUT}"
+rm -rf "${HEALTH_MODEL_ROOT}"
+rm -f "${HEALTH_TEST_OUTPUT}"
 
 PORT_TEST_OUTPUT="$(mktemp)"
 python3 -m http.server 29380 --bind 127.0.0.1 > /dev/null 2>&1 &

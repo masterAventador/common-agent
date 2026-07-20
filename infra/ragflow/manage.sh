@@ -60,6 +60,37 @@ check_ports() {
   done
 }
 
+check_resources() {
+  local minimum_gib total_bytes required_bytes
+  minimum_gib="${RAGFLOW_MIN_DOCKER_MEMORY_GIB:-40}"
+  if [[ ! "${minimum_gib}" =~ ^[0-9]+$ ]] || ((minimum_gib < 1 || minimum_gib > 128)); then
+    echo "RAGFlow 最低 Docker 内存必须是 1-128 的整数 GiB：${minimum_gib}" >&2
+    exit 2
+  fi
+  if ! total_bytes="$(docker_cli info --format '{{.MemTotal}}')"; then
+    echo "无法读取 common-agent Docker context 内存" >&2
+    return 1
+  fi
+  if [[ ! "${total_bytes}" =~ ^[0-9]+$ ]]; then
+    echo "Docker 返回了无法识别的内存值：${total_bytes}" >&2
+    return 1
+  fi
+  required_bytes=$((minimum_gib * 1024 * 1024 * 1024))
+  if ((total_bytes < required_bytes)); then
+    echo "common-agent Docker context 内存不足：至少需要 ${minimum_gib} GiB；建议为 common-agent-dev 分配 48 GiB" >&2
+    return 1
+  fi
+}
+
+health_timeout() {
+  local timeout_seconds="${RAGFLOW_HEALTH_TIMEOUT_SECONDS:-180}"
+  if [[ ! "${timeout_seconds}" =~ ^[0-9]+$ ]] || ((timeout_seconds < 1 || timeout_seconds > 600)); then
+    echo "RAGFlow 健康等待必须是 1-600 的整数秒：${timeout_seconds}" >&2
+    exit 2
+  fi
+  echo "${timeout_seconds}"
+}
+
 ensure_data_directories() {
   mkdir -p \
     "${DATA_ROOT}/elasticsearch" \
@@ -169,14 +200,17 @@ pull_image() {
 case "${1:-}" in
   prepare) prepare ;;
   check-model) check_model ;;
+  check-resources) check_resources ;;
   pull-image) pull_image ;;
   check-ports) check_ports ;;
   up)
+    health_timeout_seconds="$(health_timeout)"
+    check_resources
     check_model
     if ! stack_has_containers; then
       check_ports
     fi
-    compose up -d --wait
+    compose up -d --wait --wait-timeout "${health_timeout_seconds}"
     ;;
   stop) compose stop ;;
   down) compose down ;;
@@ -184,7 +218,7 @@ case "${1:-}" in
   config) compose config ;;
   logs) compose logs -f ragflow-cpu ;;
   *)
-    echo "用法: $0 {prepare|pull-image|check-model|check-ports|up|stop|down|status|config|logs}" >&2
+    echo "用法: $0 {prepare|pull-image|check-model|check-resources|check-ports|up|stop|down|status|config|logs}" >&2
     exit 2
     ;;
 esac

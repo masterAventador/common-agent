@@ -419,6 +419,9 @@ class ConversationService:
             )
             last_sequence = 0
             async for event in self._runtime.stream(request, stop=stop):
+                if stop.is_requested and event.kind is not RuntimeEventKind.STOPPED:
+                    await self._persist_stopped(turn_id, assistant_message.id)
+                    return
                 if (
                     event.assistant_message_id != assistant_message.id
                     or event.sequence <= last_sequence
@@ -437,20 +440,26 @@ class ConversationService:
                 )
                 if terminal:
                     return
-            await self._persist_failure(
-                turn_id,
-                assistant_message.id,
-                "runtime_stream_interrupted",
-            )
+            if stop.is_requested:
+                await self._persist_stopped(turn_id, assistant_message.id)
+            else:
+                await self._persist_failure(
+                    turn_id,
+                    assistant_message.id,
+                    "runtime_stream_interrupted",
+                )
         except asyncio.CancelledError:
             await self._persist_stopped(turn_id, assistant_message.id)
             raise
         except Exception as error:
-            await self._persist_failure(
-                turn_id,
-                assistant_message.id,
-                _safe_error_code(error),
-            )
+            if stop.is_requested:
+                await self._persist_stopped(turn_id, assistant_message.id)
+            else:
+                await self._persist_failure(
+                    turn_id,
+                    assistant_message.id,
+                    _safe_error_code(error),
+                )
         finally:
             async with self._locks[conversation.id]:
                 active = self._active.get(conversation.id)
