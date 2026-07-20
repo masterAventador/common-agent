@@ -21,13 +21,13 @@ for expected in \
   'frontend:' \
   'demo-and-contracts:' \
   'uv sync --frozen' \
-  'uv run --frozen pytest' \
+  './scripts/coverage.sh backend' \
   'uv run --frozen ruff check .' \
   'uv run --frozen mypy src tests' \
   'uv lock --check' \
   'uv audit --frozen --preview-features audit' \
   'pnpm install --frozen-lockfile' \
-  'pnpm test' \
+  'pnpm test:coverage' \
   'pnpm lint' \
   'pnpm typecheck' \
   'pnpm build' \
@@ -40,6 +40,7 @@ for expected in \
   './scripts/test-dev.sh' \
   './scripts/test-real.sh' \
   './scripts/test-ci.sh' \
+  './scripts/test-coverage.sh' \
   "rg --files -g '*.sh' -g '!third_party/**' | xargs shellcheck"; do
   grep -Fq "${expected}" "${WORKFLOW}" || fail "CI 缺少门禁：${expected}"
 done

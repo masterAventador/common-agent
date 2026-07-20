@@ -28,6 +28,7 @@ build-backend = "hatchling.build"
 dev = [
     "mypy>=1.15,<2",
     "pytest>=8.3,<10",
+    "pytest-cov>=7,<8",
     "ruff>=0.11,<1",
 ]
 
@@ -38,6 +39,17 @@ packages = ["src/common_agent"]
 addopts = "-ra --strict-config --strict-markers"
 pythonpath = [".", "src"]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+patch = ["subprocess"]
+relative_files = true
+sigterm = true
+source = ["common_agent"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 100

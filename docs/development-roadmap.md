@@ -280,7 +280,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
 | H7-01 | 本地质量门禁与可选 GitHub CI 镜像 | 以本机冻结安装和可复现命令为权威，执行后端 pytest/Ruff/Mypy/uv lock/audit、前端 Vitest/ESLint/Typecheck/Build/pnpm audit、契约漂移、ShellCheck 和 Demo 链路；PR/main workflow 只镜像同一组门禁，不依赖付费 Hosted Runner，也不作为完成前提；缓存不得绕过锁文件，失败不得吞掉；真实外部依赖门禁保留显式入口 | D8-03 | ✅ 已完成 |
-| H7-02 | 自动化覆盖率门禁 | 后端、前端分别生成行/分支覆盖率；先记录真实基线并补足缺口，最终后端总体行覆盖率不低于 85%、核心领域/应用不低于 90%，前端总体行覆盖率不低于 80%，新增改动不得降低；报告不进入 Git | H7-01 | ⬜ 未开始 |
+| H7-02 | 自动化覆盖率门禁 | 后端、前端分别生成行/分支覆盖率；先记录真实基线并补足缺口，最终后端总体行覆盖率不低于 85%、核心领域/应用不低于 90%，前端总体行覆盖率不低于 80%，新增改动不得降低；报告不进入 Git | H7-01 | ✅ 已完成 |
 | H7-03 | 平台自有消息与模型协议 | 定义不依赖 LangChain 的平台消息、模型请求、增量、终态、错误和释放协议；会话与工作流节点只消费平台类型；百炼与 Deep Agents 适配器负责双向转换；真实百炼、会话和工作流回归全部通过 | H7-02 | ⬜ 未开始 |
 | H7-04 | 平台自有图执行协议 | 定义不依赖 LangGraph 的编译、执行、节点观察、停止和结果协议；把 LangGraph 编译器、运行状态和节点框架转换移入 `adapters/workflow/langgraph/`；`WorkflowService` 只依赖平台端口，手动与员工触发语义不变 | H7-03 | ⬜ 未开始 |
 | H7-05 | 第三方依赖边界门禁 | 增加可自动执行的 import/AST 架构测试；除 `api/` 的 FastAPI 边界和 `adapters/` 外，生产平台层不得导入 FastAPI、SQLAlchemy、HTTP SDK、LangChain、LangGraph、Deep Agents 或供应商类型；修正规则和架构文档与实现口径 | H7-04 | ⬜ 未开始 |
@@ -337,12 +337,12 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 ## 18. 当前下一步
 
-R8-00、D8-01、D8-02、D8-03、H7-01 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
+R8-00、D8-01、D8-02、D8-03、H7-01、H7-02 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
 embedding/rerank 统一使用阿里百炼，本地模型退场；全新克隆可由统一入口进入 12 GiB
 `demo-light`，Demo 知识、员工绑定与会话引用在后端重启后保持一致；`real` 可按需切到暂定
 32 GiB，完成脱敏体检、费用诊断、真实纵向门禁和跨 Colima 重启恢复；本机质量门禁已经冻结，
-GitHub Hosted Runner 只作可选镜像、不作为验收依赖。下一任务进入 H7-02，并按依赖顺序完成
-覆盖率、平台自有协议和第三方边界收口；R8-04 仍独立负责 32 GiB 的峰值
+GitHub Hosted Runner 只作可选镜像、不作为验收依赖；前后端行/分支覆盖率已建立本机不回退门禁。
+下一任务进入 H7-03，并按依赖顺序完成平台自有消息/模型/图执行协议和第三方边界收口；R8-04 仍独立负责 32 GiB 的峰值
 与 30 分钟 soak，不用 D8-03 的功能通过冒充长期资源验收。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
 
@@ -1165,3 +1165,17 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - 本机 GREEN：CI 锁定的 uv 0.11.16 完成 frozen sync、Ruff lint、排除已应用不可变 0005 后 162 个文件格式、严格 Mypy 155 个源/测试文件、uv lock 和 81 个包安全审计；后端全量 `407 passed, 12 skipped in 65.93s`，12 项均为需显式 real 开关的既有真实门禁。锁定 pnpm 11.9.0 完成 frozen install、前端 14 files/61 tests、ESLint、TypeScript、生产 Build、契约漂移和依赖审计且无已知漏洞；两类基础设施管理脚本、`test-dev.sh`、`test-real.sh`、`test-ci.sh`、全部项目 ShellCheck、Bash/YAML 语法与 `git diff --check` 通过
 - Demo 验收与清理：项目专属 Colima 仅以 12 GiB demo-light 启动；无头 Chromium 经正式 React/FastAPI/MySQL 和 Demo 适配器完成两轮带引用会话及中断恢复，`1 passed (6.0s)`，finally 清理唯一会话、员工、知识库和固定 Seed。随后平台容器、网络与 Colima 已停止，18200/18280 无项目进程；MySQL/RAGFlow 数据、冻结依赖和官方镜像保留
 - 遗留：无；下一任务 H7-02 在同一本机权威门禁上记录真实行/分支覆盖率基线并补足缺口，GitHub Hosted Runner 仍只作可选镜像
+
+### H7-02 自动化覆盖率门禁
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED 与真实基线：新增 `scripts/test-coverage.sh` 后首轮按预期以“缺少可执行的本机权威覆盖率入口”失败。前端首次完整 V8 采集为行 86.17%、分支 75.00%，已超过 80% 目标。后端首次只采 pytest 主进程为总体行 83.22%、分支 65.24%，低于 85%；报告同时显示现有正式 Uvicorn 子进程集成测试已经执行的 API、仓储和应用装配没有被计入，不能用重复测试或排除生产文件掩盖采集缺口
+- 子进程采集：按 pytest-cov 7.1/coverage.py 7.15 官方机制启用 `patch = ["subprocess"]`、`sigterm = true`、branch 与 relative source；由现有集成测试启动的独立 Uvicorn 进程继承采集并在 SIGTERM 时保存，pytest-cov 合并并继续覆盖同一 5,375 条生产语句。修复后后端总体行从 83.22% 提升到稳定 90.90% 以上，不是修改业务实现、增加重复测试或通过 omit 缩小分母
+- 本机权威入口：新增 `scripts/coverage.sh backend/frontend/all`。后端一次 pytest 生成 term、JSON、XML，再由严格类型的 `check-backend-coverage.py` 分别聚合全部生产包和 `domain/application` 核心层；前端固定 pnpm 11.9.0 执行 Vitest V8。新增 `scripts/test-coverage.sh` 固定依赖、生产范围、六项阈值、报告忽略和可选 CI 复用契约；把四项阈值故障注入为 100% 时会明确非零失败
+- 不回退阈值：后端总体行不低于 90.90%、总体分支不低于 72.20%、核心行不低于 93.17%、核心分支不低于 74.26%，均高于路线图 85%/90% 的行覆盖率目标；前端行不低于 86.17%、分支不低于 75.00%，高于 80% 行目标。阈值锁在本轮可复现基线，后续新增生产代码或减少测试会直接失败，不能只保留宽松最低目标
+- 依赖与可选镜像：后端冻结新增 pytest-cov 7.1.0 与 coverage 7.15.2，前端冻结与 Vitest 完全同版的 `@vitest/coverage-v8` 4.1.10。PR/main workflow 后端直接复用 `./scripts/coverage.sh backend`，前端执行同一 `pnpm test:coverage` 配置；GitHub Hosted Runner 仍只是可选镜像，本机 `coverage.sh all` 才是当前权威结果
+- GREEN：唯一入口最终后端 `407 passed, 12 skipped in 127.99s`，12 项均为需显式 real 开关的既有外部门禁；总体行 90.92%、分支 72.20%，核心行 93.18%、分支 74.26%。前端 14 files/61 tests，行 86.17%、分支 75.00%。新增解析器和后端通过 Ruff lint、163 个文件格式及严格 Mypy 156 个源/测试文件；uv lock、83 包审计、前端 ESLint/TypeScript/Build/pnpm audit、ShellCheck、CI/覆盖率契约和 `git diff --check` 全部通过
+- 报告与清理：后端 JSON/XML 只写入 Git 忽略的 `.local/coverage/backend`，前端 summary 只写入已忽略的 `frontend/coverage`，`git check-ignore` 已实证且没有报告进入暂存范围。覆盖率使用的项目专属 12 GiB demo-light、平台 MySQL、网络和前后端 launchd 进程最终全部停止，释放内存；稳定数据、冻结依赖和官方镜像保留
+- 遗留：无；下一任务 H7-03 定义平台自有消息与模型协议，把 LangChain/供应商类型完整收回适配层

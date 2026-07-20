@@ -41,23 +41,23 @@ jobs:
           PLATFORM_DOCKER_CONTEXT: default
         run: ./infra/platform/manage.sh up
 
-      - name: Run backend tests
-        working-directory: backend
-        run: uv run --frozen pytest
+      - name: Run backend tests and coverage gate
+        run: ./scripts/coverage.sh backend
 
       - name: Lint backend
         working-directory: backend
-        run: uv run --frozen ruff check .
+        run: uv run --frozen ruff check . ../scripts/check-backend-coverage.py
 
       - name: Check backend formatting
         working-directory: backend
         run: >-
           uv run --frozen ruff format --check
-          --exclude migrations/versions/20260720_0005_workflow_runs.py .
+          --exclude migrations/versions/20260720_0005_workflow_runs.py
+          . ../scripts/check-backend-coverage.py
 
       - name: Type-check backend
         working-directory: backend
-        run: uv run --frozen mypy src tests
+        run: uv run --frozen mypy src tests ../scripts/check-backend-coverage.py
 
       - name: Verify backend lock file
         working-directory: backend
@@ -98,9 +98,9 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
-      - name: Run frontend tests
+      - name: Run frontend tests and coverage gate
         working-directory: frontend
-        run: pnpm test
+        run: pnpm test:coverage
 
       - name: Lint frontend
         working-directory: frontend
@@ -174,6 +174,7 @@ jobs:
           ./scripts/test-dev.sh
           ./scripts/test-real.sh
           ./scripts/test-ci.sh
+          ./scripts/test-coverage.sh
 
       - name: Check shell scripts
         run: rg --files -g '*.sh' -g '!third_party/**' | xargs shellcheck
