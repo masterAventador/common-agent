@@ -283,7 +283,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 | H7-02 | 自动化覆盖率门禁 | 后端、前端分别生成行/分支覆盖率；先记录真实基线并补足缺口，最终后端总体行覆盖率不低于 85%、核心领域/应用不低于 90%，前端总体行覆盖率不低于 80%，新增改动不得降低；报告不进入 Git | H7-01 | ✅ 已完成 |
 | H7-03 | 平台自有消息与模型协议 | 定义不依赖 LangChain 的平台消息、模型请求、增量、终态、错误和释放协议；会话与工作流节点只消费平台类型；百炼与 Deep Agents 适配器负责双向转换；真实百炼、会话和工作流回归全部通过 | H7-02 | ✅ 已完成 |
 | H7-04 | 平台自有图执行协议 | 定义不依赖 LangGraph 的编译、执行、节点观察、停止和结果协议；把 LangGraph 编译器、运行状态和节点框架转换移入 `adapters/workflow/langgraph/`；`WorkflowService` 只依赖平台端口，手动与员工触发语义不变 | H7-03 | ✅ 已完成 |
-| H7-05 | 第三方依赖边界门禁 | 增加可自动执行的 import/AST 架构测试；除 `api/` 的 FastAPI 边界和 `adapters/` 外，生产平台层不得导入 FastAPI、SQLAlchemy、HTTP SDK、LangChain、LangGraph、Deep Agents 或供应商类型；修正规则和架构文档与实现口径 | H7-04 | ⬜ 未开始 |
+| H7-05 | 第三方依赖边界门禁 | 增加可自动执行的 import/AST 架构测试；除 `api/` 的 FastAPI 边界和 `adapters/` 外，生产平台层不得导入 FastAPI、SQLAlchemy、HTTP SDK、LangChain、LangGraph、Deep Agents 或供应商类型；修正规则和架构文档与实现口径 | H7-04 | ✅ 已完成 |
 | H7-06 | 结构化日志、指标与追踪 | 统一 JSON 日志和关联上下文，覆盖 request/conversation/message/turn/workflow/run ID、耗时、状态与稳定错误码；提供本机最小健康/指标入口和跨服务 trace context；默认脱敏提示词、知识正文、Key、密码和上游响应，故障测试证明可定位且不泄密 | H7-05 | ⬜ 未开始 |
 | H7-07 | 事件与锁状态生命周期 | 为会话/工作流 Broker 历史、订阅者、per-ID 锁和终态状态增加有界容量、TTL/LRU 与安全回收；保留允许的 SSE 回放窗口，慢消费者和历史缺口语义不变；通过大量短会话/运行及长时间 soak 证明内存最终回落且无活跃状态误删 | H7-06 | ⬜ 未开始 |
 | H7-08 | 核心大文件按职责拆分 | 在既有行为测试保护下拆分 ChatPage、WorkflowsPage、ConversationService、WorkflowService 和大型路由；页面容器只做编排，消息/运行/设计器状态与协议映射独立；服务按用例/运行协调/持久化投影分责，禁止循环依赖和跨 Feature 私有导入 | H7-07 | ⬜ 未开始 |
@@ -337,13 +337,14 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 ## 18. 当前下一步
 
-R8-00、D8-01、D8-02、D8-03、H7-01、H7-02、H7-03、H7-04 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
+R8-00、D8-01、D8-02、D8-03、H7-01、H7-02、H7-03、H7-04、H7-05 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
 embedding/rerank 统一使用阿里百炼，本地模型退场；全新克隆可由统一入口进入 12 GiB
 `demo-light`，Demo 知识、员工绑定与会话引用在后端重启后保持一致；`real` 可按需切到暂定
 32 GiB，完成脱敏体检、费用诊断、真实纵向门禁和跨 Colima 重启恢复；本机质量门禁已经冻结，
 GitHub Hosted Runner 只作可选镜像、不作为验收依赖；前后端行/分支覆盖率已建立本机不回退门禁；
-平台消息/模型/图执行协议不再暴露 LangChain、OpenAI、Deep Agents 或 LangGraph 类型。
-下一任务进入 H7-05，建立完整第三方依赖边界门禁；R8-04 仍独立负责 32 GiB 的峰值
+平台消息/模型/图执行协议不再暴露 LangChain、OpenAI、Deep Agents 或 LangGraph 类型，生产
+第三方 import 和平台内部依赖方向由关闭失败的统一 AST 门禁约束。下一任务进入 H7-06，建立
+结构化日志、指标、关联上下文和脱敏追踪；R8-04 仍独立负责 32 GiB 的峰值
 与 30 分钟 soak，不用 D8-03 的功能通过冒充长期资源验收。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
 
@@ -1213,3 +1214,18 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - 真实验收：12 GiB demo-light 上正式 React/FastAPI/MySQL 两轮带引用会话与中断恢复 `1 passed (5.4s)`。随后临时切到项目专属 32 GiB real，显式执行真实百炼、Deep Agents 流/停止/错误、会话 HTTP/SSE、RAGFlow+百炼图编译、手动运行和员工 allowlist 工具触发共 `6 passed in 35.49s`，没有 Mock/Fake 或 GitHub Runner 结果
 - 清理：Demo/real 测试 finally 已删除唯一业务数据；real 前后端、平台/RAGFlow 容器和项目专属 32 GiB Colima 已停止，稳定数据、0600 Token、冻结依赖与官方镜像保留。覆盖率报告、前端构建/覆盖率产物与两次环境前置失败日志在提交前精确删除
 - 遗留：无；下一任务 H7-05 将 FastAPI、SQLAlchemy、HTTP SDK、LangChain、LangGraph、Deep Agents 和供应商类型的完整平台/适配层依赖方向固化为自动架构门禁
+
+### H7-05 第三方依赖边界门禁
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：新增统一 `tests/architecture/test_dependency_boundaries.py` 后首次定向执行得到 `1 failed`，准确报告根启动文件 `__main__.py:1:uvicorn (allowed: api)`；证明现有 H7-03/H7-04 局部扫描没有覆盖 FastAPI/Uvicorn、数据库、HTTP SDK 和完整依赖方向。最小修复把 Uvicorn 启动收回 `api/server.py`，根入口只调用平台 HTTP 边界；随后补充相对 import 解析测试，防止合法平台内部导入被新门禁误报
+- 统一门禁：AST 扫描全部 `backend/src/common_agent/**/*.py`，标准库与平台包之外的 import 必须登记唯一职责目录，未登记 SDK 默认失败。FastAPI/Starlette/Uvicorn/multipart 只允许 `api/`，SQLAlchemy/Alembic/MySQL 驱动只允许 `adapters/persistence/`，HTTP、模型、代理、图、缓存、对象存储和供应商 SDK 只允许 `adapters/`；Pydantic、dotenv 和 cryptography 也按当前实际职责限定目录，不以第三方尚未使用为由放行
+- 平台依赖方向：除唯一 FastAPI 组合根 `api/app.py` 外，生产平台层不能导入 `common_agent.adapters`；API 只允许被 API 自身、契约导出与根启动入口消费；`domain/` 只能依赖自身和标准库。原模型与 LangGraph 两套重复 AST 扫描已删除，避免同一规则分散漂移；默认 pytest/覆盖率会自动发现统一门禁，`test-ci.sh` 同时验证门禁入口没有被移除
+- GREEN：架构/启动/原模型与图契约定向 `9 passed`，统一架构文件自身 `4 passed`；后端覆盖率全量 `421 passed, 12 skipped in 121.31s`，总体行 `91.08%`、分支 `73.06%`、核心行 `93.26%`、核心分支 `74.63%`，全部高于冻结阈值。Ruff lint、171 个文件格式、严格 Mypy 164 个源/测试/门禁文件、uv lock 与 83 包安全审计通过；前端 14 files/61 tests、行 `86.17%`、分支 `75.00%`、ESLint、TypeScript、Build、pnpm audit 和契约漂移通过。两类基础设施、dev/real/CI/覆盖率契约、全部 ShellCheck 与 `git diff --check` 通过
+- 真实回归：12 GiB demo-light 上正式 React/FastAPI/MySQL 两轮引用会话与中断恢复 `1 passed (6.2s)`。随后临时切到项目专属 32 GiB real，显式启用而非接受 skip，真实百炼、Deep Agents 流/停止/错误、会话 HTTP/SSE、RAGFlow+百炼图编译、手动运行和员工 allowlist 工具触发共 `6 passed in 37.17s`；完成状态没有使用 Mock/Fake 或 GitHub Runner 结果，RAGFlow 官方 submodule 工作区保持未修改
+- 失败矩阵：覆盖未知第三方依赖默认拒绝、框架/数据库/HTTP/模型/图 SDK 越层、平台反向依赖适配器、领域越层、根入口直接持有 Uvicorn 和相对平台 import 误判；既有真实回归继续覆盖供应商认证/超时/断流、停止、知识检索、工作流结果与工具权限。H7-05 不新增外部副作用或用户语义，因此不另造远端资源、部署或浏览器功能
+- 清理：Demo 和 real 用例 finally 已删除唯一会话、员工、知识库和工作流数据；无头浏览器、Vite、Uvicorn、平台/RAGFlow 容器和项目专属 Colima 已停止，18200/18280 无监听。前端 dist/覆盖率/tsbuildinfo、后端覆盖率数据已精确删除；稳定数据、0600 Token、冻结依赖和官方镜像保留
+- 文档：`docs/backend-architecture.md` 与 `docs/project-structure.md` 同步唯一依赖矩阵、装配根、启动边界和架构测试归属；进度、命令、真实边界和清理只写入本路线图，产品范围没有变化
+- 遗留：无；下一任务 H7-06 统一 JSON 日志、关联上下文、健康/指标和跨服务 trace context，并用故障测试证明可定位且不泄漏提示词、知识正文、Key、密码或上游响应

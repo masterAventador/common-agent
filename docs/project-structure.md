@@ -41,7 +41,8 @@ backend/
 │       │   │   ├── knowledge.py
 │       │   │   ├── workflows.py
 │       │   │   └── workflow_runs.py
-│       │   └── app.py
+│       │   ├── app.py            # FastAPI 组合根
+│       │   └── server.py         # Uvicorn 进程边界
 │       ├── application/         # 平台用例编排
 │       │   └── workflow_service.py
 │       ├── conversations/       # 连续会话应用服务与事件
@@ -77,6 +78,7 @@ backend/
 ├── tests/
 │   ├── unit/
 │   ├── integration/
+│   ├── architecture/           # 生产 import/AST 依赖边界门禁
 │   ├── contract/
 │   └── fixtures/
 ├── pyproject.toml
@@ -107,6 +109,10 @@ api -> application -> domain
 - 第三方 SDK 类型不得越过适配层；百炼负责平台消息与 LangChain 消息转换，Deep Agents 负责
   平台运行请求/事件与 LangChain/Deep Agents 类型转换，二者共享的 `BaseChatModel` 只能经
   `adapters/model/langchain.py` 的适配层内部桥传递；
+- `tests/architecture/` 对生产树执行关闭失败的 AST 扫描；所有非标准库依赖
+  必须登记允许目录，未登记新 SDK 直接失败。FastAPI/Starlette/Uvicorn 只在
+  `api/`，SQLAlchemy/Alembic/数据库驱动只在 `adapters/persistence/`，HTTP/模型/
+  代理/图/供应商 SDK 只在 `adapters/`；
 - 员工、会话、消息、工作流和知识库绑定必须经过仓储端口；正式实现使用平台独立 MySQL、SQLAlchemy async 和 Alembic，不改变领域模型依赖方向；
 - 任何第三方技术依赖都通过与其职责相符的应用端口和外围适配器接入；Redis、消息队列、对象存储和 Worker 只是示例，不构成白名单；只实现当前用例实际调用的端口，不创建没有调用方的空实现；
 - RAGFlow 保存知识文档和索引，平台不直连其内部数据库、缓存、检索引擎或对象存储。

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import ast
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import pytest
 
@@ -83,28 +81,3 @@ def test_text_streaming_model_protocol_uses_only_platform_types() -> None:
             pass
 
     assert isinstance(ModelProbe(), TextStreamingModel)
-
-
-def test_model_and_message_third_party_imports_stay_inside_adapters() -> None:
-    source_root = Path(__file__).parents[3] / "src" / "common_agent"
-    forbidden_roots = {"deepagents", "langchain", "langchain_core", "langchain_openai", "openai"}
-    violations: list[str] = []
-    for source_file in source_root.rglob("*.py"):
-        if "adapters" in source_file.relative_to(source_root).parts:
-            continue
-        tree = ast.parse(source_file.read_text(encoding="utf-8"), filename=str(source_file))
-        for node in ast.walk(tree):
-            module = ""
-            if isinstance(node, ast.Import):
-                modules = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                modules = [node.module or ""]
-            else:
-                continue
-            for module in modules:
-                if module.split(".", 1)[0] in forbidden_roots:
-                    violations.append(
-                        f"{source_file.relative_to(source_root)}:{node.lineno}:{module}"
-                    )
-
-    assert violations == []

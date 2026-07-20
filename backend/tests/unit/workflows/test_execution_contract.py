@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import ast
 import asyncio
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -102,25 +100,3 @@ def test_platform_graph_execution_protocol_is_strict_and_runtime_checkable() -> 
         )
     with pytest.raises(ValueError):
         WorkflowExecutionResult(output="完成", completed_node_ids=("start",), step_count=2)
-
-
-def test_langgraph_imports_stay_inside_workflow_adapter() -> None:
-    source_root = Path(__file__).parents[3] / "src" / "common_agent"
-    violations: list[str] = []
-    for source_file in source_root.rglob("*.py"):
-        relative = source_file.relative_to(source_root)
-        if relative.parts[:3] == ("adapters", "workflow", "langgraph"):
-            continue
-        tree = ast.parse(source_file.read_text(encoding="utf-8"), filename=str(source_file))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                modules = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                modules = [node.module or ""]
-            else:
-                continue
-            for module in modules:
-                if module.split(".", 1)[0] == "langgraph":
-                    violations.append(f"{relative}:{node.lineno}:{module}")
-
-    assert violations == []

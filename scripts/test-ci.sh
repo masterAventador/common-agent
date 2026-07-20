@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 WORKFLOW="${REPOSITORY_ROOT}/.github/workflows/ci.yml"
 UV_RUNNER="${SCRIPT_DIR}/uv.sh"
+ARCHITECTURE_TEST="${REPOSITORY_ROOT}/backend/tests/architecture/test_dependency_boundaries.py"
 
 fail() {
   echo "$1" >&2
@@ -12,6 +13,9 @@ fail() {
 }
 
 [[ -f "${WORKFLOW}" ]] || fail "缺少 PR/main GitHub CI workflow"
+[[ -f "${ARCHITECTURE_TEST}" ]] || fail "缺少第三方依赖边界架构测试"
+grep -Fq 'test_third_party_imports_stay_at_declared_boundaries' "${ARCHITECTURE_TEST}" || \
+  fail "第三方依赖边界架构测试入口漂移"
 [[ -x "${UV_RUNNER}" ]] || fail "缺少可执行的项目固定 uv 入口"
 grep -Fq 'UV_PROJECT_VERSION="0.11.16"' "${UV_RUNNER}" || \
   fail "项目 uv 入口未固定 0.11.16"

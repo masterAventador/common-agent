@@ -163,6 +163,27 @@ application --------------+
 LangGraph 的 `StateGraph`、Runtime context、TypedDict 状态、节点包装、递归上限异常与
 编译结果都只存在于外围适配器。
 
+### 3.4 自动依赖边界
+
+`backend/tests/architecture/test_dependency_boundaries.py` 通过 AST 扫描每个生产 Python 文件。
+Python 标准库和 `common_agent` 之外的所有 import 都视为第三方，必须先在门禁中
+登记职责边界；未登记的新 SDK 默认失败，不得因当前尚未使用而绕过规则。
+
+| 第三方能力 | 唯一允许位置 |
+| --- | --- |
+| FastAPI、Starlette、Uvicorn、multipart | `api/` |
+| SQLAlchemy、Alembic、MySQL 驱动 | `adapters/persistence/` |
+| HTTP 客户端、模型/代理/图/缓存/对象存储与供应商 SDK | `adapters/` |
+| Pydantic | `api/`、`bootstrap/` 或 `adapters/knowledge/` |
+| python-dotenv | `bootstrap/` |
+| cryptography | `adapters/` |
+
+内部依赖同时关闭失败：只有适配器自身和 `api/app.py` 组合根能导入
+`common_agent.adapters`；只有 API、契约导出和根启动入口能导入 `common_agent.api`；
+`domain/` 只能依赖自身与标准库。`__main__.py` 不再直接导入 Uvicorn，只调用
+`api/server.py` 的 HTTP 边界函数。该架构测试由默认 pytest/覆盖率入口自动执行，
+本机是当前权威结果，GitHub CI 只是同一命令的可选镜像。
+
 ## 4. 核心模型
 
 ### 4.1 数字员工
