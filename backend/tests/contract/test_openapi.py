@@ -180,6 +180,7 @@ def test_openapi_exposes_workflow_run_start_summary_stop_and_sse() -> None:
     schema = _schema()
     paths = schema["paths"]
     start = paths["/api/v1/workflows/{workflow_id}/runs"]["post"]
+    conversation_runs = paths["/api/v1/workflow-runs"]["get"]
     summary = paths["/api/v1/workflow-runs/{run_id}"]["get"]
     stop = paths["/api/v1/workflow-runs/{run_id}/stop"]["post"]
     events = paths["/api/v1/workflow-runs/{run_id}/events"]["get"]
@@ -190,6 +191,13 @@ def test_openapi_exposes_workflow_run_start_summary_stop_and_sse() -> None:
     assert summary["responses"]["200"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/WorkflowRunResponse"
     }
+    conversation_schema = conversation_runs["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+    assert conversation_schema["type"] == "array"
+    assert conversation_schema["items"] == {"$ref": "#/components/schemas/WorkflowRunResponse"}
+    assert conversation_runs["parameters"][0]["name"] == "conversation_id"
+    assert conversation_runs["parameters"][0]["required"] is True
     assert stop["responses"]["202"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/WorkflowRunStopAcceptedResponse"
     }
@@ -199,6 +207,9 @@ def test_openapi_exposes_workflow_run_start_summary_stop_and_sse() -> None:
     body = schema["components"]["schemas"]["StartWorkflowRunBody"]
     assert body["properties"]["input"]["maxLength"] == 200000
     assert set(body["required"]) == {"run_id", "input"}
+    run = schema["components"]["schemas"]["WorkflowRunResponse"]
+    assert "origin" in run["required"]
+    assert "WorkflowRunOriginResponse" in str(run["properties"]["origin"])
 
 
 def test_committed_workflow_run_event_schema_matches_sse_payload_model() -> None:

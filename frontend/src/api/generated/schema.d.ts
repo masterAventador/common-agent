@@ -180,6 +180,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workflow Runs For Conversation */
+        get: operations["list_workflow_runs_for_conversation_api_v1_workflow_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflow-runs/{run_id}": {
         parameters: {
             query?: never;
@@ -786,6 +803,24 @@ export interface components {
              */
             workflow_id: string;
         };
+        /** WorkflowRunOriginResponse */
+        WorkflowRunOriginResponse: {
+            /**
+             * Assistant Message Id
+             * Format: uuid
+             */
+            assistant_message_id: string;
+            /**
+             * Conversation Id
+             * Format: uuid
+             */
+            conversation_id: string;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+        };
         /** WorkflowRunResponse */
         WorkflowRunResponse: {
             /** Completed Node Ids */
@@ -810,6 +845,7 @@ export interface components {
             id: string;
             /** Input */
             input: string;
+            origin: components["schemas"]["WorkflowRunOriginResponse"] | null;
             /** Output */
             output: string;
             /** Started At */
@@ -1711,6 +1747,46 @@ export interface operations {
                 };
             };
             /** @description API 或正式依赖尚未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_workflow_runs_for_conversation_api_v1_workflow_runs_get: {
+        parameters: {
+            query: {
+                conversation_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunResponse"][];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

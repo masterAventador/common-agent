@@ -8,6 +8,7 @@ import pytest
 from common_agent.domain.workflow_run import (
     WORKFLOW_RUN_INPUT_MAX_LENGTH,
     WorkflowRun,
+    WorkflowRunOrigin,
     WorkflowRunStatus,
     WorkflowRunTransitionError,
     WorkflowRunTrigger,
@@ -42,11 +43,17 @@ def test_workflow_run_moves_through_nodes_to_completed_summary() -> None:
 
 
 def test_workflow_run_records_failure_and_stop_at_current_node() -> None:
+    origin = WorkflowRunOrigin(
+        employee_id=uuid4(),
+        conversation_id=uuid4(),
+        assistant_message_id=uuid4(),
+    )
     at_chat = (
         WorkflowRun.create(
             workflow_id=uuid4(),
             trigger=WorkflowRunTrigger.EMPLOYEE,
             input="执行输入",
+            origin=origin,
         )
         .start()
         .start_node("chat")
@@ -63,6 +70,29 @@ def test_workflow_run_records_failure_and_stop_at_current_node() -> None:
     assert stopped.current_node_id == "chat"
     assert stopped.failed_node_id is None
     assert stopped.error_code is None
+    assert stopped.origin == origin
+
+
+def test_workflow_run_requires_complete_origin_only_for_employee_trigger() -> None:
+    origin = WorkflowRunOrigin(
+        employee_id=uuid4(),
+        conversation_id=uuid4(),
+        assistant_message_id=uuid4(),
+    )
+
+    with pytest.raises(WorkflowRunValidationError):
+        WorkflowRun.create(
+            workflow_id=uuid4(),
+            trigger=WorkflowRunTrigger.EMPLOYEE,
+            input="缺少来源",
+        )
+    with pytest.raises(WorkflowRunValidationError):
+        WorkflowRun.create(
+            workflow_id=uuid4(),
+            trigger=WorkflowRunTrigger.MANUAL,
+            input="手动运行不能冒充员工",
+            origin=origin,
+        )
 
 
 def test_workflow_run_rejects_invalid_content_order_and_terminal_reentry() -> None:

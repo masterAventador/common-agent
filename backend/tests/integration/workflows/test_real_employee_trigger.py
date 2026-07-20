@@ -108,6 +108,17 @@ async def _exercise_employee_trigger(
         assert summary.status_code == 200
         assert summary.json()["trigger"] == "employee"
         assert marker in summary.json()["output"]
+        assert summary.json()["origin"] == {
+            "employee_id": authorized_id,
+            "conversation_id": str(authorized_conversation),
+            "assistant_message_id": str(terminal.message.id),
+        }
+        conversation_runs = await client.get(
+            "/api/v1/workflow-runs",
+            params={"conversation_id": str(authorized_conversation)},
+        )
+        assert conversation_runs.status_code == 200
+        assert [item["id"] for item in conversation_runs.json()] == [run_id]
 
         unauthorized = await client.post(
             "/api/v1/employees",

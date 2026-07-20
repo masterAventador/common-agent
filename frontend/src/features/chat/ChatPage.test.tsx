@@ -25,9 +25,17 @@ const chatApi = vi.hoisted(() => ({
       }
     | undefined,
 }));
+const workflowRunApi = vi.hoisted(() => ({
+  fetchConversationWorkflowRuns: vi.fn(),
+}));
+const workflowApi = vi.hoisted(() => ({
+  fetchWorkflows: vi.fn(),
+}));
 
 vi.mock("../../api/employees", () => employeeApi);
 vi.mock("../../api/conversations", () => chatApi);
+vi.mock("../../api/workflowRuns", () => workflowRunApi);
+vi.mock("../../api/workflows", () => workflowApi);
 
 const employee = {
   id: "6f3d43e0-6f6d-5a67-9f25-756a0b9ed2ab",
@@ -80,6 +88,41 @@ const assistantMessage = {
   ],
 };
 
+const workflow = {
+  id: "3f6dce37-b74c-449f-8e82-e75725889f25",
+  name: "会话摘要工作流",
+  description: "由数字员工触发",
+  nodes: [
+    { id: "start", type: "start" as const, position: { x: 0, y: 0 }, config: {} },
+    { id: "end", type: "end" as const, position: { x: 240, y: 0 }, config: {} },
+  ],
+  edges: [{ id: "edge", source: "start", target: "end" }],
+  created_at: "2026-07-20T02:00:00Z",
+  updated_at: "2026-07-20T02:00:00Z",
+};
+
+const employeeRun = {
+  id: "6b283c3f-b901-4cc4-945c-0131f3045403",
+  workflow_id: workflow.id,
+  trigger: "employee" as const,
+  status: "completed" as const,
+  input: "执行对话工作流",
+  output: "工作流已完成",
+  current_node_id: null,
+  completed_node_ids: ["start", "end"],
+  failed_node_id: null,
+  error_code: null,
+  origin: {
+    employee_id: employee.id,
+    conversation_id: conversation.id,
+    assistant_message_id: assistantMessage.id,
+  },
+  created_at: "2026-07-20T02:00:02Z",
+  started_at: "2026-07-20T02:00:02Z",
+  finished_at: "2026-07-20T02:00:03Z",
+  updated_at: "2026-07-20T02:00:03Z",
+};
+
 function TestProviders({ children }: PropsWithChildren) {
   const client = new QueryClient({
     defaultOptions: {
@@ -99,6 +142,7 @@ function renderPage() {
     >
       <Routes>
         <Route path="/chat" element={<ChatPage />} />
+        <Route path="/workflows" element={<div>运行详情页</div>} />
       </Routes>
     </MemoryRouter>,
     { wrapper: TestProviders },
@@ -112,6 +156,8 @@ describe("ChatPage", () => {
     employeeApi.fetchEmployees.mockResolvedValue([employee]);
     chatApi.fetchConversations.mockResolvedValue([conversation]);
     chatApi.fetchConversationMessages.mockResolvedValue([userMessage, assistantMessage]);
+    workflowRunApi.fetchConversationWorkflowRuns.mockResolvedValue([]);
+    workflowApi.fetchWorkflows.mockResolvedValue([workflow]);
     chatApi.subscribeToConversationEvents.mockImplementation(
       (_conversationId: string, options: typeof chatApi.streamOptions) => {
         chatApi.streamOptions = options;
@@ -140,6 +186,19 @@ describe("ChatPage", () => {
     ).toBeInTheDocument();
     expect(within(employeeRegion).getByText("知识助理")).toBeInTheDocument();
     expect(within(employeeRegion).getByText("已绑定知识库")).toBeInTheDocument();
+  });
+
+  it("restores an expandable employee workflow summary and opens the formal run detail route", async () => {
+    workflowRunApi.fetchConversationWorkflowRuns.mockResolvedValue([employeeRun]);
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("会话摘要工作流")).toBeInTheDocument();
+    expect(workflowRunApi.fetchConversationWorkflowRuns).toHaveBeenCalledWith(conversation.id);
+    await user.click(screen.getByText("会话摘要工作流"));
+    expect(await screen.findByText("工作流已完成")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "查看运行详情" }));
+    expect(await screen.findByText("运行详情页")).toBeInTheDocument();
   });
 
   it("creates a conversation from the selected employee", async () => {

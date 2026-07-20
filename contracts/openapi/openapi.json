@@ -1137,6 +1137,33 @@
         "title": "WorkflowRunEventResponse",
         "type": "object"
       },
+      "WorkflowRunOriginResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "assistant_message_id": {
+            "format": "uuid",
+            "title": "Assistant Message Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "employee_id": {
+            "format": "uuid",
+            "title": "Employee Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "employee_id",
+          "conversation_id",
+          "assistant_message_id"
+        ],
+        "title": "WorkflowRunOriginResponse",
+        "type": "object"
+      },
       "WorkflowRunResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1206,6 +1233,16 @@
             "title": "Input",
             "type": "string"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowRunOriginResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "output": {
             "title": "Output",
             "type": "string"
@@ -1250,6 +1287,7 @@
           "completed_node_ids",
           "failed_node_id",
           "error_code",
+          "origin",
           "created_at",
           "started_at",
           "finished_at",
@@ -2472,6 +2510,63 @@
         "summary": "Health",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/v1/workflow-runs": {
+      "get": {
+        "operationId": "list_workflow_runs_for_conversation_api_v1_workflow_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowRunResponse"
+                  },
+                  "title": "Response List Workflow Runs For Conversation Api V1 Workflow Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Workflow Runs For Conversation",
+        "tags": [
+          "workflow-runs"
         ]
       }
     },

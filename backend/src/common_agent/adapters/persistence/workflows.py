@@ -38,6 +38,7 @@ from common_agent.domain.workflow import (
 )
 from common_agent.domain.workflow_run import (
     WorkflowRun,
+    WorkflowRunOrigin,
     WorkflowRunStatus,
     WorkflowRunTrigger,
     WorkflowRunValidationError,
@@ -158,6 +159,14 @@ class SqlAlchemyWorkflowRunRepository:
         )
         return tuple(_run_to_domain(row) for row in rows)
 
+    async def list_for_conversation(self, conversation_id: UUID) -> tuple[WorkflowRun, ...]:
+        rows = await self._session.scalars(
+            select(WorkflowRunRow)
+            .where(WorkflowRunRow.conversation_id == str(conversation_id))
+            .order_by(WorkflowRunRow.created_at, WorkflowRunRow.id)
+        )
+        return tuple(_run_to_domain(row) for row in rows)
+
     async def add(self, run: WorkflowRun) -> None:
         self._session.add(WorkflowRunRow(**_run_values(run)))
         try:
@@ -267,6 +276,11 @@ def _run_values(run: WorkflowRun) -> dict[str, object]:
         "id": str(run.id),
         "workflow_id": str(run.workflow_id),
         "trigger": run.trigger.value,
+        "employee_id": None if run.origin is None else str(run.origin.employee_id),
+        "conversation_id": None if run.origin is None else str(run.origin.conversation_id),
+        "assistant_message_id": (
+            None if run.origin is None else str(run.origin.assistant_message_id)
+        ),
         "status": run.status.value,
         "input": run.input,
         "output": run.output,
@@ -354,6 +368,17 @@ def _run_to_domain(row: WorkflowRunRow) -> WorkflowRun:
         completed_node_ids=tuple(row.completed_node_ids),
         failed_node_id=row.failed_node_id,
         error_code=row.error_code,
+        origin=(
+            None
+            if row.employee_id is None
+            or row.conversation_id is None
+            or row.assistant_message_id is None
+            else WorkflowRunOrigin(
+                employee_id=UUID(row.employee_id),
+                conversation_id=UUID(row.conversation_id),
+                assistant_message_id=UUID(row.assistant_message_id),
+            )
+        ),
         created_at=from_database_datetime(row.created_at),
         started_at=(None if row.started_at is None else from_database_datetime(row.started_at)),
         finished_at=(None if row.finished_at is None else from_database_datetime(row.finished_at)),

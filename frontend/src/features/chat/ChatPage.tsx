@@ -12,9 +12,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Button,
+  Collapse,
   Empty,
   Flex,
   Input,
+  Progress,
   Select,
   Skeleton,
   Space,
@@ -23,7 +25,7 @@ import {
   Typography,
 } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   createConversation,
@@ -38,6 +40,11 @@ import {
 } from "../../api/conversations";
 import { fetchEmployees, type Employee } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
+import {
+  fetchConversationWorkflowRuns,
+  type WorkflowRun,
+} from "../../api/workflowRuns";
+import { fetchWorkflows, type Workflow } from "../../api/workflows";
 
 const { Text, Title } = Typography;
 const messageStatusOrder: Record<ConversationMessage["status"], number> = {
@@ -147,13 +154,91 @@ function CitationList({ message }: { message: ConversationMessage }) {
   );
 }
 
+const workflowRunStatus: Record<
+  WorkflowRun["status"],
+  { color: string; label: string }
+> = {
+  pending: { color: "default", label: "等待运行" },
+  running: { color: "processing", label: "运行中" },
+  completed: { color: "success", label: "已完成" },
+  failed: { color: "error", label: "运行失败" },
+  stopped: { color: "default", label: "已停止" },
+};
+
+function WorkflowRunCards({
+  runs,
+  workflows,
+  onOpen,
+}: {
+  runs: WorkflowRun[];
+  workflows: Map<string, Workflow>;
+  onOpen: (runId: string) => void;
+}) {
+  if (runs.length === 0) return null;
+  return (
+    <div className="chat-workflow-runs" aria-label={`工作流运行 ${runs.length}`}>
+      <Text strong>工作流运行</Text>
+      <Collapse
+        size="small"
+        items={runs.map((run) => {
+          const workflow = workflows.get(run.workflow_id);
+          const status = workflowRunStatus[run.status];
+          const nodeCount = workflow?.nodes.length ?? run.completed_node_ids.length;
+          const progress =
+            nodeCount === 0
+              ? 0
+              : Math.min(100, Math.round((run.completed_node_ids.length / nodeCount) * 100));
+          return {
+            key: run.id,
+            label: (
+              <Flex justify="space-between" align="center" gap={8}>
+                <Text strong>{workflow?.name ?? `工作流 ${run.workflow_id.slice(0, 8)}`}</Text>
+                <Tag color={status.color}>{status.label}</Tag>
+              </Flex>
+            ),
+            children: (
+              <div className="chat-workflow-run-summary">
+                <Progress
+                  percent={run.status === "completed" ? 100 : progress}
+                  status={run.status === "failed" ? "exception" : undefined}
+                  size="small"
+                />
+                <div>
+                  <Text type="secondary">输入</Text>
+                  <Typography.Paragraph>{run.input}</Typography.Paragraph>
+                </div>
+                {run.output && (
+                  <div>
+                    <Text type="secondary">运行结果</Text>
+                    <Typography.Paragraph>{run.output}</Typography.Paragraph>
+                  </div>
+                )}
+                {run.error_code && <Alert type="error" showIcon title={run.error_code} />}
+                <Button size="small" onClick={() => onOpen(run.id)}>
+                  查看运行详情
+                </Button>
+              </div>
+            ),
+          };
+        })}
+      />
+    </div>
+  );
+}
+
 function MessageBubble({
   message,
+  workflowRuns,
+  workflows,
   retrying,
+  onOpenWorkflowRun,
   onRetry,
 }: {
   message: ConversationMessage;
+  workflowRuns: WorkflowRun[];
+  workflows: Map<string, Workflow>;
   retrying: boolean;
+  onOpenWorkflowRun: (runId: string) => void;
   onRetry: (messageId: string) => void;
 }) {
   const isAssistant = message.role === "assistant";
@@ -192,6 +277,13 @@ function MessageBubble({
           </Button>
         )}
         <CitationList message={message} />
+        {isAssistant && (
+          <WorkflowRunCards
+            runs={workflowRuns}
+            workflows={workflows}
+            onOpen={onOpenWorkflowRun}
+          />
+        )}
       </div>
     </article>
   );
@@ -199,6 +291,7 @@ function MessageBubble({
 
 export function ChatPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [draft, setDraft] = useState("");
   const [streamNotice, setStreamNotice] = useState<string>();
@@ -227,6 +320,36 @@ export function ChatPage() {
     queryFn: () => fetchConversationMessages(selectedConversation?.id ?? ""),
     enabled: Boolean(selectedConversation),
   });
+  const hasActiveAssistant = Boolean(
+    messages.data?.some(
+      (message) =>
+        message.role === "assistant" && ["pending", "streaming"].includes(message.status),
+    ),
+  );
+  const workflowRuns = useQuery({
+    queryKey: ["conversation-workflow-runs", selectedConversationId],
+    queryFn: () => fetchConversationWorkflowRuns(selectedConversationId ?? ""),
+    enabled: Boolean(selectedConversationId),
+    refetchInterval: hasActiveAssistant ? 1_000 : false,
+  });
+  const workflows = useQuery({
+    queryKey: ["workflows"],
+    queryFn: fetchWorkflows,
+    enabled: Boolean(selectedConversationId),
+  });
+  const workflowsById = useMemo(
+    () => new Map((workflows.data ?? []).map((workflow) => [workflow.id, workflow])),
+    [workflows.data],
+  );
+  const runsByMessageId = useMemo(() => {
+    const grouped = new Map<string, WorkflowRun[]>();
+    for (const run of workflowRuns.data ?? []) {
+      const messageId = run.origin?.assistant_message_id;
+      if (!messageId) continue;
+      grouped.set(messageId, [...(grouped.get(messageId) ?? []), run]);
+    }
+    return grouped;
+  }, [workflowRuns.data]);
 
   useEffect(() => {
     if (!employees.data?.length || !selectedEmployee || selectedEmployee.id === requestedEmployeeId) {
@@ -263,12 +386,18 @@ export function ChatPage() {
           void queryClient.invalidateQueries({
             queryKey: ["conversations", selectedEmployee?.id],
           });
+          void queryClient.invalidateQueries({
+            queryKey: ["conversation-workflow-runs", selectedConversationId],
+          });
         }
       },
       onError: () => {
         setStreamNotice("会话连接已中断，正在恢复消息历史");
         void queryClient.invalidateQueries({
           queryKey: ["conversation-messages", selectedConversationId],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["conversation-workflow-runs", selectedConversationId],
         });
       },
     });
@@ -501,7 +630,10 @@ export function ChatPage() {
                 <MessageBubble
                   key={message.id}
                   message={message}
+                  workflowRuns={runsByMessageId.get(message.id) ?? []}
+                  workflows={workflowsById}
                   retrying={retryMutation.isPending && retryMutation.variables === message.id}
+                  onOpenWorkflowRun={(runId) => navigate(`/workflows?run_id=${runId}`)}
                   onRetry={(messageId) => retryMutation.mutate(messageId)}
                 />
               ))

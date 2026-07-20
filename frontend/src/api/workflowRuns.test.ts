@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient } from "./client";
 import {
+  fetchConversationWorkflowRuns,
   fetchWorkflowRun,
   parseWorkflowRunEvent,
   parseWorkflowRunResponse,
@@ -29,6 +30,7 @@ const run = {
   completed_node_ids: ["start"],
   failed_node_id: null,
   error_code: null,
+  origin: null,
   created_at: "2026-07-20T06:00:00Z",
   started_at: "2026-07-20T06:00:00Z",
   finished_at: null,
@@ -77,11 +79,44 @@ describe("workflow run API and SSE boundary", () => {
   });
 
   it("accepts generated run and event snapshots and rejects protocol drift", () => {
+    const employeeRun = {
+      ...run,
+      trigger: "employee" as const,
+      origin: {
+        employee_id: "52a34887-e32a-4709-aa32-6835502a8bc8",
+        conversation_id: "4feb17bd-684e-4160-a2a0-ca8ac91a6817",
+        assistant_message_id: "baeed6a2-d8cb-49ac-8999-393cf2153161",
+      },
+    };
     expect(parseWorkflowRunResponse(run)).toEqual(run);
+    expect(parseWorkflowRunResponse(employeeRun)).toEqual(employeeRun);
     expect(parseWorkflowRunEvent(event)).toEqual(event);
 
     expect(() => parseWorkflowRunResponse({ ...run, private_context: "secret" })).toThrow();
     expect(() => parseWorkflowRunResponse({ ...run, status: "unknown" })).toThrow();
+    expect(() => parseWorkflowRunResponse({ ...run, origin: employeeRun.origin })).toThrow();
+    expect(() => parseWorkflowRunResponse({ ...employeeRun, origin: null })).toThrow();
+    expect(() =>
+      parseWorkflowRunResponse({
+        ...employeeRun,
+        origin: { ...employeeRun.origin, employee_id: "not-a-uuid" },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseWorkflowRunResponse({
+        ...employeeRun,
+        origin: {
+          employee_id: employeeRun.origin.employee_id,
+          conversation_id: employeeRun.origin.conversation_id,
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseWorkflowRunResponse({
+        ...employeeRun,
+        origin: { ...employeeRun.origin, private_context: "secret" },
+      }),
+    ).toThrow();
     expect(() => parseWorkflowRunEvent({ ...event, schema_version: "2" })).toThrow();
     expect(() =>
       parseWorkflowRunEvent({
@@ -94,15 +129,19 @@ describe("workflow run API and SSE boundary", () => {
     ).toThrow();
   });
 
-  it("uses only the formal start, summary, and stop endpoints", async () => {
+  it("uses only the formal start, conversation list, summary, and stop endpoints", async () => {
     vi.mocked(apiClient.post)
       .mockResolvedValueOnce({ data: run })
       .mockResolvedValueOnce({ data: { run_id: run.id } });
-    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: run });
+    vi.mocked(apiClient.get)
+      .mockResolvedValueOnce({ data: [run] })
+      .mockResolvedValueOnce({ data: run });
 
     await expect(
       startWorkflowRun(run.workflow_id, { run_id: run.id, input: run.input }),
     ).resolves.toEqual(run);
+    await expect(fetchConversationWorkflowRuns("4feb17bd-684e-4160-a2a0-ca8ac91a6817"))
+      .resolves.toEqual([run]);
     await expect(fetchWorkflowRun(run.id)).resolves.toEqual(run);
     await expect(stopWorkflowRun(run.id)).resolves.toEqual({ run_id: run.id });
 
@@ -111,7 +150,10 @@ describe("workflow run API and SSE boundary", () => {
       `/workflows/${run.workflow_id}/runs`,
       { run_id: run.id, input: run.input },
     );
-    expect(apiClient.get).toHaveBeenCalledWith(`/workflow-runs/${run.id}`);
+    expect(apiClient.get).toHaveBeenNthCalledWith(1, "/workflow-runs", {
+      params: { conversation_id: "4feb17bd-684e-4160-a2a0-ca8ac91a6817" },
+    });
+    expect(apiClient.get).toHaveBeenNthCalledWith(2, `/workflow-runs/${run.id}`);
     expect(apiClient.post).toHaveBeenNthCalledWith(2, `/workflow-runs/${run.id}/stop`);
   });
 

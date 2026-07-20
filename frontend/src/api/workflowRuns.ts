@@ -20,22 +20,39 @@ const workflowRunStatusSchema = z.enum([
   "failed",
   "stopped",
 ]);
-const workflowRunSchema = z.strictObject({
-  id: runIdSchema,
-  workflow_id: z.uuid(),
-  trigger: z.enum(["manual", "employee"]),
-  status: workflowRunStatusSchema,
-  input: z.string().min(1).max(200_000),
-  output: z.string().max(200_000),
-  current_node_id: nodeIdSchema.nullable(),
-  completed_node_ids: z.array(nodeIdSchema).max(100),
-  failed_node_id: nodeIdSchema.nullable(),
-  error_code: z.string().trim().min(1).max(128).nullable(),
-  created_at: timestampSchema,
-  started_at: timestampSchema.nullable(),
-  finished_at: timestampSchema.nullable(),
-  updated_at: timestampSchema,
+const workflowRunOriginSchema = z.strictObject({
+  employee_id: z.uuid(),
+  conversation_id: z.uuid(),
+  assistant_message_id: z.uuid(),
 });
+const workflowRunSchema = z
+  .strictObject({
+    id: runIdSchema,
+    workflow_id: z.uuid(),
+    trigger: z.enum(["manual", "employee"]),
+    status: workflowRunStatusSchema,
+    input: z.string().min(1).max(200_000),
+    output: z.string().max(200_000),
+    current_node_id: nodeIdSchema.nullable(),
+    completed_node_ids: z.array(nodeIdSchema).max(100),
+    failed_node_id: nodeIdSchema.nullable(),
+    error_code: z.string().trim().min(1).max(128).nullable(),
+    origin: workflowRunOriginSchema.nullable(),
+    created_at: timestampSchema,
+    started_at: timestampSchema.nullable(),
+    finished_at: timestampSchema.nullable(),
+    updated_at: timestampSchema,
+  })
+  .superRefine((value, context) => {
+    if ((value.trigger === "employee") !== (value.origin !== null)) {
+      context.addIssue({
+        code: "custom",
+        message: "运行触发来源与关联信息不一致",
+        path: ["origin"],
+      });
+    }
+  });
+const workflowRunsSchema = z.array(workflowRunSchema);
 const workflowRunEventTypes = [
   "workflow.run.started",
   "workflow.node.started",
@@ -72,6 +89,19 @@ export function parseWorkflowRunResponse(data: unknown): WorkflowRun {
 
 export function parseWorkflowRunEvent(data: unknown): WorkflowRunEvent {
   return workflowRunEventSchema.parse(data);
+}
+
+export async function fetchConversationWorkflowRuns(
+  conversationId: string,
+): Promise<WorkflowRun[]> {
+  try {
+    const response = await apiClient.get<unknown>("/workflow-runs", {
+      params: { conversation_id: conversationId },
+    });
+    return workflowRunsSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
 }
 
 export async function startWorkflowRun(

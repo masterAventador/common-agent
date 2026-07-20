@@ -11,7 +11,14 @@ from common_agent.adapters.agent.deep_agents import (
     DeepAgentToolRegistryValidationError,
     RuntimeCapabilityUnavailable,
 )
+from common_agent.domain.workflow_run import WorkflowRunOrigin
 from tests.support.runtime import OTHER_WORKFLOW_ID, WORKFLOW_ID
+
+ORIGIN = WorkflowRunOrigin(
+    employee_id=uuid4(),
+    conversation_id=uuid4(),
+    assistant_message_id=uuid4(),
+)
 
 
 @tool
@@ -36,9 +43,9 @@ def test_registry_resolves_only_explicitly_allowed_tools_in_request_order() -> N
         }
     )
 
-    assert asyncio.run(registry.resolve(())) == ()
-    assert asyncio.run(registry.resolve((OTHER_WORKFLOW_ID,))) == (second_workflow,)
-    assert asyncio.run(registry.resolve((WORKFLOW_ID, OTHER_WORKFLOW_ID))) == (
+    assert asyncio.run(registry.resolve((), origin=ORIGIN)) == ()
+    assert asyncio.run(registry.resolve((OTHER_WORKFLOW_ID,), origin=ORIGIN)) == (second_workflow,)
+    assert asyncio.run(registry.resolve((WORKFLOW_ID, OTHER_WORKFLOW_ID), origin=ORIGIN)) == (
         first_workflow,
         second_workflow,
     )
@@ -48,7 +55,7 @@ def test_registry_fails_closed_for_an_unregistered_capability() -> None:
     registry = DeepAgentToolRegistry({WORKFLOW_ID: first_workflow})
 
     with pytest.raises(RuntimeCapabilityUnavailable) as captured:
-        asyncio.run(registry.resolve((uuid4(),)))
+        asyncio.run(registry.resolve((uuid4(),), origin=ORIGIN))
 
     assert captured.value.code == "runtime_capability_unavailable"
     assert captured.value.retryable is False

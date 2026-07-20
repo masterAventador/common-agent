@@ -200,7 +200,7 @@
 | W5-05 | 工作流设计器 | React Flow 拖拽/连线/配置/保存/服务端校验 | W5-02,F1-03 | ✅ 已完成 |
 | W5-06 | 手动运行 UI | 输入、运行、节点高亮、失败和最终结果 | W5-04,W5-05 | ✅ 已完成 |
 | W5-07 | 数字员工触发工具 | 只允许调用员工 allowlist 中工作流，共用 WorkflowService | W5-04,A4-04 | ✅ 已完成 |
-| W5-08 | 工作流 E2E | 创建图→保存→手动运行→员工触发→刷新查看摘要 | W5-06,W5-07 | ⬜ 未开始 |
+| W5-08 | 工作流 E2E | 创建图→保存→手动运行→员工触发→刷新查看摘要 | W5-06,W5-07 | ✅ 已完成 |
 
 ## 12. Wave 6：MVP 收口
 
@@ -878,10 +878,24 @@
 - 清理与正式库：真实验收以 finally 按会话→员工→工作流顺序精确清理；最终测试库员工/会话/消息/工作流/运行全为 0，W5-07 工作流名前缀为 0。发现默认正式库仍停在既有 `20260719_0003` 后，通过正式 `python -m common_agent` lifespan 无旁路升级到 `20260720_0005`，公开 Health 返回 200，正式库保持 Seed 1、会话/消息/工作流/运行 0；两库 `alembic check` 均无漂移。18200/18280 无监听，无 Uvicorn/Vite/Playwright/Chromium 残留，无 dangling 镜像；本任务未启动浏览器，构建产物和项目测试缓存已删除，健康 MySQL/RAGFlow 稳定栈继续复用
 - 遗留：无；下一任务 W5-08 只组合已完成的设计器、手动运行和员工工具，通过固定无头 Chromium 从真实页面完成跨端闭环，并补齐员工触发运行卡片/刷新摘要的用户可见关联
 
+### W5-08 工作流 E2E
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先新增员工工作流运行来源、会话筛选和工具关联测试；定向 pytest 因领域层尚无 `WorkflowRunOrigin` 发生 3 个收集错误，证明当前员工工具虽然会真实执行，但运行摘要无法稳定关联到发起它的会话和助手消息，浏览器刷新后也就没有权威依据恢复内联运行卡片
+- GREEN：领域、工具注册表、运行服务与仓储定向 38 passed，真实 MySQL 运行仓储 4 passed，数据库迁移/正式系统入口 12 passed；最终后端全量 381 passed/11 个显式外部验收 skip，Ruff lint、除不可变 0005 外 151 个文件格式、严格 Mypy 145 个源/测试文件、uv lock、OpenAPI/双事件 Schema/生成 TypeScript 和正式/测试 MySQL Alembic 漂移全部通过。前端最终 14 个文件 58 passed，ESLint、TypeScript、生产 Build、冻结 pnpm 锁与契约漂移通过；ShellCheck 和 `git diff --check` 通过。显式真实 Deep Agents/百炼员工运行来源验收 1 passed in 5.87s
+- 权威关联与契约：新增不可变迁移 `20260720_0006`，`workflow_runs` 为 employee 触发保存 `employee_id`、`conversation_id`、`assistant_message_id`，以 assistant message 外键级联、trigger/origin 一致性 CHECK 和 conversation/created 索引约束；手动运行三项必须为空。`WorkflowRunOrigin` 从正式 `EmployeeRuntimeRequest` 传入动态工具，再进入同一个 `WorkflowService` 和 MySQL 摘要，工具不能自行伪造来源。公开 `GET /api/v1/workflow-runs?conversation_id=...` 只读返回该会话权威摘要，OpenAPI、工作流 SSE Schema、生成 DTO 和前端 Zod 边界同步且严格拒绝 manual/employee 来源不一致
+- 对话运行卡片：聊天页按选中会话从正式查询恢复运行，并以 `assistant_message_id` 归档到实际助手消息；生成期间轮询、助手终态和 SSE 恢复时都重新读取服务端摘要。每条运行以可展开卡片显示工作流名称、状态、节点进度、输入、结果或稳定错误码，点击“查看运行详情”进入既有 `/workflows?run_id=...` 正式摘要入口；页面刷新后不依赖内存事件或模型文本重新构造状态
+- 生产同路径验收：新增独立 `workflow-chat-e2e` suite，固定 `chromium-headless-shell`、单 worker、零重试、无视频。最终 1 passed in 8.2s：真实浏览器从 React Flow 页面拖入开始/结束节点并连线、服务端校验保存，经手动运行入口看到持久化结果；再从员工页面创建员工并多选授权，从聊天页面新建会话和发送消息，完整经过 `FastAPI -> ConversationService -> Deep Agents -> 阿里百炼 -> WorkflowToolRegistry -> WorkflowService -> LangGraph -> MySQL`，展开 employee 运行卡片看到唯一标记，刷新页面后恢复同一摘要，再点击卡片进入正式工作流运行详情。浏览器请求监听确认没有直连 RAGFlow 或百炼；首次执行仅因结果标记同时匹配输入框和 `<pre>` 的 Playwright strict selector 失败，当轮真实手动运行已经完成，收紧到正式结果区域后复跑通过，没有把定位器失败冒充产品失败
+- 失败矩阵：领域和前端边界覆盖 employee 缺来源、manual 携带来源、非 UUID、部分/额外来源字段与触发类型不一致；MySQL 覆盖来源外键、CHECK、重启回读、按会话排序和级联清理；HTTP 覆盖 manual 来源为空、无运行会话空列表、非法 query 和真实 employee 来源三 ID 对齐；既有工作流运行的重复、缺失、失败、停止、SSE 恢复与工具取消/越权矩阵继续全量回归。Mock/Fake 只用于失败定位，W5-08 完成状态只取真实无头用户路径和真实外部依赖证据
+- 清理与正式库：E2E trap 无论成功、失败或中断都先关闭 Playwright、Vite、FastAPI，再按会话→员工→工作流顺序精确清理；最终测试库 W5-08 员工/工作流前缀、会话、消息、工作流和运行均为 0。正式应用通过 `python -m common_agent` lifespan 从 0005 升级到 0006，公开 Health 200；正式库保留 Seed 员工 1，会话/消息/工作流/运行 0，两库均为 0006 且 `alembic check` 无漂移。18200/18280 无监听，无 Uvicorn/Vite/Playwright/Chromium 残留；成功产物和首次定位器失败 Trace 已删除，健康 MySQL/RAGFlow 稳定栈继续复用。发现本机缺少后续持续需要的 MySQL CLI，按全局规则以 Homebrew 安装并全局 link `mysql-client 9.7.1`
+- 遗留：无；下一任务 Q6-01 汇总第 5 节全平台失败矩阵，补齐尚未显式自动化或真实验收的适用分支
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `W5-08`：从真实浏览器完成创建图、手动运行、员工触发和刷新摘要的跨端验收；
-2. 完成 `Q6-01`：汇总并补齐 MVP 完整失败矩阵；
-3. 完成 `Q6-02`：执行全量质量门禁并建立基线。
+1. 完成 `Q6-01`：汇总并补齐 MVP 完整失败矩阵；
+2. 完成 `Q6-02`：评估 Docker 资源、稳定栈复用与镜像/磁盘清理；
+3. 完成 `Q6-03`：执行全量自动化并建立基线。

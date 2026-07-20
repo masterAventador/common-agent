@@ -14,6 +14,7 @@ from common_agent.domain.workflow import (
 from common_agent.domain.workflow_run import (
     WORKFLOW_RUN_ERROR_CODE_MAX_LENGTH,
     WorkflowRun,
+    WorkflowRunOrigin,
     WorkflowRunTrigger,
 )
 from common_agent.knowledge.base import KnowledgeBaseNotFound
@@ -193,6 +194,10 @@ class WorkflowService:
             raise WorkflowRunNotFound
         return run
 
+    async def list_runs_for_conversation(self, conversation_id: UUID) -> tuple[WorkflowRun, ...]:
+        async with self._unit_of_work_factory() as unit_of_work:
+            return await unit_of_work.workflow_runs.list_for_conversation(conversation_id)
+
     async def start_run(
         self,
         workflow_id: UUID,
@@ -200,6 +205,7 @@ class WorkflowService:
         run_id: UUID,
         input: str,
         trigger: WorkflowRunTrigger,
+        origin: WorkflowRunOrigin | None = None,
     ) -> WorkflowRun:
         self._ensure_execution_available()
         async with self._run_locks[run_id]:
@@ -208,6 +214,7 @@ class WorkflowService:
                 workflow_id=workflow.id,
                 trigger=trigger,
                 input=input,
+                origin=origin,
                 run_id=run_id,
             )
             try:

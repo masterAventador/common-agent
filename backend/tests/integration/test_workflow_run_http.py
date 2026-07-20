@@ -93,6 +93,7 @@ def test_workflow_run_http_and_sse_persist_summary_across_restart() -> None:
             )
             assert accepted.status_code == 202
             assert accepted.json()["status"] == "running"
+            assert accepted.json()["origin"] is None
             completed = _terminal(client, completed_run_id)
             assert completed["status"] == "completed"
             assert "HTTP 运行输入" in str(completed["output"])
@@ -140,6 +141,21 @@ def test_workflow_run_http_and_sse_persist_summary_across_restart() -> None:
             assert_error_response(invalid_input, status=422, code="validation_error")
             missing_run = client.get(f"/api/v1/workflow-runs/{uuid4()}")
             assert_error_response(missing_run, status=404, code="workflow_run_not_found")
+            unrelated_runs = client.get(
+                "/api/v1/workflow-runs",
+                params={"conversation_id": str(uuid4())},
+            )
+            assert unrelated_runs.status_code == 200
+            assert unrelated_runs.json() == []
+            invalid_conversation = client.get(
+                "/api/v1/workflow-runs",
+                params={"conversation_id": "not-a-uuid"},
+            )
+            assert_error_response(
+                invalid_conversation,
+                status=422,
+                code="validation_error",
+            )
 
         with (
             running_api(TEST_DATABASE_URL, env_overrides=environment) as restarted_url,

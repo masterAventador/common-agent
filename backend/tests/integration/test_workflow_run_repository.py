@@ -11,14 +11,23 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+from common_agent.adapters.persistence.conversations import (
+    SqlAlchemyConversationRepository,
+    SqlAlchemyMessageRepository,
+)
 from common_agent.adapters.persistence.database import Database
+from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeRepository
 from common_agent.adapters.persistence.workflows import (
     SqlAlchemyWorkflowRepository,
     SqlAlchemyWorkflowRunRepository,
 )
+from common_agent.domain.conversation import Conversation, Message
+from common_agent.domain.employee import Employee
 from common_agent.domain.workflow import WorkflowDefinition
-from common_agent.domain.workflow_run import WorkflowRun, WorkflowRunTrigger
+from common_agent.domain.workflow_run import WorkflowRun, WorkflowRunOrigin, WorkflowRunTrigger
 from common_agent.ports.workflows import WorkflowRunAlreadyExists
+from tests.support.conversations import delete_conversations
+from tests.support.employees import delete_employees
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows
 from tests.unit.workflows.support import workflow_configuration
@@ -84,7 +93,7 @@ def test_workflow_run_repository_lists_active_and_maps_duplicate_identity() -> N
     workflow, pending, running = _records()
     second = WorkflowRun.create(
         workflow_id=workflow.id,
-        trigger=WorkflowRunTrigger.EMPLOYEE,
+        trigger=WorkflowRunTrigger.MANUAL,
         input="第二次运行",
         now=running.updated_at + timedelta(microseconds=1),
     )
@@ -111,6 +120,52 @@ def test_workflow_run_repository_lists_active_and_maps_duplicate_identity() -> N
     active = asyncio.run(exercise())
     own_ids = {pending.id, second.id}
     assert {run.id for run in active if run.id in own_ids} == own_ids
+
+
+def test_workflow_run_repository_round_trips_employee_conversation_origin() -> None:
+    workflow, _, _ = _records()
+    employee = Employee.create(name="运行来源员工", system_prompt="按要求执行工作流")
+    conversation = Conversation.create(employee_id=employee.id, title="来源会话")
+    assistant_message = Message.create_assistant(
+        conversation_id=conversation.id,
+        sequence_number=1,
+    )
+    run = WorkflowRun.create(
+        workflow_id=workflow.id,
+        trigger=WorkflowRunTrigger.EMPLOYEE,
+        input="从对话触发",
+        origin=WorkflowRunOrigin(
+            employee_id=employee.id,
+            conversation_id=conversation.id,
+            assistant_message_id=assistant_message.id,
+        ),
+    )
+
+    async def exercise() -> tuple[WorkflowRun | None, tuple[WorkflowRun, ...]]:
+        async with _database() as database:
+            try:
+                async with database.session() as session:
+                    await SqlAlchemyEmployeeRepository(session).add(employee)
+                    await SqlAlchemyConversationRepository(session).add(conversation)
+                    await SqlAlchemyMessageRepository(session).add(assistant_message)
+                    await SqlAlchemyWorkflowRepository(session).add(workflow)
+                    await SqlAlchemyWorkflowRunRepository(session).add(run)
+                    await session.commit()
+
+                async with database.session() as session:
+                    repository = SqlAlchemyWorkflowRunRepository(session)
+                    return (
+                        await repository.get(run.id),
+                        await repository.list_for_conversation(conversation.id),
+                    )
+            finally:
+                await delete_conversations(database, conversation.id)
+                await delete_workflows(database, workflow.id)
+                await delete_employees(database, employee.id)
+
+    restored, conversation_runs = asyncio.run(exercise())
+    assert restored == run
+    assert conversation_runs == (run,)
 
 
 def test_workflow_run_transaction_rollback_and_mysql_constraints_fail_closed() -> None:

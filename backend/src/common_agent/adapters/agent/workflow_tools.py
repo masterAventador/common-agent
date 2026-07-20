@@ -17,7 +17,12 @@ from common_agent.application.workflow_service import (
     WorkflowServiceError,
 )
 from common_agent.domain.workflow import WorkflowDefinition
-from common_agent.domain.workflow_run import WorkflowRun, WorkflowRunStatus, WorkflowRunTrigger
+from common_agent.domain.workflow_run import (
+    WorkflowRun,
+    WorkflowRunOrigin,
+    WorkflowRunStatus,
+    WorkflowRunTrigger,
+)
 
 
 class WorkflowToolRegistry:
@@ -26,16 +31,21 @@ class WorkflowToolRegistry:
     def __init__(self, workflows: WorkflowService) -> None:
         self._workflows = workflows
 
-    async def resolve(self, workflow_ids: Sequence[UUID]) -> tuple[BaseTool, ...]:
+    async def resolve(
+        self,
+        workflow_ids: Sequence[UUID],
+        *,
+        origin: WorkflowRunOrigin,
+    ) -> tuple[BaseTool, ...]:
         definitions: list[WorkflowDefinition] = []
         try:
             for workflow_id in workflow_ids:
                 definitions.append(await self._workflows.get(workflow_id))
         except WorkflowNotFound:
             raise RuntimeCapabilityUnavailable from None
-        return tuple(self._tool(definition) for definition in definitions)
+        return tuple(self._tool(definition, origin) for definition in definitions)
 
-    def _tool(self, workflow: WorkflowDefinition) -> BaseTool:
+    def _tool(self, workflow: WorkflowDefinition, origin: WorkflowRunOrigin) -> BaseTool:
         async def run_workflow(
             input: Annotated[str, "传给工作流开始节点的输入"],
         ) -> str:
@@ -46,6 +56,7 @@ class WorkflowToolRegistry:
                     run_id=run_id,
                     input=input,
                     trigger=WorkflowRunTrigger.EMPLOYEE,
+                    origin=origin,
                 )
                 run = await self._workflows.wait_for_run(run_id)
             except asyncio.CancelledError:

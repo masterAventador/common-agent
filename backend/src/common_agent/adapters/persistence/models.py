@@ -340,6 +340,13 @@ class WorkflowRunRow(PersistenceBase):
             name="ck_workflow_runs_trigger",
         ),
         CheckConstraint(
+            "(`trigger` = 'manual' AND employee_id IS NULL "
+            "AND conversation_id IS NULL AND assistant_message_id IS NULL) OR "
+            "(`trigger` = 'employee' AND employee_id IS NOT NULL "
+            "AND conversation_id IS NOT NULL AND assistant_message_id IS NOT NULL)",
+            name="ck_workflow_runs_origin",
+        ),
+        CheckConstraint(
             "status IN ('pending', 'running', 'completed', 'failed', 'stopped')",
             name="ck_workflow_runs_status",
         ),
@@ -395,6 +402,7 @@ class WorkflowRunRow(PersistenceBase):
             name="ck_workflow_runs_state",
         ),
         Index("ix_workflow_runs_workflow_created", "workflow_id", "created_at"),
+        Index("ix_workflow_runs_conversation_created", "conversation_id", "created_at"),
         Index("ix_workflow_runs_status", "status"),
     )
 
@@ -405,6 +413,17 @@ class WorkflowRunRow(PersistenceBase):
         nullable=False,
     )
     trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    employee_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    assistant_message_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey(
+            "messages.id",
+            ondelete="CASCADE",
+            name="fk_workflow_runs_assistant_message_id",
+        ),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     input: Mapped[str] = mapped_column(mysql.MEDIUMTEXT(), nullable=False)
     output: Mapped[str] = mapped_column(mysql.MEDIUMTEXT(), nullable=False)

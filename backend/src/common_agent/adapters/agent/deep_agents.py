@@ -18,6 +18,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langchain_core.tools import BaseTool
 
 from common_agent.domain.conversation import MessageRole
+from common_agent.domain.workflow_run import WorkflowRunOrigin
 from common_agent.models.base import (
     ModelProviderResponseInvalid,
     ModelServiceError,
@@ -65,7 +66,12 @@ class RuntimeCapabilityUnavailable(Exception):
 
 
 class DeepAgentToolResolver(Protocol):
-    async def resolve(self, capability_ids: Sequence[UUID]) -> tuple[BaseTool, ...]: ...
+    async def resolve(
+        self,
+        capability_ids: Sequence[UUID],
+        *,
+        origin: WorkflowRunOrigin,
+    ) -> tuple[BaseTool, ...]: ...
 
 
 class DeepAgentToolRegistry:
@@ -84,7 +90,13 @@ class DeepAgentToolRegistry:
             names.add(registered_tool.name)
         self._tools = registered
 
-    async def resolve(self, capability_ids: Sequence[UUID]) -> tuple[BaseTool, ...]:
+    async def resolve(
+        self,
+        capability_ids: Sequence[UUID],
+        *,
+        origin: WorkflowRunOrigin,
+    ) -> tuple[BaseTool, ...]:
+        del origin
         resolved: list[BaseTool] = []
         for capability_id in capability_ids:
             registered_tool = self._tools.get(capability_id)
@@ -147,7 +159,14 @@ class DeepAgentsEmployeeRuntime:
             return
 
         try:
-            allowed_tools = await self._tools.resolve(request.allowed_workflow_ids)
+            allowed_tools = await self._tools.resolve(
+                request.allowed_workflow_ids,
+                origin=WorkflowRunOrigin(
+                    employee_id=request.employee_id,
+                    conversation_id=request.conversation_id,
+                    assistant_message_id=request.assistant_message_id,
+                ),
+            )
             graph = cast(
                 "_AgentGraph",
                 self._agent_builder(

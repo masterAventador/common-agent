@@ -50,6 +50,14 @@ class StartWorkflowRunBody(BaseModel):
     input: WorkflowRunInput
 
 
+class WorkflowRunOriginResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    employee_id: UUID
+    conversation_id: UUID
+    assistant_message_id: UUID
+
+
 class WorkflowRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
@@ -63,6 +71,7 @@ class WorkflowRunResponse(BaseModel):
     completed_node_ids: list[str]
     failed_node_id: str | None
     error_code: str | None
+    origin: WorkflowRunOriginResponse | None
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
@@ -166,6 +175,22 @@ async def start_workflow_run(
     except (WorkflowServiceError, WorkflowRunValidationError) as error:
         raise _service_error(error) from error
     return _run_response(run)
+
+
+@router.get(
+    "/api/v1/workflow-runs",
+    response_model=list[WorkflowRunResponse],
+    responses={
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def list_workflow_runs_for_conversation(
+    request: Request,
+    conversation_id: Annotated[UUID, Query()],
+) -> list[WorkflowRunResponse]:
+    runs = await _application(request).list_runs_for_conversation(conversation_id)
+    return [_run_response(run) for run in runs]
 
 
 @router.get(

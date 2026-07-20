@@ -58,6 +58,13 @@ class WorkflowRunRepositoryProbe:
             if run.status in {WorkflowRunStatus.PENDING, WorkflowRunStatus.RUNNING}
         )
 
+    async def list_for_conversation(self, conversation_id: UUID) -> tuple[WorkflowRun, ...]:
+        return tuple(
+            run
+            for run in self.values.values()
+            if run.origin is not None and run.origin.conversation_id == conversation_id
+        )
+
     async def add(self, run: WorkflowRun) -> None:
         if run.id in self.values:
             raise WorkflowRunAlreadyExists

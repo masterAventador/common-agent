@@ -15,7 +15,12 @@ from common_agent.application.workflow_service import (
     WorkflowRunNotFound,
     WorkflowService,
 )
-from common_agent.domain.workflow_run import WorkflowRun, WorkflowRunStatus, WorkflowRunTrigger
+from common_agent.domain.workflow_run import (
+    WorkflowRun,
+    WorkflowRunOrigin,
+    WorkflowRunStatus,
+    WorkflowRunTrigger,
+)
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.models.base import ModelServiceError, ModelServiceUnavailable
 from common_agent.runtimes.base import RuntimeStopSignal
@@ -139,6 +144,36 @@ def test_wait_for_run_rejects_unknown_run() -> None:
         with pytest.raises(WorkflowRunNotFound):
             await service.wait_for_run(uuid4())
         await service.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_employee_run_persists_origin_and_lists_only_its_conversation() -> None:
+    async def exercise() -> None:
+        service, _, _, _ = _service()
+        workflow = await service.create(workflow_configuration())
+        origin = WorkflowRunOrigin(
+            employee_id=uuid4(),
+            conversation_id=uuid4(),
+            assistant_message_id=uuid4(),
+        )
+        run_id = uuid4()
+
+        await service.start_run(
+            workflow.id,
+            run_id=run_id,
+            input="员工关联运行",
+            trigger=WorkflowRunTrigger.EMPLOYEE,
+            origin=origin,
+        )
+        completed = await service.wait_for_run(run_id)
+        own_runs = await service.list_runs_for_conversation(origin.conversation_id)
+        other_runs = await service.list_runs_for_conversation(uuid4())
+        await service.aclose()
+
+        assert completed.origin == origin
+        assert own_runs == (completed,)
+        assert other_runs == ()
 
     asyncio.run(exercise())
 

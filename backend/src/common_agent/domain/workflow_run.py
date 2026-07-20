@@ -50,6 +50,18 @@ TERMINAL_WORKFLOW_RUN_STATUSES = frozenset(
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowRunOrigin:
+    employee_id: UUID
+    conversation_id: UUID
+    assistant_message_id: UUID
+
+    def __post_init__(self) -> None:
+        _uuid("origin.employee_id", self.employee_id)
+        _uuid("origin.conversation_id", self.conversation_id)
+        _uuid("origin.assistant_message_id", self.assistant_message_id)
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowRun:
     id: UUID
     workflow_id: UUID
@@ -61,6 +73,7 @@ class WorkflowRun:
     completed_node_ids: tuple[str, ...]
     failed_node_id: str | None
     error_code: str | None
+    origin: WorkflowRunOrigin | None
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
@@ -90,6 +103,12 @@ class WorkflowRun:
         error_code = _optional_text(
             "error_code", self.error_code, WORKFLOW_RUN_ERROR_CODE_MAX_LENGTH
         )
+        if self.origin is not None and not isinstance(self.origin, WorkflowRunOrigin):
+            raise WorkflowRunValidationError("origin", "必须是 WorkflowRunOrigin")
+        if self.trigger is WorkflowRunTrigger.EMPLOYEE and self.origin is None:
+            raise WorkflowRunValidationError("origin", "员工触发必须包含会话来源")
+        if self.trigger is WorkflowRunTrigger.MANUAL and self.origin is not None:
+            raise WorkflowRunValidationError("origin", "手动触发不能包含员工会话来源")
         _timestamp("created_at", self.created_at)
         _timestamp("updated_at", self.updated_at)
         if self.updated_at < self.created_at:
@@ -128,6 +147,7 @@ class WorkflowRun:
         workflow_id: UUID,
         trigger: WorkflowRunTrigger,
         input: str,
+        origin: WorkflowRunOrigin | None = None,
         run_id: UUID | None = None,
         now: datetime | None = None,
     ) -> WorkflowRun:
@@ -143,6 +163,7 @@ class WorkflowRun:
             completed_node_ids=(),
             failed_node_id=None,
             error_code=None,
+            origin=origin,
             created_at=created_at,
             started_at=None,
             finished_at=None,
