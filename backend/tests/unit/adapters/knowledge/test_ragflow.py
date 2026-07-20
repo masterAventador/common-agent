@@ -32,6 +32,24 @@ def _run[Result](awaitable: Coroutine[Any, Any, Result]) -> Result:
     return asyncio.run(awaitable)
 
 
+def test_owned_ragflow_client_ignores_system_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    client_options: dict[str, object] = {}
+
+    class ClientProbe:
+        def __init__(self, **kwargs: object) -> None:
+            client_options.update(kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", ClientProbe)
+
+    RagFlowKnowledgeService(
+        base_url="http://127.0.0.1:19380",
+        api_key="test-key",
+        expected_version="v0.25.6",
+    )
+
+    assert client_options["trust_env"] is False
+
+
 def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
     requests: list[httpx.Request] = []
 
@@ -74,6 +92,7 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
                 "description": "内部制度",
                 "permission": "me",
                 "chunk_method": "naive",
+                "embedding_model": "text-embedding-v4@Tongyi-Qianwen",
             }
             return httpx.Response(
                 200,
@@ -136,6 +155,7 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
                 "top_k": 5,
                 "similarity_threshold": 0.2,
                 "vector_similarity_weight": 0.3,
+                "rerank_id": "qwen3-rerank@Tongyi-Qianwen",
                 "include_metadata": True,
             }
             return httpx.Response(

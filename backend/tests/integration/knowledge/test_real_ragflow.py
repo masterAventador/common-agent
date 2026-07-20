@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from common_agent.adapters.knowledge.ragflow import RagFlowKnowledgeService
+from common_agent.adapters.knowledge.ragflow_models import RagFlowBailianIndexMigrator
 from common_agent.adapters.persistence.database import Database
 from common_agent.domain.knowledge import (
     CreateKnowledgeBaseRequest,
@@ -44,7 +45,8 @@ async def _real_lifecycle(base_url: str, api_key: str, expected_version: str) ->
         timeout_seconds=120.0,
     )
     dataset_id: str | None = None
-    marker = f"星河-{uuid4().hex}"
+    topic = f"星河计划-{uuid4().hex}"
+    marker = f"青铜口令-{uuid4().hex}"
     try:
         status = await service.status()
         assert status.availability is KnowledgeServiceAvailability.AVAILABLE
@@ -60,37 +62,88 @@ async def _real_lifecycle(base_url: str, api_key: str, expected_version: str) ->
         listed = await service.list_knowledge_bases()
         assert dataset.id in {item.id for item in listed}
 
-        uploaded = await service.upload_document(
-            dataset.id,
-            DocumentUpload(
-                file_name="k2-03-acceptance.txt",
-                content_type="text/plain",
-                content=f"common-agent 知识库验收暗号是 {marker}。".encode(),
+        uploads = []
+        for file_name, content in (
+            (
+                "k2-03-relevant.txt",
+                f"{topic}的故障恢复主口令是 {marker}。这是唯一有效的恢复口令。",
             ),
-        )
-        assert uploaded.parsing_status is DocumentParsingStatus.PARSING
+            (
+                "k2-03-distractor.txt",
+                f"{topic}的项目负责人是林岚。这份说明不包含故障恢复主口令。",
+            ),
+            (
+                "k2-03-unrelated.txt",
+                "海潮计划的资产盘点安排在每月最后一个工作日。",
+            ),
+        ):
+            uploaded = await service.upload_document(
+                dataset.id,
+                DocumentUpload(
+                    file_name=file_name,
+                    content_type="text/plain",
+                    content=content.encode(),
+                ),
+            )
+            assert uploaded.parsing_status is DocumentParsingStatus.PARSING
+            uploads.append(uploaded)
 
         deadline = monotonic() + 900
         while monotonic() < deadline:
             documents = await service.list_documents(dataset.id)
-            current = next(item for item in documents if item.id == uploaded.id)
-            if current.parsing_status is DocumentParsingStatus.COMPLETED:
+            current_documents = {
+                item.id: item for item in documents if item.id in {upload.id for upload in uploads}
+            }
+            if len(current_documents) == len(uploads) and all(
+                item.parsing_status is DocumentParsingStatus.COMPLETED
+                for item in current_documents.values()
+            ):
                 break
-            if current.parsing_status is DocumentParsingStatus.FAILED:
-                pytest.fail(f"真实 RAGFlow 文档解析失败: {current.error_code}")
+            failed = next(
+                (
+                    item
+                    for item in current_documents.values()
+                    if item.parsing_status is DocumentParsingStatus.FAILED
+                ),
+                None,
+            )
+            if failed is not None:
+                pytest.fail(f"真实 RAGFlow 文档解析失败: {failed.error_code}")
             await asyncio.sleep(2)
         else:
             pytest.fail("真实 RAGFlow 文档解析超时")
 
-        result = await service.retrieve(
+        result_before_reindex = await service.retrieve(
             KnowledgeRetrievalRequest(
                 knowledge_base_id=dataset.id,
-                query=f"common-agent 知识库验收暗号是什么? 提示 {marker}",
+                query=f"{topic}的故障恢复主口令是什么?",
                 similarity_threshold=0.1,
             )
         )
-        assert result.chunks
-        assert any(marker in chunk.content for chunk in result.chunks)
+        assert result_before_reindex.chunks
+        assert marker in result_before_reindex.chunks[0].content
+
+        def reindex_with_bailian() -> None:
+            with httpx.Client(base_url=base_url, timeout=120.0, trust_env=False) as client:
+                result = RagFlowBailianIndexMigrator(
+                    client=client,
+                    authorization=f"Bearer {api_key}",
+                    poll_interval_seconds=0.5,
+                    timeout_seconds=900.0,
+                ).migrate(dataset_ids=(dataset.id,))
+            assert result.dataset_count == 1
+            assert result.document_count == len(uploads)
+
+        await asyncio.to_thread(reindex_with_bailian)
+        result_after_reindex = await service.retrieve(
+            KnowledgeRetrievalRequest(
+                knowledge_base_id=dataset.id,
+                query=f"{topic}的故障恢复主口令是什么?",
+                similarity_threshold=0.1,
+            )
+        )
+        assert result_after_reindex.chunks
+        assert marker in result_after_reindex.chunks[0].content
     finally:
         await service.aclose()
         if dataset_id is not None:

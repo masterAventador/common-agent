@@ -2,20 +2,23 @@
 
 本项目固定使用 RAGFlow 官方稳定版 `v0.25.6`，并同时固定官方 tag 对应提交
 `8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4`，禁止使用 `latest` 或漂移分支。
-`manage.sh` 把未修改的官方 checkout 放到
-`.local/dev/common-agent-dev/ragflow/upstream/`，本项目只维护外围 Compose 覆盖层，
-不复制、Fork 或修改 RAGFlow 源码和官方 Compose。
+未修改的官方 checkout 以 `third_party/ragflow` Git submodule 纳入父仓库，`manage.sh` 只读取
+该目录；本项目只维护外围 Compose 覆盖层，不复制、Fork 或修改 RAGFlow 源码和官方 Compose。
+commit、tag、origin 或工作区任一不匹配时管理脚本都会关闭失败。
 
 ## 使用
 
 ```bash
-colima start common-agent-dev --cpus 12 --memory 48 --disk 100 --root-disk 20 \
+git submodule update --init --recursive third_party/ragflow
+colima start common-agent-dev --cpus 8 --memory 32 --disk 100 --root-disk 20 \
   --runtime docker --vm-type vz --vz-rosetta --activate=false
 infra/ragflow/manage.sh prepare
 infra/ragflow/manage.sh pull-image
-infra/ragflow/manage.sh check-model
 infra/ragflow/manage.sh check-ports
 infra/ragflow/manage.sh up
+infra/ragflow/manage.sh configure-bailian
+infra/ragflow/manage.sh check-bailian
+infra/ragflow/manage.sh plan-bailian-migration
 infra/ragflow/manage.sh status
 infra/ragflow/manage.sh config
 infra/ragflow/manage.sh logs
@@ -26,9 +29,9 @@ bash infra/ragflow/test-manage.sh
 
 固定开发栈 Compose project name 为 `common-agent-dev`。普通开发和定向测试复用该栈，
 不因 FastAPI 或 React 改动重建 RAGFlow；`stop` 停止服务但保留容器，`down` 删除容器和
-网络但保留数据。数据、日志和官方 checkout 全部位于被 Git 忽略的
-`.local/dev/common-agent-dev/ragflow/`。只有改动 RAGFlow 版本、Compose 或存储时才重建
-整栈；任务镜像清理不得删除仍由稳定栈使用的官方镜像。
+网络但保留数据。数据和日志位于被 Git 忽略的 `.local/dev/common-agent-dev/ragflow/`，官方
+checkout 位于 `third_party/ragflow` submodule。只有改动 RAGFlow 版本、submodule 指针、Compose
+或存储时才重建整栈；任务镜像清理不得删除仍由稳定栈使用的官方镜像。
 
 管理脚本默认固定使用 Docker context `colima-common-agent-dev`。该 context 来自同名独立
 Colima profile，不会改变全局当前 context，也不会与其他项目共享 Docker 镜像存储、
@@ -46,7 +49,6 @@ Colima profile，不会改变全局当前 context，也不会与其他项目共�
 | RAGFlow Admin | `19382` |
 | RAGFlow MCP | `19383` |
 | Go Admin / HTTP | `19384` / `19385` |
-| 本地 embedding | `19386` |
 | Valkey | `19379` |
 | Elasticsearch | `19200` |
 | MySQL | `19432` |
@@ -58,22 +60,41 @@ Colima profile，不会改变全局当前 context，也不会与其他项目共�
 
 ## 资源策略
 
-官方最低要求是 4 核、16GB RAM 和 50GB 磁盘；`v0.25.6` 镜像不包含 embedding
-模型。真实首次启动发现共享 Colima 的 30GiB 内容分区已经被其他项目占满，因此本项目
-使用独立 profile：12 CPU、48GiB 内存、100GiB 容器磁盘。为保证中文知识检索，稳定栈
-默认启用官方 `tei-cpu` profile 和 `BAAI/bge-m3`，不静默降级到英文模型。
+官方最低要求是 4 核、16GB RAM 和 50GB 磁盘。本项目不再启动 `tei-cpu`，也不维护本地
+embedding/rerank 权重、端口、挂载或下载入口；知识库统一通过 RAGFlow 官方
+`Tongyi-Qianwen` 能力调用阿里百炼 `text-embedding-v4` 与 `qwen3-rerank`。管理脚本默认要求
+Docker context 至少 24GiB，并建议项目独立 profile 使用 8 CPU、32GiB 内存和 100GiB 容器磁盘。
 
-TEI 运行时固定为 Hugging Face 官方
-`ghcr.io/huggingface/text-embeddings-inference:cpu-1.8`。模型以只读 bind mount 从
-`.local/dev/common-agent-dev/ragflow/models/BAAI/bge-m3` 挂载到容器 `/data/BAAI/bge-m3`，
-避免把 4GB 级权重重复塞进 Docker 内容分区。`check-model` 会在启动前验证模型配置和
-权重文件；模型缺失时必须从官方 Hugging Face 仓库准备，不得自动换成其他模型。
+非本地模型容器上限为：RAGFlow 5GiB、Elasticsearch 3GiB（JVM 1GiB）、MySQL 2GiB、MinIO
+1GiB、Valkey 256MiB。`configure-bailian` 从获准的后端 Demo 配置或同名环境变量读取百炼 Key，
+只通过 RAGFlow 官方 UI/API 注册两个模型并设置租户默认值，不打印凭据；`check-bailian` 只报告
+embedding、rerank 和默认绑定是否就绪。新知识库显式固定
+`text-embedding-v4@Tongyi-Qianwen`，平台检索显式固定 `qwen3-rerank@Tongyi-Qianwen`。
 
-容器上限为：embedding 24GiB、RAGFlow 5GiB、Elasticsearch 3GiB（JVM 1GiB）、
-MySQL 2GiB、MinIO 1GiB、Valkey 256MiB。K2-03 首次真实解析记录启动峰值和稳定占用；
-若仍出现 OOM 或内存压力，应提高独立 profile 资源，而不是裁剪必需服务、降低验收范围
-或改用不适合中文的 embedding。宿主机有 128GB RAM，48GiB profile 不影响现有 32GiB
-默认 profile 并行运行。
+从其他 embedding 迁移已有知识库时，必须先更新知识库模型并通过 RAGFlow 官方重建入口重新
+向量化全部文档，再执行中文召回与重排基准；不得复用旧向量冒充迁移成功。32GiB 是否作为长期
+real 默认值仍以路线图 R8-04 的峰值和稳定性门禁为准，日常 Demo 不应启动本栈。
+
+迁移先执行只读预检，输出知识库、文档、待更新模型和正在解析的文档数量，不输出知识正文、名称
+或凭据：
+
+```bash
+infra/ragflow/manage.sh plan-bailian-migration
+```
+
+重建会重新调用百炼 embedding，产生外部数据传输、API 费用和限流风险，因此没有默认确认值。
+确认预检结果、费用和数据边界后才显式执行；可用逗号分隔的知识库 ID 缩小范围：
+
+```bash
+RAGFLOW_BAILIAN_MIGRATION_DATASET_IDS=dataset-id-1,dataset-id-2 \
+RAGFLOW_CONFIRM_BAILIAN_REINDEX=yes \
+  infra/ragflow/manage.sh migrate-bailian
+```
+
+迁移在任何写操作前拒绝仍在解析的文档；更新模型后使用 RAGFlow v0.25.6 公开文档重建 API，
+保留原始文件并等待所有文档进入完成态。中断、限流、超时或解析失败会返回脱敏阶段码，可在上游
+恢复后使用同一命令重新执行，不需要修改 RAGFlow 数据库或源码。等待上限默认 3600 秒，可通过
+`RAGFLOW_BAILIAN_MIGRATION_TIMEOUT_SECONDS` 在 1-86400 秒内调整。
 
 Apple Silicon 使用官方 `linux/amd64` 镜像并由独立 Colima VZ/Rosetta 环境运行。镜像已存在时
 `pull-image` 直接复用；下载 Docker Hub 不稳定时，可通过官方 tag 对应镜像源覆盖：
@@ -83,5 +104,5 @@ RAGFLOW_IMAGE_SOURCE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v0.25.6
   infra/ragflow/manage.sh pull-image
 ```
 
-升级必须作为独立路线图任务：修改 `VERSION` 与 `UPSTREAM_COMMIT`，运行配置契约、正式
-适配器契约和完整纵向链路回归；禁止在 `.local/` 内维护上游补丁。
+升级必须作为独立路线图任务：同步修改 submodule 指针、`VERSION` 与 `UPSTREAM_COMMIT`，运行
+配置契约、正式适配器契约和完整纵向链路回归；禁止修改 submodule 或维护上游补丁。

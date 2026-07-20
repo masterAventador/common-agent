@@ -13,7 +13,7 @@ _TEST_PASSWORD = (
 
 
 async def provision_api_key(base_url: str) -> str:
-    async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
+    async with httpx.AsyncClient(base_url=base_url, timeout=60.0, trust_env=False) as client:
         registration = await client.post(
             "/api/v1/users",
             json={
@@ -56,7 +56,7 @@ async def provision_api_key(base_url: str) -> str:
 
 
 async def delete_dataset(base_url: str, api_key: str, dataset_id: str) -> None:
-    async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
+    async with httpx.AsyncClient(base_url=base_url, timeout=60.0, trust_env=False) as client:
         response = await client.request(
             "DELETE",
             "/api/v1/datasets",
@@ -69,7 +69,7 @@ async def delete_dataset(base_url: str, api_key: str, dataset_id: str) -> None:
 
 
 async def delete_datasets_named(base_url: str, api_key: str, name: str) -> int:
-    async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
+    async with httpx.AsyncClient(base_url=base_url, timeout=60.0, trust_env=False) as client:
         response = await client.get(
             "/api/v1/datasets",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -91,7 +91,7 @@ async def cancel_document_parsing(
     dataset_id: str,
     document_id: str,
 ) -> None:
-    async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
+    async with httpx.AsyncClient(base_url=base_url, timeout=60.0, trust_env=False) as client:
         response = await client.request(
             "DELETE",
             f"/api/v1/datasets/{dataset_id}/chunks",

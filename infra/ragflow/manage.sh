@@ -6,9 +6,8 @@ REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "${SCRIPT_DIR}/VERSION")"
 EXPECTED_COMMIT="$(tr -d '[:space:]' < "${SCRIPT_DIR}/UPSTREAM_COMMIT")"
 STACK_ROOT="${REPOSITORY_ROOT}/.local/dev/common-agent-dev/ragflow"
-RUNTIME_ROOT="${RAGFLOW_RUNTIME_ROOT:-${STACK_ROOT}/upstream/${VERSION}}"
+RUNTIME_ROOT="${RAGFLOW_RUNTIME_ROOT:-${REPOSITORY_ROOT}/third_party/ragflow}"
 DATA_ROOT="${RAGFLOW_DATA_ROOT:-${STACK_ROOT}/data}"
-MODEL_ROOT="${RAGFLOW_MODEL_ROOT:-${STACK_ROOT}/models}"
 UPSTREAM_URL="https://github.com/infiniflow/ragflow.git"
 OFFICIAL_IMAGE="infiniflow/ragflow:${VERSION}"
 PROJECT_NAME="common-agent-dev"
@@ -29,7 +28,6 @@ port_value() {
     mcp) echo "${RAGFLOW_MCP_PORT:-19383}" ;;
     go_admin) echo "${RAGFLOW_GO_ADMIN_PORT:-19384}" ;;
     go_http) echo "${RAGFLOW_GO_HTTP_PORT:-19385}" ;;
-    tei) echo "${RAGFLOW_TEI_PORT:-19386}" ;;
     mysql) echo "${RAGFLOW_MYSQL_PORT:-19432}" ;;
     minio) echo "${RAGFLOW_MINIO_PORT:-19900}" ;;
     minio_console) echo "${RAGFLOW_MINIO_CONSOLE_PORT:-19901}" ;;
@@ -47,11 +45,11 @@ validate_port() {
 
 check_ports() {
   local name port
-  for name in es redis api web web_https admin mcp go_admin go_http tei mysql minio minio_console; do
+  for name in es redis api web web_https admin mcp go_admin go_http mysql minio minio_console; do
     port="$(port_value "${name}")"
     validate_port "${port}"
   done
-  for name in es redis api web web_https admin mcp go_admin go_http tei mysql minio minio_console; do
+  for name in es redis api web web_https admin mcp go_admin go_http mysql minio minio_console; do
     port="$(port_value "${name}")"
     if lsof -nP -iTCP:"${port}" -sTCP:LISTEN > /dev/null 2>&1; then
       echo "RAGFlow 端口已被占用：127.0.0.1:${port}（${name}）" >&2
@@ -62,7 +60,7 @@ check_ports() {
 
 check_resources() {
   local minimum_gib total_bytes required_bytes
-  minimum_gib="${RAGFLOW_MIN_DOCKER_MEMORY_GIB:-40}"
+  minimum_gib="${RAGFLOW_MIN_DOCKER_MEMORY_GIB:-24}"
   if [[ ! "${minimum_gib}" =~ ^[0-9]+$ ]] || ((minimum_gib < 1 || minimum_gib > 128)); then
     echo "RAGFlow 最低 Docker 内存必须是 1-128 的整数 GiB：${minimum_gib}" >&2
     exit 2
@@ -77,7 +75,7 @@ check_resources() {
   fi
   required_bytes=$((minimum_gib * 1024 * 1024 * 1024))
   if ((total_bytes < required_bytes)); then
-    echo "common-agent Docker context 内存不足：至少需要 ${minimum_gib} GiB；建议为 common-agent-dev 分配 48 GiB" >&2
+    echo "common-agent Docker context 内存不足：至少需要 ${minimum_gib} GiB；建议为 common-agent-dev 分配 32 GiB" >&2
     return 1
   fi
 }
@@ -100,36 +98,15 @@ ensure_data_directories() {
     "${DATA_ROOT}/logs"
 }
 
-check_model() {
-  local profiles model model_path
-  profiles="${RAGFLOW_COMPOSE_PROFILES:-elasticsearch,cpu,tei-cpu}"
-  if [[ ",${profiles}," != *",tei-cpu,"* ]]; then
-    return
-  fi
-  model="${RAGFLOW_TEI_MODEL:-BAAI/bge-m3}"
-  model_path="${MODEL_ROOT}/${model}"
-  [[ -f "${model_path}/config.json" ]] || {
-    echo "缺少 RAGFlow embedding 模型配置：${model_path}/config.json" >&2
-    exit 1
-  }
-  if [[ ! -f "${model_path}/model.safetensors" && ! -f "${model_path}/pytorch_model.bin" ]]; then
-    echo "缺少 RAGFlow embedding 模型权重：${model_path}" >&2
-    exit 1
-  fi
-}
-
 prepare() {
   ensure_data_directories
-  if [[ -e "${RUNTIME_ROOT}" && ! -d "${RUNTIME_ROOT}/.git" ]]; then
-    echo "RAGFlow 运行目录存在但不是 Git checkout：${RUNTIME_ROOT}" >&2
+  if ! git -C "${RUNTIME_ROOT}" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    echo "RAGFlow submodule 未初始化：${RUNTIME_ROOT}" >&2
+    echo "请执行：git submodule update --init --recursive third_party/ragflow" >&2
     exit 1
   fi
-  if [[ ! -d "${RUNTIME_ROOT}/.git" ]]; then
-    mkdir -p "$(dirname "${RUNTIME_ROOT}")"
-    git clone --depth 1 --branch "${VERSION}" "${UPSTREAM_URL}" "${RUNTIME_ROOT}"
-  fi
 
-  local actual_commit actual_tag origin
+  local actual_commit actual_tag origin worktree_status
   actual_commit="$(git -C "${RUNTIME_ROOT}" rev-parse HEAD)"
   actual_tag="$(git -C "${RUNTIME_ROOT}" describe --tags --exact-match HEAD)"
   origin="$(git -C "${RUNTIME_ROOT}" remote get-url origin)"
@@ -145,16 +122,24 @@ prepare() {
     echo "RAGFlow 上游提交不匹配：期望 ${EXPECTED_COMMIT}，实际 ${actual_commit}" >&2
     exit 1
   }
-  git -C "${RUNTIME_ROOT}" diff --quiet
-  git -C "${RUNTIME_ROOT}" diff --cached --quiet
+  worktree_status="$(git -C "${RUNTIME_ROOT}" status --short)"
+  [[ -z "${worktree_status}" ]] || {
+    echo "RAGFlow submodule 必须保持未修改状态：${RUNTIME_ROOT}" >&2
+    exit 1
+  }
 }
 
 compose() {
+  local dashscope_http_base_url
   prepare
+  if [[ -n "${RAGFLOW_DASHSCOPE_HTTP_BASE_URL:-}" ]]; then
+    dashscope_http_base_url="${RAGFLOW_DASHSCOPE_HTTP_BASE_URL}"
+  elif ! dashscope_http_base_url="$(bailian_native_base_url 2>/dev/null)"; then
+    dashscope_http_base_url="https://dashscope.aliyuncs.com/api/v1"
+  fi
   RAGFLOW_DATA_ROOT="${DATA_ROOT}" \
-  RAGFLOW_MODEL_ROOT="${MODEL_ROOT}" \
+  RAGFLOW_DASHSCOPE_HTTP_BASE_URL="${dashscope_http_base_url}" \
   RAGFLOW_IMAGE="${OFFICIAL_IMAGE}" \
-  TEI_IMAGE_CPU="ghcr.io/huggingface/text-embeddings-inference:cpu-1.8" \
   ES_PORT="127.0.0.1:$(port_value es)" \
   EXPOSE_MYSQL_PORT="127.0.0.1:$(port_value mysql)" \
   MINIO_PORT="127.0.0.1:$(port_value minio)" \
@@ -167,11 +152,8 @@ compose() {
   SVR_MCP_PORT="127.0.0.1:$(port_value mcp)" \
   GO_ADMIN_PORT="127.0.0.1:$(port_value go_admin)" \
   GO_HTTP_PORT="127.0.0.1:$(port_value go_http)" \
-  TEI_PORT="127.0.0.1:$(port_value tei)" \
-  COMPOSE_PROFILES="${RAGFLOW_COMPOSE_PROFILES:-elasticsearch,cpu,tei-cpu}" \
-  TEI_MODEL="${RAGFLOW_TEI_MODEL:-BAAI/bge-m3}" \
+  COMPOSE_PROFILES="${RAGFLOW_COMPOSE_PROFILES:-elasticsearch,cpu}" \
   MACOS=1 \
-  DOCKER_DEFAULT_PLATFORM=linux/amd64 \
     docker_cli compose \
       --project-name "${PROJECT_NAME}" \
       --project-directory "${RUNTIME_ROOT}/docker" \
@@ -197,20 +179,44 @@ pull_image() {
   fi
 }
 
+bailian_native_base_url() {
+  local backend_python="${REPOSITORY_ROOT}/backend/.venv/bin/python"
+  [[ -x "${backend_python}" ]] || return 1
+  "${backend_python}" -m common_agent.adapters.knowledge.ragflow_models native-base-url
+}
+
+configure_bailian_models() {
+  local action="$1"
+  local backend_python="${REPOSITORY_ROOT}/backend/.venv/bin/python"
+  if [[ ! -x "${backend_python}" ]]; then
+    echo "缺少后端冻结环境；请先在 backend/ 执行 uv sync --frozen" >&2
+    exit 1
+  fi
+  RAGFLOW_BASE_URL="${RAGFLOW_BASE_URL:-http://127.0.0.1:$(port_value api)}" \
+    "${backend_python}" -m common_agent.adapters.knowledge.ragflow_models "${action}"
+}
+
 case "${1:-}" in
   prepare) prepare ;;
-  check-model) check_model ;;
   check-resources) check_resources ;;
   pull-image) pull_image ;;
   check-ports) check_ports ;;
+  configure-bailian) configure_bailian_models apply ;;
+  check-bailian) configure_bailian_models status ;;
+  plan-bailian-migration) configure_bailian_models plan-migration ;;
+  migrate-bailian) configure_bailian_models migrate ;;
   up)
+    bailian_base_url="$(bailian_native_base_url)" || {
+      echo "缺少有效的百炼配置或后端冻结环境；请先在 backend/ 执行 uv sync --frozen" >&2
+      exit 1
+    }
     health_timeout_seconds="$(health_timeout)"
     check_resources
-    check_model
     if ! stack_has_containers; then
       check_ports
     fi
-    compose up -d --wait --wait-timeout "${health_timeout_seconds}"
+    RAGFLOW_DASHSCOPE_HTTP_BASE_URL="${bailian_base_url}" \
+      compose up -d --wait --wait-timeout "${health_timeout_seconds}"
     ;;
   stop) compose stop ;;
   down) compose down ;;
@@ -218,7 +224,7 @@ case "${1:-}" in
   config) compose config ;;
   logs) compose logs -f ragflow-cpu ;;
   *)
-    echo "用法: $0 {prepare|pull-image|check-model|check-resources|check-ports|up|stop|down|status|config|logs}" >&2
+    echo "用法: $0 {prepare|pull-image|check-resources|check-ports|up|configure-bailian|check-bailian|plan-bailian-migration|migrate-bailian|stop|down|status|config|logs}" >&2
     exit 2
     ;;
 esac

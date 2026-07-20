@@ -13,6 +13,7 @@ common-agent/
 ├── backend/                    # FastAPI 与 Agent 编排
 ├── contracts/                  # OpenAPI、会话/工作流事件和公共样例
 ├── infra/                      # RAGFlow 等外部依赖的本地接入说明
+├── third_party/                # 项目实际消费源码的官方 Git submodule
 ├── scripts/                    # 跨前后端生成与验证脚本
 ├── docs/                       # 产品、架构和唯一开发路线图
 ├── AGENTS.md
@@ -162,9 +163,16 @@ infra/platform/                 # 当前路线图实际采用的平台基础设�
 ├── compose.yaml                # 平台独立 MySQL；其他组件按真实需要增加
 ├── manage.sh                   # 固定 context、端口、启动、停止和状态检查
 └── README.md                   # 端口、资源、持久化和清理边界
+
+third_party/
+└── ragflow/                    # 官方 submodule；固定到 VERSION/UPSTREAM_COMMIT
 ```
 
-不复制或修改 RAGFlow 源码，也不让平台代码直连 RAGFlow 的内部依赖。管理脚本只把固定官方 checkout 和运行数据准备到 `.local/dev/common-agent-dev/ragflow/`；稳定开发栈可以跨任务复用。平台自有基础设施只有在路线图选用后才进入正式 Compose 和生产同路径验收。
+不复制或修改 RAGFlow 源码，也不让平台代码直连 RAGFlow 的内部依赖。管理脚本只读取
+`third_party/ragflow` 官方 submodule，且在 commit、tag、origin 或工作区完整性不匹配时关闭失败；
+运行数据仍位于 `.local/dev/common-agent-dev/ragflow/`，稳定开发栈可以跨任务复用。普通 Python/npm
+包必须以实际安装使用的 `uv.lock`/`pnpm-lock.yaml` 为准，不能用旁路源码目录替代包管理器锁定。
+平台自有基础设施只有在路线图选用后才进入正式 Compose 和生产同路径验收。
 
 ## 6. 测试归属
 

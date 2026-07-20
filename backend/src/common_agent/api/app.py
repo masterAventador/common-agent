@@ -76,6 +76,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 base_url=ragflow_settings.base_url,
                 api_key=ragflow_settings.api_key.get_secret_value(),
                 expected_version=ragflow_settings.expected_version,
+                embedding_model=ragflow_settings.embedding_model,
+                rerank_model=ragflow_settings.rerank_model,
                 timeout_seconds=ragflow_settings.timeout_seconds,
             )
             model = BailianChatModelAdapter(ModelSettings.from_env())

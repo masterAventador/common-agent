@@ -131,6 +131,8 @@ class RagFlowSettings:
     base_url: str
     api_key: SecretStr
     expected_version: str
+    embedding_model: str
+    rerank_model: str
     timeout_seconds: float
 
     @classmethod
@@ -161,6 +163,18 @@ class RagFlowSettings:
         if not expected_version:
             raise ConfigurationError("RAGFLOW_EXPECTED_VERSION is required")
 
+        embedding_model = values.get(
+            "RAGFLOW_EMBEDDING_MODEL", "text-embedding-v4@Tongyi-Qianwen"
+        ).strip()
+        if embedding_model != "text-embedding-v4@Tongyi-Qianwen":
+            raise ConfigurationError(
+                "RAGFLOW_EMBEDDING_MODEL must be text-embedding-v4@Tongyi-Qianwen"
+            )
+
+        rerank_model = values.get("RAGFLOW_RERANK_MODEL", "qwen3-rerank@Tongyi-Qianwen").strip()
+        if rerank_model != "qwen3-rerank@Tongyi-Qianwen":
+            raise ConfigurationError("RAGFLOW_RERANK_MODEL must be qwen3-rerank@Tongyi-Qianwen")
+
         raw_timeout = values.get("RAGFLOW_TIMEOUT_SECONDS", "60")
         try:
             timeout_seconds = float(raw_timeout)
@@ -173,6 +187,8 @@ class RagFlowSettings:
             base_url=base_url,
             api_key=SecretStr(values.get("RAGFLOW_API_KEY", "").strip()),
             expected_version=expected_version,
+            embedding_model=embedding_model,
+            rerank_model=rerank_model,
             timeout_seconds=timeout_seconds,
         )
 

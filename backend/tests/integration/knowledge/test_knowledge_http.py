@@ -207,6 +207,7 @@ def test_knowledge_routes_use_formal_uvicorn_and_ragflow_adapter() -> None:
             "description": "人事制度",
             "permission": "me",
             "chunk_method": "naive",
+            "embedding_model": "text-embedding-v4@Tongyi-Qianwen",
         }
     ]
     assert len(probe.upload_bodies) == 1

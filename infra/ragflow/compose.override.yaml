@@ -5,39 +5,24 @@ services:
     mem_limit: 5g
     environment:
       COMPOSE_PROFILES: ${COMPOSE_PROFILES}
+      DASHSCOPE_HTTP_BASE_URL: ${RAGFLOW_DASHSCOPE_HTTP_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}
       MACOS: "1"
     volumes:
       - ${RAGFLOW_DATA_ROOT}/logs:/ragflow/logs
   es01:
     container_name: common-agent-ragflow-elasticsearch
-    platform: linux/amd64
     mem_limit: 3g
     environment:
       ES_JAVA_OPTS: -Xms1g -Xmx1g
   mysql:
     container_name: common-agent-ragflow-mysql
-    platform: linux/amd64
     mem_limit: 2g
   minio:
     container_name: common-agent-ragflow-minio
-    platform: linux/amd64
     mem_limit: 1g
   redis:
     container_name: common-agent-ragflow-valkey
-    platform: linux/amd64
     mem_limit: 256m
-  tei-cpu:
-    container_name: common-agent-ragflow-embedding
-    platform: linux/amd64
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
-    mem_limit: 24g
-    command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
-    volumes:
-      - type: bind
-        source: ${RAGFLOW_MODEL_ROOT}
-        target: /data
-        read_only: true
-
 volumes:
   esdata01:
     name: common-agent-ragflow-esdata

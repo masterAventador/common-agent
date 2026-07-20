@@ -20,6 +20,17 @@
 
 全部服务在本机运行。项目使用专属端口、Compose project、Volume 和 `.local/` 数据目录，避免影响本机其他项目。
 
+## 克隆与第三方源码
+
+RAGFlow 是项目直接消费其官方 Compose 的源码级依赖，作为 Git submodule 固定到已验收 commit：
+
+```bash
+git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
+```
+
+已有工作区使用 `git submodule update --init --recursive` 初始化。普通 Python/npm 依赖仍分别由
+`backend/uv.lock` 和 `frontend/pnpm-lock.yaml` 冻结，不能用未参与实际安装的源码副本冒充版本锁定。
+
 ## 项目文档
 
 - [产品范围](docs/product-scope.md)：只定义产品功能和边界；

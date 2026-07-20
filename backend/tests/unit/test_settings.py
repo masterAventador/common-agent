@@ -138,6 +138,8 @@ def test_ragflow_settings_use_fixed_loopback_defaults() -> None:
     assert settings.expected_version == "v0.25.6"
     assert settings.timeout_seconds == 60
     assert settings.api_key.get_secret_value() == ""
+    assert settings.embedding_model == "text-embedding-v4@Tongyi-Qianwen"
+    assert settings.rerank_model == "qwen3-rerank@Tongyi-Qianwen"
 
 
 def test_ragflow_settings_accept_safe_override_without_leaking_key() -> None:
@@ -147,12 +149,28 @@ def test_ragflow_settings_accept_safe_override_without_leaking_key() -> None:
             "RAGFLOW_API_KEY": "do-not-leak",
             "RAGFLOW_EXPECTED_VERSION": "v0.25.6",
             "RAGFLOW_TIMEOUT_SECONDS": "120",
+            "RAGFLOW_EMBEDDING_MODEL": "text-embedding-v4@Tongyi-Qianwen",
+            "RAGFLOW_RERANK_MODEL": "qwen3-rerank@Tongyi-Qianwen",
         }
     )
 
     assert settings.base_url == "http://localhost:29380"
     assert settings.timeout_seconds == 120
     assert "do-not-leak" not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("RAGFLOW_EMBEDDING_MODEL", "BAAI/bge-m3"),
+        ("RAGFLOW_EMBEDDING_MODEL", "text-embedding-v4@OpenAI-API-Compatible"),
+        ("RAGFLOW_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
+        ("RAGFLOW_RERANK_MODEL", "gte-rerank-v2@Tongyi-Qianwen"),
+    ],
+)
+def test_ragflow_settings_reject_non_bailian_knowledge_models(name: str, value: str) -> None:
+    with pytest.raises(ConfigurationError, match=name):
+        RagFlowSettings.from_mapping({name: value})
 
 
 @pytest.mark.parametrize(

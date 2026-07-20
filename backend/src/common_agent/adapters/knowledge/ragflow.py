@@ -112,15 +112,20 @@ class RagFlowKnowledgeService:
         base_url: str,
         api_key: str,
         expected_version: str,
+        embedding_model: str = "text-embedding-v4@Tongyi-Qianwen",
+        rerank_model: str = "qwen3-rerank@Tongyi-Qianwen",
         timeout_seconds: float = 60.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._api_key = api_key.strip()
         self._expected_version = expected_version
+        self._embedding_model = embedding_model
+        self._rerank_model = rerank_model
         self._owned_client = client is None
         self._client = client or httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             timeout=httpx.Timeout(timeout_seconds),
+            trust_env=False,
         )
         self._headers = {"Authorization": f"Bearer {self._api_key}"}
 
@@ -187,6 +192,7 @@ class RagFlowKnowledgeService:
                 "description": request.description,
                 "permission": "me",
                 "chunk_method": "naive",
+                "embedding_model": self._embedding_model,
             },
         )
         return self._knowledge_base(_validate(_DATASET_ADAPTER, data))
@@ -254,6 +260,7 @@ class RagFlowKnowledgeService:
                 "top_k": request.top_k,
                 "similarity_threshold": request.similarity_threshold,
                 "vector_similarity_weight": 0.3,
+                "rerank_id": self._rerank_model,
                 "include_metadata": True,
             },
         )
