@@ -208,7 +208,7 @@
 | --- | --- | --- | --- | --- |
 | Q6-01 | 完整失败矩阵 | 第 5 节所有适用分支有自动化或明确真实证据 | A4-09,W5-08 | ✅ 已完成 |
 | Q6-02 | Docker 资源与清理验收 | 记录峰值/稳定内存、48GiB 独立 profile 建议、端口/context 隔离；证明稳定栈复用、按影响重建，并清理重复任务镜像和悬空层 | Q6-01 | ✅ 已完成 |
-| Q6-03 | 全量自动化 | 后端、前端、契约、构建和 Playwright 全量通过 | Q6-02 | ⬜ 未开始 |
+| Q6-03 | 全量自动化 | 后端、前端、契约、构建和 Playwright 全量通过 | Q6-02 | ✅ 已完成 |
 | Q6-04 | 本机 MVP 验收 | 从空平台完成知识库→员工→两轮对话→工作流，全部走正式入口 | Q6-03 | ⬜ 未开始 |
 | Q6-05 | 规格与质量复审 | 核对范围、假绿、泄密、资源泄漏、残留进程和无用代码 | Q6-04 | ⬜ 未开始 |
 
@@ -918,10 +918,22 @@
 - GREEN：平台和 RAGFlow 两套管理脚本测试通过，ShellCheck 覆盖管理/测试/故障注入脚本；内存不足、非法资源值、端口冲突、平台 unhealthy 与 RAGFlow Compose 健康失败均有自动化，真实健康栈、固定镜像、资源采样、无头用户路径和清理状态提供生产同路径证据
 - 遗留：无；下一任务 Q6-03 执行后端、前端、契约、构建、基础设施与全部无头 Playwright 套件的最终全量自动化
 
+### Q6-03 全量自动化
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- 后端全量：显式设置 `TEST_BAILIAN_REAL=1`、真实 `TEST_RAGFLOW_BASE_URL=http://127.0.0.1:19380` 与 `v0.25.6` 后执行完整 pytest，最终 `396 passed in 89.71s`，此前 11 个按环境跳过的 RAGFlow 生命周期/公开 HTTP/会话检索、百炼成功与无效 Key、Deep Agents、会话停止重试、LangGraph 工作流和员工工具验收全部真实执行，没有 skip。Ruff lint、除已应用不可变 0005 外 151 个文件格式、严格 Mypy 145 个源/测试文件和 uv lock 全部通过
+- 前端与契约：14 个 Vitest 文件 58 passed，ESLint、TypeScript、冻结 `pnpm install`、27 个顶层依赖解析、生产 Vite Build 和 OpenAPI/双 SSE/生成 TypeScript 逐字节漂移检查全部通过；构建如实保留 `errors` chunk 602.76 kB 的既有大于 500 kB 提示，不把 warning 隐藏或误报为失败
+- 无头 Playwright：所有套件固定 `chromium-headless-shell`、单 worker、零重试顺序执行。默认 real 平台套件 2 passed in 35.0s，Demo 两轮引用/中断恢复 1 passed in 5.8s，React Flow 设计器 1 passed in 5.5s，手动运行成功/停止/知识失效 1 passed in 4.8s，设计→手动运行→员工触发→刷新详情跨页面闭环 1 passed in 8.0s；合计 6 项全部通过，未打开可见浏览器
+- 基础设施与数据库：平台/RAGFlow 两套管理脚本门禁及 ShellCheck 全部通过。正式 `common_agent` 与隔离 `common_agent_test` 两库均为 `20260720_0006 (head)`，`alembic check` 均返回 `No new upgrade operations detected`；稳定七容器继续复用，声明健康检查的容器全部 healthy，没有因全量测试重建基础设施
+- 执行异常与复验：首轮并行后端全量虽然自然结束，但调度层只返回进行中的点状输出且未保留最终句柄，因此没有采信该轮，单独完整重跑后才记录 396 项通过。首轮 Alembic 命令因 zsh 把未引号包裹的 `?charset` 当作 glob 而在进入 Alembic 前失败；单引号包裹完整 URL 后正式/测试库四项 revision/check 全部通过。两项均是验收命令问题，没有修改产品代码或降低门禁
+- 清理：五个 E2E suite 的 finally 分别清理唯一知识库、员工、会话、工作流和运行；最终正式库/测试库都只保留固定 Seed 员工 1 条，会话/消息/工作流/运行为 0。18200/18280 无监听，无 pytest/Uvicorn/Vite/Playwright/Chromium 残留，dist、tsbuildinfo、测试产物和 Python 工具缓存已精确删除；独立 Docker context dangling 镜像为 0，固定 MySQL/RAGFlow 栈保持运行
+- 遗留：无；下一任务 Q6-04 必须从空业务数据开始，由真实浏览器一次连续完成知识库→员工绑定→两轮知识对话→工作流设计→手动运行→员工触发，不以本任务各独立套件的组合结果替代总验收
+
 ## 15. 当前下一步
 
 严格按顺序：
 
-1. 完成 `Q6-03`：执行全量自动化并建立基线；
-2. 完成 `Q6-04`：从空平台走正式用户路径完成本机 MVP 总验收；
-3. 完成 `Q6-05`：复审规格、质量、泄密、资源和残留进程。
+1. 完成 `Q6-04`：从空平台走正式用户路径完成本机 MVP 总验收；
+2. 完成 `Q6-05`：复审规格、质量、泄密、资源和残留进程。
