@@ -149,6 +149,7 @@ frontend/
 │   ├── test/
 │   └── main.tsx
 ├── e2e/                         # Playwright 核心聊天链路
+├── scripts/                     # 生产 manifest、chunk 与路由图预算分析
 ├── public/
 ├── package.json
 ├── pnpm-lock.yaml
@@ -161,6 +162,8 @@ frontend/
 第一版只有聊天工作台与独立工作流设计器，不为未实现能力创建空 Feature 目录或菜单。工作流画布使用成熟的 React 节点图库，不自行实现缩放、拖拽、连线和命中测试。
 页面容器只组合控制器和展示区域；协议映射、服务端状态、流式/运行状态、画布和属性表单分模块维护。
 架构门禁限制页面容器体量、跨 Feature 私有导入、实现层反向依赖容器和拆分模块循环依赖。
+Vite 生产构建保留四个路由异步入口并使用入口感知 vendor 分组；manifest 分析同时约束 500,000
+bytes 单 chunk 和 1,500,000 bytes 单路由首次 JS 图，生产 preview 浏览器验证首屏、切换和复用。
 
 ## 4. 跨端契约
 

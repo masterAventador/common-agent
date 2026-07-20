@@ -50,6 +50,8 @@ for expected in \
   './scripts/test-real.sh' \
   './scripts/test-ci.sh' \
   './scripts/test-coverage.sh' \
+  './scripts/test-frontend-bundle.sh' \
+  'pnpm test:e2e:loading' \
   "rg --files -g '*.sh' -g '!third_party/**' | xargs shellcheck"; do
   grep -Fq "${expected}" "${WORKFLOW}" || fail "CI 缺少门禁：${expected}"
 done

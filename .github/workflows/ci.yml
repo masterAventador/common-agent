@@ -175,6 +175,7 @@ jobs:
           ./scripts/test-real.sh
           ./scripts/test-ci.sh
           ./scripts/test-coverage.sh
+          ./scripts/test-frontend-bundle.sh
 
       - name: Check shell scripts
         run: rg --files -g '*.sh' -g '!third_party/**' | xargs shellcheck
@@ -184,6 +185,12 @@ jobs:
         env:
           COMMON_AGENT_E2E_DOCKER_CONTEXT: default
         run: pnpm test:e2e:demo
+
+      - name: Run production bundle loading acceptance
+        working-directory: frontend
+        env:
+          COMMON_AGENT_E2E_DOCKER_CONTEXT: default
+        run: pnpm test:e2e:loading
 
       - name: Stop Demo infrastructure
         if: always()

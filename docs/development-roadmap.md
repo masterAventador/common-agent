@@ -59,7 +59,7 @@
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
 | 产品代码 | `✅` 知识库、数字员工、连续会话、工作流设计/运行及两类触发的 MVP 正式链路已完成 |
 | 本地服务 | `✅` D8-03 验收后 real 前后端、平台/RAGFlow 容器和项目专属 Colima 已停止；原生 Volume、0600 Token 与官方镜像保留，下一任务可按需复用 |
-| 后续整改 | `🟨` Wave 8 的 R8-00、D8-01、D8-02、D8-03 与 Wave 7 的 H7-01 至 H7-08 已完成；前端包体、32 GiB soak、数据管理和生产化继续按 Wave 7-10 推进，MVP 完成事实不变 |
+| 后续整改 | `🟨` Wave 7 全部任务及 Wave 8 的 R8-00、D8-01、D8-02、D8-03 已完成；32 GiB soak、数据管理和生产化继续按 Wave 8-10 推进，MVP 完成事实不变 |
 
 ## 4. 全局完成门禁
 
@@ -287,7 +287,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 | H7-06 | 结构化日志、指标与追踪 | 统一 JSON 日志和关联上下文，覆盖 request/conversation/message/turn/workflow/run ID、耗时、状态与稳定错误码；提供本机最小健康/指标入口和跨服务 trace context；默认脱敏提示词、知识正文、Key、密码和上游响应，故障测试证明可定位且不泄密 | H7-05 | ✅ 已完成 |
 | H7-07 | 事件与锁状态生命周期 | 为会话/工作流 Broker 历史、订阅者、per-ID 锁和终态状态增加有界容量、TTL/LRU 与安全回收；保留允许的 SSE 回放窗口，慢消费者和历史缺口语义不变；通过大量短会话/运行及长时间 soak 证明内存最终回落且无活跃状态误删 | H7-06 | ✅ 已完成 |
 | H7-08 | 核心大文件按职责拆分 | 在既有行为测试保护下拆分 ChatPage、WorkflowsPage、ConversationService、WorkflowService 和大型路由；页面容器只做编排，消息/运行/设计器状态与协议映射独立；服务按用例/运行协调/持久化投影分责，禁止循环依赖和跨 Feature 私有导入 | H7-07 | ✅ 已完成 |
-| H7-09 | 前端包体与加载性能 | 建立 bundle 分析和预算门禁，路由与稳定 vendor 合理拆分；任何初始或异步单 chunk 不超过 500 kB，四入口真实浏览器首屏、交互和缓存复用无回归；不得仅调高 warning 阈值 | H7-08 | ⬜ 未开始 |
+| H7-09 | 前端包体与加载性能 | 建立 bundle 分析和预算门禁，路由与稳定 vendor 合理拆分；任何初始或异步单 chunk 不超过 500 kB，四入口真实浏览器首屏、交互和缓存复用无回归；不得仅调高 warning 阈值 | H7-08 | ✅ 已完成 |
 
 ## 15. Wave 8：开发体验与资源优化
 
@@ -337,7 +337,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 ## 18. 当前下一步
 
-R8-00、D8-01、D8-02、D8-03、H7-01 至 H7-08 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
+R8-00、D8-01、D8-02、D8-03 与 H7-01 至 H7-09 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库
 embedding/rerank 统一使用阿里百炼，本地模型退场；全新克隆可由统一入口进入 12 GiB
 `demo-light`，Demo 知识、员工绑定与会话引用在后端重启后保持一致；`real` 可按需切到暂定
 32 GiB，完成脱敏体检、费用诊断、真实纵向门禁和跨 Colima 重启恢复；本机质量门禁已经冻结，
@@ -346,9 +346,9 @@ GitHub Hosted Runner 只作可选镜像、不作为验收依赖；前后端行/�
 第三方 import 和平台内部依赖方向由关闭失败的统一 AST 门禁约束；正式 API、会话、工作流及
 RAGFlow/百炼出站已具备脱敏 JSON 日志、有界进程指标和关联追踪；事件历史、订阅者、per-ID
 锁与终态状态也已具备容量、TTL/LRU 和安全回收；核心页面、服务与大型路由已按编排、运行协调、
-持久化和投影职责拆分，并由体量、依赖方向、Feature 私有边界和循环依赖门禁保护。下一任务进入
-H7-09，建立前端包体分析和不超过 500 kB 的 chunk 预算；
-R8-04 仍独立负责 32 GiB 的峰值
+持久化和投影职责拆分，并由体量、依赖方向、Feature 私有边界和循环依赖门禁保护；四路由异步
+入口和稳定 vendor 已按 Vite 8/Rolldown 正式能力拆分，单 chunk 与单路由首次加载图均有本机
+不回退门禁。下一任务进入 R8-04，独立完成 32 GiB 的峰值
 与 30 分钟 soak，不用 D8-03 的功能通过冒充长期资源验收。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
 
@@ -1276,3 +1276,16 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - 生产同路径：12 GiB demo-light 经正式 React/FastAPI/MySQL 完成两轮引用会话与中断恢复，浏览器用例 `1 passed in 5.2s`；退出阶段的 runner 等待被人工中断后，已用正式清理器删除其唯一会话、员工、知识库和 Seed。随后临时切到项目专属 32 GiB real，显式执行真实百炼、Deep Agents、会话 SSE、RAGFlow+百炼图编译、手动运行与员工工具共 `6 passed in 35.37s`，没有 Mock/Fake 或 GitHub Runner 结果
 - 清理与边界：Demo/real 唯一测试数据已删除；前后端、浏览器、平台/RAGFlow 容器和项目专属 Colima 已停止，18200/18280 无监听。覆盖率、构建、tsbuildinfo、字节码和保留日志已精确清理；稳定数据、0600 Token、冻结依赖与官方镜像保留，RAGFlow 官方 submodule commit 与 `UPSTREAM_COMMIT` 一致且工作区未修改
 - 遗留：无；下一任务 H7-09 建立 bundle 分析和单 chunk 不超过 500 kB 的门禁，并验证四入口真实浏览器加载与缓存复用
+
+### H7-09 前端包体与加载性能
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：先增加隔离 bundle 契约，首次执行按预期因缺少分析器失败；实现后对 500,001 bytes 单 chunk、四个 400,000 bytes 依赖组成的 1.6 MB `/chat` 首次图、缺失 manifest 和缺失四路由入口逐项故障注入，均返回非零并指出具体文件、路由、预算或修复边界。改动前生产构建如实复现 `errors-*.js` 602,760 bytes 与 Vite 大 chunk 警告，没有通过提高 `chunkSizeWarningLimit` 消音
+- 构建拆分：保留 `App` 四个动态 import，按 Vite 8 正式 `build.rolldownOptions.output.codeSplitting` 将 React core、Ant Design/RC、TanStack/Axios/Zod 和 React Flow/Zustand/D3 分成入口感知、带内容哈希的稳定组；小分组可合并，大组按 400,000 bytes 上限继续拆分。入口感知避免普通页面无条件加载完整工作流画布，未使用已废弃的 object `manualChunks`
+- 自动预算：生产构建固定生成 `.vite/manifest.json`，`pnpm build` 在 Vite 成功后必跑 `check-bundle-budget.mjs`。分析器扫描所有 JS chunk，硬性拒绝超过 500,000 bytes；解析 manifest 递归计算 `/chat`、`/employees`、`/knowledge-bases`、`/workflows` 首次静态 JS 图，任一路由超过 1,500,000 bytes 或不再是异步入口同样失败。可选 CI 复用 `pnpm build`、隔离故障注入和生产 preview 浏览器入口，但本机结果仍为权威
+- 结果：最终最大 chunk 为 `react-core` 189,644 bytes，较 602,760 bytes 基线下降 68.5%，没有构建警告；四路由首次 JS 图分别为 1,101,220 / 1,157,532 / 1,360,071 / 1,176,468 bytes，全部低于 1.5 MB 门禁。前端 14 files/61 tests，行 `86.30%`、分支 `75.48%`，ESLint、TypeScript、生产 Build、pnpm 高危审计、跨端契约、ShellCheck、bundle 与 CI 镜像契约全部通过
+- 浏览器验收：12 GiB demo-light 下生产 preview 逐个直达四入口、校验 10 秒本机首屏上限和页面异常，再通过菜单加载全部异步路由；第二轮切换没有任何重复 JS 请求，`2 passed in 4.9s`。随后临时切换到 32 GiB real，生产 preview 连接正式 MySQL、RAGFlow 与百炼配置的 real 后端，同一套首屏/交互/缓存复用验收再次 `2 passed in 4.9s`；该任务不发送模型请求或上传文档，不产生百炼调用费用
+- 清理与边界：Demo/real 前后端、生产 preview、浏览器、平台/RAGFlow 容器和项目专属 Colima 已停止，18200/18280 无监听；构建、manifest、覆盖率、tsbuildinfo 和临时浏览器产物在提交前精确删除。稳定数据、0600 Token、冻结依赖和官方镜像保留，RAGFlow 官方 submodule 未修改
+- 遗留：无；Wave 7 全部完成，下一任务 R8-04 在暂定 32 GiB real profile 下完成峰值不高于 25 GiB、中文检索质量与 30 分钟 soak 专项验收

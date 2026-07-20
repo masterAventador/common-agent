@@ -37,7 +37,7 @@ FRONTEND_PID=""
 RAGFLOW_API_KEY=""
 COMMON_AGENT_DATABASE_URL="mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
 
-if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" ]]; then
+if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" ]]; then
   echo "不支持的 E2E suite：${E2E_SUITE}" >&2
   exit 2
 fi
@@ -198,7 +198,7 @@ if [[ "$(docker --context "${DOCKER_CONTEXT_NAME}" inspect \
     "${REPOSITORY_ROOT}/infra/platform/manage.sh" up
 fi
 export COMMON_AGENT_DATABASE_URL
-if [[ "${E2E_SUITE}" != "demo-chat" ]]; then
+if [[ "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" ]]; then
   export COMMON_AGENT_INTEGRATION_MODE="real"
   if ! curl --fail --silent --show-error \
     "${RAGFLOW_BASE_URL}/api/v1/system/version" >/dev/null 2>&1; then
@@ -236,6 +236,10 @@ wait_for_url "http://127.0.0.1:${API_PORT}/api/v1/system/health"
 (
   cd "${FRONTEND_ROOT}"
   unset RAGFLOW_API_KEY
+  if [[ "${E2E_SUITE}" == "frontend-loading" ]]; then
+    pnpm build
+    exec pnpm exec vite preview --host 127.0.0.1 --port "${FRONTEND_PORT}" --strictPort
+  fi
   exec pnpm dev
 ) >"${FRONTEND_LOG}" 2>&1 &
 FRONTEND_PID=$!
@@ -252,6 +256,10 @@ wait_for_url "http://127.0.0.1:${FRONTEND_PORT}/knowledge-bases"
       exec pnpm exec playwright test \
         e2e/employees.spec.ts e2e/knowledge-bases.spec.ts \
         --config playwright.config.ts
+  elif [[ "${E2E_SUITE}" == "frontend-loading" ]]; then
+    COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
+      exec pnpm exec playwright test e2e/entry-loading.spec.ts --config playwright.config.ts
   elif [[ "${E2E_SUITE}" == "workflow-designer" ]]; then
     COMMON_AGENT_E2E_WORKFLOW_NAME="${COMMON_AGENT_E2E_WORKFLOW_NAME}" \
     COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME}" \

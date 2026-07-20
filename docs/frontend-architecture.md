@@ -173,6 +173,14 @@ Playwright 使用项目专属或随机空闲端口，结束后停止 Vite、Fast
 ## 9. 构建边界
 
 - 当前只构建本机 Web 资产，不部署服务器；
+- 四个页面继续使用独立动态 import；Vite 8 通过 `build.rolldownOptions.output.codeSplitting`
+  把 React、Ant Design、数据客户端和工作流画布依赖拆成带内容哈希的稳定 vendor 组，并按入口
+  感知使用关系，不能用手工合并把未使用的工作流画布塞进其他页面；
+- 生产构建必须生成 manifest 并通过 `check-bundle-budget.mjs`：所有初始/异步 JS chunk 不超过
+  500,000 bytes，任一页面首次静态 JS 依赖图不超过 1,500,000 bytes，四个页面必须仍是异步入口；
+  `pnpm build` 自带该门禁，不得通过提高 Vite warning 阈值或跳过分析放行；
+- 生产 preview 的无头浏览器逐个直达四入口并完成菜单切换；第二轮菜单切换不得再次请求已加载
+  JS，页面错误和 10 秒本机首屏上限任一失败都会关闭失败；
 - Vite 默认绑定 `127.0.0.1` 和项目专属端口；
 - `.env.example` 只包含后端 Base URL 等非敏感配置；
 - 百炼和 RAGFlow Key 不进入任何 `VITE_*` 变量；
