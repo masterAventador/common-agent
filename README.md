@@ -31,6 +31,28 @@ git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
 已有工作区使用 `git submodule update --init --recursive` 初始化。普通 Python/npm 依赖仍分别由
 `backend/uv.lock` 和 `frontend/pnpm-lock.yaml` 冻结，不能用未参与实际安装的源码副本冒充版本锁定。
 
+## 日常轻量开发
+
+64 GiB 日常开发机默认使用项目专属的 `demo-light`：同一个 `common-agent-dev` Colima profile
+以 12 GiB 运行，只启动平台 MySQL、FastAPI 和 Vite，不启动 RAGFlow，也不会调用百炼
+embedding/rerank。真实知识库链路仍由后续 `real` 入口把同一 profile 重启到暂定 32 GiB 后验收，
+两种模式不会同时运行。
+
+```bash
+scripts/dev.sh doctor  # 检查工具链、冻结依赖、submodule 与当前资源状态
+scripts/dev.sh setup   # 初始化 submodule，以锁文件安装后端和前端依赖
+scripts/dev.sh up      # 切换到 12 GiB demo-light 并启动服务
+scripts/dev.sh status
+scripts/dev.sh stop
+scripts/dev.sh clean
+```
+
+`up` 成功后访问前端 <http://127.0.0.1:18280>，后端 API 位于
+<http://127.0.0.1:18200/api/v1>。脚本使用 `packageManager` 锁定的 pnpm 11.9.0，不修改本机全局
+pnpm；macOS 前后端进程使用项目专属 launchd 标签托管，`stop/clean` 不按模糊进程名停止其他项目。
+`clean` 删除本入口的进程、容器、日志和已被 submodule 取代的旧 RAGFlow checkout，但保留
+MySQL/RAGFlow 数据、依赖和官方镜像。
+
 ## 项目文档
 
 - [产品范围](docs/product-scope.md)：只定义产品功能和边界；

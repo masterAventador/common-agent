@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${COMMON_AGENT_TEST_DOCKER_SCENARIO:-}" == "platform-existing-volume" ]]; then
+  if [[ " $* " == *" volume inspect common-agent-platform-mysql-data "* ]]; then
+    printf '%s\n' "${COMMON_AGENT_TEST_PLATFORM_VOLUME_DEVICE:?missing existing volume device}"
+    exit 0
+  fi
+  if [[ " $* " == *" compose "* && " $* " == *" config "* ]]; then
+    printf 'device: %s\n' "${PLATFORM_MYSQL_DATA_ROOT:?missing resolved platform data root}"
+    exit 0
+  fi
+fi
+
 if [[ "${COMMON_AGENT_TEST_DOCKER_SCENARIO:-}" == "platform-unhealthy" ]]; then
   if [[ " $* " == *" compose "* && " $* " == *" ps -q mysql "* ]]; then
     printf '%s\n' "fake-platform-mysql"

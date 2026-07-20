@@ -11,6 +11,12 @@
 
 当前脚本：
 
+- `dev.sh`：macOS 本机统一 `demo-light` 入口，提供 `doctor/setup/up/status/stop/clean`；复用项目
+  专属 `common-agent-dev` Colima profile，但会在停止完整 real 栈后将其重启为 12 GiB，只启动
+  平台 MySQL、Demo FastAPI 和 Vite。前端依赖始终以 `npx pnpm@11.9.0` 按锁文件安装，不改全局
+  pnpm；前后端使用精确 launchd 标签管理，清理保留数据库数据、冻结依赖和官方镜像；
+- `test-dev.sh`：检查统一入口动作、12 GiB 资源边界、Demo 适配器、固定 pnpm、项目专属进程标签
+  和精确清理契约；
 - `generate-contracts.sh`：从正式 FastAPI 应用导出 OpenAPI 并生成前端 TypeScript 类型；
 - `check-contracts.sh`：在隔离临时目录重建契约并检查已提交文件无漂移；
 - `test-platform-e2e.sh`：复用健康的稳定基础设施，以无窗口 `chromium-headless-shell` 编排正式

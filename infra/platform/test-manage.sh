@@ -46,6 +46,34 @@ if rg --color=never --quiet 'host_ip: 0\.0\.0\.0' <<< "${CONFIG}"; then
   fail "平台 MySQL 端口不得公开绑定"
 fi
 
+EXISTING_VOLUME_ROOT="$(mktemp -d)"
+EXISTING_VOLUME_CONFIG="$(
+  PATH="${SCRIPT_DIR}/../test-fixtures:${PATH}" \
+  COMMON_AGENT_TEST_DOCKER_SCENARIO=platform-existing-volume \
+  COMMON_AGENT_TEST_PLATFORM_VOLUME_DEVICE="${EXISTING_VOLUME_ROOT}" \
+    "${MANAGER}" config
+)"
+rg --color=never --fixed-strings --quiet \
+  "device: ${EXISTING_VOLUME_ROOT}" <<< "${EXISTING_VOLUME_CONFIG}" || {
+  rm -rf "${EXISTING_VOLUME_ROOT}"
+  fail "新克隆没有复用现有平台 MySQL Volume 的原始宿主目录"
+}
+
+MISMATCH_VOLUME_ROOT="$(mktemp -d)"
+MISMATCH_VOLUME_OUTPUT="$(mktemp)"
+if PATH="${SCRIPT_DIR}/../test-fixtures:${PATH}" \
+  COMMON_AGENT_TEST_DOCKER_SCENARIO=platform-existing-volume \
+  COMMON_AGENT_TEST_PLATFORM_VOLUME_DEVICE="${EXISTING_VOLUME_ROOT}" \
+  PLATFORM_MYSQL_DATA_ROOT="${MISMATCH_VOLUME_ROOT}" \
+    "${MANAGER}" config > "${MISMATCH_VOLUME_OUTPUT}" 2>&1; then
+  rm -rf "${EXISTING_VOLUME_ROOT}" "${MISMATCH_VOLUME_ROOT}"
+  rm -f "${MISMATCH_VOLUME_OUTPUT}"
+  fail "显式平台数据目录与现有 Volume 冲突时仍被放行"
+fi
+rg --color=never --quiet '已绑定其他目录' "${MISMATCH_VOLUME_OUTPUT}"
+rm -rf "${EXISTING_VOLUME_ROOT}" "${MISMATCH_VOLUME_ROOT}"
+rm -f "${MISMATCH_VOLUME_OUTPUT}"
+
 INVALID_PORT_OUTPUT="$(mktemp)"
 if PLATFORM_MYSQL_PORT=abc "${MANAGER}" check-ports > "${INVALID_PORT_OUTPUT}" 2>&1; then
   rm -f "${INVALID_PORT_OUTPUT}"

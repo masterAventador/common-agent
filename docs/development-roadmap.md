@@ -58,8 +58,8 @@
 | 前端 API | `✅` Axios、Query Client、Zod、CORS 与后端真实成功/失败状态已跨端跑通 |
 | RAGFlow 基线 | `✅` 官方 v0.25.6/tag commit、common-agent-dev 隔离栈、loopback 端口、数据目录和资源策略已锁定 |
 | 产品代码 | `✅` 知识库、数字员工、连续会话、工作流设计/运行及两类触发的 MVP 正式链路已完成 |
-| 本地服务 | `✅` 临时前后端均已停止；平台 MySQL 与移除本地模型后的 RAGFlow 五服务保留在独立 `colima-common-agent-dev` 稳定栈供后续复用 |
-| 后续整改 | `🟨` R8-00 已完成；CI、平台自有协议、可观测性、运行态内存、代码拆分、开发体验、资源优化、数据管理和生产化继续按 Wave 7-10 推进，MVP 完成事实不变 |
+| 本地服务 | `✅` D8-01 验收后的前后端、平台容器和项目专属 Colima 已停止；MySQL/RAGFlow 数据与官方镜像保留，下一任务可按需复用 |
+| 后续整改 | `🟨` R8-00、D8-01 已完成；CI、平台自有协议、可观测性、运行态内存、代码拆分、Demo 持久语义、real 入口、资源优化、数据管理和生产化继续按 Wave 7-10 推进，MVP 完成事实不变 |
 
 ## 4. 全局完成门禁
 
@@ -299,7 +299,7 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 | ID | 任务 | 交付物与完成定义 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
 | R8-00 | 百炼向量/重排迁移与本地模型退场 | 仅通过 RAGFlow v0.25.6 官方 `Tongyi-Qianwen` 供应商的公开 UI/API/配置接入百炼 `text-embedding-v4` 和 `qwen3-rerank`，禁止修改 RAGFlow 源码、镜像内文件、已安装包或维护 fork/patch；迁移 API Key、区域/业务空间、模型绑定、超时/限流/费用和脱敏诊断；embedding 变更必须重建既有知识库索引，中文基准同时验证初召回与重排顺序，失败时保持可恢复；正式门禁通过后移除本地 TEI 服务、BGE-M3/本地 rerank 权重、挂载、端口、profile、下载/检查和启停入口且不保留本地模型兜底；`real` 改为不含本地模型的按需 32 GiB 暂定模式，不复用旧 48 GiB 重型 profile；统一 `demo-light` 入口与 8-12 GiB 门禁由紧随其后的 D8-01 交付 | Q6-05 | ✅ 已完成 |
-| D8-01 | 全新克隆一键 Demo | 提供统一的 `doctor/setup/up/status/stop/clean` 开发入口；检查并冻结安装 uv/pnpm 依赖、使用轻量平台 MySQL 启动 Demo 前后端、显示访问地址并精确清理；从无 `.venv`/`node_modules` 的临时克隆完成两轮 Demo 会话，失败给出可操作信息，当前 64 GiB 电脑不启动 48 GiB profile | R8-00 | ⬜ 未开始 |
+| D8-01 | 全新克隆一键 Demo | 提供统一的 `doctor/setup/up/status/stop/clean` 开发入口；检查并冻结安装 uv/pnpm 依赖、使用轻量平台 MySQL 启动 Demo 前后端、显示访问地址并精确清理；从无 `.venv`/`node_modules` 的临时克隆完成两轮 Demo 会话，失败给出可操作信息，当前 64 GiB 电脑不启动 48 GiB profile | R8-00 | ✅ 已完成 |
 | D8-02 | Demo 知识状态持久语义 | Demo 知识库、文档和解析/检索状态使用可重启恢复的项目专属持久边界，或采用同等一致的显式生命周期设计；员工绑定、会话引用与知识数据在后端重启后保持一致，不出现持久员工引用已消失内存知识库；与 real 协议和错误语义保持契约一致 | D8-01 | ⬜ 未开始 |
 | D8-03 | real 模式一键体检与启停 | 在不打印凭据的前提下统一检查按需 Colima context、MySQL、RAGFlow 官方版本/源码完整性、RAGFlow Token、百炼 embedding/rerank 供应商、模型绑定、区域/业务空间、端口和磁盘；提供不含本地模型的 `real` 模式可重复启停、健康和费用诊断，保留稳定栈复用；64 GiB 电脑本地完成知识库→员工→两轮会话→工作流，向量/重排配置、限流、超时和费用边界失败显示真实可恢复错误；128 GiB 电脑仅可按相同 Git revision 独立执行同一门禁，不作为远程依赖 | D8-02,R8-00 | ⬜ 未开始 |
 | R8-04 | Colima 32 GiB 专项优化与验收 | 以原 28.63 GiB 和 R8-00 真实稳定采样约 6.25 GiB 为上下界基线，实测百炼 embedding/rerank 下的 RAGFlow/ES/解析/运行峰值、中文召回与重排质量、延迟、费用、限流和数据边界；把本机完整 `real` 链路峰值压到不高于 25 GiB，在暂定 32 GiB profile 连续完成冷启动、解析/检索、两轮会话、工作流及 30 分钟 soak，无 OOM、持续 Swap 压力、重启或质量下降后确认并保留 real 默认值，否则按实测上调；`demo-light` 仍保持 8-12 GiB，避免长期占用 64 GiB 主机一半内存 | D8-03 | ⬜ 未开始 |
@@ -337,10 +337,10 @@ R8-00 按用户要求先把 real profile 从 48 GiB 调整为 32 GiB，并完成
 
 ## 18. 当前下一步
 
-R8-00 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库 embedding/rerank 已统一
-使用阿里百炼，本地模型退场，既有数据预检为空，隔离中文索引重建和 32 GiB 基础资源门禁通过。
-下一任务 D8-01 提供全新克隆的一键 `demo-light` 与 8-12 GiB 门禁，随后按 D8-02、D8-03、
-R8-04 证明 Demo 持久语义、real 一键诊断和 32 GiB 长期峰值/soak。D8-03 完成后进入 H7-01，
+R8-00、D8-01 已完成：RAGFlow 官方源码以 submodule 固定且保持未修改，知识库 embedding/rerank
+统一使用阿里百炼，本地模型退场；全新克隆现在可由统一入口进入 12 GiB `demo-light`，不会启动
+RAGFlow 或 48 GiB profile。下一任务 D8-02 修复 Demo 知识状态的重启持久语义，随后按 D8-03、
+R8-04 证明 real 一键诊断和 32 GiB 长期峰值/soak。D8-03 完成后进入 H7-01，
 并按依赖顺序完成覆盖率、平台自有协议和第三方边界收口。所有后续任务仍遵循
 Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单任务完成后提交推送规则。
 
@@ -1106,3 +1106,17 @@ Red-Green-Refactor、生产同路径验收、失败矩阵、资源清理和单�
 - 自动化与工具：相关配置/适配器/迁移 77 passed，最终 RAGFlow 单元 37 passed；后端全量 `402 passed, 12 skipped`，12 项均为需显式外部开关的既有真实门禁，本任务另行显式执行真实 RAGFlow/百炼重建。Ruff 全仓 lint、本轮 10 个 Python 文件格式、严格 Mypy 151 个源/测试文件、uv lock、OpenAPI/事件/前端 DTO 漂移、RAGFlow 管理脚本、Bash 语法、ShellCheck 0.11.0、`git diff --check` 和 submodule 完整性全部通过。全仓格式检查仍会提示一个与本任务无关、已提交的不可变 migration `20260720_0005_workflow_runs.py`，本轮未改写历史迁移
 - 资源与清理：为全量集成门禁补拉并启动项目锁定的 `mysql:8.4.10`，平台 MySQL 与五个 RAGFlow 容器继续在专属 32 GiB context 复用；没有启动前端、可见浏览器或长期测试进程，RAGFlow 临时知识库清理后回到 0。官方活动镜像全部有运行容器引用，Build Cache 为 0，未删除仍需复用的基础镜像；被 submodule 取代的 132 MiB Git 忽略旧 checkout 不参与运行，留给 D8-01 的统一 `clean` 做可预览、精确清理
 - 遗留：统一 `demo-light` 的 `doctor/setup/up/status/stop/clean`、8-12 GiB 门禁和全新克隆验证由下一任务 D8-01 交付；32 GiB real 的完整峰值与 soak 不在本任务伪装完成，由 R8-04 保持未开始
+
+### D8-01 全新克隆一键 Demo
+
+- 状态：✅ 已完成
+- 日期：2026-07-20
+- 提交：本任务提交（见 Git 历史）
+- RED：统一入口契约首先按预期报告“缺少统一的 demo-light 开发入口”。首轮 `doctor` 又真实发现全局 pnpm 为 10.33.0、与项目锁定的 11.9.0 漂移；改为 `npx pnpm@11.9.0` 后不修改全局工具。首轮真实 `up` 虽在当前命令内健康，但命令退出后 Uvicorn/Vite 被会话回收，改用两个项目专属 launchd 标签后跨命令复查健康。临时新克隆首次复用平台 MySQL 时，Compose 提示现有 Volume 与新 checkout 路径不一致并询问是否重建；新增行为测试先失败，再让管理脚本读取并复用现有 Volume 的真实 bind 目录，显式冲突关闭失败且禁止自动重建/迁移
+- 统一入口：新增可执行 `scripts/dev.sh`，提供 `doctor/setup/up/status/stop/clean`。`setup/up` 校验 Node >=22、uv、Docker/Colima、RAGFlow submodule 和两份锁文件，以 `uv sync --frozen`、固定 pnpm 11.9.0 安装；`up` 显式使用 `COMMON_AGENT_INTEGRATION_MODE=demo`，启动平台 MySQL、FastAPI 与 Vite并显示 loopback 地址。状态检查同时核对实际 Docker 内存、MySQL health、launchd 标签和 HTTP health；端口被非本入口进程占用时拒绝启动
+- 资源与模式边界：复用同一个项目专属 `common-agent-dev` profile，但切换到 Demo 前先停止本项目 RAGFlow 和平台容器，再停止/重启虚拟机；Docker 实际 `MemTotal=12,514,689,024` bytes（约 11.66 GiB），门禁仅接受 8-12 GiB。运行态只有 `common-agent-platform-mysql` 一个容器，后端 Health 返回 `integration_mode=demo`，RAGFlow 五容器保持停止；完整 real 仍由后续 D8-03 在同一 profile 切回暂定 32 GiB，12 GiB 不冒充真实知识链路或 RAGFlow 验收
+- 全新克隆：在 `/private/tmp/common-agent-d8-01.aVjBKl` 创建独立递归 Git 克隆，官方 RAGFlow submodule 精确为 `8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4 (v0.25.6)`；启动前确认没有 `backend/.venv` 和 `frontend/node_modules`。只执行统一 `up` 后从零创建 Python 3.12 环境并安装锁定的 81 个 Python 包、379 个前端包，pnpm 实际为 11.9.0；跨命令 `status` 的 Colima/MySQL/FastAPI/Vite 四项全部健康
+- 页面验收：同一临时克隆固定使用无窗口 `chromium-headless-shell`、单 worker、零重试，经正式 React 页面、Axios/SSE、loopback FastAPI、平台 MySQL 和显式 Demo 适配器完成两轮带引用对话，并验证中断后的正式重试恢复，最终 `1 passed (8.2s)`；Demo 不调用 RAGFlow、Deep Agents 或百炼，因此这些真实外部依赖对本任务不适用，不能把本结果用于解除 D8-03/R8-04 的 real 门禁
+- GREEN：`scripts/test-dev.sh`、平台 MySQL 管理脚本测试、Bash 语法、ShellCheck 和 `git diff --check` 通过；新克隆安全复用原平台 Volume 的自动化覆盖原目录复用与显式目录冲突。实际验证了 profile 停止/12 GiB 重启、RAGFlow 停止、依赖冷安装、进程跨终端存活、HTTP 健康、两轮浏览器会话、测试数据 finally 清理和统一 clean
+- 清理：无头用例精确删除本轮会话、员工和固定 Seed；统一 `clean` 只按两个 launchd 标签、固定 Compose project/container/network 和固定运行目录清理，最终 18200/18280 无监听、两个标签不存在、项目专属 Colima 已停止。临时克隆目录已删除；根工作区中被官方 submodule 取代的旧 RAGFlow checkout 也在确认官方 origin 后删除。平台 MySQL/RAGFlow 数据目录、冻结依赖缓存、Colima 磁盘和官方镜像保留，没有删除 Volume 或用户业务数据
+- 遗留：无；下一任务 D8-02 让 Demo 知识库、文档和检索状态在后端重启后与已持久化员工/会话引用保持一致

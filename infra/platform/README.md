@@ -12,6 +12,9 @@
 - 仅绑定 `127.0.0.1:19506`，与 RAGFlow 自带的 `127.0.0.1:19432` 完全分离；
 - 数据 Volume 为 `common-agent-platform-mysql-data`，实际目录位于
   `.local/dev/common-agent-dev/platform/mysql`；
+- 从另一个 Git 克隆调用管理脚本时，如果这个专属 Volume 已存在，脚本读取并复用其原始 bind
+  目录，不按新克隆路径请求重建；显式指定的目录与现有绑定冲突时关闭失败，数据迁移必须另设
+  有备份的任务；
 - 本机开发不做复制或时间点恢复，关闭 binary log，避免 macOS bind mount 在容器重启时因
   `binlog.index` 权限同步产生瞬态启动失败；事务恢复仍由 InnoDB redo/undo 保证；
 - 默认开发数据库/用户为 `common_agent`，仅用于本机 loopback 开发链路。
@@ -28,6 +31,10 @@ infra/platform/manage.sh stop
 
 稳定栈跨任务复用；普通后端测试不得重复重建 MySQL。`down` 只删除容器和网络，不删除
 Volume/数据目录。版本升级、数据清理或删除 Volume 必须作为明确任务单独验收。
+
+日常 64 GiB 开发机优先从仓库根目录执行 `scripts/dev.sh up`：统一入口会把同一个项目专属
+Colima profile 切换到 12 GiB，只启动平台 MySQL 和 Demo 前后端。需要完整 RAGFlow 时再由 real
+入口切回暂定 32 GiB，两种模式不得并行。
 
 配置门禁：
 
