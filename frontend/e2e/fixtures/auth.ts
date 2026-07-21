@@ -14,7 +14,8 @@ const apiUrl = requiredEnvironment("COMMON_AGENT_E2E_API_URL").replace(/\/$/, ""
 const bootstrapToken = requiredEnvironment("COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN");
 const email = requiredEnvironment("COMMON_AGENT_E2E_AUTH_EMAIL");
 const password = requiredEnvironment("COMMON_AGENT_E2E_AUTH_PASSWORD");
-const trustedOrigin = "http://127.0.0.1:18280";
+const trustedOrigin =
+  process.env.COMMON_AGENT_E2E_TRUSTED_ORIGIN?.trim() || "http://127.0.0.1:18280";
 
 async function authenticate(page: Page): Promise<void> {
   const policyResponse = await page.request.get(`${apiUrl}/auth/policy`);

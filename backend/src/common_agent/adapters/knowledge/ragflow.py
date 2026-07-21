@@ -126,6 +126,7 @@ class RagFlowKnowledgeService:
         embedding_model: str = "text-embedding-v4@Tongyi-Qianwen",
         rerank_model: str = "qwen3-rerank@Tongyi-Qianwen",
         timeout_seconds: float = 60.0,
+        ca_bundle_path: str | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._api_key = api_key.strip()
@@ -136,6 +137,7 @@ class RagFlowKnowledgeService:
         self._client = client or httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             timeout=httpx.Timeout(timeout_seconds),
+            verify=ca_bundle_path or True,
             trust_env=False,
         )
         self._headers = {"Authorization": f"Bearer {self._api_key}"}

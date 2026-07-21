@@ -150,6 +150,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 embedding_model=ragflow_settings.embedding_model,
                 rerank_model=ragflow_settings.rerank_model,
                 timeout_seconds=ragflow_settings.timeout_seconds,
+                ca_bundle_path=(
+                    str(ragflow_settings.ca_bundle_path)
+                    if ragflow_settings.ca_bundle_path is not None
+                    else None
+                ),
             )
             model = BailianChatModelAdapter(ModelSettings.from_env())
             workflow_model = model

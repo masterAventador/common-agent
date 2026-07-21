@@ -47,6 +47,7 @@ for expected in \
   'bash infra/ragflow/test-manage.sh' \
   'bash infra/platform/test-manage.sh' \
   'bash infra/backup/test-manage.sh' \
+  'bash infra/production/test-manage.sh' \
   './scripts/test-dev.sh' \
   './scripts/test-real.sh' \
   './scripts/test-ci.sh' \

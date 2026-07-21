@@ -53,6 +53,28 @@ def test_owned_ragflow_client_ignores_system_proxy(monkeypatch: pytest.MonkeyPat
     assert client_options["trust_env"] is False
 
 
+def test_owned_ragflow_client_uses_explicit_private_ca_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client_options: dict[str, object] = {}
+
+    class ClientProbe:
+        def __init__(self, **kwargs: object) -> None:
+            client_options.update(kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", ClientProbe)
+
+    RagFlowKnowledgeService(
+        base_url="https://ragflow.internal:9443",
+        api_key="test-key",
+        expected_version="v0.25.6",
+        ca_bundle_path="/run/common-agent/tls/ca-bundle.crt",
+    )
+
+    assert client_options["verify"] == "/run/common-agent/tls/ca-bundle.crt"
+    assert client_options["trust_env"] is False
+
+
 def test_ragflow_requests_forward_trace_context_without_exposing_credentials() -> None:
     captured: httpx.Request | None = None
 

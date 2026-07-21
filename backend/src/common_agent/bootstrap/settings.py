@@ -17,6 +17,24 @@ class ConfigurationError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeEnvironmentSettings:
+    environment: Literal["local", "production"]
+
+    @classmethod
+    def from_env(cls) -> RuntimeEnvironmentSettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> RuntimeEnvironmentSettings:
+        environment = values.get("COMMON_AGENT_RUNTIME_ENV", "local").strip().lower()
+        if environment == "local":
+            return cls(environment="local")
+        if environment == "production":
+            return cls(environment="production")
+        raise ConfigurationError("COMMON_AGENT_RUNTIME_ENV must be local or production")
+
+
+@dataclass(frozen=True, slots=True)
 class ApiSettings:
     host: str
     port: int
@@ -27,9 +45,15 @@ class ApiSettings:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> ApiSettings:
+        runtime = RuntimeEnvironmentSettings.from_mapping(values)
         host = values.get("COMMON_AGENT_API_HOST", "127.0.0.1")
-        if host not in {"127.0.0.1", "::1", "localhost"}:
-            raise ConfigurationError("COMMON_AGENT_API_HOST must be a loopback address")
+        if runtime.environment == "local":
+            if host not in {"127.0.0.1", "::1", "localhost"}:
+                raise ConfigurationError("COMMON_AGENT_API_HOST must be a loopback address")
+        elif host not in {"0.0.0.0", "::"}:
+            raise ConfigurationError(
+                "COMMON_AGENT_API_HOST must be a container wildcard address in production"
+            )
 
         raw_port = values.get("COMMON_AGENT_API_PORT", "18200")
         try:
@@ -53,6 +77,7 @@ class DatabaseSettings:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> DatabaseSettings:
+        runtime = RuntimeEnvironmentSettings.from_mapping(values)
         configured = values.get(
             "COMMON_AGENT_DATABASE_URL",
             "mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/"
@@ -61,8 +86,13 @@ class DatabaseSettings:
         parsed = urlparse(configured)
         if parsed.scheme != "mysql+aiomysql":
             raise ConfigurationError("COMMON_AGENT_DATABASE_URL must use mysql+aiomysql")
-        if parsed.hostname not in {"127.0.0.1", "::1", "localhost"}:
-            raise ConfigurationError("COMMON_AGENT_DATABASE_URL must use a loopback host")
+        if runtime.environment == "local":
+            if parsed.hostname not in {"127.0.0.1", "::1", "localhost"}:
+                raise ConfigurationError("COMMON_AGENT_DATABASE_URL must use a loopback host")
+        elif not parsed.hostname or parsed.hostname in {"127.0.0.1", "::1", "localhost"}:
+            raise ConfigurationError(
+                "COMMON_AGENT_DATABASE_URL must use a non-loopback service host in production"
+            )
         try:
             port = parsed.port
         except ValueError as error:
@@ -89,6 +119,7 @@ class CorsSettings:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> CorsSettings:
+        runtime = RuntimeEnvironmentSettings.from_mapping(values)
         configured = values.get("COMMON_AGENT_CORS_ORIGINS", "http://127.0.0.1:18280")
         origins = tuple(
             origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()
@@ -98,12 +129,29 @@ class CorsSettings:
 
         for origin in origins:
             parsed = urlparse(origin)
-            if (
-                parsed.scheme not in {"http", "https"}
-                or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
+            if runtime.environment == "local":
+                if (
+                    parsed.scheme not in {"http", "https"}
+                    or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
+                    or parsed.path not in {"", "/"}
+                ):
+                    raise ConfigurationError(
+                        "COMMON_AGENT_CORS_ORIGINS must contain loopback origins"
+                    )
+            elif (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.hostname in {"127.0.0.1", "::1", "localhost"}
+                or parsed.username is not None
+                or parsed.password is not None
                 or parsed.path not in {"", "/"}
+                or parsed.params
+                or parsed.query
+                or parsed.fragment
             ):
-                raise ConfigurationError("COMMON_AGENT_CORS_ORIGINS must contain loopback origins")
+                raise ConfigurationError(
+                    "COMMON_AGENT_CORS_ORIGINS must contain secure production origins"
+                )
 
         return cls(origins=origins)
 
@@ -154,6 +202,17 @@ class AuthSettings:
                 "COMMON_AGENT_AUTH_SESSION_ABSOLUTE_SECONDS must not be shorter than idle time"
             )
 
+        cookie_secure = _strict_bool(
+            values,
+            "COMMON_AGENT_AUTH_COOKIE_SECURE",
+            default=False,
+        )
+        if (
+            RuntimeEnvironmentSettings.from_mapping(values).environment == "production"
+            and not cookie_secure
+        ):
+            raise ConfigurationError("COMMON_AGENT_AUTH_COOKIE_SECURE must be true in production")
+
         return cls(
             bootstrap_token=SecretStr(raw_bootstrap_token),
             session_idle_seconds=session_idle_seconds,
@@ -172,11 +231,7 @@ class AuthSettings:
                 minimum=3,
                 maximum=20,
             ),
-            cookie_secure=_strict_bool(
-                values,
-                "COMMON_AGENT_AUTH_COOKIE_SECURE",
-                default=False,
-            ),
+            cookie_secure=cookie_secure,
         )
 
 
@@ -307,6 +362,7 @@ class IntegrationModeSettings:
 class RagFlowSettings:
     base_url: str
     api_key: SecretStr
+    ca_bundle_path: Path | None
     expected_version: str
     embedding_model: str
     rerank_model: str
@@ -318,23 +374,42 @@ class RagFlowSettings:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> RagFlowSettings:
+        runtime = RuntimeEnvironmentSettings.from_mapping(values)
         base_url = values.get("RAGFLOW_BASE_URL", "http://127.0.0.1:19380").strip().rstrip("/")
         parsed = urlparse(base_url)
         try:
             port = parsed.port
         except ValueError as error:
             raise ConfigurationError("RAGFLOW_BASE_URL must be a loopback HTTP(S) URL") from error
-        if (
-            parsed.scheme not in {"http", "https"}
-            or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
-            or port is None
+        invalid_common = (
+            port is None
             or parsed.username is not None
             or parsed.password is not None
             or parsed.path not in {"", "/"}
-            or parsed.query
-            or parsed.fragment
+            or bool(parsed.query)
+            or bool(parsed.fragment)
+        )
+        if runtime.environment == "local":
+            if (
+                parsed.scheme not in {"http", "https"}
+                or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
+                or invalid_common
+            ):
+                raise ConfigurationError("RAGFLOW_BASE_URL must be a loopback HTTP(S) URL")
+        elif (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.hostname in {"127.0.0.1", "::1", "localhost"}
+            or invalid_common
         ):
-            raise ConfigurationError("RAGFLOW_BASE_URL must be a loopback HTTP(S) URL")
+            raise ConfigurationError("RAGFLOW_BASE_URL must be a secure production service URL")
+
+        raw_ca_bundle = values.get("RAGFLOW_CA_BUNDLE", "").strip()
+        ca_bundle_path = Path(raw_ca_bundle) if raw_ca_bundle else None
+        if ca_bundle_path is not None and not ca_bundle_path.is_absolute():
+            raise ConfigurationError("RAGFLOW_CA_BUNDLE must be an absolute path")
+        if runtime.environment == "production" and ca_bundle_path is None:
+            raise ConfigurationError("RAGFLOW_CA_BUNDLE is required in production")
 
         expected_version = values.get("RAGFLOW_EXPECTED_VERSION", "v0.25.6").strip()
         if not expected_version:
@@ -363,6 +438,7 @@ class RagFlowSettings:
         return cls(
             base_url=base_url,
             api_key=SecretStr(values.get("RAGFLOW_API_KEY", "").strip()),
+            ca_bundle_path=ca_bundle_path,
             expected_version=expected_version,
             embedding_model=embedding_model,
             rerank_model=rerank_model,

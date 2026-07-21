@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from common_agent.bootstrap.settings import (
@@ -8,6 +10,7 @@ from common_agent.bootstrap.settings import (
     DatabaseSettings,
     IntegrationModeSettings,
     RagFlowSettings,
+    RuntimeEnvironmentSettings,
 )
 
 
@@ -39,6 +42,90 @@ def test_api_settings_reject_invalid_port(port: str) -> None:
 def test_api_settings_reject_public_bind_address() -> None:
     with pytest.raises(ConfigurationError, match="loopback"):
         ApiSettings.from_mapping({"COMMON_AGENT_API_HOST": "0.0.0.0"})
+
+
+def test_production_runtime_requires_container_bind_and_secure_service_addresses() -> None:
+    values = {
+        "COMMON_AGENT_RUNTIME_ENV": "production",
+        "COMMON_AGENT_API_HOST": "0.0.0.0",
+        "COMMON_AGENT_API_PORT": "8000",
+        "COMMON_AGENT_DATABASE_URL": (
+            "mysql+aiomysql://common_agent:secret@platform-mysql:3306/common_agent"
+        ),
+        "COMMON_AGENT_CORS_ORIGINS": "https://agent.example.com",
+        "COMMON_AGENT_AUTH_COOKIE_SECURE": "true",
+        "RAGFLOW_BASE_URL": "https://ragflow.internal:9380",
+        "RAGFLOW_CA_BUNDLE": "/run/common-agent/tls/ca-bundle.crt",
+    }
+
+    assert RuntimeEnvironmentSettings.from_mapping(values).environment == "production"
+    assert ApiSettings.from_mapping(values).host == "0.0.0.0"
+    assert DatabaseSettings.from_mapping(values).url == values["COMMON_AGENT_DATABASE_URL"]
+    assert CorsSettings.from_mapping(values).origins == ("https://agent.example.com",)
+    assert AuthSettings.from_mapping(values).cookie_secure is True
+    assert RagFlowSettings.from_mapping(values).base_url == "https://ragflow.internal:9380"
+    assert RagFlowSettings.from_mapping(values).ca_bundle_path == Path(
+        "/run/common-agent/tls/ca-bundle.crt"
+    )
+
+
+@pytest.mark.parametrize(
+    ("settings_type", "values", "message"),
+    [
+        (
+            ApiSettings,
+            {"COMMON_AGENT_RUNTIME_ENV": "production", "COMMON_AGENT_API_HOST": "127.0.0.1"},
+            "COMMON_AGENT_API_HOST",
+        ),
+        (
+            DatabaseSettings,
+            {
+                "COMMON_AGENT_RUNTIME_ENV": "production",
+                "COMMON_AGENT_DATABASE_URL": (
+                    "mysql+aiomysql://common_agent:secret@127.0.0.1:3306/common_agent"
+                ),
+            },
+            "COMMON_AGENT_DATABASE_URL",
+        ),
+        (
+            CorsSettings,
+            {
+                "COMMON_AGENT_RUNTIME_ENV": "production",
+                "COMMON_AGENT_CORS_ORIGINS": "http://agent.example.com",
+            },
+            "COMMON_AGENT_CORS_ORIGINS",
+        ),
+        (
+            AuthSettings,
+            {
+                "COMMON_AGENT_RUNTIME_ENV": "production",
+                "COMMON_AGENT_AUTH_COOKIE_SECURE": "false",
+            },
+            "COMMON_AGENT_AUTH_COOKIE_SECURE",
+        ),
+        (
+            RagFlowSettings,
+            {
+                "COMMON_AGENT_RUNTIME_ENV": "production",
+                "RAGFLOW_BASE_URL": "http://ragflow.internal:9380",
+            },
+            "RAGFLOW_BASE_URL",
+        ),
+    ],
+)
+def test_production_runtime_rejects_local_or_insecure_addresses(
+    settings_type: type[object],
+    values: dict[str, str],
+    message: str,
+) -> None:
+    with pytest.raises(ConfigurationError, match=message):
+        settings_type.from_mapping(values)  # type: ignore[attr-defined]
+
+
+def test_runtime_environment_defaults_local_and_rejects_unknown_values() -> None:
+    assert RuntimeEnvironmentSettings.from_mapping({}).environment == "local"
+    with pytest.raises(ConfigurationError, match="COMMON_AGENT_RUNTIME_ENV"):
+        RuntimeEnvironmentSettings.from_mapping({"COMMON_AGENT_RUNTIME_ENV": "staging"})
 
 
 def test_database_settings_default_to_project_local_mysql() -> None:

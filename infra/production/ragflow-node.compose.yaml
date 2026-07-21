@@ -1,0 +1,52 @@
+name: common-agent-production-ragflow-edge
+
+services:
+  ragflow-edge:
+    image: nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284
+    container_name: common-agent-production-ragflow-edge
+    user: "101:101"
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - ${COMMON_AGENT_RAGFLOW_HTTPS_BIND:-127.0.0.1}:${COMMON_AGENT_RAGFLOW_HTTPS_PORT:-19443}:9443
+    networks:
+      - ragflow-private
+    volumes:
+      - type: bind
+        source: ${COMMON_AGENT_RAGFLOW_EDGE_CONFIG:?COMMON_AGENT_RAGFLOW_EDGE_CONFIG is required}
+        target: /etc/nginx/nginx.conf
+        read_only: true
+    secrets:
+      - ragflow-cert
+      - ragflow-key
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    mem_limit: 128m
+    cpus: 0.25
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --spider
+        - --no-check-certificate
+        - https://127.0.0.1:9443/api/v1/system/version
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+networks:
+  ragflow-private:
+    name: ${COMMON_AGENT_RAGFLOW_NETWORK:-common-agent-dev_ragflow}
+    external: true
+
+secrets:
+  ragflow-cert:
+    file: ${COMMON_AGENT_RAGFLOW_CERT:?COMMON_AGENT_RAGFLOW_CERT is required}
+  ragflow-key:
+    file: ${COMMON_AGENT_RAGFLOW_KEY:?COMMON_AGENT_RAGFLOW_KEY is required}

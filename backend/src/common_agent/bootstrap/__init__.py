@@ -8,6 +8,7 @@ from common_agent.bootstrap.settings import (
     IntegrationModeSettings,
     ModelSettings,
     RagFlowSettings,
+    RuntimeEnvironmentSettings,
     WorkerSettings,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "IntegrationModeSettings",
     "ModelSettings",
     "RagFlowSettings",
+    "RuntimeEnvironmentSettings",
     "WorkerSettings",
 ]

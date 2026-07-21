@@ -1,0 +1,10 @@
+services:
+  ragflow-edge:
+    networks:
+      - app-private
+      - ragflow-private
+
+networks:
+  app-private:
+    name: common-agent-production-private
+    external: true

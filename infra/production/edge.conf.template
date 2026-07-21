@@ -1,0 +1,42 @@
+pid /tmp/nginx.pid;
+worker_processes auto;
+
+events {
+  worker_connections 1024;
+}
+
+http {
+  access_log /dev/stdout;
+  error_log /dev/stderr warn;
+  server_tokens off;
+
+  client_body_temp_path /tmp/client_temp;
+  proxy_temp_path /tmp/proxy_temp;
+  fastcgi_temp_path /tmp/fastcgi_temp;
+  uwsgi_temp_path /tmp/uwsgi_temp;
+  scgi_temp_path /tmp/scgi_temp;
+
+  upstream common_agent_api {
+    server api-{{ACTIVE_SLOT}}:8000;
+  }
+
+  upstream common_agent_web {
+    server web-{{ACTIVE_SLOT}}:8080;
+  }
+
+  server {
+    listen 9443 ssl;
+    ssl_certificate /run/secrets/edge-cert;
+    ssl_certificate_key /run/secrets/edge-key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+
+    location = /edge-health {
+      access_log off;
+      add_header Content-Type text/plain;
+      return 200 "ok\n";
+    }
+
+    include /etc/nginx/conf.d/common-agent-web.conf;
+  }
+}

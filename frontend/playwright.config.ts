@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const hostResolverRules = process.env.COMMON_AGENT_E2E_HOST_RESOLVER_RULES?.trim();
+
 export default defineConfig({
   testDir: "./e2e",
   outputDir: process.env.COMMON_AGENT_E2E_ARTIFACT_DIR ?? "./test-results",
@@ -14,10 +16,12 @@ export default defineConfig({
   },
   use: {
     baseURL: process.env.COMMON_AGENT_E2E_FRONTEND_URL ?? "http://127.0.0.1:18280",
+    ignoreHTTPSErrors: process.env.COMMON_AGENT_E2E_IGNORE_HTTPS_ERRORS === "true",
     actionTimeout: 15_000,
     headless: true,
     launchOptions: {
       channel: "chromium-headless-shell",
+      args: hostResolverRules ? [`--host-resolver-rules=${hostResolverRules}`] : [],
     },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",

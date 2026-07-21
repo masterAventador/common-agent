@@ -1,0 +1,251 @@
+name: common-agent-production
+
+x-service-security: &service-security
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-app-environment: &app-environment
+  COMMON_AGENT_RUNTIME_ENV: production
+  COMMON_AGENT_API_HOST: 0.0.0.0
+  COMMON_AGENT_API_PORT: "8000"
+  SSL_CERT_FILE: /run/common-agent/tls/ca-bundle.crt
+
+x-api: &api
+  <<: *service-security
+  image: ${COMMON_AGENT_API_IMAGE:?COMMON_AGENT_API_IMAGE must be an immutable digest}
+  restart: unless-stopped
+  env_file:
+    - ${COMMON_AGENT_CONFIG_FILE:?COMMON_AGENT_CONFIG_FILE is required}
+    - ${COMMON_AGENT_SECRETS_FILE:?COMMON_AGENT_SECRETS_FILE is required}
+  environment: *app-environment
+  command: ["python", "-m", "common_agent"]
+  depends_on:
+    platform-mysql:
+      condition: service_healthy
+  networks:
+    - app-private
+    - app-egress
+  volumes:
+    - type: bind
+      source: ${COMMON_AGENT_CA_BUNDLE:?COMMON_AGENT_CA_BUNDLE is required}
+      target: /run/common-agent/tls/ca-bundle.crt
+      read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  mem_limit: 5g
+  cpus: 2.0
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=2)
+    interval: 10s
+    timeout: 3s
+    retries: 12
+    start_period: 30s
+  stop_grace_period: 30s
+
+x-worker: &worker
+  <<: *service-security
+  image: ${COMMON_AGENT_API_IMAGE:?COMMON_AGENT_API_IMAGE must be an immutable digest}
+  restart: unless-stopped
+  env_file:
+    - ${COMMON_AGENT_CONFIG_FILE:?COMMON_AGENT_CONFIG_FILE is required}
+    - ${COMMON_AGENT_SECRETS_FILE:?COMMON_AGENT_SECRETS_FILE is required}
+  environment: *app-environment
+  command: ["python", "-m", "common_agent.worker_main"]
+  depends_on:
+    platform-mysql:
+      condition: service_healthy
+  networks:
+    - app-private
+    - app-egress
+  volumes:
+    - type: bind
+      source: ${COMMON_AGENT_CA_BUNDLE:?COMMON_AGENT_CA_BUNDLE is required}
+      target: /run/common-agent/tls/ca-bundle.crt
+      read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  mem_limit: 5g
+  cpus: 2.0
+  healthcheck:
+    test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+    interval: 15s
+    timeout: 3s
+    retries: 4
+    start_period: 10s
+  stop_grace_period: 90s
+
+x-web: &web
+  <<: *service-security
+  image: ${COMMON_AGENT_WEB_IMAGE:?COMMON_AGENT_WEB_IMAGE must be an immutable digest}
+  restart: unless-stopped
+  networks:
+    - app-private
+  tmpfs:
+    - /tmp:size=32m,mode=1777
+  mem_limit: 128m
+  cpus: 0.25
+  healthcheck:
+    test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/healthz"]
+    interval: 10s
+    timeout: 3s
+    retries: 6
+    start_period: 5s
+
+services:
+  platform-mysql:
+    image: mysql:8.4.10@sha256:c592c15aaf4a1961e15d82eb31ea5987dda862d1c4b1e93424438c0e91dc1f8d
+    container_name: common-agent-production-platform-mysql
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    env_file:
+      - ${COMMON_AGENT_SECRETS_FILE:?COMMON_AGENT_SECRETS_FILE is required}
+    command:
+      - --disable-log-bin
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --max-connections=300
+    networks:
+      - app-private
+    volumes:
+      - platform-mysql-data:/var/lib/mysql
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+      - /var/run/mysqld:size=32m,uid=999,gid=999,mode=0755
+    mem_limit: 1536m
+    cpus: 1.0
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    stop_grace_period: 60s
+
+  migration:
+    <<: *service-security
+    profiles: ["operations"]
+    image: ${COMMON_AGENT_API_IMAGE:?COMMON_AGENT_API_IMAGE must be an immutable digest}
+    env_file:
+      - ${COMMON_AGENT_CONFIG_FILE:?COMMON_AGENT_CONFIG_FILE is required}
+      - ${COMMON_AGENT_SECRETS_FILE:?COMMON_AGENT_SECRETS_FILE is required}
+    environment: *app-environment
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      platform-mysql:
+        condition: service_healthy
+    networks:
+      - app-private
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    mem_limit: 512m
+    cpus: 0.5
+    restart: "no"
+
+  api-blue:
+    <<: *api
+    profiles: ["blue"]
+    container_name: common-agent-production-api-blue
+
+  worker-blue:
+    <<: *worker
+    profiles: ["blue"]
+    container_name: common-agent-production-worker-blue
+
+  web-blue:
+    <<: *web
+    profiles: ["blue"]
+    container_name: common-agent-production-web-blue
+
+  api-green:
+    <<: *api
+    profiles: ["green"]
+    container_name: common-agent-production-api-green
+
+  worker-green:
+    <<: *worker
+    profiles: ["green"]
+    container_name: common-agent-production-worker-green
+
+  web-green:
+    <<: *web
+    profiles: ["green"]
+    container_name: common-agent-production-web-green
+
+  edge:
+    <<: *service-security
+    image: nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284
+    container_name: common-agent-production-edge
+    user: "101:101"
+    restart: unless-stopped
+    ports:
+      - ${COMMON_AGENT_HTTPS_BIND:-127.0.0.1}:${COMMON_AGENT_HTTPS_PORT:-18443}:9443
+    networks:
+      - edge-public
+      - app-private
+    volumes:
+      - type: bind
+        source: ${COMMON_AGENT_EDGE_CONFIG:?COMMON_AGENT_EDGE_CONFIG is required}
+        target: /etc/nginx/nginx.conf
+        read_only: true
+      - type: bind
+        source: ${COMMON_AGENT_WEB_CONFIG:?COMMON_AGENT_WEB_CONFIG is required}
+        target: /etc/nginx/conf.d/common-agent-web.conf
+        read_only: true
+    secrets:
+      - edge-cert
+      - edge-key
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    mem_limit: 128m
+    cpus: 0.25
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --spider
+        - --no-check-certificate
+        - https://127.0.0.1:9443/edge-health
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    stop_grace_period: 15s
+
+networks:
+  edge-public:
+    name: common-agent-production-edge-public
+  app-egress:
+    name: common-agent-production-egress
+  app-private:
+    name: common-agent-production-private
+    internal: true
+
+volumes:
+  platform-mysql-data:
+    name: common-agent-production-platform-mysql-data
+
+secrets:
+  edge-cert:
+    file: ${COMMON_AGENT_EDGE_CERT:?COMMON_AGENT_EDGE_CERT is required}
+  edge-key:
+    file: ${COMMON_AGENT_EDGE_KEY:?COMMON_AGENT_EDGE_KEY is required}
