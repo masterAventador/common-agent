@@ -27,6 +27,7 @@ class AuditAction(StrEnum):
     MODEL_CONFIGURATION_VERIFIED = "model.configuration.verified"
     KNOWLEDGE_BASE_CREATED = "knowledge.base.created"
     KNOWLEDGE_DOCUMENT_UPLOADED = "knowledge.document.uploaded"
+    KNOWLEDGE_DOCUMENT_RETRY_STARTED = "knowledge.document.retry_started"
     RESOURCE_DELETED = "resource.deleted"
     CONVERSATION_REPLY_STARTED = "conversation.reply.started"
     WORKFLOW_CONFIGURATION_UPDATED = "workflow.configuration.updated"

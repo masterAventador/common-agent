@@ -41,13 +41,13 @@ test("creates a generic knowledge base and shows real completed and failed parsi
   await expect(page.locator(".knowledge-base-item", { hasText: knowledgeBaseName })).toBeVisible();
 
   await page
-    .getByLabel("选择文档")
+    .getByLabel("选择或拖拽文档")
     .setInputFiles(path.join(fixtureDirectory, "generic-knowledge.txt"));
   const uploadedResponse = page.waitForResponse(
     (response) =>
       response.url().includes("/documents") && response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "上传文档" }).click();
+  await page.getByRole("button", { name: "开始上传" }).click();
   expect((await uploadedResponse).status()).toBe(202);
 
   const completedRow = page.getByRole("row").filter({ hasText: "generic-knowledge.txt" });
@@ -58,7 +58,7 @@ test("creates a generic knowledge base and shows real completed and failed parsi
   await expect(completedRow.getByText("已完成")).toBeVisible();
 
   await page
-    .getByLabel("选择文档")
+    .getByLabel("选择或拖拽文档")
     .setInputFiles({
       name: "cancelled-parsing.txt",
       mimeType: "text/plain",
@@ -68,7 +68,7 @@ test("creates a generic knowledge base and shows real completed and failed parsi
     (response) =>
       response.url().includes("/documents") && response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "上传文档" }).click();
+  await page.getByRole("button", { name: "开始上传" }).click();
   const failedResponse = await failedUploadResponse;
   expect(failedResponse.status()).toBe(202);
   const failedUpload = (await failedResponse.json()) as {

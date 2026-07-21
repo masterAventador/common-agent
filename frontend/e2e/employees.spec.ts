@@ -42,13 +42,13 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
   await expect(page.locator(".knowledge-base-item", { hasText: knowledgeBaseName })).toBeVisible();
 
   await page
-    .getByLabel("选择文档")
+    .getByLabel("选择或拖拽文档")
     .setInputFiles(path.join(fixtureDirectory, "generic-knowledge.txt"));
   const uploadedResponse = page.waitForResponse(
     (response) =>
       response.url().includes("/documents") && response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "上传文档" }).click();
+  await page.getByRole("button", { name: "开始上传" }).click();
   expect((await uploadedResponse).status()).toBe(202);
   const documentRow = page.getByRole("row").filter({ hasText: "generic-knowledge.txt" });
   await expect(documentRow.getByText("已完成")).toBeVisible({ timeout: 180_000 });

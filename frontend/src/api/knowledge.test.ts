@@ -8,6 +8,7 @@ import {
   fetchKnowledgeDocuments,
   parseKnowledgeBasesResponse,
   parseKnowledgeDocumentsResponse,
+  retryKnowledgeDocument,
   uploadKnowledgeDocument,
 } from "./knowledge";
 
@@ -99,5 +100,22 @@ describe("knowledge API boundary", () => {
     const form = vi.mocked(apiClient.post).mock.calls[0]?.[1];
     expect(form).toBeInstanceOf(FormData);
     expect((form as FormData).get("file")).toBe(file);
+  });
+
+  it("retries parsing through the encoded platform document route", async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { ...document, parsing_status: "parsing" },
+    });
+
+    await expect(retryKnowledgeDocument("kb/with space", "doc/with space")).resolves.toEqual({
+      ...document,
+      parsing_status: "parsing",
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      "/knowledge-bases/kb%2Fwith%20space/documents/doc%2Fwith%20space/retry",
+      undefined,
+      expect.objectContaining({ timeout: 60_000 }),
+    );
   });
 });

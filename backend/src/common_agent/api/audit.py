@@ -278,6 +278,13 @@ def _classify(
             None,
         ),
         (
+            "POST",
+            r"/api/v1/knowledge-bases/[^/]+/documents/[^/]+/retry",
+            AuditAction.KNOWLEDGE_DOCUMENT_RETRY_STARTED,
+            AuditResourceType.KNOWLEDGE_DOCUMENT,
+            "document_id",
+        ),
+        (
             "PUT",
             r"/api/v1/workflows/[^/]+",
             AuditAction.WORKFLOW_CONFIGURATION_UPDATED,

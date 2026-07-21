@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any, Literal, cast
 
@@ -23,6 +24,7 @@ from common_agent.knowledge.base import (
     KnowledgeBaseDeleteResultUnknown,
     KnowledgeBaseNotFound,
     KnowledgeConfigurationMissing,
+    KnowledgeDocumentRetryResultUnknown,
     KnowledgeDocumentUploadFailed,
     KnowledgeDocumentUploadResultUnknown,
     KnowledgeProviderResponseInvalid,
@@ -326,6 +328,24 @@ class RagFlowKnowledgeService:
         payload = _validate(_DOCUMENT_LIST_ADAPTER, data)
         return tuple(self._document(item, knowledge_base_id) for item in payload.docs)
 
+    async def retry_document(
+        self,
+        knowledge_base_id: str,
+        document: KnowledgeDocument,
+    ) -> KnowledgeDocument:
+        await self._request(
+            "POST",
+            f"/api/v1/datasets/{knowledge_base_id}/chunks",
+            dataset_scoped=True,
+            failure_mode="retry",
+            json={"document_ids": [document.id]},
+        )
+        return replace(
+            document,
+            parsing_status=DocumentParsingStatus.PARSING,
+            error_code=None,
+        )
+
     async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult:
         data = await self._request(
             "POST",
@@ -368,7 +388,7 @@ class RagFlowKnowledgeService:
         path: str,
         *,
         dataset_scoped: bool = False,
-        failure_mode: Literal["standard", "upload", "post_upload", "delete"] = "standard",
+        failure_mode: Literal["standard", "upload", "post_upload", "retry", "delete"] = "standard",
         include_total: bool = False,
         **kwargs: Any,
     ) -> Any:
@@ -381,6 +401,8 @@ class RagFlowKnowledgeService:
                 **kwargs,
             )
         except httpx.HTTPError as error:
+            if failure_mode == "retry":
+                raise KnowledgeDocumentRetryResultUnknown() from error
             if failure_mode in {"upload", "post_upload"}:
                 raise KnowledgeDocumentUploadResultUnknown() from error
             if failure_mode == "delete":
@@ -388,6 +410,8 @@ class RagFlowKnowledgeService:
             raise KnowledgeServiceUnavailable() from error
 
         if response.status_code >= 500:
+            if failure_mode == "retry":
+                raise KnowledgeDocumentRetryResultUnknown()
             if failure_mode in {"upload", "post_upload"}:
                 raise KnowledgeDocumentUploadResultUnknown()
             if failure_mode == "delete":
@@ -398,6 +422,8 @@ class RagFlowKnowledgeService:
                 return None
             if failure_mode == "post_upload":
                 raise KnowledgeDocumentUploadResultUnknown()
+            if failure_mode == "retry":
+                raise KnowledgeDocumentRetryResultUnknown()
             if failure_mode == "upload":
                 raise KnowledgeDocumentUploadFailed()
             if dataset_scoped and response.status_code == 404:
@@ -407,6 +433,8 @@ class RagFlowKnowledgeService:
         try:
             raw = response.json()
         except (OverflowError, ValueError) as error:
+            if failure_mode == "retry":
+                raise KnowledgeDocumentRetryResultUnknown() from error
             if failure_mode in {"upload", "post_upload"}:
                 raise KnowledgeDocumentUploadResultUnknown() from error
             if failure_mode == "delete":
@@ -417,12 +445,16 @@ class RagFlowKnowledgeService:
         except KnowledgeProviderResponseInvalid as error:
             if failure_mode == "delete":
                 raise KnowledgeBaseDeleteResultUnknown() from error
+            if failure_mode == "retry":
+                raise KnowledgeDocumentRetryResultUnknown() from error
             raise
         if envelope.code != 0:
             if failure_mode == "delete" and envelope.code == 102:
                 return None
             if failure_mode == "post_upload":
                 raise KnowledgeDocumentUploadResultUnknown()
+            if failure_mode == "retry":
+                raise KnowledgeDocumentRetryResultUnknown()
             if failure_mode == "upload":
                 raise KnowledgeDocumentUploadFailed()
             if dataset_scoped and envelope.code == 102:

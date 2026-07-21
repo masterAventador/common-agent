@@ -34,13 +34,13 @@ test("seeds the isolated disaster-recovery source through the formal UI", async 
   expect((await createKnowledge).status()).toBe(201);
 
   await page
-    .getByLabel("选择文档")
+    .getByLabel("选择或拖拽文档")
     .setInputFiles(path.join(fixtureDirectory, "generic-knowledge.txt"));
   const upload = page.waitForResponse(
     (response) =>
       response.url().includes("/documents") && response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "上传文档" }).click();
+  await page.getByRole("button", { name: "开始上传" }).click();
   expect((await upload).status()).toBe(202);
   await expect(
     page.getByRole("row").filter({ hasText: "generic-knowledge.txt" }).getByText("已完成"),

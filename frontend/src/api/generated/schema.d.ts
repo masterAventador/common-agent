@@ -352,6 +352,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Document */
+        post: operations["retry_document_api_v1_knowledge_bases__knowledge_base_id__documents__document_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/messages/{message_id}/retry": {
         parameters: {
             query?: never;
@@ -680,7 +697,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
+        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
         /** AuditEventResponse */
         AuditEventResponse: {
             action: components["schemas"]["AuditAction"];
@@ -3621,6 +3638,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    retry_document_api_v1_knowledge_bases__knowledge_base_id__documents__document_id__retry_post: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                knowledge_base_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeDocumentResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
             /** @description Bad Gateway */

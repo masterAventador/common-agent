@@ -8,6 +8,7 @@ import pytest
 
 from common_agent.domain.knowledge import (
     CreateKnowledgeBaseRequest,
+    DocumentParsingStatus,
     DocumentUpload,
     KnowledgeBaseSummary,
     KnowledgeDocument,
@@ -16,7 +17,11 @@ from common_agent.domain.knowledge import (
     KnowledgeServiceAvailability,
     KnowledgeServiceStatus,
 )
-from common_agent.knowledge.base import KnowledgeBaseNotFound
+from common_agent.knowledge.base import (
+    KnowledgeBaseNotFound,
+    KnowledgeDocumentNotFound,
+    KnowledgeDocumentRetryRejected,
+)
 from common_agent.knowledge.service import (
     MAX_DOCUMENT_SIZE_BYTES,
     DocumentTooLarge,
@@ -105,6 +110,41 @@ class _KnowledgeProbe:
         return self.retrieval_result
 
 
+class _RetryKnowledgeProbe(_KnowledgeProbe):
+    def __init__(self) -> None:
+        super().__init__()
+        self.documents: tuple[KnowledgeDocument, ...] = (
+            KnowledgeDocument(
+                id="doc-failed",
+                knowledge_base_id="kb-1",
+                name="failed.pdf",
+                size_bytes=128,
+                parsing_status=DocumentParsingStatus.FAILED,
+                error_code="document_parsing_failed",
+            ),
+        )
+        self.retried: list[tuple[str, KnowledgeDocument]] = []
+
+    async def list_documents(self, knowledge_base_id: str) -> tuple[KnowledgeDocument, ...]:
+        assert knowledge_base_id == "kb-1"
+        return self.documents
+
+    async def retry_document(
+        self,
+        knowledge_base_id: str,
+        document: KnowledgeDocument,
+    ) -> KnowledgeDocument:
+        self.retried.append((knowledge_base_id, document))
+        return KnowledgeDocument(
+            id=document.id,
+            knowledge_base_id=knowledge_base_id,
+            name="failed.pdf",
+            size_bytes=128,
+            parsing_status=DocumentParsingStatus.PARSING,
+            error_code=None,
+        )
+
+
 class _OwnershipProbe:
     def __init__(self) -> None:
         self.values: dict[UUID, set[str]] = {}
@@ -182,6 +222,58 @@ def test_invalid_upload_is_rejected_before_calling_provider(
 
     asyncio.run(exercise())
     assert probe.uploads == []
+
+
+def test_retry_document_requires_owned_failed_document_before_calling_provider() -> None:
+    tenant_id = UUID("10000000-0000-4000-8000-000000000099")
+    probe = _RetryKnowledgeProbe()
+    ownership = _OwnershipProbe()
+    ownership.values = {tenant_id: {"kb-1"}}
+    service = KnowledgeBaseService(
+        probe,
+        ownership=ownership,
+        tenant_id_provider=lambda: tenant_id,
+    )
+
+    retried = asyncio.run(service.retry_document("kb-1", "doc-failed"))
+
+    assert retried.parsing_status is DocumentParsingStatus.PARSING
+    assert [(knowledge_base_id, document.id) for knowledge_base_id, document in probe.retried] == [
+        ("kb-1", "doc-failed")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("documents", "error_type"),
+    [
+        ((), KnowledgeDocumentNotFound),
+        (
+            (
+                KnowledgeDocument(
+                    id="doc-failed",
+                    knowledge_base_id="kb-1",
+                    name="completed.pdf",
+                    size_bytes=128,
+                    parsing_status=DocumentParsingStatus.COMPLETED,
+                    error_code=None,
+                ),
+            ),
+            KnowledgeDocumentRetryRejected,
+        ),
+    ],
+)
+def test_retry_document_rejects_missing_or_non_failed_document(
+    documents: tuple[KnowledgeDocument, ...],
+    error_type: type[Exception],
+) -> None:
+    probe = _RetryKnowledgeProbe()
+    probe.documents = documents
+    service = KnowledgeBaseService(probe)
+
+    with pytest.raises(error_type):
+        asyncio.run(service.retry_document("kb-1", "doc-failed"))
+
+    assert probe.retried == []
 
 
 def test_retrieve_checks_service_availability_before_calling_provider() -> None:

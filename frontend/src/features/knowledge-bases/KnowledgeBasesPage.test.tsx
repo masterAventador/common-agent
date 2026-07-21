@@ -158,8 +158,8 @@ describe("KnowledgeBasesPage", () => {
     expect(screen.getByText("parser_failed")).toBeInTheDocument();
 
     const file = new File(["shared knowledge"], "shared.txt", { type: "text/plain" });
-    await user.upload(screen.getByLabelText("选择文档"), file);
-    await user.click(screen.getByRole("button", { name: "上传文档" }));
+    await user.upload(screen.getByLabelText("选择或拖拽文档"), file);
+    await user.click(screen.getByRole("button", { name: "开始上传" }));
 
     await waitFor(() =>
       expect(knowledgeApi.uploadKnowledgeDocument).toHaveBeenCalledWith("kb-1", file),

@@ -13,6 +13,7 @@ from common_agent.domain.knowledge import (
     CreateKnowledgeBaseRequest,
     DocumentParsingStatus,
     DocumentUpload,
+    KnowledgeDocument,
     KnowledgeRetrievalRequest,
     KnowledgeServiceAvailability,
 )
@@ -279,6 +280,44 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
 
     _run(scenario())
     assert all(request.headers["authorization"] == "Bearer test-key" for request in requests)
+
+
+def test_ragflow_retries_failed_document_through_public_parse_endpoint() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "POST" and request.url.path == "/api/v1/datasets/kb-1/chunks":
+            assert json.loads(request.content) == {"document_ids": ["doc-failed"]}
+            return httpx.Response(200, json={"code": 0, "data": True})
+        raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
+
+    async def scenario() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://ragflow") as client:
+            service = RagFlowKnowledgeService(
+                base_url="http://ragflow",
+                api_key="test-key",
+                expected_version="v0.26.4",
+                client=client,
+            )
+            retried = await service.retry_document(
+                "kb-1",
+                KnowledgeDocument(
+                    id="doc-failed",
+                    knowledge_base_id="kb-1",
+                    name="failed.pdf",
+                    size_bytes=128,
+                    parsing_status=DocumentParsingStatus.FAILED,
+                    error_code="document_parsing_failed",
+                ),
+            )
+
+        assert retried.parsing_status is DocumentParsingStatus.PARSING
+        assert retried.error_code is None
+
+    _run(scenario())
+    assert len(requests) == 1
 
 
 def test_ragflow_dataset_pagination_translates_opaque_cursor_and_server_search() -> None:

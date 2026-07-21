@@ -21,15 +21,14 @@ import {
   Typography,
   type TableColumnsType,
 } from "antd";
-import { Database, FileText, Plus, RefreshCw, UploadCloud } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Database, FileText, Plus, RefreshCw } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
   fetchKnowledgeBases,
   fetchKnowledgeDocuments,
-  uploadKnowledgeDocument,
   type CreateKnowledgeBaseInput,
   type KnowledgeBase,
   type KnowledgeDocument,
@@ -40,11 +39,9 @@ import {
   ResourceDeleteButton,
 } from "../../components/ResourceDeleteButton";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
+import { KnowledgeUploadQueue } from "./KnowledgeUploadQueue";
 
 const { Text, Title } = Typography;
-const ACCEPTED_DOCUMENTS =
-  ".txt,.md,.markdown,.pdf,.docx,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
 const parsingStatus = {
   uploaded: { color: "default", label: "已上传" },
   parsing: { color: "processing", label: "解析中" },
@@ -99,8 +96,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
   const [deleteNotice, setDeleteNotice] = useState<string>();
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>();
-  const [selectedFile, setSelectedFile] = useState<File>();
-  const [fileInputKey, setFileInputKey] = useState(0);
+  const [uploadBusy, setUploadBusy] = useState(false);
   const [form] = Form.useForm<CreateKnowledgeBaseInput>();
 
   const knowledgeBases = useInfiniteQuery({
@@ -141,20 +137,12 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
     },
   });
 
-  const uploadMutation = useMutation({
-    mutationFn: async () => {
-      if (!activeId || !selectedFile) throw new Error("请先选择知识库和文档");
-      return uploadKnowledgeDocument(activeId, selectedFile);
-    },
-    onSuccess: async () => {
-      setSelectedFile(undefined);
-      setFileInputKey((value) => value + 1);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["knowledge-bases"] }),
-        queryClient.invalidateQueries({ queryKey: ["knowledge-bases", activeId, "documents"] }),
-      ]);
-    },
-  });
+  const refreshDocuments = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["knowledge-bases"] }),
+      queryClient.invalidateQueries({ queryKey: ["knowledge-bases", activeId, "documents"] }),
+    ]);
+  }, [activeId, queryClient]);
 
   const deleteMutation = useMutation({
     mutationFn: async (knowledgeBase: KnowledgeBase) => {
@@ -169,8 +157,6 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
         exact: true,
       });
       setSelectedId(remaining[0]?.id);
-      setSelectedFile(undefined);
-      setFileInputKey((value) => value + 1);
       setDeleteNotice(`知识库“${deleted.name}”已删除`);
       await queryClient.resetQueries({ queryKey: ["knowledge-bases"] });
     },
@@ -273,6 +259,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
                 <button
                   key={item.id}
                   type="button"
+                  disabled={uploadBusy}
                   className={`knowledge-base-item ${item.id === activeId ? "is-active" : ""}`}
                   onClick={() => setSelectedId(item.id)}
                 >
@@ -309,7 +296,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
                     resourceName={activeKnowledgeBase.name}
                     impact="RAGFlow 中的文档、切片和索引都会被永久删除。"
                     loading={deleteMutation.isPending}
-                    disabled={readOnly || deleteMutation.isPending || uploadMutation.isPending}
+                    disabled={readOnly || deleteMutation.isPending || uploadBusy}
                     onConfirm={() => deleteMutation.mutateAsync(activeKnowledgeBase)}
                   />
                 )}
@@ -323,38 +310,14 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
               </Space>
             }
           >
-            <Flex gap={12} align="center" wrap className="knowledge-upload-row">
-              <label className="knowledge-file-picker">
-                <UploadCloud aria-hidden="true" size={16} /> 选择文档
-                <input
-                  key={fileInputKey}
-                  type="file"
-                  aria-label="选择文档"
-                  disabled={readOnly}
-                  accept={ACCEPTED_DOCUMENTS}
-                  onChange={(event) => setSelectedFile(event.target.files?.[0])}
-                />
-              </label>
-              <Text type="secondary">{selectedFile?.name ?? "尚未选择文件（最大 20 MiB）"}</Text>
-              <Button
-                type="primary"
-                disabled={readOnly || !selectedFile}
-                loading={uploadMutation.isPending}
-                onClick={() => uploadMutation.mutate()}
-              >
-                上传文档
-              </Button>
-            </Flex>
-
-            {uploadMutation.isError && (
-              <Alert
-                type="error"
-                showIcon
-                closable
-                title="文档上传失败"
-                description={getErrorMessage(uploadMutation.error)}
-                className="knowledge-inline-alert"
-                onClose={() => uploadMutation.reset()}
+            {activeId && (
+              <KnowledgeUploadQueue
+                key={activeId}
+                knowledgeBaseId={activeId}
+                documents={documents.data ?? []}
+                readOnly={readOnly}
+                onBusyChange={setUploadBusy}
+                onDocumentsChanged={refreshDocuments}
               />
             )}
 

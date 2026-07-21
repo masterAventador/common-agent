@@ -65,6 +65,24 @@ class KnowledgeDocumentUploadResultUnknown(KnowledgeServiceError):
     retryable = False
 
 
+class KnowledgeDocumentNotFound(KnowledgeServiceError):
+    code = "knowledge_document_not_found"
+    message = "知识库文档不存在或已失效"
+    retryable = False
+
+
+class KnowledgeDocumentRetryRejected(KnowledgeServiceError):
+    code = "knowledge_document_retry_rejected"
+    message = "只有解析失败的文档可以重试"
+    retryable = False
+
+
+class KnowledgeDocumentRetryResultUnknown(KnowledgeServiceError):
+    code = "knowledge_document_retry_result_unknown"
+    message = "文档重试结果无法确认。请刷新文档列表后再决定是否重试"
+    retryable = False
+
+
 class KnowledgeBaseDeleteResultUnknown(KnowledgeServiceError):
     code = "knowledge_base_delete_result_unknown"
     message = "知识库删除结果无法确认。请刷新列表后再次删除以完成核对"
@@ -108,3 +126,12 @@ class PageableKnowledgeService(Protocol):
     async def page_knowledge_bases(
         self, page: ListPageRequest
     ) -> CursorPage[KnowledgeBaseSummary]: ...
+
+
+@runtime_checkable
+class RetryableKnowledgeService(Protocol):
+    async def retry_document(
+        self,
+        knowledge_base_id: str,
+        document: KnowledgeDocument,
+    ) -> KnowledgeDocument: ...

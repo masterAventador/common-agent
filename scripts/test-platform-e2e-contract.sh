@@ -61,6 +61,10 @@ grep -Fq 'e2e/knowledge-pagination.spec.ts' "${RUNNER}" || \
   fail "E2E 入口没有执行真实 RAGFlow 大分页页面用例"
 grep -Fq 'tests.support.knowledge_pagination_e2e_cleanup' "${RUNNER}" || \
   fail "知识库大分页 E2E 没有登记精确业务数据清理器"
+grep -Fq 'e2e/knowledge-batch.spec.ts' "${RUNNER}" || \
+  fail "E2E 入口没有执行知识库批量拖拽正式页面用例"
+grep -Fq 'tests.support.knowledge_batch_e2e_cleanup' "${RUNNER}" || \
+  fail "知识库批量拖拽 E2E 没有登记精确业务数据清理器"
 grep -Fq 'WORKER_LOG="${ARTIFACT_ROOT}/worker.log"' "${RUNNER}" || \
   fail "平台 E2E 没有保留独立 Worker 日志"
 grep -Fq 'python -m common_agent.worker_main' "${RUNNER}" || \

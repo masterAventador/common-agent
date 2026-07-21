@@ -90,13 +90,13 @@ test("completes the whole MVP from empty business data through one real user jou
   expect((await knowledgeResponse).status()).toBe(201);
 
   await page
-    .getByLabel("选择文档")
+    .getByLabel("选择或拖拽文档")
     .setInputFiles(path.join(fixtureDirectory, "generic-knowledge.txt"));
   const uploadResponse = page.waitForResponse(
     (response) =>
       response.url().includes("/documents") && response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "上传文档" }).click();
+  await page.getByRole("button", { name: "开始上传" }).click();
   expect((await uploadResponse).status()).toBe(202);
   const documentRow = page.getByRole("row").filter({ hasText: "generic-knowledge.txt" });
   await expect(documentRow.getByText("已完成")).toBeVisible({ timeout: 180_000 });

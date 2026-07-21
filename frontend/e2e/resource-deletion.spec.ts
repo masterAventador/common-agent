@@ -95,13 +95,13 @@ test("blocks live references, unbinds them, and deletes all four resources throu
   const knowledgeBase = (await createdKnowledgeResponse.json()) as { id: string };
 
   await page
-    .getByLabel("选择文档")
+    .getByLabel("选择或拖拽文档")
     .setInputFiles(path.join(fixtureDirectory, "generic-knowledge.txt"));
   const uploadResponse = page.waitForResponse(
     (response) =>
       response.url().includes("/documents") && response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "上传文档" }).click();
+  await page.getByRole("button", { name: "开始上传" }).click();
   expect((await uploadResponse).status()).toBe(202);
   await expect(
     page.getByRole("row").filter({ hasText: "generic-knowledge.txt" }).getByText("已完成"),

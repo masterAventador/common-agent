@@ -112,3 +112,19 @@ export async function uploadKnowledgeDocument(
     throw toApiClientError(error);
   }
 }
+
+export async function retryKnowledgeDocument(
+  knowledgeBaseId: string,
+  documentId: string,
+): Promise<KnowledgeDocument> {
+  try {
+    const response = await apiClient.post<unknown>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}/retry`,
+      undefined,
+      { timeout: 60_000 },
+    );
+    return parseKnowledgeDocumentResponse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}

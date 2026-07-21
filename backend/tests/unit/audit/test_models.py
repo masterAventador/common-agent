@@ -44,6 +44,7 @@ def _entry(**overrides: object) -> AuditEntry:
 def test_audit_contract_has_fixed_actions_and_no_payload_fields() -> None:
     assert AuditAction.AUTH_LOGIN.value == "auth.login"
     assert AuditAction.KNOWLEDGE_DOCUMENT_UPLOADED.value == "knowledge.document.uploaded"
+    assert AuditAction.KNOWLEDGE_DOCUMENT_RETRY_STARTED.value == "knowledge.document.retry_started"
     assert AuditAction.SECURITY_PERMISSION_DENIED.value == "security.permission.denied"
     assert AuditOutcome.DENIED.value == "denied"
 

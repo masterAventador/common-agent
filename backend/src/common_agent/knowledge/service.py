@@ -7,6 +7,7 @@ from uuid import UUID
 
 from common_agent.domain.knowledge import (
     CreateKnowledgeBaseRequest,
+    DocumentParsingStatus,
     DocumentUpload,
     KnowledgeBaseSummary,
     KnowledgeDocument,
@@ -17,10 +18,13 @@ from common_agent.domain.knowledge import (
 from common_agent.knowledge.base import (
     KnowledgeBaseNotFound,
     KnowledgeConfigurationMissing,
+    KnowledgeDocumentNotFound,
+    KnowledgeDocumentRetryRejected,
     KnowledgeService,
     KnowledgeServiceUnavailable,
     KnowledgeServiceVersionMismatch,
     PageableKnowledgeService,
+    RetryableKnowledgeService,
 )
 from common_agent.pagination import (
     CursorPage,
@@ -236,6 +240,23 @@ class KnowledgeBaseService:
         await self._ensure_available()
         await self._ensure_owned(knowledge_base_id)
         return await self._knowledge.upload_document(knowledge_base_id, upload)
+
+    async def retry_document(
+        self,
+        knowledge_base_id: str,
+        document_id: str,
+    ) -> KnowledgeDocument:
+        await self._ensure_available()
+        await self._ensure_owned(knowledge_base_id)
+        documents = await self._knowledge.list_documents(knowledge_base_id)
+        document = next((value for value in documents if value.id == document_id), None)
+        if document is None:
+            raise KnowledgeDocumentNotFound()
+        if document.parsing_status is not DocumentParsingStatus.FAILED:
+            raise KnowledgeDocumentRetryRejected()
+        if not isinstance(self._knowledge, RetryableKnowledgeService):
+            raise KnowledgeServiceUnavailable()
+        return await self._knowledge.retry_document(knowledge_base_id, document)
 
     async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult:
         await self._ensure_available()

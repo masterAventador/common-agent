@@ -40,13 +40,13 @@ test("runs two cited turns and automatically recovers an interrupted durable rep
   expect((await createdKnowledge).status()).toBe(201);
 
   await page
-    .getByLabel("选择文档")
+    .getByLabel("选择或拖拽文档")
     .setInputFiles(path.join(fixtureDirectory, "demo-chat-knowledge.txt"));
   const uploadedDocument = page.waitForResponse(
     (response) =>
       response.url().includes("/documents") && response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "上传文档" }).click();
+  await page.getByRole("button", { name: "开始上传" }).click();
   expect((await uploadedDocument).status()).toBe(202);
   const documentRow = page.getByRole("row").filter({ hasText: "demo-chat-knowledge.txt" });
   await expect(documentRow.getByText("已完成")).toBeVisible();

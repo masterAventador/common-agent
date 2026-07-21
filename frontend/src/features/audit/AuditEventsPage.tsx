@@ -43,6 +43,7 @@ const actionLabels: Record<AuditAction, string> = {
   "model.configuration.verified": "模型调用验证",
   "knowledge.base.created": "知识库创建",
   "knowledge.document.uploaded": "知识文档上传",
+  "knowledge.document.retry_started": "知识文档解析重试",
   "resource.deleted": "资源删除",
   "conversation.reply.started": "会话回复启动",
   "workflow.configuration.updated": "工作流配置更新",

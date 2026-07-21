@@ -31,6 +31,7 @@ class _RagFlowProbe:
     create_payloads: list[dict[str, Any]] = field(default_factory=list)
     upload_bodies: list[bytes] = field(default_factory=list)
     parse_payloads: list[dict[str, Any]] = field(default_factory=list)
+    document_run: str = "DONE"
 
 
 class _LoopbackHTTPServer(ThreadingHTTPServer):
@@ -93,7 +94,7 @@ def _handler(probe: _RagFlowProbe) -> type[BaseHTTPRequestHandler]:
                                     "id": "doc-1",
                                     "dataset_id": "kb-1",
                                     "name": "policy.md",
-                                    "run": "DONE",
+                                    "run": probe.document_run,
                                     "size": 12,
                                 }
                             ],
@@ -194,6 +195,8 @@ def test_knowledge_routes_use_formal_uvicorn_and_ragflow_adapter() -> None:
                 files={"file": ("policy.md", b"policy bytes", "text/markdown")},
             )
             documents = client.get("/api/v1/knowledge-bases/kb-1/documents")
+            probe.document_run = "FAIL"
+            retried = client.post("/api/v1/knowledge-bases/kb-1/documents/doc-1/retry")
     finally:
         asyncio.run(_clear_fake_ownerships())
 
@@ -216,6 +219,8 @@ def test_knowledge_routes_use_formal_uvicorn_and_ragflow_adapter() -> None:
     assert uploaded.json()["parsing_status"] == "parsing"
     assert documents.status_code == 200
     assert documents.json()[0]["parsing_status"] == "completed"
+    assert retried.status_code == 202
+    assert retried.json()["parsing_status"] == "parsing"
     assert probe.create_payloads == [
         {
             "name": "员工手册",
@@ -227,7 +232,10 @@ def test_knowledge_routes_use_formal_uvicorn_and_ragflow_adapter() -> None:
     ]
     assert len(probe.upload_bodies) == 1
     assert b'filename="policy.md"' in probe.upload_bodies[0]
-    assert probe.parse_payloads == [{"document_ids": ["doc-1"]}]
+    assert probe.parse_payloads == [
+        {"document_ids": ["doc-1"]},
+        {"document_ids": ["doc-1"]},
+    ]
 
 
 async def _clear_fake_ownerships() -> None:
@@ -284,14 +292,27 @@ def test_create_validation_and_missing_knowledge_base_use_safe_errors() -> None:
         running_api(TEST_DATABASE_URL, env_overrides=_ragflow_env(ragflow_url)) as api_url,
         authenticated_client(base_url=api_url, timeout=5) as client,
     ):
+        assert client.get("/api/v1/knowledge-bases").status_code == 200
         blank_name = client.post(
             "/api/v1/knowledge-bases",
             json={"name": "   ", "description": "invalid"},
         )
         missing = client.get("/api/v1/knowledge-bases/missing/documents")
+        completed_retry = client.post("/api/v1/knowledge-bases/kb-1/documents/doc-1/retry")
+        missing_document = client.post("/api/v1/knowledge-bases/kb-1/documents/missing/retry")
 
     assert_error_response(blank_name, status=422, code="validation_error")
     assert_error_response(missing, status=404, code="knowledge_base_not_found")
+    assert_error_response(
+        completed_retry,
+        status=409,
+        code="knowledge_document_retry_rejected",
+    )
+    assert_error_response(
+        missing_document,
+        status=404,
+        code="knowledge_document_not_found",
+    )
     assert "private upstream detail" not in missing.text
 
 

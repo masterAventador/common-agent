@@ -27,6 +27,9 @@ from common_agent.knowledge.base import (
     KnowledgeBaseDeleteResultUnknown,
     KnowledgeBaseNotFound,
     KnowledgeConfigurationMissing,
+    KnowledgeDocumentNotFound,
+    KnowledgeDocumentRetryRejected,
+    KnowledgeDocumentRetryResultUnknown,
     KnowledgeDocumentUploadFailed,
     KnowledgeDocumentUploadResultUnknown,
     KnowledgeProviderResponseInvalid,
@@ -118,8 +121,10 @@ def knowledge_error_to_app_error(error: KnowledgeServiceError | KnowledgeInputEr
         )
 
     status_code = 502
-    if isinstance(error, KnowledgeBaseNotFound):
+    if isinstance(error, (KnowledgeBaseNotFound, KnowledgeDocumentNotFound)):
         status_code = 404
+    elif isinstance(error, KnowledgeDocumentRetryRejected):
+        status_code = 409
     elif isinstance(
         error,
         (
@@ -135,6 +140,7 @@ def knowledge_error_to_app_error(error: KnowledgeServiceError | KnowledgeInputEr
         error,
         (
             KnowledgeBaseDeleteResultUnknown,
+            KnowledgeDocumentRetryResultUnknown,
             KnowledgeDocumentUploadResultUnknown,
             KnowledgeProviderResponseInvalid,
             KnowledgeRequestRejected,
@@ -290,6 +296,30 @@ async def upload_document(
     try:
         document = await _application(request).upload_document(knowledge_base_id, upload)
     except (KnowledgeServiceError, KnowledgeInputError) as error:
+        raise knowledge_error_to_app_error(error) from error
+    mark_audit_resource(request, AuditResourceType.KNOWLEDGE_DOCUMENT, document.id)
+    return _document_response(document)
+
+
+@router.post(
+    "/{knowledge_base_id}/documents/{document_id}/retry",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=KnowledgeDocumentResponse,
+    responses={
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        502: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def retry_document(
+    request: Request,
+    knowledge_base_id: str,
+    document_id: str,
+) -> KnowledgeDocumentResponse:
+    try:
+        document = await _application(request).retry_document(knowledge_base_id, document_id)
+    except KnowledgeServiceError as error:
         raise knowledge_error_to_app_error(error) from error
     mark_audit_resource(request, AuditResourceType.KNOWLEDGE_DOCUMENT, document.id)
     return _document_response(document)
