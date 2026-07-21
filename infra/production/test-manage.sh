@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Contract assertions intentionally match literal shell expressions.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -85,5 +86,11 @@ grep -Fq 'ssl_protocols TLSv1.2 TLSv1.3' "${SCRIPT_DIR}/edge.conf.template" || \
 grep -Fq 'proxy_buffering off' "${SCRIPT_DIR}/web.conf.template" || \
   fail "前端代理没有关闭 SSE 缓冲"
 grep -Fq 'backup-recovery' "${DRILL}" || fail "生产演练没有复用正式页面恢复验证"
+grep -Fq 'verify_forwarded_for_spoof_is_rate_limited' "${DRILL}" || \
+  fail "生产演练没有从正式 TLS Edge 验证伪造来源头"
+grep -Fq 'X-Forwarded-For: 203.0.113.${attempt}' "${DRILL}" || \
+  fail "生产演练没有轮换伪造来源地址"
+grep -Fq '[[ "${status}" == "429" ]]' "${DRILL}" || \
+  fail "生产演练没有验证 Edge 后真实来源限流"
 
 echo "生产构建与回滚契约通过"

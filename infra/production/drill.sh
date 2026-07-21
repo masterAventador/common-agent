@@ -113,6 +113,35 @@ run_formal_page_smoke() {
   )
 }
 
+verify_forwarded_for_spoof_is_rate_limited() {
+  local attempt status
+  for attempt in 1 2 3 4 5; do
+    status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+      --noproxy '*' \
+      --cacert "${STATE_ROOT}/tls/ca.crt" \
+      --resolve 'common-agent.test:18443:127.0.0.1' \
+      --request POST \
+      --header 'Content-Type: application/json' \
+      --header 'Origin: https://common-agent.test:18443' \
+      --header "X-Forwarded-For: 203.0.113.${attempt}" \
+      --data "{\"email\":\"proxy-spoof-${attempt}@example.com\",\"password\":\"wrong password value\"}" \
+      'https://common-agent.test:18443/api/v1/auth/login')"
+    [[ "${status}" == "401" ]] || fail "伪造来源头第 ${attempt} 次请求状态异常：${status}"
+  done
+  attempt=6
+  status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    --noproxy '*' \
+    --cacert "${STATE_ROOT}/tls/ca.crt" \
+    --resolve 'common-agent.test:18443:127.0.0.1' \
+    --request POST \
+    --header 'Content-Type: application/json' \
+    --header 'Origin: https://common-agent.test:18443' \
+    --header "X-Forwarded-For: 203.0.113.${attempt}" \
+    --data "{\"email\":\"proxy-spoof-${attempt}@example.com\",\"password\":\"wrong password value\"}" \
+    'https://common-agent.test:18443/api/v1/auth/login')"
+  [[ "${status}" == "429" ]] || fail "伪造来源头绕过了正式 Edge 来源限流：${status}"
+}
+
 exercise_failure_and_rollback() {
   local active_slot
   "${MANAGER}" build
@@ -150,6 +179,7 @@ write_runtime_configuration
 "${MANAGER}" rollout
 "${MANAGER}" verify
 run_formal_page_smoke
+verify_forwarded_for_spoof_is_rate_limited
 exercise_failure_and_rollback
 
 echo "本地双节点生产同路径演练通过"
