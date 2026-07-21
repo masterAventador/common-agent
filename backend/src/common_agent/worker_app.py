@@ -39,6 +39,7 @@ from common_agent.bootstrap import (
     RagFlowSettings,
     WorkerSettings,
 )
+from common_agent.concurrency import CoordinatedLockPool
 from common_agent.conversations import ConversationEventBroker, ConversationService
 from common_agent.employees import EmployeeService
 from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
@@ -110,10 +111,12 @@ async def run_worker(stop: asyncio.Event) -> None:
             tenant_id_provider=tenant_id_provider,
         )
         task_queue = SqlAlchemyTaskQueue(database)
+        distributed_locks = MySqlNamedLockProvider(database)
         resource_guard = ResourceMutationGuard(
             key_namespace,
-            distributed=MySqlNamedLockProvider(database),
+            distributed=distributed_locks,
         )
+        task_execution_guard = CoordinatedLockPool(distributed=distributed_locks)
         workflow_events = WorkflowEventBroker(
             key_namespace=lambda run_id: key_namespace(f"workflow-run:{run_id}"),
             journal=SqlAlchemyEventJournal(database),
@@ -202,6 +205,7 @@ async def run_worker(stop: asyncio.Event) -> None:
                 worker_id=f"{worker_id}-conversation-{slot}",
                 lease_for=timedelta(seconds=worker_settings.lease_seconds),
                 heartbeat_interval=timedelta(seconds=worker_settings.heartbeat_seconds),
+                execution_guard=task_execution_guard,
             )
             for slot in range(conversation_slot_count)
         )
@@ -212,6 +216,7 @@ async def run_worker(stop: asyncio.Event) -> None:
                 worker_id=f"{worker_id}-workflow-{slot}",
                 lease_for=timedelta(seconds=worker_settings.lease_seconds),
                 heartbeat_interval=timedelta(seconds=worker_settings.heartbeat_seconds),
+                execution_guard=task_execution_guard,
             )
             for slot in range(workflow_slot_count)
         )

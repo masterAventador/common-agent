@@ -6,6 +6,7 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from common_agent.concurrency import CoordinatedLockPool
 from common_agent.tasks.models import DurableTask, TaskKind
 from common_agent.tasks.ports import TaskQueue
 
@@ -73,6 +74,7 @@ class TaskWorker:
         base_retry_delay: timedelta = timedelta(seconds=1),
         maximum_retry_delay: timedelta = timedelta(minutes=5),
         heartbeat_interval: timedelta | None = None,
+        execution_guard: CoordinatedLockPool | None = None,
         clock: Clock | None = None,
     ) -> None:
         if not worker_id.strip() or worker_id != worker_id.strip() or len(worker_id) > 128:
@@ -95,6 +97,7 @@ class TaskWorker:
         self._base_retry_delay = base_retry_delay
         self._maximum_retry_delay = maximum_retry_delay
         self._heartbeat_interval = active_heartbeat_interval
+        self._execution_guard = execution_guard
         self._clock = clock or (lambda: datetime.now(UTC))
 
     async def run_once(self) -> bool:
@@ -116,7 +119,9 @@ class TaskWorker:
             handler = self._handlers.get(task.request.kind)
             if handler is None:
                 raise TaskFatalError("task_handler_missing")
-            handler_task = asyncio.ensure_future(handler(task, context))
+            handler_task = asyncio.ensure_future(
+                self._execute_handler(task, context, lease_token, handler)
+            )
             heartbeat = asyncio.create_task(
                 self._heartbeat(task, context, lease_token, handler_task),
                 name=f"task-heartbeat-{task.request.task_id}",
@@ -162,6 +167,33 @@ class TaskWorker:
                 with suppress(asyncio.CancelledError):
                     await heartbeat
         return True
+
+    async def _execute_handler(
+        self,
+        task: DurableTask,
+        context: TaskExecutionContext,
+        lease_token: UUID,
+        handler: TaskHandler,
+    ) -> None:
+        guard = self._execution_guard
+        if guard is None:
+            await handler(task, context)
+            return
+        key = f"task:{task.request.tenant_id}:{task.request.task_id}"
+        async with guard.hold(key):
+            lease = await self._queue.heartbeat(
+                task.request.task_id,
+                worker_id=self._worker_id,
+                lease_token=lease_token,
+                now=self._clock(),
+                lease_for=self._lease_for,
+            )
+            if not lease.owned:
+                context._mark_lease_lost()
+                raise asyncio.CancelledError
+            if lease.stop_requested:
+                context.request_stop()
+            await handler(task, context)
 
     async def _retry_or_fail(
         self,

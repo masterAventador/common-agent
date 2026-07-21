@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
 
+from common_agent.concurrency import CoordinatedLockPool
 from common_agent.tasks import (
     ConversationReplyPayload,
     DurableTask,
@@ -328,6 +331,129 @@ def test_worker_cancels_stale_handler_without_writing_after_lease_loss() -> None
         assert queue.completed == []
         assert queue.cancelled == []
         assert queue.retried == []
+
+    asyncio.run(scenario())
+
+
+def test_workers_serialize_same_task_across_process_lock_providers() -> None:
+    class SharedProvider:
+        def __init__(self) -> None:
+            self.lock = asyncio.Lock()
+
+        @asynccontextmanager
+        async def hold(self, keys: tuple[str, ...]) -> AsyncIterator[None]:
+            assert len(keys) == 1
+            assert keys[0].startswith("task:")
+            async with self.lock:
+                yield
+
+    async def scenario() -> None:
+        task = _task()
+        provider = SharedProvider()
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+        second_started = asyncio.Event()
+
+        async def first_handler(claimed: DurableTask, context: TaskExecutionContext) -> None:
+            del claimed, context
+            first_started.set()
+            await release_first.wait()
+
+        async def second_handler(claimed: DurableTask, context: TaskExecutionContext) -> None:
+            del claimed, context
+            second_started.set()
+
+        first = TaskWorker(
+            QueueProbe(task),
+            handlers={TaskKind.CONVERSATION_REPLY: first_handler},
+            worker_id="worker-a",
+            execution_guard=CoordinatedLockPool(distributed=provider),
+            clock=lambda: NOW,
+        )
+        second = TaskWorker(
+            QueueProbe(task),
+            handlers={TaskKind.CONVERSATION_REPLY: second_handler},
+            worker_id="worker-b",
+            execution_guard=CoordinatedLockPool(distributed=provider),
+            clock=lambda: NOW,
+        )
+        first_task = asyncio.create_task(first.run_once())
+        await first_started.wait()
+        second_task = asyncio.create_task(second.run_once())
+        await asyncio.sleep(0)
+        assert second_started.is_set() is False
+        release_first.set()
+        assert await asyncio.gather(first_task, second_task) == [True, True]
+        assert second_started.is_set()
+
+    asyncio.run(scenario())
+
+
+def test_worker_that_loses_lease_while_waiting_never_runs_business_handler() -> None:
+    class SharedProvider:
+        def __init__(self) -> None:
+            self.lock = asyncio.Lock()
+
+        @asynccontextmanager
+        async def hold(self, keys: tuple[str, ...]) -> AsyncIterator[None]:
+            del keys
+            async with self.lock:
+                yield
+
+    class LeaseLostQueue(QueueProbe):
+        async def heartbeat(
+            self,
+            task_id: UUID,
+            *,
+            worker_id: str,
+            lease_token: UUID,
+            now: datetime,
+            lease_for: timedelta,
+        ) -> TaskLeaseState:
+            del task_id, worker_id, lease_token, now, lease_for
+            return TaskLeaseState(owned=False, stop_requested=False)
+
+    async def scenario() -> None:
+        task = _task()
+        provider = SharedProvider()
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+        stale_handler_called = False
+
+        async def first_handler(claimed: DurableTask, context: TaskExecutionContext) -> None:
+            del claimed, context
+            first_started.set()
+            await release_first.wait()
+
+        async def stale_handler(claimed: DurableTask, context: TaskExecutionContext) -> None:
+            nonlocal stale_handler_called
+            del claimed, context
+            stale_handler_called = True
+
+        first = TaskWorker(
+            QueueProbe(task),
+            handlers={TaskKind.CONVERSATION_REPLY: first_handler},
+            worker_id="worker-current",
+            execution_guard=CoordinatedLockPool(distributed=provider),
+            lease_for=timedelta(seconds=3),
+            heartbeat_interval=timedelta(seconds=1),
+            clock=lambda: NOW,
+        )
+        stale = TaskWorker(
+            LeaseLostQueue(task),
+            handlers={TaskKind.CONVERSATION_REPLY: stale_handler},
+            worker_id="worker-stale",
+            execution_guard=CoordinatedLockPool(distributed=provider),
+            lease_for=timedelta(seconds=3),
+            heartbeat_interval=timedelta(milliseconds=10),
+            clock=lambda: NOW,
+        )
+        first_task = asyncio.create_task(first.run_once())
+        await first_started.wait()
+        assert await asyncio.wait_for(stale.run_once(), timeout=0.2) is True
+        assert stale_handler_called is False
+        release_first.set()
+        assert await first_task is True
 
     asyncio.run(scenario())
 
