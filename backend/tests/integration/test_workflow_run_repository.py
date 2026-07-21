@@ -89,6 +89,45 @@ def test_workflow_run_round_trip_and_update_survive_database_restart() -> None:
     assert asyncio.run(exercise()) == running
 
 
+def test_workflow_run_repository_rejects_late_completion_after_stopped_terminal() -> None:
+    workflow, _, running = _records()
+    stopped = running.stop(now=running.updated_at + timedelta(microseconds=1))
+    late_completed = running.complete(
+        "晚到完成不得覆盖停止",
+        now=stopped.updated_at + timedelta(microseconds=1),
+    )
+
+    async def exercise() -> tuple[bool, WorkflowRun | None]:
+        async with _database() as database:
+            try:
+                async with database.session() as session:
+                    await SqlAlchemyWorkflowRepository(session).add(workflow)
+                    repository = SqlAlchemyWorkflowRunRepository(session)
+                    await repository.add(running)
+                    await session.commit()
+
+                async with database.session() as session:
+                    repository = SqlAlchemyWorkflowRunRepository(session)
+                    assert await repository.update(stopped) is True
+                    await session.commit()
+
+                async with database.session() as session:
+                    repository = SqlAlchemyWorkflowRunRepository(session)
+                    updated = await repository.update(late_completed)
+                    await session.commit()
+
+                async with database.session() as session:
+                    persisted = await SqlAlchemyWorkflowRunRepository(session).get(running.id)
+                return updated, persisted
+            finally:
+                await delete_workflows(database, workflow.id)
+
+    updated, persisted = asyncio.run(exercise())
+
+    assert updated is False
+    assert persisted == stopped
+
+
 def test_workflow_run_repository_lists_active_and_maps_duplicate_identity() -> None:
     workflow, pending, running = _records()
     second = WorkflowRun.create(

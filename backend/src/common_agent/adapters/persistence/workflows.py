@@ -303,6 +303,12 @@ class SqlAlchemyWorkflowRunRepository:
                 .where(
                     WorkflowRunRow.id == str(run.id),
                     WorkflowRunRow.tenant_id == self._tenant_id,
+                    WorkflowRunRow.status.in_(
+                        (
+                            WorkflowRunStatus.PENDING.value,
+                            WorkflowRunStatus.RUNNING.value,
+                        )
+                    ),
                 )
                 .values(
                     status=run.status.value,

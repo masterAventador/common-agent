@@ -169,7 +169,8 @@ class WorkflowRunCoordinator:
                     )
                 except TaskNotFound:
                     raise WorkflowRunNotActive from None
-            await self._run_projection.stop(run_id)
+            if not await self._run_projection.stop(run_id):
+                raise WorkflowRunNotActive
             return WorkflowRunStopAccepted(run_id=run_id)
 
         async with self._locks.hold(run_id):

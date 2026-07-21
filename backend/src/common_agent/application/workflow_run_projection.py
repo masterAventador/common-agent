@@ -104,12 +104,14 @@ class WorkflowRunProjection:
 
     async def mark_running(self, run: WorkflowRun) -> WorkflowRun:
         running = run.start()
-        await self._update(running)
+        if not await self._update(running):
+            raise WorkflowExecutionStopped
         return running
 
     async def restart_execution(self, run: WorkflowRun) -> WorkflowRun:
         restarted = run.restart_execution()
-        await self._update(restarted)
+        if not await self._update(restarted):
+            raise WorkflowExecutionStopped
         return restarted
 
     async def republish_terminal(self, run: WorkflowRun) -> None:
@@ -132,10 +134,11 @@ class WorkflowRunProjection:
     async def recover_interrupted(self) -> int:
         async with self._unit_of_work_factory() as unit_of_work:
             active_runs = await unit_of_work.workflow_runs.list_active()
-            recovered = tuple(run.fail("workflow_run_interrupted") for run in active_runs)
-            for run in recovered:
-                if not await unit_of_work.workflow_runs.update(run):
-                    raise WorkflowRunNotFound
+            recovered = []
+            for active in active_runs:
+                candidate = active.fail("workflow_run_interrupted")
+                if await unit_of_work.workflow_runs.update(candidate):
+                    recovered.append(candidate)
             if recovered:
                 await unit_of_work.commit()
 
@@ -175,7 +178,8 @@ class WorkflowRunProjection:
             ):
                 raise WorkflowRunResultInvalid
             completed = current.complete(result.output)
-            await self._update(completed)
+            if not await self._update(completed):
+                return
         await self._event_broker.publish(run=completed, kind=WorkflowEventKind.RUN_COMPLETED)
 
     async def fail(self, run_id: UUID, error_code: str) -> None:
@@ -184,7 +188,8 @@ class WorkflowRunProjection:
             if current.is_terminal:
                 return
             failed = current.fail(error_code)
-            await self._update(failed)
+            if not await self._update(failed):
+                return
         if failed.failed_node_id is not None:
             await self._event_broker.publish(
                 run=failed,
@@ -193,14 +198,16 @@ class WorkflowRunProjection:
             )
         await self._event_broker.publish(run=failed, kind=WorkflowEventKind.RUN_FAILED)
 
-    async def stop(self, run_id: UUID) -> None:
+    async def stop(self, run_id: UUID) -> bool:
         async with self._locks.hold(run_id):
             current = await self.get(run_id)
             if current.is_terminal:
-                return
+                return False
             stopped = current.stop()
-            await self._update(stopped)
+            if not await self._update(stopped):
+                return False
         await self._event_broker.publish(run=stopped, kind=WorkflowEventKind.RUN_STOPPED)
+        return True
 
     async def _transition_and_publish(
         self,
@@ -215,14 +222,16 @@ class WorkflowRunProjection:
             if current.is_terminal:
                 raise WorkflowExecutionStopped
             updated = transition(current)
-            await self._update(updated)
+            if not await self._update(updated):
+                raise WorkflowExecutionStopped
         await self._event_broker.publish(run=updated, kind=kind, node_id=node_id)
 
-    async def _update(self, run: WorkflowRun) -> None:
+    async def _update(self, run: WorkflowRun) -> bool:
         async with self._unit_of_work_factory() as unit_of_work:
             if not await unit_of_work.workflow_runs.update(run):
-                raise WorkflowRunNotFound
+                return False
             await unit_of_work.commit()
+        return True
 
     @property
     def _event_broker(self) -> WorkflowEventBroker:

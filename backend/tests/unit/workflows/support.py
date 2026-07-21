@@ -131,6 +131,8 @@ class WorkflowRunRepositoryProbe:
     async def update(self, run: WorkflowRun) -> bool:
         if run.id not in self.values:
             return False
+        if self.values[run.id].is_terminal:
+            return False
         self.values[run.id] = run
         return True
 
