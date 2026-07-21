@@ -153,6 +153,10 @@ describe("App shell", () => {
     }
     expect(screen.getByRole("combobox", { name: "当前工作区" })).toBeInTheDocument();
     expect(screen.getByText(/默认工作区/)).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Common Agent 首页" })).toBeInTheDocument();
+    expect(screen.getByTestId("brand-logo")).toBeInTheDocument();
+    expect(screen.queryByText("PowerAI")).not.toBeInTheDocument();
   });
 
   it("redirects the root entry to chat", async () => {

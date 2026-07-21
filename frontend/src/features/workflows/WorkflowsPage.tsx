@@ -1,6 +1,6 @@
-import { ReloadOutlined } from "@ant-design/icons";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Alert, Button, Skeleton } from "antd";
+import { RefreshCw } from "lucide-react";
 import { getErrorMessage } from "../../api/errors";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
 import { WorkflowCanvas } from "./WorkflowCanvas";
@@ -30,7 +30,7 @@ export function WorkflowsPage({ readOnly = false }: { readOnly?: boolean }) {
           description={getErrorMessage(workflows.error)}
           action={
             <Button
-              icon={<ReloadOutlined />}
+              icon={<RefreshCw aria-hidden="true" size={16} />}
               aria-label="重试加载工作流"
               onClick={() => void workflows.refetch()}
             >

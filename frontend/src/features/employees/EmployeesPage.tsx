@@ -1,11 +1,4 @@
 import {
-  EditOutlined,
-  MessageOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  TeamOutlined,
-} from "@ant-design/icons";
-import {
   keepPreviousData,
   useInfiniteQuery,
   useMutation,
@@ -26,6 +19,7 @@ import {
   Tag,
   Typography,
 } from "antd";
+import { Bot, MessageSquare, Pencil, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -202,7 +196,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
           action={
             <Button
               aria-label="重试加载"
-              icon={<ReloadOutlined />}
+              icon={<RefreshCw aria-hidden="true" size={16} />}
               onClick={() => void employees.refetch()}
             >
               重试加载
@@ -218,7 +212,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
       <Flex justify="space-between" align="flex-start" gap={24} className="employees-page-heading">
         <div>
           <Space align="center">
-            <TeamOutlined className="employees-title-icon" />
+            <Bot aria-hidden="true" className="employees-title-icon" size={22} strokeWidth={1.75} />
             <Title level={2}>数字员工</Title>
           </Space>
           <Typography.Paragraph type="secondary">
@@ -228,7 +222,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
         <Button
           type="primary"
           aria-label="创建数字员工"
-          icon={<PlusOutlined />}
+          icon={<Plus aria-hidden="true" size={16} />}
           disabled={readOnly}
           onClick={() => setEditor({ mode: "create" })}
         >
@@ -327,7 +321,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
                 />
                 <Button
                   aria-label={`编辑 ${employee.name}`}
-                  icon={<EditOutlined />}
+                  icon={<Pencil aria-hidden="true" size={15} />}
                   disabled={readOnly}
                   onClick={() => setEditor({ mode: "edit", employee })}
                 >
@@ -336,7 +330,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
                 <Button
                   type="primary"
                   aria-label={`与${employee.name}开始对话`}
-                  icon={<MessageOutlined />}
+                  icon={<MessageSquare aria-hidden="true" size={15} />}
                   onClick={() =>
                     navigate(`/chat?${new URLSearchParams({ employee_id: employee.id })}`)
                   }

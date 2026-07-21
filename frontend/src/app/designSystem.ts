@@ -1,0 +1,73 @@
+import type { ThemeConfig } from "antd";
+
+export const designTheme: ThemeConfig = {
+  token: {
+    colorPrimary: "#191919",
+    colorPrimaryHover: "#333333",
+    colorPrimaryActive: "#000000",
+    colorInfo: "#2563EB",
+    colorSuccess: "#1F8A4C",
+    colorWarning: "#C46A17",
+    colorError: "#D64545",
+    colorBgLayout: "#FAFAFA",
+    colorBgContainer: "#FFFFFF",
+    colorBgElevated: "#FFFFFF",
+    colorBorder: "#EDEDE9",
+    colorBorderSecondary: "#EDEDE9",
+    colorText: "#37352F",
+    colorTextHeading: "#191919",
+    colorTextSecondary: "#787774",
+    colorTextTertiary: "#A8A8A5",
+    borderRadius: 10,
+    borderRadiusLG: 12,
+    borderRadiusSM: 8,
+    fontFamily:
+      'Inter, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontSize: 14,
+    lineHeight: 1.57,
+    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
+    boxShadowSecondary: "0 4px 12px rgba(0, 0, 0, 0.06)",
+    controlOutline: "transparent",
+    motionDurationFast: "0.15s",
+    motionDurationMid: "0.2s",
+  },
+  components: {
+    Button: {
+      borderRadius: 8,
+      primaryShadow: "none",
+      defaultShadow: "none",
+    },
+    Card: {
+      borderRadiusLG: 12,
+      boxShadow: "none",
+      boxShadowTertiary: "none",
+    },
+    Input: {
+      activeBorderColor: "#B8B8B2",
+      activeShadow: "none",
+      hoverBorderColor: "#B8B8B2",
+    },
+    Menu: {
+      itemBg: "transparent",
+      itemColor: "#787774",
+      itemHoverBg: "#F5F5F2",
+      itemHoverColor: "#191919",
+      itemSelectedBg: "#F1F1EF",
+      itemSelectedColor: "#191919",
+      itemBorderRadius: 8,
+    },
+    Modal: {
+      borderRadiusLG: 16,
+    },
+    Select: {
+      activeBorderColor: "#B8B8B2",
+      activeOutlineColor: "transparent",
+      hoverBorderColor: "#B8B8B2",
+    },
+    Table: {
+      headerBg: "#FAFAFA",
+      headerColor: "#787774",
+      rowHoverBg: "#F5F5F2",
+    },
+  },
+};

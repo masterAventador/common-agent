@@ -1,5 +1,5 @@
-import { PlusOutlined, SendOutlined, StopOutlined, TeamOutlined } from "@ant-design/icons";
 import { Alert, Button, Empty, Flex, Input, Skeleton, Tag, Typography } from "antd";
+import { Bot, Plus, Send, Square } from "lucide-react";
 
 import type { Employee } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
@@ -51,7 +51,7 @@ export function ChatWorkspace({
           <Button
             type="primary"
             size="small"
-            icon={<PlusOutlined />}
+            icon={<Plus aria-hidden="true" size={15} />}
             loading={createMutation.isPending}
             disabled={readOnly}
             aria-label="新建会话"
@@ -187,7 +187,7 @@ export function ChatWorkspace({
             {activeMessage ? (
               <Button
                 danger
-                icon={<StopOutlined />}
+                icon={<Square aria-hidden="true" size={15} />}
                 loading={stopMutation.isPending}
                 disabled={readOnly}
                 aria-label="停止生成"
@@ -198,7 +198,7 @@ export function ChatWorkspace({
             ) : (
               <Button
                 type="primary"
-                icon={<SendOutlined />}
+                icon={<Send aria-hidden="true" size={15} />}
                 loading={sendMutation.isPending}
                 disabled={readOnly || !selectedConversation || !draft.trim()}
                 aria-label="发送消息"
@@ -222,7 +222,7 @@ function EmployeeDetails({ employee }: { employee: Employee }) {
   return (
     <>
       <div className="chat-employee-avatar" aria-hidden="true">
-        <TeamOutlined />
+        <Bot aria-hidden="true" size={23} strokeWidth={1.75} />
       </div>
       <Title level={4}>{employee.name}</Title>
       <Text type="secondary">{employee.description || "暂无说明"}</Text>

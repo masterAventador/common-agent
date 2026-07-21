@@ -1,11 +1,4 @@
 import {
-  CloudUploadOutlined,
-  DatabaseOutlined,
-  FileTextOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-} from "@ant-design/icons";
-import {
   keepPreviousData,
   useInfiniteQuery,
   useMutation,
@@ -28,6 +21,7 @@ import {
   Typography,
   type TableColumnsType,
 } from "antd";
+import { Database, FileText, Plus, RefreshCw, UploadCloud } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -70,7 +64,7 @@ const documentColumns: TableColumnsType<KnowledgeDocument> = [
     dataIndex: "name",
     render: (name: string) => (
       <Space>
-        <FileTextOutlined />
+        <FileText aria-hidden="true" size={15} />
         <Text>{name}</Text>
       </Space>
     ),
@@ -202,7 +196,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
             <Button
               aria-label="重试加载"
               onClick={() => void knowledgeBases.refetch()}
-              icon={<ReloadOutlined />}
+              icon={<RefreshCw aria-hidden="true" size={16} />}
             >
               重试加载
             </Button>
@@ -217,7 +211,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
       <Flex justify="space-between" align="flex-start" gap={24} className="knowledge-page-heading">
         <div>
           <Space align="center">
-            <DatabaseOutlined className="knowledge-title-icon" />
+            <Database aria-hidden="true" className="knowledge-title-icon" size={22} strokeWidth={1.75} />
             <Title level={2}>知识库</Title>
           </Space>
           <Typography.Paragraph type="secondary">
@@ -227,7 +221,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
         <Button
           type="primary"
           aria-label="创建知识库"
-          icon={<PlusOutlined />}
+          icon={<Plus aria-hidden="true" size={16} />}
           disabled={readOnly}
           onClick={() => setCreateOpen(true)}
         >
@@ -320,7 +314,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
                   />
                 )}
                 <Button
-                  icon={<ReloadOutlined />}
+                  icon={<RefreshCw aria-hidden="true" size={16} />}
                   loading={documents.isFetching}
                   onClick={() => void documents.refetch()}
                 >
@@ -331,7 +325,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
           >
             <Flex gap={12} align="center" wrap className="knowledge-upload-row">
               <label className="knowledge-file-picker">
-                <CloudUploadOutlined /> 选择文档
+                <UploadCloud aria-hidden="true" size={16} /> 选择文档
                 <input
                   key={fileInputKey}
                   type="file"

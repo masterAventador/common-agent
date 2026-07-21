@@ -1,5 +1,5 @@
-import { FileTextOutlined, RedoOutlined } from "@ant-design/icons";
 import { Alert, Button, Collapse, Flex, Progress, Space, Spin, Tag, Typography } from "antd";
+import { FileText, RotateCcw } from "lucide-react";
 
 import type { ConversationMessage } from "../../api/conversations";
 import type { WorkflowRun } from "../../api/workflowRuns";
@@ -61,7 +61,7 @@ export function MessageBubble({
         {mayRetry && (
           <Button
             size="small"
-            icon={<RedoOutlined />}
+            icon={<RotateCcw aria-hidden="true" size={15} />}
             loading={retrying}
             disabled={readOnly}
             aria-label="重试回答"
@@ -84,7 +84,7 @@ function CitationList({ message }: { message: ConversationMessage }) {
   return (
     <div className="chat-citations" aria-label={`引用资料 ${message.citations.length}`}>
       <Text strong>
-        <FileTextOutlined /> 引用资料 {message.citations.length}
+        <FileText aria-hidden="true" size={14} /> 引用资料 {message.citations.length}
       </Text>
       {message.citations.map((citation) => (
         <div

@@ -1,5 +1,5 @@
-import { CommentOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Alert, Button, Empty, Flex, Select, Skeleton, Space, Typography } from "antd";
+import { MessageSquare, RefreshCw } from "lucide-react";
 
 import { getErrorMessage } from "../../api/errors";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
@@ -28,7 +28,7 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
           title="数字员工加载失败"
           description={getErrorMessage(employees.error)}
           action={
-            <Button icon={<ReloadOutlined />} onClick={() => void employees.refetch()}>
+            <Button icon={<RefreshCw aria-hidden="true" size={16} />} onClick={() => void employees.refetch()}>
               重试加载
             </Button>
           }
@@ -49,7 +49,7 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
       <Flex justify="space-between" align="center" gap={24} className="chat-page-heading">
         <div>
           <Space align="center">
-            <CommentOutlined className="chat-title-icon" />
+            <MessageSquare aria-hidden="true" className="chat-title-icon" size={22} strokeWidth={1.75} />
             <Title level={2}>AI 会话</Title>
           </Space>
           <Typography.Paragraph type="secondary">

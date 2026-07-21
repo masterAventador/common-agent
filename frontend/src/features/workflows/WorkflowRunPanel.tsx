@@ -1,12 +1,5 @@
-import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  ClockCircleOutlined,
-  LoadingOutlined,
-  PlayCircleOutlined,
-  StopOutlined,
-} from "@ant-design/icons";
 import { Alert, Button, Flex, Input, Space, Tag, Typography } from "antd";
+import { CircleCheckBig, CirclePlay, CircleX, Clock3, LoaderCircle, Square } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { getErrorMessage } from "../../api/errors";
@@ -22,11 +15,11 @@ const statusPresentation: Record<
   WorkflowRun["status"],
   { label: string; color: string; icon: ReactNode }
 > = {
-  pending: { label: "等待运行", color: "default", icon: <ClockCircleOutlined /> },
-  running: { label: "运行中", color: "processing", icon: <LoadingOutlined spin /> },
-  completed: { label: "运行完成", color: "success", icon: <CheckCircleOutlined /> },
-  failed: { label: "运行失败", color: "error", icon: <CloseCircleOutlined /> },
-  stopped: { label: "已停止", color: "default", icon: <StopOutlined /> },
+  pending: { label: "等待运行", color: "default", icon: <Clock3 aria-hidden="true" size={14} /> },
+  running: { label: "运行中", color: "processing", icon: <LoaderCircle aria-hidden="true" className="status-spin" size={14} /> },
+  completed: { label: "运行完成", color: "success", icon: <CircleCheckBig aria-hidden="true" size={14} /> },
+  failed: { label: "运行失败", color: "error", icon: <CircleX aria-hidden="true" size={14} /> },
+  stopped: { label: "已停止", color: "default", icon: <Square aria-hidden="true" size={14} /> },
 };
 
 export function WorkflowRunPanel({
@@ -100,7 +93,7 @@ export function WorkflowRunPanel({
         {active ? (
           <Button
             danger
-            icon={<StopOutlined />}
+            icon={<Square aria-hidden="true" size={15} />}
             loading={controller.stopping}
             disabled={readOnly}
             aria-label="停止工作流"
@@ -111,7 +104,7 @@ export function WorkflowRunPanel({
         ) : (
           <Button
             type="primary"
-            icon={<PlayCircleOutlined />}
+            icon={<CirclePlay aria-hidden="true" size={15} />}
             loading={controller.starting}
             disabled={readOnly || !workflowId || dirty || !controller.input.trim()}
             aria-label="运行工作流"

@@ -1,5 +1,5 @@
-import { DeleteOutlined } from "@ant-design/icons";
 import { Button, Card, Empty, Flex, Input, Select, Tag, Typography } from "antd";
+import { Trash2 } from "lucide-react";
 import type { Dispatch, UIEvent } from "react";
 
 import { WorkflowRunPanel } from "./WorkflowRunPanel";
@@ -94,7 +94,7 @@ export function WorkflowInspector({
             <Button
               danger
               type="text"
-              icon={<DeleteOutlined />}
+              icon={<Trash2 aria-hidden="true" size={15} />}
               aria-label={`删除节点 ${selected.data.label} ${selected.id}`}
               disabled={editingLocked}
               onClick={() =>

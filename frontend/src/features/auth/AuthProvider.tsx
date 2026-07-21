@@ -33,6 +33,7 @@ import {
   fetchTenantAccesses,
   type TenantAccess,
 } from "../../api/tenants";
+import { BrandLogo } from "../../components/BrandLogo";
 import {
   AuthContext,
   useAuth,
@@ -331,7 +332,9 @@ function AuthPage() {
       <Card className="auth-card">
         <Space orientation="vertical" size={20} className="auth-card-content">
           <div className="auth-heading">
-            <span className="brand-mark">CA</span>
+            <span className="brand-logo-tile auth-logo">
+              <BrandLogo size={34} />
+            </span>
             <div>
               <Typography.Title level={2}>
                 {auth.mode === "register" ? "创建首位管理员" : "登录 Common Agent"}

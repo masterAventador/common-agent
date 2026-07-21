@@ -1,4 +1,3 @@
-import { SafetyCertificateOutlined } from "@ant-design/icons";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   Alert,
@@ -13,6 +12,7 @@ import {
   Tag,
   Typography,
 } from "antd";
+import { ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -77,7 +77,7 @@ export function AuditEventsPage() {
       <Flex justify="space-between" align="flex-start" gap={24}>
         <div>
           <Space align="center">
-            <SafetyCertificateOutlined />
+            <ShieldCheck aria-hidden="true" size={22} strokeWidth={1.75} />
             <Title level={2}>审计与安全事件</Title>
           </Space>
           <Typography.Paragraph type="secondary">

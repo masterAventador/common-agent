@@ -1,10 +1,5 @@
-import {
-  CheckCircleOutlined,
-  DatabaseOutlined,
-  PlayCircleOutlined,
-  RobotOutlined,
-} from "@ant-design/icons";
 import { Button, Empty, Input, Typography } from "antd";
+import { Bot, CircleCheckBig, CirclePlay, Database } from "lucide-react";
 import type { Dispatch, DragEvent, ReactNode } from "react";
 
 import type { Workflow, WorkflowNodeType } from "../../api/workflows";
@@ -16,14 +11,14 @@ import {
 import { WORKFLOW_NODE_MIME } from "./workflowDnd";
 
 const palette = [
-  { type: "start" as const, icon: <PlayCircleOutlined />, description: "流程唯一入口" },
-  { type: "ai_chat" as const, icon: <RobotOutlined />, description: "调用模型生成文本" },
+  { type: "start" as const, icon: <CirclePlay aria-hidden="true" size={17} />, description: "流程唯一入口" },
+  { type: "ai_chat" as const, icon: <Bot aria-hidden="true" size={17} />, description: "调用模型生成文本" },
   {
     type: "knowledge_retrieval" as const,
-    icon: <DatabaseOutlined />,
+    icon: <Database aria-hidden="true" size={17} />,
     description: "检索指定知识库",
   },
-  { type: "end" as const, icon: <CheckCircleOutlined />, description: "收敛最终结果" },
+  { type: "end" as const, icon: <CircleCheckBig aria-hidden="true" size={17} />, description: "收敛最终结果" },
 ] satisfies Array<{ type: WorkflowNodeType; icon: ReactNode; description: string }>;
 const { Text } = Typography;
 

@@ -1,18 +1,13 @@
-import {
-  CheckCircleOutlined,
-  DatabaseOutlined,
-  PlayCircleOutlined,
-  RobotOutlined,
-} from "@ant-design/icons";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Bot, CircleCheckBig, CirclePlay, Database } from "lucide-react";
 
 import type { WorkflowEditorNode } from "./workflowEditor";
 
 const icons = {
-  start: <PlayCircleOutlined />,
-  ai_chat: <RobotOutlined />,
-  knowledge_retrieval: <DatabaseOutlined />,
-  end: <CheckCircleOutlined />,
+  start: <CirclePlay aria-hidden="true" size={17} />,
+  ai_chat: <Bot aria-hidden="true" size={17} />,
+  knowledge_retrieval: <Database aria-hidden="true" size={17} />,
+  end: <CircleCheckBig aria-hidden="true" size={17} />,
 };
 
 export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowEditorNode>) {

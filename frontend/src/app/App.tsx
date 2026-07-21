@@ -1,11 +1,4 @@
 import {
-  ApartmentOutlined,
-  CommentOutlined,
-  DatabaseOutlined,
-  SafetyCertificateOutlined,
-  TeamOutlined,
-} from "@ant-design/icons";
-import {
   Alert,
   Button,
   Form,
@@ -18,10 +11,21 @@ import {
   Tag,
   Typography,
 } from "antd";
+import {
+  Bot,
+  Database,
+  LogOut,
+  MessageSquare,
+  PanelsTopLeft,
+  ShieldCheck,
+  UserPlus,
+  Workflow,
+} from "lucide-react";
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { SystemStatus } from "../components/SystemStatus";
+import { BrandLogo } from "../components/BrandLogo";
 import { getErrorMessage } from "../api/errors";
 import {
   provisionTenantMember,
@@ -57,27 +61,27 @@ const entries = [
   {
     path: "/chat",
     label: "AI 会话",
-    icon: <CommentOutlined />,
+    icon: <MessageSquare aria-hidden="true" size={18} strokeWidth={1.75} />,
   },
   {
     path: "/employees",
     label: "数字员工",
-    icon: <TeamOutlined />,
+    icon: <Bot aria-hidden="true" size={18} strokeWidth={1.75} />,
   },
   {
     path: "/knowledge-bases",
     label: "知识库",
-    icon: <DatabaseOutlined />,
+    icon: <Database aria-hidden="true" size={18} strokeWidth={1.75} />,
   },
   {
     path: "/workflows",
     label: "工作流",
-    icon: <ApartmentOutlined />,
+    icon: <Workflow aria-hidden="true" size={18} strokeWidth={1.75} />,
   },
   {
     path: "/audit-events",
     label: "审计与安全事件",
-    icon: <SafetyCertificateOutlined />,
+    icon: <ShieldCheck aria-hidden="true" size={18} strokeWidth={1.75} />,
     ownerOnly: true,
   },
 ] as const;
@@ -113,6 +117,7 @@ function AuthenticatedApp() {
     (tenant) => tenant.id === auth.selectedTenantId,
   );
   const roleLabels = { owner: "所有者", editor: "编辑者", viewer: "访客" } as const;
+  const currentEntry = entries.find((entry) => entry.path === location.pathname);
 
   const submitWorkspace = async ({ name }: { name: string }) => {
     if (await auth.createWorkspace(name)) {
@@ -140,28 +145,30 @@ function AuthenticatedApp() {
   return (
     <Layout className="app-layout">
       <Sider className="app-sider" width={232} theme="light">
-        <div className="brand-block">
-          <span className="brand-mark">CA</span>
-          <div>
+        <Link to="/chat" className="brand-block" aria-label="Common Agent 首页">
+          <span className="brand-logo-tile">
+            <BrandLogo size={28} />
+          </span>
+          <div className="brand-copy">
             <Typography.Text strong>Common Agent</Typography.Text>
             <Typography.Text className="brand-subtitle">AI 中台</Typography.Text>
           </div>
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          items={menuItems(selectedTenant?.role === "owner")}
-        />
+        </Link>
+        <nav aria-label="主导航" className="app-navigation">
+          <Menu
+            mode="inline"
+            selectedKeys={[location.pathname]}
+            items={menuItems(selectedTenant?.role === "owner")}
+          />
+        </nav>
       </Sider>
       <Layout>
         <Header className="app-header">
-          <div>
-            <Typography.Text strong>通用 Agent 中台</Typography.Text>
-            <Typography.Text type="secondary" className="header-description">
-              本机开发环境
-            </Typography.Text>
+          <div className="app-header-context">
+            <Typography.Text className="header-description">WORKSPACE</Typography.Text>
+            <Typography.Text strong>{currentEntry?.label ?? "Common Agent"}</Typography.Text>
           </div>
-          <Space size={8}>
+          <Space size={8} wrap className="app-header-actions">
             <Select
               aria-label="当前工作区"
               value={auth.selectedTenantId ?? undefined}
@@ -179,17 +186,30 @@ function AuthenticatedApp() {
             ) : null}
             {selectedTenant?.role === "owner" ? (
               <>
-                <Button size="small" onClick={() => setMemberModalOpen(true)}>
+                <Button
+                  size="small"
+                  icon={<UserPlus aria-hidden="true" size={15} />}
+                  onClick={() => setMemberModalOpen(true)}
+                >
                   添加成员
                 </Button>
-                <Button size="small" onClick={() => setWorkspaceModalOpen(true)}>
+                <Button
+                  size="small"
+                  icon={<PanelsTopLeft aria-hidden="true" size={15} />}
+                  onClick={() => setWorkspaceModalOpen(true)}
+                >
                   新建工作区
                 </Button>
               </>
             ) : null}
             <SystemStatus />
             <Tag color="processing">{auth.session?.email}</Tag>
-            <Button size="small" loading={auth.busy} onClick={() => void auth.logout()}>
+            <Button
+              size="small"
+              icon={<LogOut aria-hidden="true" size={15} />}
+              loading={auth.busy}
+              onClick={() => void auth.logout()}
+            >
               退出登录
             </Button>
           </Space>

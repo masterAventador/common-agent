@@ -19,6 +19,8 @@ grep -Fq 'current_memory_bytes=' "${RUNNER}" || \
   fail "E2E 入口没有检查正在运行的 Colima 实际内存"
 grep -Fq 'current_memory_bytes + 1073741823' "${RUNNER}" || \
   fail "E2E 入口没有按 GiB 向上折算 Docker 预留内存"
+grep -Fq 'current_memory_gib >= memory_gib' "${RUNNER}" || \
+  fail "E2E 入口会为了轻量验收把已经足够的高配 Colima 降档重启"
 grep -Fq 'colima stop common-agent-dev' "${RUNNER}" || \
   fail "E2E 入口不能在资源档位不符时重启专属 profile"
 grep -Fq 'PLATFORM_DOCKER_CONTEXT="${DOCKER_CONTEXT_NAME}"' "${RUNNER}" || \
@@ -29,6 +31,16 @@ grep -Fq '"auth" || "${E2E_SUITE}" == "tenant-rbac" || "${E2E_SUITE}" == "audit"
   fail "认证、租户和审计 E2E 没有归入轻量档位"
 grep -Fq 'e2e/audit.spec.ts' "${RUNNER}" || \
   fail "E2E 入口没有执行正式审计页面用例"
+grep -Fq 'COMMON_AGENT_E2E_API_PORT:-18200' "${RUNNER}" || \
+  fail "E2E 入口不支持为并行本地项目隔离 API 端口"
+grep -Fq 'COMMON_AGENT_E2E_FRONTEND_PORT:-18280' "${RUNNER}" || \
+  fail "E2E 入口不支持为并行本地项目隔离前端端口"
+grep -Fq 'COMMON_AGENT_API_PORT="${API_PORT}"' "${RUNNER}" || \
+  fail "E2E 独立 API 没有实际绑定所选隔离端口"
+grep -Fq 'COMMON_AGENT_CORS_ORIGINS="http://127.0.0.1:${FRONTEND_PORT}"' "${RUNNER}" || \
+  fail "E2E 独立 API 没有信任所选隔离前端端口"
+grep -Fq 'e2e/design-system.spec.ts' "${RUNNER}" || \
+  fail "E2E 入口没有执行统一设计正式页面用例"
 grep -Fq 'tests.support.audit_e2e_cleanup' "${RUNNER}" || \
   fail "审计 E2E 没有登记精确业务数据清理器"
 grep -Fq 'e2e/knowledge-pagination.spec.ts' "${RUNNER}" || \

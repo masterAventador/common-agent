@@ -1,5 +1,5 @@
-import { ApartmentOutlined, PlusOutlined, SaveOutlined } from "@ant-design/icons";
 import { Button, Flex, Space, Tag, Typography } from "antd";
+import { Plus, Save, Workflow } from "lucide-react";
 
 import { ResourceDeleteButton } from "../../components/ResourceDeleteButton";
 import type { useWorkflowDesigner } from "./useWorkflowDesigner";
@@ -18,7 +18,7 @@ export function WorkflowPageHeader({
     <Flex justify="space-between" align="flex-start" gap={24} className="workflows-heading">
       <div>
         <Space align="center">
-          <ApartmentOutlined className="workflows-title-icon" />
+          <Workflow aria-hidden="true" className="workflows-title-icon" size={22} strokeWidth={1.75} />
           <Title level={2}>工作流</Title>
           {state.dirty ? <Tag color="gold">有未保存修改</Tag> : <Tag>已保存</Tag>}
         </Space>
@@ -36,7 +36,7 @@ export function WorkflowPageHeader({
           onConfirm={controller.deleteSelectedWorkflow}
         />
         <Button
-          icon={<PlusOutlined />}
+          icon={<Plus aria-hidden="true" size={16} />}
           aria-label="新建工作流"
           disabled={readOnly || controller.activeRun}
           onClick={controller.createDraft}
@@ -45,7 +45,7 @@ export function WorkflowPageHeader({
         </Button>
         <Button
           type="primary"
-          icon={<SaveOutlined />}
+          icon={<Save aria-hidden="true" size={16} />}
           aria-label="保存工作流"
           loading={controller.saveMutation.isPending}
           disabled={readOnly || controller.activeRun}
