@@ -5,12 +5,14 @@ from common_agent.adapters.persistence.events import SqlAlchemyEventJournal
 from common_agent.adapters.persistence.knowledge_ownership import (
     SqlAlchemyKnowledgeOwnershipStore,
 )
+from common_agent.adapters.persistence.locks import MySqlNamedLockProvider
 from common_agent.adapters.persistence.tasks import SqlAlchemyTaskQueue
 from common_agent.adapters.persistence.tenancy import SqlAlchemyTenancyStore
 
 __all__ = [
     "Database",
     "DatabaseStartupError",
+    "MySqlNamedLockProvider",
     "SqlAlchemyAuditStore",
     "SqlAlchemyAuthStore",
     "SqlAlchemyEventJournal",

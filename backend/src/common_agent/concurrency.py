@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Hashable
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from typing import Protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,4 +56,39 @@ class KeyedLockPool[KeyT: Hashable]:
             )
 
 
-__all__ = ["KeyedLockPool", "KeyedLockPoolSnapshot"]
+class DistributedLockUnavailable(RuntimeError):
+    """Raised when the shared lock backend cannot safely serialize an operation."""
+
+
+class DistributedLockProvider(Protocol):
+    def hold(self, keys: tuple[str, ...]) -> AbstractAsyncContextManager[None]: ...
+
+
+class CoordinatedLockPool:
+    """Combines inexpensive process-local locks with a shared lock provider."""
+
+    def __init__(self, *, distributed: DistributedLockProvider | None = None) -> None:
+        self._local: KeyedLockPool[str] = KeyedLockPool()
+        self._distributed = distributed
+
+    @asynccontextmanager
+    async def hold(self, *keys: str) -> AsyncIterator[None]:
+        normalized = tuple(sorted({key.strip() for key in keys if key.strip()}))
+        if not normalized:
+            yield
+            return
+        async with AsyncExitStack() as stack:
+            for key in normalized:
+                await stack.enter_async_context(self._local.hold(key))
+            if self._distributed is not None:
+                await stack.enter_async_context(self._distributed.hold(normalized))
+            yield
+
+
+__all__ = [
+    "CoordinatedLockPool",
+    "DistributedLockProvider",
+    "DistributedLockUnavailable",
+    "KeyedLockPool",
+    "KeyedLockPoolSnapshot",
+]

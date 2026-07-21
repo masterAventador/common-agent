@@ -13,6 +13,7 @@ from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.adapters.persistence import (
     Database,
+    MySqlNamedLockProvider,
     SqlAlchemyAuditStore,
     SqlAlchemyEventJournal,
     SqlAlchemyKnowledgeOwnershipStore,
@@ -109,7 +110,10 @@ async def run_worker(stop: asyncio.Event) -> None:
             tenant_id_provider=tenant_id_provider,
         )
         task_queue = SqlAlchemyTaskQueue(database)
-        resource_guard = ResourceMutationGuard(key_namespace)
+        resource_guard = ResourceMutationGuard(
+            key_namespace,
+            distributed=MySqlNamedLockProvider(database),
+        )
         workflow_events = WorkflowEventBroker(
             key_namespace=lambda run_id: key_namespace(f"workflow-run:{run_id}"),
             journal=SqlAlchemyEventJournal(database),

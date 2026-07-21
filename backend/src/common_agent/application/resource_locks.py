@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 
-from common_agent.concurrency import KeyedLockPool
+from common_agent.concurrency import CoordinatedLockPool, DistributedLockProvider
 
 
 class ResourceMutationGuard:
     """Serializes mutations that can create or remove cross-resource references."""
 
-    def __init__(self, key_namespace: Callable[[str], str] | None = None) -> None:
-        self._locks: KeyedLockPool[str] = KeyedLockPool()
+    def __init__(
+        self,
+        key_namespace: Callable[[str], str] | None = None,
+        *,
+        distributed: DistributedLockProvider | None = None,
+    ) -> None:
+        self._locks = CoordinatedLockPool(distributed=distributed)
         self._key_namespace = key_namespace or (lambda key: key)
 
     @asynccontextmanager
@@ -18,9 +23,7 @@ class ResourceMutationGuard:
         normalized = tuple(
             sorted({self._key_namespace(key.strip()) for key in keys if key.strip()})
         )
-        async with AsyncExitStack() as stack:
-            for key in normalized:
-                await stack.enter_async_context(self._locks.hold(key))
+        async with self._locks.hold(*normalized):
             yield
 
 

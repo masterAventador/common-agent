@@ -21,6 +21,7 @@ from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.adapters.persistence import (
     Database,
+    MySqlNamedLockProvider,
     SqlAlchemyAuditStore,
     SqlAlchemyAuthStore,
     SqlAlchemyEventJournal,
@@ -167,7 +168,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ),
             tenant_id_provider=tenant_id_provider,
         )
-        resource_guard = ResourceMutationGuard(key_namespace)
+        resource_guard = ResourceMutationGuard(
+            key_namespace,
+            distributed=MySqlNamedLockProvider(database),
+        )
         app.state.knowledge_bases = knowledge_bases
         app.state.resource_deletions = ResourceDeletionService(
             SqlAlchemyResourceDeletionStore(database, tenant_id_provider),

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from uuid import UUID
 
 import pytest
@@ -263,5 +264,46 @@ def test_resource_guard_serializes_equal_keys_but_not_unrelated_resources() -> N
         release_first.set()
         await asyncio.gather(*tasks)
         assert second_entered.is_set() is True
+
+    asyncio.run(exercise())
+
+
+def test_distinct_resource_guards_share_the_distributed_lock_provider() -> None:
+    class SharedProvider:
+        def __init__(self) -> None:
+            self.lock = asyncio.Lock()
+
+        @asynccontextmanager
+        async def hold(self, keys: tuple[str, ...]) -> AsyncIterator[None]:
+            assert keys == ("tenant:test:knowledge:kb-1",)
+            async with self.lock:
+                yield
+
+    provider = SharedProvider()
+    first_guard = ResourceMutationGuard(lambda key: f"tenant:test:{key}", distributed=provider)
+    second_guard = ResourceMutationGuard(lambda key: f"tenant:test:{key}", distributed=provider)
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    second_entered = asyncio.Event()
+
+    async def first() -> None:
+        async with first_guard.hold("knowledge:kb-1"):
+            first_entered.set()
+            await release_first.wait()
+
+    async def second() -> None:
+        await first_entered.wait()
+        async with second_guard.hold("knowledge:kb-1"):
+            second_entered.set()
+
+    async def exercise() -> None:
+        first_task = asyncio.create_task(first())
+        second_task = asyncio.create_task(second())
+        await first_entered.wait()
+        await asyncio.sleep(0)
+        assert second_entered.is_set() is False
+        release_first.set()
+        await asyncio.gather(first_task, second_task)
+        assert second_entered.is_set()
 
     asyncio.run(exercise())

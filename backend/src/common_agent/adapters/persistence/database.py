@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
@@ -69,3 +70,11 @@ class Database:
             except Exception:
                 await session.rollback()
                 raise
+
+    @asynccontextmanager
+    async def connection(self) -> AsyncIterator[AsyncConnection]:
+        engine = self._engine
+        if engine is None:
+            raise DatabaseNotStartedError("平台数据库尚未启动")
+        async with engine.connect() as connection:
+            yield connection
