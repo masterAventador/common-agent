@@ -39,7 +39,7 @@
 - `test-coverage.sh`：检查覆盖率依赖、生产代码范围、六项不回退阈值、报告忽略和可选 CI
   复用本机入口的契约；
 - `test-frontend-bundle.sh`：对隔离构建 fixture 故障注入，证明前端分析器会拒绝超过 500,000
-  bytes 的单 JS chunk、超过 1,500,000 bytes 的单路由首次 JS 图、缺失 manifest 或五路由入口；
+  bytes 的单 JS chunk、超过 1,500,000 bytes 的单路由首次 JS 图、缺失 manifest 或六路由入口；
 - `generate-contracts.sh`：从正式 FastAPI 应用导出 OpenAPI 并生成前端 TypeScript 类型；
 - `check-contracts.sh`：在隔离临时目录重建契约并检查已提交文件无漂移；
 - `test-platform-e2e.sh`：复用健康的稳定基础设施，以无窗口 `chromium-headless-shell` 编排正式
@@ -51,11 +51,13 @@
   Viewer 只读和跨租户拒绝；设置 `COMMON_AGENT_E2E_SUITE=audit` 时验证 Owner 审计查询、链完整性、
   策略边界和固定脱敏元数据；设置
   `COMMON_AGENT_E2E_SUITE=demo-chat` 时只启用显式 Demo 固定适配器，验证两轮会话、引用、断流
-  和 Worker 自动重试；设置 `COMMON_AGENT_E2E_SUITE=frontend-loading` 时构建并启动生产 preview，验证五入口
+  和 Worker 自动重试；设置 `COMMON_AGENT_E2E_SUITE=frontend-loading` 时构建并启动生产 preview，验证六入口
   首屏/交互与第二轮切换不重复请求 JS；设置 `COMMON_AGENT_E2E_SUITE=workflow-designer` 时只验收 React Flow 拖拽、连线、
   服务端校验、真实知识库引用与 MySQL 保存/刷新回显；设置
   `COMMON_AGENT_E2E_SUITE=workflow-run-ui` 时通过正式页面验收真实百炼完成、协作停止、真实
-  RAGFlow 失效失败和刷新摘要恢复。各套件都负责唯一测试数据、预置测试 Seed、本轮
+  RAGFlow 失效失败和刷新摘要恢复；设置 `COMMON_AGENT_E2E_SUITE=model-configurations` 时通过
+  生产 preview、正式 API/MySQL 和真实百炼验收模型创建、验证、刷新、停用与引用安全删除。各套件
+  都负责唯一测试数据、预置测试 Seed、本轮
   Playwright/前后端进程和成功产物清理；`COMMON_AGENT_E2E_DOCKER_CONTEXT` 可让同一脚本在
   GitHub Runner 的 `default` Docker context 下运行 Demo 门禁。
 - `test-platform-e2e-contract.sh`：静态检查轻量/真实 E2E 的 12/32 GiB 分档、运行中内存探测和

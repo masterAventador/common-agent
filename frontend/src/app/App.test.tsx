@@ -104,6 +104,14 @@ vi.mock("../api/workflows", () => ({
   validateWorkflow: vi.fn(),
 }));
 
+vi.mock("../api/modelConfigurations", () => ({
+  fetchModelConfigurations: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
+  createModelConfiguration: vi.fn(),
+  deleteModelConfiguration: vi.fn(),
+  updateModelConfiguration: vi.fn(),
+  verifyModelConfiguration: vi.fn(),
+}));
+
 vi.mock("../api/audit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/audit")>()),
   fetchAuditEvents: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
@@ -128,6 +136,7 @@ const routes = [
   ["/knowledge-bases", "知识库"],
   ["/workflows", "工作流"],
   ["/audit-events", "审计与安全事件"],
+  ["/model-configurations", "模型管理"],
 ] as const;
 
 describe("App shell", () => {

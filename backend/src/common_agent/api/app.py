@@ -19,6 +19,10 @@ from common_agent.adapters.demo import (
 )
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
+from common_agent.adapters.model.verification import (
+    BailianModelConfigurationVerifier,
+    DemoModelConfigurationVerifier,
+)
 from common_agent.adapters.persistence import (
     Database,
     MySqlNamedLockProvider,
@@ -36,6 +40,9 @@ from common_agent.adapters.persistence.demo_knowledge import (
     SqlAlchemyDemoKnowledgeUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeUnitOfWorkFactory
+from common_agent.adapters.persistence.model_configurations import (
+    SqlAlchemyModelConfigurationUnitOfWorkFactory,
+)
 from common_agent.adapters.persistence.resources import SqlAlchemyResourceDeletionStore
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
@@ -49,6 +56,7 @@ from common_agent.api.routers import (
     conversation_router,
     employee_router,
     knowledge_router,
+    model_configuration_router,
     system_router,
     tenant_router,
     workflow_router,
@@ -76,6 +84,10 @@ from common_agent.employees import EmployeeService
 from common_agent.employees.seeds import seed_default_employee
 from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.model_configurations import (
+    ModelConfigurationService,
+    ModelConfigurationVerifier,
+)
 from common_agent.models.base import TextStreamingModel
 from common_agent.observability import MetricsRegistry, configure_json_logging
 from common_agent.tenancy import (
@@ -135,6 +147,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         worker_settings: WorkerSettings = app.state.worker_settings
         task_queue = SqlAlchemyTaskQueue(database)
         workflow_model: TextStreamingModel
+        model_configuration_verifier: ModelConfigurationVerifier
         if integration_mode.mode == "demo":
             knowledge_adapter = DemoKnowledgeService(
                 SqlAlchemyDemoKnowledgeUnitOfWorkFactory(database, tenant_id_provider)
@@ -142,6 +155,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             runtime = DemoEmployeeRuntime()
             demo_workflow_model = DemoWorkflowModel()
             workflow_model = demo_workflow_model
+            model_configuration_verifier = DemoModelConfigurationVerifier()
         else:
             ragflow_settings: RagFlowSettings = app.state.ragflow_settings
             knowledge_adapter = RagFlowKnowledgeService(
@@ -157,8 +171,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     else None
                 ),
             )
-            model = BailianChatModelAdapter(ModelSettings.from_env())
+            model_settings = ModelSettings.from_env()
+            model = BailianChatModelAdapter(model_settings)
             workflow_model = model
+            model_configuration_verifier = BailianModelConfigurationVerifier(model_settings)
         knowledge_bases = KnowledgeBaseService(
             knowledge_adapter,
             ownership=(
@@ -173,6 +189,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             distributed=MySqlNamedLockProvider(database),
         )
         app.state.knowledge_bases = knowledge_bases
+        app.state.model_configurations = ModelConfigurationService(
+            SqlAlchemyModelConfigurationUnitOfWorkFactory(database, tenant_id_provider),
+            verifier=model_configuration_verifier,
+            guard=resource_guard,
+        )
         app.state.resource_deletions = ResourceDeletionService(
             SqlAlchemyResourceDeletionStore(database, tenant_id_provider),
             knowledge_bases,
@@ -255,6 +276,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.workflows = None
         app.state.workflow_events = None
         app.state.knowledge_bases = None
+        app.state.model_configurations = None
         app.state.resource_deletions = None
         app.state.system = None
         if workflows is not None:
@@ -327,6 +349,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         knowledge_router,
+        dependencies=protected,
+        responses=protected_responses,
+    )
+    app.include_router(
+        model_configuration_router,
         dependencies=protected,
         responses=protected_responses,
     )

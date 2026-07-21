@@ -35,6 +35,10 @@ def knowledge_base_resource(knowledge_base_id: str) -> str:
     return f"knowledge:{knowledge_base_id}"
 
 
+def model_configuration_resource(model_configuration_id: object) -> str:
+    return f"model-configuration:{model_configuration_id}"
+
+
 def workflow_resource(workflow_id: object) -> str:
     return f"workflow:{workflow_id}"
 
@@ -43,5 +47,6 @@ __all__ = [
     "ResourceMutationGuard",
     "employee_resource",
     "knowledge_base_resource",
+    "model_configuration_resource",
     "workflow_resource",
 ]

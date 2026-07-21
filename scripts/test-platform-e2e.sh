@@ -41,6 +41,7 @@ COMMON_AGENT_E2E_TENANT_EMPLOYEE_NAME="common-agent-s10-03-employee-${RUN_ID}"
 COMMON_AGENT_E2E_VIEWER_EMAIL="viewer-s10-03-${RUN_ID}@example.com"
 COMMON_AGENT_E2E_VIEWER_PASSWORD="viewer initial password is secure"
 COMMON_AGENT_E2E_AUDIT_EMPLOYEE_NAME="common-agent-s10-04-audit-${RUN_ID}"
+COMMON_AGENT_E2E_MODEL_NAME="common-agent-s10-07e-model-${RUN_ID}"
 LIGHT_E2E_MEMORY_GIB=12
 REAL_E2E_MEMORY_GIB=32
 ARTIFACT_ROOT="${REPOSITORY_ROOT}/.local/test-artifacts/platform-e2e/${E2E_SUITE}-${RUN_ID}"
@@ -55,7 +56,7 @@ FRONTEND_PID=""
 RAGFLOW_API_KEY=""
 COMMON_AGENT_DATABASE_URL="mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
 
-if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUITE}" != "audit" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "design-system" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" && "${E2E_SUITE}" != "resource-deletion" && "${E2E_SUITE}" != "list-pagination" && "${E2E_SUITE}" != "knowledge-pagination" ]]; then
+if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUITE}" != "audit" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "design-system" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" && "${E2E_SUITE}" != "resource-deletion" && "${E2E_SUITE}" != "list-pagination" && "${E2E_SUITE}" != "knowledge-pagination" && "${E2E_SUITE}" != "model-configurations" ]]; then
   echo "不支持的 E2E suite：${E2E_SUITE}" >&2
   exit 2
 fi
@@ -176,6 +177,16 @@ cleanup() {
         "${UV_RUNNER}" run --frozen python -m tests.support.audit_e2e_cleanup
     ); then
       echo "审计 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
+      cleanup_status=1
+    fi
+  elif [[ "${E2E_SUITE}" == "model-configurations" ]]; then
+    if ! (
+      cd "${BACKEND_ROOT}"
+      COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
+      COMMON_AGENT_E2E_MODEL_NAME="${COMMON_AGENT_E2E_MODEL_NAME}" \
+        "${UV_RUNNER}" run --frozen python -m tests.support.model_configuration_e2e_state cleanup
+    ); then
+      echo "模型管理 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
       cleanup_status=1
     fi
   elif [[ "${E2E_SUITE}" == "demo-chat" ]]; then
@@ -344,6 +355,7 @@ export COMMON_AGENT_E2E_TENANT_EMPLOYEE_NAME
 export COMMON_AGENT_E2E_VIEWER_EMAIL
 export COMMON_AGENT_E2E_VIEWER_PASSWORD
 export COMMON_AGENT_E2E_AUDIT_EMPLOYEE_NAME
+export COMMON_AGENT_E2E_MODEL_NAME
 export COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN="${COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN}"
 export COMMON_AGENT_API_PORT="${API_PORT}"
 export COMMON_AGENT_CORS_ORIGINS="http://127.0.0.1:${FRONTEND_PORT}"
@@ -397,7 +409,7 @@ fi
 (
   cd "${FRONTEND_ROOT}"
   unset RAGFLOW_API_KEY
-  if [[ "${E2E_SUITE}" == "frontend-loading" || "${E2E_SUITE}" == "design-system" ]]; then
+  if [[ "${E2E_SUITE}" == "frontend-loading" || "${E2E_SUITE}" == "design-system" || "${E2E_SUITE}" == "model-configurations" ]]; then
     VITE_API_BASE_URL="http://127.0.0.1:${API_PORT}/api/v1" pnpm build
     exec env VITE_API_BASE_URL="http://127.0.0.1:${API_PORT}/api/v1" \
       pnpm exec vite preview --host 127.0.0.1 --port "${FRONTEND_PORT}" --strictPort
@@ -423,6 +435,12 @@ wait_for_url "http://127.0.0.1:${FRONTEND_PORT}/knowledge-bases"
     COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
     COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
       exec pnpm exec playwright test e2e/audit.spec.ts --config playwright.config.ts
+  elif [[ "${E2E_SUITE}" == "model-configurations" ]]; then
+    COMMON_AGENT_E2E_MODEL_NAME="${COMMON_AGENT_E2E_MODEL_NAME}" \
+    COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
+      exec pnpm exec playwright test \
+        e2e/model-configurations.spec.ts --config playwright.config.ts
   elif [[ "${E2E_SUITE}" == "platform" ]]; then
     COMMON_AGENT_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_KNOWLEDGE_NAME}" \
     COMMON_AGENT_E2E_EMPLOYEE_NAME="${COMMON_AGENT_E2E_EMPLOYEE_NAME}" \

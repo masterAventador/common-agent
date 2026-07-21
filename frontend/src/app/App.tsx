@@ -13,6 +13,7 @@ import {
 } from "antd";
 import {
   Bot,
+  Boxes,
   Database,
   LogOut,
   MessageSquare,
@@ -56,6 +57,12 @@ const AuditEventsPage = lazy(async () => {
   const module = await import("../features/audit/AuditEventsPage");
   return { default: module.AuditEventsPage };
 });
+const ModelConfigurationsPage = lazy(async () => {
+  const module = await import(
+    "../features/model-configurations/ModelConfigurationsPage"
+  );
+  return { default: module.ModelConfigurationsPage };
+});
 
 const entries = [
   {
@@ -77,6 +84,11 @@ const entries = [
     path: "/workflows",
     label: "工作流",
     icon: <Workflow aria-hidden="true" size={18} strokeWidth={1.75} />,
+  },
+  {
+    path: "/model-configurations",
+    label: "模型管理",
+    icon: <Boxes aria-hidden="true" size={18} strokeWidth={1.75} />,
   },
   {
     path: "/audit-events",
@@ -238,6 +250,12 @@ function AuthenticatedApp() {
               <Route
                 path="/workflows"
                 element={<WorkflowsPage readOnly={selectedTenant?.role === "viewer"} />}
+              />
+              <Route
+                path="/model-configurations"
+                element={
+                  <ModelConfigurationsPage readOnly={selectedTenant?.role === "viewer"} />
+                }
               />
               <Route
                 path="/audit-events"

@@ -41,6 +41,10 @@ grep -Fq 'COMMON_AGENT_CORS_ORIGINS="http://127.0.0.1:${FRONTEND_PORT}"' "${RUNN
   fail "E2E 独立 API 没有信任所选隔离前端端口"
 grep -Fq 'e2e/design-system.spec.ts' "${RUNNER}" || \
   fail "E2E 入口没有执行统一设计正式页面用例"
+grep -Fq 'e2e/model-configurations.spec.ts' "${RUNNER}" || \
+  fail "E2E 入口没有执行正式模型管理页面用例"
+grep -Fq 'tests.support.model_configuration_e2e_state cleanup' "${RUNNER}" || \
+  fail "模型管理 E2E 没有登记精确引用与业务数据清理器"
 grep -Fq 'tests.support.audit_e2e_cleanup' "${RUNNER}" || \
   fail "审计 E2E 没有登记精确业务数据清理器"
 grep -Fq 'e2e/knowledge-pagination.spec.ts' "${RUNNER}" || \

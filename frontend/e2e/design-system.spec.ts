@@ -6,6 +6,7 @@ const routes = [
   { path: "/knowledge-bases", heading: "知识库" },
   { path: "/workflows", heading: "工作流" },
   { path: "/audit-events", heading: "审计与安全事件" },
+  { path: "/model-configurations", heading: "模型管理" },
 ] as const;
 
 test("keeps the unified product shell on every production page", async ({ page }) => {

@@ -41,6 +41,10 @@ from common_agent.domain.knowledge import (
     KNOWLEDGE_DOCUMENT_ID_MAX_LENGTH,
     KNOWLEDGE_DOCUMENT_NAME_MAX_LENGTH,
 )
+from common_agent.domain.model_configuration import (
+    MODEL_DISPLAY_NAME_MAX_LENGTH,
+    MODEL_IDENTIFIER_MAX_LENGTH,
+)
 from common_agent.domain.workflow import (
     WORKFLOW_DESCRIPTION_MAX_LENGTH,
     WORKFLOW_EDGE_ID_MAX_LENGTH,
@@ -603,6 +607,125 @@ class DemoKnowledgeDocumentRow(PersistenceBase):
         String(KNOWLEDGE_DOCUMENT_ERROR_CODE_MAX_LENGTH), nullable=True
     )
     content: Mapped[str] = mapped_column(mysql.LONGTEXT(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class ModelConfigurationRow(PersistenceBase):
+    __tablename__ = "model_configurations"
+    __table_args__ = (
+        CheckConstraint(
+            "CHAR_LENGTH(id) = 36 AND id = TRIM(id)",
+            name="ck_model_configurations_id",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(display_name) BETWEEN 1 AND "
+            f"{MODEL_DISPLAY_NAME_MAX_LENGTH} AND display_name = TRIM(display_name)",
+            name="ck_model_configurations_display_name",
+        ),
+        CheckConstraint(
+            "provider = 'bailian'",
+            name="ck_model_configurations_provider",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(model_identifier) BETWEEN 1 AND "
+            f"{MODEL_IDENTIFIER_MAX_LENGTH} AND model_identifier = TRIM(model_identifier)",
+            name="ck_model_configurations_identifier",
+        ),
+        CheckConstraint(
+            "updated_at >= created_at",
+            name="ck_model_configurations_timestamps",
+        ),
+        UniqueConstraint("tenant_id", "id", name="uq_model_configurations_tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "display_name",
+            name="uq_model_configurations_tenant_name",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "provider",
+            "model_identifier",
+            name="uq_model_configurations_tenant_provider_identifier",
+        ),
+        Index(
+            "ix_model_configurations_tenant_created",
+            "tenant_id",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_model_configurations_tenant_enabled_created",
+            "tenant_id",
+            "enabled",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_model_configurations_tenant_name_created",
+            "tenant_id",
+            "display_name",
+            "created_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_model_configurations_tenant_id",
+        ),
+        nullable=False,
+    )
+    display_name: Mapped[str] = mapped_column(String(MODEL_DISPLAY_NAME_MAX_LENGTH), nullable=False)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    model_identifier: Mapped[str] = mapped_column(
+        String(MODEL_IDENTIFIER_MAX_LENGTH), nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class ModelConfigurationReferenceRow(PersistenceBase):
+    __tablename__ = "model_configuration_references"
+    __table_args__ = (
+        CheckConstraint(
+            "resource_type IN ('employee', 'workflow', 'conversation')",
+            name="ck_model_configuration_references_type",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(resource_id) BETWEEN 1 AND 128 AND resource_id = TRIM(resource_id)",
+            name="ck_model_configuration_references_resource_id",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "model_configuration_id"],
+            ["model_configurations.tenant_id", "model_configurations.id"],
+            name="fk_model_configuration_references_configuration",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "ix_model_configuration_references_resource",
+            "tenant_id",
+            "resource_type",
+            "resource_id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_model_configuration_references_tenant_id",
+        ),
+        primary_key=True,
+    )
+    model_configuration_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    resource_type: Mapped[str] = mapped_column(String(32), primary_key=True)
+    resource_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
 
 

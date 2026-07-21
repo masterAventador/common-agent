@@ -12,6 +12,7 @@
 - 数字员工创建、编辑和知识库绑定；
 - RAGFlow 知识库创建、文档上传、解析状态和自动检索；
 - 可视化工作流定义的校验、保存与 LangGraph 执行。
+- 租户隔离的阿里百炼模型配置、真实调用验证和引用安全生命周期。
 - 首位所有者注册、登录、恢复与可撤销的服务端安全会话。
 - 组织下的多工作区、成员角色与五类业务资源的租户隔离。
 - 固定元数据、租户隔离且不可原地篡改的审计与安全事件。
@@ -42,7 +43,8 @@ React
 
 - 第一版只支持阿里百炼，不引入 LiteLLM 或供应商路由；
 - 使用百炼 OpenAI 兼容接口和 `langchain-openai` 的 `ChatOpenAI`；
-- `base_url`、模型名和 API Key 来自后端配置；
+- `base_url` 和 API Key 来自后端配置；聊天模型标识可以来自当前租户的已启用模型配置，未迁移
+  的既有链路暂时使用后端默认模型；
 - 用户明确批准现有百炼 Demo API Key 只在私有仓库 `backend/.env.demo` 中版本化，且明确选择不轮换；这是唯一凭据例外；
 - API Key 永远不进入前端响应、日志、异常、OpenAPI 样例或测试快照；
 - 模型适配器固定使用锁文件中的 `langchain-openai==1.3.5`，只接受百炼官方
@@ -55,6 +57,8 @@ React
   工作流、会话、领域或应用层；
 - 平台只投影增量文本和唯一完成终态；认证/权限、请求拒绝、限流、超时、5xx、空输出和已开始流的中断
   转换成稳定安全错误，不透传供应商响应体、提示词或凭据。
+- `BailianModelConfigurationVerifier` 只接收经过领域校验的模型标识，以服务端统一凭据创建短生命周期
+  百炼适配器并走同一平台 `ModelRequest` 流协议；无论成功失败都关闭同步/异步 HTTP 客户端。
 
 ### 2.3 Deep Agents 负责数字员工
 
@@ -88,6 +92,7 @@ React
 
 - 组织、租户、成员关系和最小角色；
 - 数字员工和知识库绑定；
+- 租户模型配置及数字员工、工作流、会话对模型的通用引用关系；
 - 会话与消息；
 - 工作流定义和运行摘要；
 - Demo 模式的知识库、文档正文与解析终态；
@@ -310,7 +315,29 @@ Employee
 不保存行业字段、业务任务状态或 automation-tool 的业务模型。`allowed_workflow_ids` 只是对独立
 工作流公开能力的调用白名单，不内嵌工作流图；在 Wave 5 接入工作流前保持空列表。
 
-### 4.2 会话与消息
+### 4.2 模型配置
+
+```text
+ModelConfiguration
+├── id: UUID
+├── display_name
+├── provider: bailian
+├── model_identifier
+├── enabled
+├── created_at
+└── updated_at
+```
+
+模型配置是当前租户的业务资源；显示名称和同一提供商模型标识在租户内唯一，模型标识只允许
+字母、数字、点、下划线和连字符，不能把 URL、路径或任意供应商参数带入适配器。列表使用
+`created_at DESC, id DESC` keyset 游标，并可只返回启用配置，筛选条件进入游标作用域。
+
+`model_configuration_references` 是员工、工作流和会话后续绑定模型的统一引用表。删除在同一租户
+分布式资源锁和 MySQL 事务中重新查询引用，有引用时返回 `model_configuration_in_use`；复合外键
+同时阻止跨租户引用和绕过应用层的删除。停用只影响后续新选择，不改写既有引用。测试调用允许在
+启用前执行，以便用户先验证再启用；它不持久化提示词或供应商正文，只审计固定动作与资源 ID。
+
+### 4.3 会话与消息
 
 ```text
 Conversation
@@ -353,7 +380,7 @@ Citation
 消息序号及引用分数同时由领域模型和数据库约束。Repository 只更新标题或消息运行态等可变
 字段，不允许借更新操作迁移员工、会话归属、序号、角色或创建时间。
 
-### 4.3 EmployeeRuntime 会话协议
+### 4.4 EmployeeRuntime 会话协议
 
 `EmployeeRuntime` 每次 `stream(request, stop=...)` 只生成同一会话中的一条助手回复，不创建
 任务实体，也不暴露旧任务模型的启动、审批、恢复或产物方法。请求显式携带 Conversation、
@@ -372,7 +399,7 @@ Employee、助手占位消息 ID/序号、员工系统指令、按持久化序�
 迭代并产生 stopped，不能把用户停止伪装成失败，也不能在终态后接受晚到内容。A4-06 再把
 这些内部事件映射为持久化后才能推送的平台 SSE 事件，二者的 sequence 不互相冒充。
 
-### 4.4 知识库引用
+### 4.5 知识库引用
 
 ```text
 KnowledgeBaseRef
@@ -397,7 +424,7 @@ Demo 模式实现相同 `KnowledgeService` 协议，但不调用或伪装 RAGFlo
 已有消息引用和重新检索必须指向同一知识库与文档；应用关闭不得清空已提交数据。Demo 数据仍由
 明确测试/用户删除生命周期管理，不能依赖进程退出制造“已清理”。
 
-### 4.5 工作流
+### 4.6 工作流
 
 ```text
 WorkflowDefinition
@@ -503,6 +530,13 @@ GET    /api/v1/audit-events
 GET    /api/v1/audit-events/integrity
 GET    /api/v1/audit-events/policy
 
+GET    /api/v1/model-configurations
+POST   /api/v1/model-configurations
+GET    /api/v1/model-configurations/{model_configuration_id}
+PUT    /api/v1/model-configurations/{model_configuration_id}
+DELETE /api/v1/model-configurations/{model_configuration_id}
+POST   /api/v1/model-configurations/{model_configuration_id}/verify
+
 GET    /api/v1/employees
 POST   /api/v1/employees
 GET    /api/v1/employees/{employee_id}
@@ -536,7 +570,8 @@ POST   /api/v1/workflow-runs/{run_id}/stop
 GET    /api/v1/workflow-runs/{run_id}/events
 ```
 
-四类删除是 MVP 后 U9-01 增加的正式能力；U9-03 为五类列表交付统一游标与基础服务端搜索。
+四类删除是 MVP 后 U9-01 增加的正式能力；模型配置另有自己的引用安全删除。U9-03 为既有五类
+列表交付统一游标与基础服务端搜索，模型配置沿用同一分页协议。
 权限与 Owner 审计已由 Wave 10 交付；批量操作和业务列表高级筛选仍不属于当前范围。
 
 ### 7.1 资源删除矩阵
@@ -654,6 +689,9 @@ completed/failed/stopped 都严格提交后发布。停止接口只接受活跃�
 稳定错误至少包括：
 
 - `configuration_missing`：必要本地配置缺失；
+- `model_configuration_not_found`：当前工作区不存在指定模型配置；
+- `model_configuration_conflict`：显示名称或百炼模型标识在当前工作区重复；
+- `model_configuration_in_use`：数字员工、工作流或会话仍引用该模型配置；
 - `model_unavailable`：百炼超时、限流或服务错误；
 - `knowledge_service_unavailable`：RAGFlow 不可达；
 - `knowledge_base_not_found`：绑定或节点引用失效；

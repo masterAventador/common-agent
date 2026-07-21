@@ -21,7 +21,7 @@ fail() {
 [[ -f "${CHECKER}" ]] || fail "缺少前端 bundle 预算检查器"
 
 mkdir -p "${FIXTURE_ROOT}/assets" "${FIXTURE_ROOT}/.vite"
-for route in ChatPage EmployeesPage KnowledgeBasesPage WorkflowsPage AuditEventsPage; do
+for route in ChatPage EmployeesPage KnowledgeBasesPage ModelConfigurationsPage WorkflowsPage AuditEventsPage; do
   route_file="${route}.js"
   printf 'export const route = true;\n' > "${FIXTURE_ROOT}/assets/${route_file}"
 done
@@ -30,6 +30,7 @@ cat > "${FIXTURE_ROOT}/.vite/manifest.json" <<'JSON'
   "src/features/chat/ChatPage.tsx": {"file":"assets/ChatPage.js","isDynamicEntry":true},
   "src/features/employees/EmployeesPage.tsx": {"file":"assets/EmployeesPage.js","isDynamicEntry":true},
   "src/features/knowledge-bases/KnowledgeBasesPage.tsx": {"file":"assets/KnowledgeBasesPage.js","isDynamicEntry":true},
+  "src/features/model-configurations/ModelConfigurationsPage.tsx": {"file":"assets/ModelConfigurationsPage.js","isDynamicEntry":true},
   "src/features/workflows/WorkflowsPage.tsx": {"file":"assets/WorkflowsPage.js","isDynamicEntry":true},
   "src/features/audit/AuditEventsPage.tsx": {"file":"assets/AuditEventsPage.js","isDynamicEntry":true}
 }
@@ -37,7 +38,7 @@ JSON
 
 node "${CHECKER}" "${FIXTURE_ROOT}" > "${OUTPUT}"
 grep -Fq '最大 JS chunk' "${OUTPUT}" || fail "bundle 分析没有报告最大 chunk"
-for route in /chat /employees /knowledge-bases /workflows /audit-events; do
+for route in /chat /employees /knowledge-bases /model-configurations /workflows /audit-events; do
   grep -Fq "${route}" "${OUTPUT}" || fail "bundle 分析缺少路由 ${route}"
 done
 
@@ -61,6 +62,7 @@ cat > "${FIXTURE_ROOT}/.vite/manifest.json" <<'JSON'
   "src/features/chat/ChatPage.tsx": {"file":"assets/ChatPage.js","isDynamicEntry":true},
   "src/features/employees/EmployeesPage.tsx": {"file":"assets/EmployeesPage.js","isDynamicEntry":true},
   "src/features/knowledge-bases/KnowledgeBasesPage.tsx": {"file":"assets/KnowledgeBasesPage.js","isDynamicEntry":true},
+  "src/features/model-configurations/ModelConfigurationsPage.tsx": {"file":"assets/ModelConfigurationsPage.js","isDynamicEntry":true},
   "src/features/workflows/WorkflowsPage.tsx": {"file":"assets/WorkflowsPage.js","isDynamicEntry":true},
   "src/features/audit/AuditEventsPage.tsx": {"file":"assets/AuditEventsPage.js","isDynamicEntry":true}
 }
@@ -82,6 +84,7 @@ cat > "${FIXTURE_ROOT}/.vite/manifest.json" <<'JSON'
   "src/features/chat/ChatPage.tsx": {"file":"assets/ChatPage.js","isDynamicEntry":true,"imports":["_shared-1","_shared-2","_shared-3","_shared-4"]},
   "src/features/employees/EmployeesPage.tsx": {"file":"assets/EmployeesPage.js","isDynamicEntry":true},
   "src/features/knowledge-bases/KnowledgeBasesPage.tsx": {"file":"assets/KnowledgeBasesPage.js","isDynamicEntry":true},
+  "src/features/model-configurations/ModelConfigurationsPage.tsx": {"file":"assets/ModelConfigurationsPage.js","isDynamicEntry":true},
   "src/features/workflows/WorkflowsPage.tsx": {"file":"assets/WorkflowsPage.js","isDynamicEntry":true},
   "_shared-1": {"file":"assets/shared-1.js"},
   "_shared-2": {"file":"assets/shared-2.js"},
@@ -101,4 +104,4 @@ if node "${CHECKER}" "${FIXTURE_ROOT}" > "${OUTPUT}" 2>&1; then
 fi
 grep -Fq 'manifest' "${OUTPUT}" || fail "缺少 manifest 时没有可操作错误"
 
-echo "前端 bundle 分析、五路由与 500 kB 预算契约通过"
+echo "前端 bundle 分析、六路由与 500 kB 预算契约通过"

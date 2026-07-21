@@ -69,10 +69,12 @@ backend/
 │       ├── events/              # 平台持久事件模型与 Journal 端口
 │       ├── tasks/               # 持久任务模型、队列端口、租约 Worker 与并发池
 │       ├── employees/           # 数字员工应用服务与启动 Seed
+│       ├── model_configurations/ # 租户模型配置应用服务与引用安全删除
 │       ├── domain/              # 与第三方无关的会话和能力模型
 │       │   ├── conversation.py
 │       │   ├── employee.py
 │       │   ├── knowledge.py
+│       │   ├── model_configuration.py
 │       │   ├── workflow.py
 │       │   └── workflow_run.py
 │       ├── models/              # 平台自有消息、模型流、错误和释放协议
@@ -168,6 +170,7 @@ frontend/
 │   │   ├── chat/                # 页面编排、Query/SSE 控制器、消息投影与三栏展示
 │   │   ├── employees/           # 数字员工列表、编辑和知识库绑定
 │   │   ├── knowledge-bases/     # 知识库创建、文档上传和解析状态
+│   │   ├── model-configurations/ # 百炼模型配置、真实验证与引用阻断
 │   │   └── workflows/           # 页面编排、设计器控制器、节点面板、画布、属性和运行
 │   ├── components/              # 真实跨功能复用的公共 UI
 │   ├── api/                     # Axios、SSE、Query Client 和生成契约
@@ -186,13 +189,14 @@ frontend/
 └── README.md
 ```
 
-业务区包含聊天工作台、数字员工、知识库、独立工作流设计器，以及仅 Owner 可见的审计事件页；未认证或尚未选择工作区时由真实
+业务区包含聊天工作台、数字员工、知识库、独立工作流设计器、模型管理，以及仅 Owner 可见的
+审计事件页；未认证或尚未选择工作区时由真实
 `auth` Provider 阻止业务路由挂载，工作区选择和成员配置复用全局壳层，不为其他未实现能力创建
 空目录或菜单。工作流画布使用成熟的 React 节点
 图库，不自行实现缩放、拖拽、连线和命中测试。
 页面容器只组合控制器和展示区域；协议映射、服务端状态、流式/运行状态、画布和属性表单分模块维护。
 架构门禁限制页面容器体量、跨 Feature 私有导入、实现层反向依赖容器和拆分模块循环依赖。
-Vite 生产构建保留五个路由异步入口并使用入口感知 vendor 分组；manifest 分析同时约束 500,000
+Vite 生产构建保留六个路由异步入口并使用入口感知 vendor 分组；manifest 分析同时约束 500,000
 bytes 单 chunk 和 1,500,000 bytes 单路由首次 JS 图，生产 preview 浏览器验证首屏、切换和复用。
 
 ## 4. 跨端契约

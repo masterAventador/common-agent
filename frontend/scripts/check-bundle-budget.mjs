@@ -8,6 +8,10 @@ const ROUTES = new Map([
   ["/employees", "src/features/employees/EmployeesPage.tsx"],
   ["/knowledge-bases", "src/features/knowledge-bases/KnowledgeBasesPage.tsx"],
   ["/workflows", "src/features/workflows/WorkflowsPage.tsx"],
+  [
+    "/model-configurations",
+    "src/features/model-configurations/ModelConfigurationsPage.tsx",
+  ],
   ["/audit-events", "src/features/audit/AuditEventsPage.tsx"],
 ]);
 

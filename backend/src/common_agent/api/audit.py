@@ -196,6 +196,11 @@ def _classify(
             AuditResourceType.EMPLOYEE,
             None,
         ),
+        ("POST", "/api/v1/model-configurations"): (
+            AuditAction.MODEL_CONFIGURATION_CREATED,
+            AuditResourceType.MODEL_CONFIGURATION,
+            None,
+        ),
         ("POST", "/api/v1/knowledge-bases"): (
             AuditAction.KNOWLEDGE_BASE_CREATED,
             AuditResourceType.KNOWLEDGE_BASE,
@@ -211,6 +216,27 @@ def _classify(
     if matched is not None:
         return matched
     patterns = (
+        (
+            "PUT",
+            r"/api/v1/model-configurations/[^/]+",
+            AuditAction.MODEL_CONFIGURATION_UPDATED,
+            AuditResourceType.MODEL_CONFIGURATION,
+            "model_configuration_id",
+        ),
+        (
+            "DELETE",
+            r"/api/v1/model-configurations/[^/]+",
+            AuditAction.RESOURCE_DELETED,
+            AuditResourceType.MODEL_CONFIGURATION,
+            "model_configuration_id",
+        ),
+        (
+            "POST",
+            r"/api/v1/model-configurations/[^/]+/verify",
+            AuditAction.MODEL_CONFIGURATION_VERIFIED,
+            AuditResourceType.MODEL_CONFIGURATION,
+            "model_configuration_id",
+        ),
         (
             "POST",
             r"/api/v1/tenants/[^/]+/members",

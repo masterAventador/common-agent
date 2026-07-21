@@ -1251,6 +1251,7 @@ a,
 
 .entry-shell,
 .employees-page,
+.model-configurations-page,
 .knowledge-page,
 .chat-page,
 .workflows-page,
@@ -1262,6 +1263,7 @@ a,
 
 .entry-shell,
 .employees-page,
+.model-configurations-page,
 .knowledge-page {
   min-height: calc(100vh - 112px);
   padding: 0;
@@ -1272,6 +1274,7 @@ a,
 }
 
 .employees-page-heading,
+.model-configurations-heading,
 .knowledge-page-heading,
 .chat-page-heading,
 .workflows-heading,
@@ -1283,6 +1286,7 @@ a,
 }
 
 .employees-page-heading h2,
+.model-configurations-heading h2,
 .knowledge-page-heading h2,
 .chat-page-heading h2,
 .workflows-heading h2,
@@ -1294,6 +1298,7 @@ a,
 }
 
 .employees-page-heading .ant-typography,
+.model-configurations-heading .ant-typography,
 .knowledge-page-heading .ant-typography,
 .chat-page-heading .ant-typography,
 .workflows-heading .ant-typography,
@@ -1302,6 +1307,7 @@ a,
 }
 
 .employees-title-icon,
+.model-configurations-title-icon,
 .knowledge-title-icon,
 .chat-title-icon,
 .workflows-title-icon {
@@ -1311,6 +1317,48 @@ a,
 .employee-card-grid {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
+}
+
+.model-configurations-inline-alert {
+  margin-top: 16px;
+}
+
+.model-configurations-empty-card,
+.model-configuration-grid {
+  margin-top: 20px;
+}
+
+.model-configuration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.model-configuration-card {
+  border-color: var(--border);
+  background: var(--bg-container);
+}
+
+.model-configuration-card .ant-card-body {
+  display: flex;
+  min-height: 176px;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.model-configuration-details {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.model-configuration-card .ant-flex:last-child {
+  margin-top: auto;
+}
+
+.model-configurations-load-more {
+  margin-top: 20px;
 }
 
 .employee-card {
@@ -1585,6 +1633,7 @@ a,
   }
 
   .employees-page-heading,
+  .model-configurations-heading,
   .knowledge-page-heading,
   .chat-page-heading,
   .workflows-heading,
@@ -1627,6 +1676,10 @@ a,
   }
 
   .employee-card-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-configuration-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
