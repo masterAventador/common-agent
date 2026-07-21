@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNNER="${SCRIPT_DIR}/test-platform-e2e.sh"
+PLAYWRIGHT_CONFIG="${SCRIPT_DIR}/../frontend/playwright.config.ts"
 
 fail() {
   echo "$1" >&2
@@ -36,5 +37,13 @@ grep -Fq 'python -m common_agent.worker_main' "${RUNNER}" || \
   fail "平台 E2E 没有启动正式独立 Worker 入口"
 grep -Fq 'stop_process "${WORKER_PID}"' "${RUNNER}" || \
   fail "平台 E2E 清理阶段没有停止独立 Worker"
+grep -Fq 'headless: true' "${PLAYWRIGHT_CONFIG}" || \
+  fail "Playwright 没有强制无头运行"
+grep -Fq 'channel: "chromium-headless-shell"' "${PLAYWRIGHT_CONFIG}" || \
+  fail "Playwright 没有锁定无窗口 chromium-headless-shell"
+grep -Fq '"--headless"' "${PLAYWRIGHT_CONFIG}" || \
+  fail "Playwright 启动参数没有显式禁止有头模式"
+grep -Fq '"--no-startup-window"' "${PLAYWRIGHT_CONFIG}" || \
+  fail "Playwright 启动参数没有禁止创建启动窗口"
 
 echo "平台 E2E 资源档位契约通过"
