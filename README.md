@@ -1,6 +1,6 @@
 # common-agent
 
-`common-agent` 是一个面向本机开发的通用 AI Agent 中台。MVP 已跑通连续 AI 会话、数字员工、RAGFlow 知识库和最小可视化工作流；当前生产化阶段已增加安全会话、组织下多工作区、成员账号、Owner/Editor/Viewer 最小 RBAC、不可篡改审计，以及由 MySQL 持久队列和独立 Worker 承载的可恢复会话/工作流执行。Skill 市场、SSO、细粒度授权和远程部署仍不在当前完成范围。
+`common-agent` 是一个面向本机开发的通用 AI Agent 中台。MVP 已跑通连续 AI 会话、数字员工、RAGFlow 知识库和最小可视化工作流；当前生产化阶段已增加安全会话、组织下多工作区、成员账号、Owner/Editor/Viewer 最小 RBAC、不可篡改审计、由 MySQL 持久队列和独立 Worker 承载的可恢复执行，以及平台/RAGFlow 的认证加密备份与隔离恢复演练。Skill 市场、SSO、细粒度授权和远程部署仍不在当前完成范围。
 
 ## MVP 能力
 
@@ -86,6 +86,25 @@ Colima 原生 Volume，避免 macOS bind mount 在虚拟机重启后丢失容器
 峰值 6.91 GiB、容器合计峰值 6.85 GiB、Swap/重启/OOM 均为 0，因此确认为长期 `real`
 默认值；日常 Demo 仍使用 12 GiB `demo-light`。
 
+## 备份与恢复
+
+`infra/backup/manage.sh` 统一备份平台 MySQL、RAGFlow MySQL/MinIO/Elasticsearch/Valkey 四个
+停写 Volume、平台持有的外部知识库归属，以及非敏感部署配置。归档使用独立 `0600` 256-bit
+密钥和 AES-256-GCM，内含文件大小与 SHA-256 清单；密钥、百炼 Key、RAGFlow Token、认证凭据
+和数据库口令不进入归档。策略固定为 24 小时 RPO、120 分钟 RTO、30 天保留、至少 7 个代际，
+每 90 天执行一次恢复演练。
+
+```bash
+infra/backup/manage.sh init-key
+scripts/real.sh stop
+infra/platform/manage.sh up
+infra/backup/manage.sh backup
+infra/backup/manage.sh drill
+```
+
+`restore` 和 `drill` 只允许 `common-agent-recovery-*` 空环境，拒绝覆盖正式容器、数据库和 Volume；
+完整运维步骤、密钥分离与恢复前置条件见 [备份恢复说明](infra/backup/README.md)。
+
 ## 项目文档
 
 - [产品范围](docs/product-scope.md)：只定义产品功能和边界；
@@ -96,5 +115,6 @@ Colima 原生 Volume，避免 macOS bind mount 在虚拟机重启后丢失容器
 - [项目主规则](CLAUDE.md)：开发、测试、验收与本地资源规则。
 - [平台 MySQL 本机栈](infra/platform/README.md)：固定版本、隔离端口、Volume 和复用方式。
 - [RAGFlow 本机栈](infra/ragflow/README.md)：固定版本、隔离端口、资源和复用方式。
+- [备份恢复与灾演](infra/backup/README.md)：数据边界、加密、保留、RPO/RTO 和隔离恢复入口。
 
 具体任务状态和当前下一步只以开发路线图为准。

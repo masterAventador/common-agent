@@ -54,3 +54,7 @@
   GitHub Runner 的 `default` Docker context 下运行 Demo 门禁。
 - `test-platform-e2e-contract.sh`：静态检查轻量/真实 E2E 的 12/32 GiB 分档、运行中内存探测和
   切档前的项目栈精确停止边界。
+
+平台/RAGFlow 备份恢复属于 `infra/backup/` 的基础设施边界，不在 `scripts/` 建立第二套入口；
+`infra/backup/manage.sh drill` 会编排正式 API、独立 Worker、Vite 和无头 Chromium，并在源环境
+销毁后验证空 recovery 环境中的真实 RAGFlow 文档、员工绑定与审计链。

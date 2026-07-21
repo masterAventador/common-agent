@@ -1,0 +1,1 @@
+"""Authenticated backup archive adapter."""

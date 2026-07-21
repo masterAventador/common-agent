@@ -5,3 +5,5 @@
 本目录不复制第三方项目源码，也不保存本机 Volume 数据或凭据。
 
 - [`ragflow/`](ragflow/)：固定官方版本、外围 Compose 覆盖层、稳定开发栈管理入口和配置门禁。
+- [`platform/`](platform/)：平台独立 MySQL 的固定版本、专属端口、Volume 和生命周期入口。
+- [`backup/`](backup/)：平台/RAGFlow 认证加密归档、保留策略、空 recovery 环境恢复和正式页面灾演。

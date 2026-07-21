@@ -46,6 +46,7 @@ for expected in \
   'COMMON_AGENT_E2E_DOCKER_CONTEXT: default' \
   'bash infra/ragflow/test-manage.sh' \
   'bash infra/platform/test-manage.sh' \
+  'bash infra/backup/test-manage.sh' \
   './scripts/test-dev.sh' \
   './scripts/test-real.sh' \
   './scripts/test-ci.sh' \

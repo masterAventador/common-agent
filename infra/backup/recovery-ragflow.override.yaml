@@ -1,0 +1,43 @@
+services:
+  ragflow-cpu:
+    container_name: common-agent-recovery-${BACKUP_RECOVERY_ID}-ragflow-api
+    platform: linux/amd64
+    mem_limit: 5g
+    environment:
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES}
+      DASHSCOPE_HTTP_BASE_URL: ${RAGFLOW_DASHSCOPE_HTTP_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}
+      MACOS: "1"
+    volumes:
+      - ${RAGFLOW_RECOVERY_DATA_ROOT}/logs:/ragflow/logs
+  es01:
+    container_name: common-agent-recovery-${BACKUP_RECOVERY_ID}-ragflow-elasticsearch
+    mem_limit: 3g
+    environment:
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+  mysql:
+    container_name: common-agent-recovery-${BACKUP_RECOVERY_ID}-ragflow-mysql
+    mem_limit: 2g
+  minio:
+    container_name: common-agent-recovery-${BACKUP_RECOVERY_ID}-ragflow-minio
+    mem_limit: 1g
+  redis:
+    container_name: common-agent-recovery-${BACKUP_RECOVERY_ID}-ragflow-valkey
+    mem_limit: 256m
+
+volumes:
+  esdata01:
+    name: common-agent-recovery-${BACKUP_RECOVERY_ID}-ragflow-esdata-v2
+    driver: !reset null
+    external: true
+  mysql_data:
+    name: common-agent-recovery-${BACKUP_RECOVERY_ID}-ragflow-mysql-data-v3
+    driver: !reset null
+    external: true
+  minio_data:
+    name: common-agent-recovery-${BACKUP_RECOVERY_ID}-ragflow-minio-data-v2
+    driver: !reset null
+    external: true
+  redis_data:
+    name: common-agent-recovery-${BACKUP_RECOVERY_ID}-ragflow-valkey-data-v2
+    driver: !reset null
+    external: true

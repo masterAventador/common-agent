@@ -1,6 +1,6 @@
 # 通用 Agent 中台工程结构
 
-> 状态：MVP 基线、租户隔离、审计与持久 Worker 结构已确认
+> 状态：MVP 基线、租户隔离、审计、持久 Worker 与备份恢复结构已确认
 > 确认日期：2026-07-21
 
 ## 1. 核心决策
@@ -95,6 +95,7 @@ backend/
 │       ├── worker_main.py       # Worker 信号与进程入口
 │       └── adapters/            # 数据库、模型及第三方外围适配
 │           ├── auth/            # Argon2id 密码适配器
+│           ├── backup/          # 流式 AES-256-GCM 归档、清单校验与安全解包
 │           ├── agent/           # Deep Agents 正式适配器
 │           ├── knowledge/       # RAGFlow 正式适配器
 │           ├── model/           # 阿里百炼转换与仅适配层可见的 LangChain 桥
@@ -227,6 +228,15 @@ infra/platform/                 # 当前路线图实际采用的平台基础设�
 ├── manage.sh                   # 固定 context、端口、启动、停止和状态检查
 └── README.md                   # 端口、资源、持久化和清理边界
 
+infra/backup/                   # 平台与 RAGFlow 的可恢复备份边界
+├── policy.env                  # RPO、RTO、保留代际和灾演周期单一来源
+├── deployment-config.allowlist # 不含凭据的部署配置白名单
+├── manage.sh                   # 加密备份、验证、保留和空环境恢复
+├── drill.sh                    # 独立源销毁后由正式页面验收的灾难演练
+├── recovery-ragflow.override.yaml # recovery 专属容器、端口和 Volume
+├── test-manage.sh              # 安全、策略、停写和隔离恢复契约
+└── README.md                   # 密钥分离、调度和恢复 Runbook
+
 third_party/
 └── ragflow/                    # 官方 submodule；固定到 VERSION/UPSTREAM_COMMIT
 ```
@@ -243,9 +253,10 @@ third_party/
 | --- | --- |
 | Python 领域/应用单元测试 | `backend/tests/unit/` |
 | Deep Agents/LangGraph/RAGFlow 适配测试 | `backend/tests/integration/` |
+| 加密归档与备份恢复契约 | `backend/tests/unit/adapters/backup/`、`infra/backup/test-manage.sh` |
 | API 与事件契约测试 | `backend/tests/contract/` |
 | React 组件与交互测试 | 与 `frontend/src/` 被测文件就近放置 |
-| 核心聊天流程 | `frontend/e2e/` |
+| 核心聊天与恢复后页面流程 | `frontend/e2e/` |
 | 前后端公共样例 | `contracts/fixtures/` |
 
 ## 7. 禁止事项
