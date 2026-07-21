@@ -8,14 +8,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatPage } from "./ChatPage";
 
 const employeeApi = vi.hoisted(() => ({
+  fetchEmployee: vi.fn(),
   fetchEmployees: vi.fn(),
 }));
 const chatApi = vi.hoisted(() => ({
-  createConversation: vi.fn(),
   createConversationTurn: vi.fn(),
-  deleteConversation: vi.fn(),
+  fetchConversation: vi.fn(),
   fetchConversationMessages: vi.fn(),
-  fetchConversations: vi.fn(),
   retryConversationMessage: vi.fn(),
   sendConversationMessage: vi.fn(),
   stopConversationGeneration: vi.fn(),
@@ -200,16 +199,31 @@ function renderGenericPage() {
   );
 }
 
+function renderGenericHistoryPage() {
+  return render(
+    <MemoryRouter initialEntries={[`/chat?conversation_id=${genericConversation.id}`]}>
+      <Routes>
+        <Route path="/chat" element={<ChatPage />} />
+      </Routes>
+    </MemoryRouter>,
+    { wrapper: TestProviders },
+  );
+}
+
 describe("ChatPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chatApi.streamOptions = undefined;
+    chatApi.fetchConversation.mockResolvedValue({
+      ...conversation,
+      employee_name: employee.name,
+    });
+    employeeApi.fetchEmployee.mockResolvedValue(employee);
     employeeApi.fetchEmployees.mockResolvedValue({ items: [employee], next_cursor: null });
     modelConfigurationApi.fetchModelConfigurations.mockResolvedValue({
       items: [modelConfiguration],
       next_cursor: null,
     });
-    chatApi.fetchConversations.mockResolvedValue({ items: [conversation], next_cursor: null });
     chatApi.fetchConversationMessages.mockResolvedValue([userMessage, assistantMessage]);
     workflowRunApi.fetchConversationWorkflowRuns.mockResolvedValue({ items: [], next_cursor: null });
     workflowApi.fetchWorkflows.mockResolvedValue({ items: [workflow], next_cursor: null });
@@ -250,7 +264,6 @@ describe("ChatPage", () => {
   });
 
   it("opens a blank generic chat and atomically creates the first turn with the selected model", async () => {
-    chatApi.fetchConversations.mockResolvedValue({ items: [], next_cursor: null });
     chatApi.fetchConversationMessages.mockResolvedValue([]);
     chatApi.createConversationTurn.mockResolvedValue({
       conversation: genericConversation,
@@ -273,6 +286,10 @@ describe("ChatPage", () => {
         retry: false,
       },
     });
+    chatApi.fetchConversation.mockResolvedValue({
+      ...genericConversation,
+      employee_name: null,
+    });
     const user = userEvent.setup();
 
     renderGenericPage();
@@ -293,7 +310,6 @@ describe("ChatPage", () => {
         }),
       ),
     );
-    expect(chatApi.createConversation).not.toHaveBeenCalled();
   });
 
   it("lets an employee conversation switch the current turn model without changing its default", async () => {
@@ -337,16 +353,86 @@ describe("ChatPage", () => {
     expect(employee.default_model_configuration_id).toBe(modelConfiguration.id);
   });
 
-  it("renders conversation list, message history with citations, and employee details", async () => {
+  it("refreshes a generic conversation detail after persisting a per-turn model selection", async () => {
+    modelConfigurationApi.fetchModelConfigurations.mockResolvedValue({
+      items: [modelConfiguration, alternateModelConfiguration],
+      next_cursor: null,
+    });
+    chatApi.fetchConversation
+      .mockResolvedValueOnce({ ...genericConversation, employee_name: null })
+      .mockResolvedValue({
+        ...genericConversation,
+        employee_name: null,
+        model_configuration_id: alternateModelConfiguration.id,
+      });
+    chatApi.fetchConversationMessages.mockResolvedValue([]);
+    chatApi.sendConversationMessage.mockResolvedValue({
+      turn_id: "4dccb75c-6844-49de-a5a8-781416fab7e5",
+      user_message: { ...userMessage, content: "保存 Max" },
+      assistant_message: {
+        ...assistantMessage,
+        content: "",
+        status: "pending",
+        citations: [],
+        model_configuration_id: alternateModelConfiguration.id,
+        model_identifier: alternateModelConfiguration.model_identifier,
+      },
+      retry: false,
+    });
+    const user = userEvent.setup();
+
+    renderGenericHistoryPage();
+    await screen.findByRole("textbox", { name: "消息输入" });
+    await user.click(screen.getByRole("combobox", { name: "选择模型" }));
+    await user.click(await screen.findByText(alternateModelConfiguration.display_name));
+    await user.type(screen.getByRole("textbox", { name: "消息输入" }), "保存 Max");
+    await user.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() => expect(chatApi.fetchConversation).toHaveBeenCalledTimes(2));
+    expect(
+      screen.getByRole("combobox", { name: "选择模型" }).closest(".chat-model-select"),
+    ).toHaveTextContent(alternateModelConfiguration.display_name);
+  });
+
+  it("loads the referenced employee directly and restores its current default model", async () => {
+    const currentEmployee = {
+      ...employee,
+      default_model_configuration_id: alternateModelConfiguration.id,
+      default_model_identifier: alternateModelConfiguration.model_identifier,
+    };
+    employeeApi.fetchEmployees.mockResolvedValue({ items: [], next_cursor: null });
+    employeeApi.fetchEmployee.mockResolvedValue(currentEmployee);
+    modelConfigurationApi.fetchModelConfigurations.mockResolvedValue({
+      items: [modelConfiguration, alternateModelConfiguration],
+      next_cursor: null,
+    });
+
+    renderPage();
+
+    await waitFor(() => expect(employeeApi.fetchEmployee).toHaveBeenCalledWith(employee.id));
+    expect(await screen.findByRole("heading", { name: currentEmployee.name })).toBeInTheDocument();
+    expect(screen.getByTitle(alternateModelConfiguration.display_name)).toBeInTheDocument();
+  });
+
+  it("blocks a restored employee conversation when its linked employee is unavailable", async () => {
+    employeeApi.fetchEmployee.mockRejectedValue(new Error("数字员工已删除"));
+    const user = userEvent.setup();
+
+    renderPage();
+
+    expect(await screen.findByText("会话关联的数字员工不可用")).toBeInTheDocument();
+    expect(screen.getByText("数字员工已删除")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "消息输入" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "返回通用 AI" }));
+    expect(await screen.findByRole("heading", { name: "通用 AI" })).toBeInTheDocument();
+  });
+
+  it("renders restored message history with citations and employee details", async () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "AI 会话" })).toBeInTheDocument();
-    const conversationList = screen.getByRole("region", { name: "会话列表" });
     const messageRegion = screen.getByRole("region", { name: "消息区域" });
     const employeeRegion = screen.getByRole("region", { name: "数字员工信息" });
-    expect(
-      await within(conversationList).findByRole("button", { name: "打开会话 知识问答" }),
-    ).toBeEnabled();
     expect(await within(messageRegion).findByText("验收标记是什么？")).toBeInTheDocument();
     expect(
       await within(messageRegion).findByText("验收标记是 COMMON_AGENT_CHAT_OK。"),
@@ -359,27 +445,13 @@ describe("ChatPage", () => {
     expect(within(employeeRegion).getByText("已绑定知识库")).toBeInTheDocument();
   });
 
-  it("loads additional conversation and run pages while preserving remote search", async () => {
-    const secondConversation = {
-      ...conversation,
-      id: "866c5d4d-1c64-4ff8-98df-778aa7569461",
-      title: "第二个知识问答",
-    };
+  it("loads additional conversation workflow run pages", async () => {
     const secondRun = {
       ...employeeRun,
       id: "5262373b-10ea-4377-a75c-8242e90f3e63",
       input: "第二次执行",
       output: "第二次工作流已完成",
     };
-    chatApi.fetchConversations.mockImplementation(
-      (_employeeId: string, { cursor, search }: { cursor?: string; search?: string }) => {
-        if (search) return Promise.resolve({ items: [conversation], next_cursor: null });
-        if (cursor === "conversation-next") {
-          return Promise.resolve({ items: [secondConversation], next_cursor: null });
-        }
-        return Promise.resolve({ items: [conversation], next_cursor: "conversation-next" });
-      },
-    );
     workflowRunApi.fetchConversationWorkflowRuns.mockImplementation(
       (_conversationId: string, { cursor }: { cursor?: string }) =>
         Promise.resolve(
@@ -391,25 +463,12 @@ describe("ChatPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole("button", { name: "加载更多会话" }));
-    expect(
-      await screen.findByRole("button", { name: `打开会话 ${secondConversation.title}` }),
-    ).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "加载更多运行记录" }));
+    await user.click(await screen.findByRole("button", { name: "加载更多运行记录" }));
     await waitFor(() =>
       expect(workflowRunApi.fetchConversationWorkflowRuns).toHaveBeenCalledWith(conversation.id, {
         cursor: "run-next",
         limit: 50,
       }),
-    );
-
-    await user.type(screen.getByRole("searchbox", { name: "搜索会话" }), "知识");
-    await waitFor(() =>
-      expect(chatApi.fetchConversations).toHaveBeenCalledWith(employee.id, {
-        cursor: undefined,
-        limit: 20,
-        search: "知识",
-      }, undefined),
     );
   });
 
@@ -452,7 +511,6 @@ describe("ChatPage", () => {
     renderPage();
 
     await user.click(await screen.findByRole("button", { name: "新建会话" }));
-    expect(chatApi.createConversation).not.toHaveBeenCalled();
     await user.type(screen.getByRole("textbox", { name: "消息输入" }), userMessage.content);
     await user.click(screen.getByRole("button", { name: "发送消息" }));
     await waitFor(() =>
@@ -464,26 +522,6 @@ describe("ChatPage", () => {
         content: userMessage.content,
       }),
     );
-  });
-
-  it("confirms conversation deletion and moves to the empty state after the server succeeds", async () => {
-    chatApi.fetchConversations
-      .mockResolvedValueOnce({ items: [conversation], next_cursor: null })
-      .mockResolvedValue({ items: [], next_cursor: null });
-    chatApi.deleteConversation.mockResolvedValue(undefined);
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(
-      await screen.findByRole("button", { name: `删除会话 ${conversation.title}` }),
-    );
-    expect(screen.getAllByText(`删除会话“${conversation.title}”？`).length).toBeGreaterThan(0);
-    expect(screen.getByText("消息、引用和由该会话触发的工作流运行都会被永久删除。")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: `确认删除会话 ${conversation.title}` }));
-
-    await waitFor(() => expect(chatApi.deleteConversation).toHaveBeenCalledWith(conversation.id));
-    expect(await screen.findByText(`会话“${conversation.title}”已删除`)).toBeInTheDocument();
-    expect(await screen.findByText("还没有会话")).toBeInTheDocument();
   });
 
   it("sends, stops, retries, applies monotonic SSE snapshots, and ignores late duplicates", async () => {

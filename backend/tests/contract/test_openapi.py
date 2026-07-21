@@ -181,7 +181,7 @@ def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> Non
     paths = schema["paths"]
 
     assert set(paths["/api/v1/conversations"]) == {"get", "post"}
-    assert set(paths["/api/v1/conversations/{conversation_id}"]) == {"delete"}
+    assert set(paths["/api/v1/conversations/{conversation_id}"]) == {"delete", "get"}
     assert set(paths["/api/v1/conversations/{conversation_id}/messages"]) == {
         "get",
         "post",
@@ -235,6 +235,8 @@ def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> Non
     }
     conversation = schema["components"]["schemas"]["ConversationResponse"]
     assert {"source", "employee_id", "model_configuration_id"} <= set(conversation["required"])
+    history = schema["components"]["schemas"]["ConversationHistoryItemResponse"]
+    assert "employee_name" in history["required"]
     message = schema["components"]["schemas"]["MessageResponse"]
     assert {"model_configuration_id", "model_identifier"} <= set(message["required"])
 
@@ -317,7 +319,7 @@ def test_openapi_exposes_workflow_run_start_summary_stop_and_sse() -> None:
 def test_openapi_exposes_one_bounded_cursor_contract_for_all_resource_lists() -> None:
     schema = _schema()
     collections = {
-        "/api/v1/conversations": "ConversationResponse",
+        "/api/v1/conversations": "ConversationHistoryItemResponse",
         "/api/v1/employees": "EmployeeResponse",
         "/api/v1/knowledge-bases": "KnowledgeBaseResponse",
         "/api/v1/workflows": "WorkflowResponse",

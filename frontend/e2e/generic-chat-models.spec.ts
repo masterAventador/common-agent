@@ -103,6 +103,21 @@ test("creates a generic conversation on first send and switches real Bailian mod
   );
   await expect(page.getByText("正在生成")).toHaveCount(0);
 
+  await page.getByRole("link", { name: "模型管理" }).click();
+  const history = page.getByRole("region", { name: "历史会话" });
+  await expect(history.getByText("通用 AI")).toBeVisible();
+  await history
+    .getByRole("link", { name: `打开会话 ${firstPrompt.slice(0, 200)}` })
+    .click();
+  await expect(page).toHaveURL(
+    new RegExp(`/chat\\?conversation_id=${firstTurn.conversation.id}$`),
+  );
+  await expect(page.locator(".chat-model-select")).toContainText("平台默认模型");
+  await expect(page.locator(".chat-message.is-user .chat-message-content")).toHaveCount(2);
+  await expect(
+    page.locator(".chat-message.is-assistant .chat-message-content").last(),
+  ).toContainText(secondMarker);
+
   await page.getByRole("button", { name: `删除会话 ${firstPrompt.slice(0, 200)}` }).click();
   const deleteConversationResponse = page.waitForResponse(
     (response) =>

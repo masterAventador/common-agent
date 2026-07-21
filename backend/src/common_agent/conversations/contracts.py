@@ -78,6 +78,12 @@ class ConversationTurnAccepted:
 
 
 @dataclass(frozen=True, slots=True)
+class ConversationHistoryItem:
+    conversation: Conversation
+    employee_name: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ConversationExecutionTarget:
     subject_id: UUID
     model_configuration_id: UUID
@@ -113,6 +119,7 @@ __all__ = [
     "GENERIC_SYSTEM_INSTRUCTION",
     "ConversationBusy",
     "ConversationExecutionTarget",
+    "ConversationHistoryItem",
     "ConversationModelDisabled",
     "ConversationNotFound",
     "ConversationRequestConflict",

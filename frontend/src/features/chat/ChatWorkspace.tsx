@@ -1,9 +1,8 @@
 import { Alert, Button, Empty, Flex, Input, Select, Skeleton, Tag, Typography } from "antd";
-import { Bot, Plus, Send, Square } from "lucide-react";
+import { Bot, Send, Square } from "lucide-react";
 
 import type { Employee } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
-import { ResourceDeleteButton } from "../../components/ResourceDeleteButton";
 import { MessageBubble } from "./ChatMessages";
 import type { ChatPageController } from "./useChatPageController";
 
@@ -20,21 +19,15 @@ export function ChatWorkspace({
 }) {
   const {
     activeMessage,
-    conversations,
-    conversationItems,
-    conversationSearch,
-    deleteMutation,
     draft,
     messages,
     retryMutation,
     runsByMessageId,
     selectedConversation,
     selectedModelConfigurationId,
-    selectConversation,
     sendDraft,
     sendMutation,
     setDraft,
-    setConversationSearch,
     setSelectedModelConfigurationId,
     startNewConversation,
     stopMutation,
@@ -47,90 +40,18 @@ export function ChatWorkspace({
 
   return (
     <div className="chat-workspace">
-      <aside className="chat-conversations-panel" role="region" aria-label="会话列表">
-        <Flex justify="space-between" align="center" gap={8} className="chat-panel-heading">
-          <Text strong>会话</Text>
-          <Button
-            type="primary"
-            size="small"
-            icon={<Plus aria-hidden="true" size={15} />}
-            disabled={readOnly}
-            aria-label="新建会话"
-            onClick={startNewConversation}
-          >
-            新建
-          </Button>
-        </Flex>
-        <Input.Search
-          aria-label="搜索会话"
-          allowClear
-          value={conversationSearch}
-          placeholder="搜索会话"
-          onChange={(event) => setConversationSearch(event.target.value)}
-        />
-        {conversations.isPending ? (
-          <Skeleton active paragraph={{ rows: 6 }} />
-        ) : conversations.isError ? (
-          <Alert
-            type="error"
-            showIcon
-            title="会话列表加载失败"
-            action={<Button onClick={() => void conversations.refetch()}>重试</Button>}
-          />
-        ) : conversationItems.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有会话" />
-        ) : (
-          <div className="chat-conversation-list">
-            {conversationItems.map((conversation) => (
-              <div key={conversation.id} className="chat-conversation-list-item">
-                <button
-                  type="button"
-                  className={`chat-conversation-button ${
-                    selectedConversation?.id === conversation.id ? "is-active" : ""
-                  }`}
-                  aria-label={`打开会话 ${conversation.title}`}
-                  onClick={() => selectConversation(conversation.id)}
-                >
-                  <Text strong>{conversation.title}</Text>
-                  <Text type="secondary">{formatConversationTime(conversation.updated_at)}</Text>
-                </button>
-                <ResourceDeleteButton
-                  resourceKind="会话"
-                  resourceName={conversation.title}
-                  impact="消息、引用和由该会话触发的工作流运行都会被永久删除。"
-                  compact
-                  size="small"
-                  disabled={
-                    readOnly || deleteMutation.isPending ||
-                    (selectedConversation?.id === conversation.id && Boolean(activeMessage))
-                  }
-                  loading={
-                    deleteMutation.isPending && deleteMutation.variables?.id === conversation.id
-                  }
-                  onConfirm={() => deleteMutation.mutateAsync(conversation)}
-                />
-              </div>
-            ))}
-            {conversations.hasNextPage && (
-              <Button
-                block
-                loading={conversations.isFetchingNextPage}
-                onClick={() => void conversations.fetchNextPage()}
-              >
-                加载更多会话
-              </Button>
-            )}
-          </div>
-        )}
-      </aside>
-
       <main className="chat-messages-panel" role="region" aria-label="消息区域">
         <div className="chat-messages-heading">
           <div>
             <Title level={3}>{selectedConversation?.title ?? "新会话"}</Title>
             <Text type="secondary">{employee?.name ?? "通用 AI"}</Text>
           </div>
-          {activeMessage && <Tag color="processing">正在生成</Tag>}
+          <Flex align="center" gap={8}>
+            {activeMessage && <Tag color="processing">正在生成</Tag>}
+            <Button size="small" disabled={readOnly} onClick={startNewConversation}>
+              新建会话
+            </Button>
+          </Flex>
         </div>
         <div className="chat-message-scroll" aria-live="polite">
           {!selectedConversation ? (
@@ -286,14 +207,4 @@ function EmployeeDetails({ employee }: { employee: Employee }) {
       />
     </>
   );
-}
-
-function formatConversationTime(timestamp: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestamp));
 }

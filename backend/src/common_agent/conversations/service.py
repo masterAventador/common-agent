@@ -7,6 +7,7 @@ from common_agent.application.resource_locks import ResourceMutationGuard, emplo
 from common_agent.concurrency import KeyedLockPool
 from common_agent.conversations.contracts import (
     ConversationBusy,
+    ConversationHistoryItem,
     ConversationTurnAccepted,
     EmployeeDirectory,
     KnowledgeResolver,
@@ -86,8 +87,18 @@ class ConversationService:
         *,
         employee_id: UUID | None = None,
         source: ConversationSource | None = None,
-    ) -> CursorPage[Conversation]:
+    ) -> CursorPage[ConversationHistoryItem]:
         return await self._persistence.page(page, employee_id=employee_id, source=source)
+
+    async def get(self, conversation_id: UUID) -> ConversationHistoryItem:
+        conversation = await self._persistence.get(conversation_id)
+        employee_name = None
+        if conversation.employee_id is not None:
+            employee_name = (await self._employees.get(conversation.employee_id)).name
+        return ConversationHistoryItem(
+            conversation=conversation,
+            employee_name=employee_name,
+        )
 
     async def create(
         self,

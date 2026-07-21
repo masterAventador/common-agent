@@ -189,6 +189,61 @@ def test_employee_first_turn_uses_selected_model_without_mutating_employee_defau
         )
 
 
+def test_history_uses_updated_order_employee_attribution_and_stable_cursor() -> None:
+    older_id = uuid4()
+    newer_id = uuid4()
+    try:
+        with (
+            running_api(TEST_DATABASE_URL) as api_url,
+            authenticated_client(base_url=api_url, timeout=10) as client,
+        ):
+            for conversation_id, title in (
+                (older_id, "较早但刚继续的会话"),
+                (newer_id, "较新的会话"),
+            ):
+                created = client.post(
+                    "/api/v1/conversations",
+                    json={
+                        "conversation_id": str(conversation_id),
+                        "employee_id": str(DEFAULT_KNOWLEDGE_ASSISTANT_ID),
+                        "title": title,
+                    },
+                )
+                assert created.status_code == 201
+
+            continued = client.post(
+                f"/api/v1/conversations/{older_id}/messages",
+                json={
+                    "message_id": str(uuid4()),
+                    "model_configuration_id": str(
+                        platform_default_model_configuration_id(DEFAULT_TENANT_ID)
+                    ),
+                    "content": "把这条会话移动到历史顶部",
+                },
+            )
+            first_page = client.get("/api/v1/conversations", params={"limit": 1})
+            detail = client.get(f"/api/v1/conversations/{older_id}")
+            second_page = client.get(
+                "/api/v1/conversations",
+                params={"limit": 1, "cursor": first_page.json()["next_cursor"]},
+            )
+
+        assert continued.status_code == 202
+        assert first_page.status_code == 200
+        assert len(first_page.json()["items"]) == 1
+        assert first_page.json()["items"][0]["id"] == str(older_id)
+        assert first_page.json()["items"][0]["employee_name"] == "知识助理"
+        assert first_page.json()["next_cursor"] is not None
+        assert detail.status_code == 200
+        assert detail.json()["id"] == str(older_id)
+        assert detail.json()["employee_name"] == "知识助理"
+        assert second_page.status_code == 200
+        assert second_page.json()["items"][0]["id"] == str(newer_id)
+    finally:
+        asyncio.run(_delete_conversation(older_id))
+        asyncio.run(_delete_conversation(newer_id))
+
+
 def test_real_http_sse_send_stop_retry_and_duplicate_submission() -> None:
     if os.environ.get("TEST_BAILIAN_REAL") != "1":
         pytest.skip("未显式启用真实会话 API + SSE + 百炼验收")

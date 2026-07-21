@@ -2,7 +2,6 @@ import { Alert, Button, Empty, Flex, Select, Skeleton, Space, Typography } from 
 import { MessageSquare, RefreshCw } from "lucide-react";
 
 import { getErrorMessage } from "../../api/errors";
-import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
 import { ChatWorkspace } from "./ChatWorkspace";
 import { GENERIC_CHAT_VALUE, useChatPageController } from "./useChatPageController";
 
@@ -12,7 +11,11 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
   const controller = useChatPageController();
   const { employeeItems, employees, modelConfigurations, selectedEmployee } = controller;
 
-  if (modelConfigurations.isPending) {
+  if (
+    modelConfigurations.isPending ||
+    (Boolean(controller.selectedConversationId) && controller.selectedConversationQuery.isPending) ||
+    (Boolean(controller.selectedEmployeeId) && controller.selectedEmployeeQuery.isPending)
+  ) {
     return (
       <section className="chat-page" aria-label="AI 会话加载中">
         <Skeleton active paragraph={{ rows: 10 }} />
@@ -33,6 +36,28 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
               onClick={() => void modelConfigurations.refetch()}
             >
               重试加载
+            </Button>
+          }
+        />
+      </section>
+    );
+  }
+  if (controller.selectedConversationQuery.isError || controller.selectedEmployeeQuery.isError) {
+    const employeeUnavailable = controller.selectedEmployeeQuery.isError;
+    return (
+      <section className="chat-page">
+        <Alert
+          type="error"
+          showIcon
+          title={employeeUnavailable ? "会话关联的数字员工不可用" : "历史会话加载失败"}
+          description={getErrorMessage(
+            employeeUnavailable
+              ? controller.selectedEmployeeQuery.error
+              : controller.selectedConversationQuery.error,
+          )}
+          action={
+            <Button onClick={() => controller.selectEmployee(GENERIC_CHAT_VALUE)}>
+              返回通用 AI
             </Button>
           }
         />
@@ -105,20 +130,7 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
           showIcon
           closable
           title="会话操作失败"
-          description={
-            controller.deleteMutation.isError
-              ? getResourceDeletionErrorMessage(controller.deleteMutation.error)
-              : getErrorMessage(controller.operationError)
-          }
-          className="chat-inline-alert"
-        />
-      )}
-      {controller.deleteNotice && (
-        <Alert
-          type="success"
-          showIcon
-          closable
-          title={controller.deleteNotice}
+          description={getErrorMessage(controller.operationError)}
           className="chat-inline-alert"
         />
       )}

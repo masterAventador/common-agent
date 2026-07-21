@@ -166,7 +166,7 @@ def test_formal_api_migrates_mysql_and_recovers_after_restart() -> None:
         finally:
             await database.stop()
 
-    assert asyncio.run(revision()) == "20260722_0020"
+    assert asyncio.run(revision()) == "20260722_0021"
 
 
 def test_health_allows_the_project_frontend_origin_over_real_http() -> None:

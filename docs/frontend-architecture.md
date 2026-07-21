@@ -135,7 +135,8 @@ src/app
 - `ChatPage` 与 `WorkflowsPage` 只处理页面级加载/错误和区域编排；Query、Mutation、SSE、URL
   同步与运行协调分别进入 `useChatPageController` / `useWorkflowDesigner`；
 - 聊天消息投影、消息/引用展示和三栏工作区分别由 `chatState`、`ChatMessages`、
-  `ChatWorkspace` 承担；工作流节点面板、画布、属性/运行面板与拖拽协议分别独立；
+  `ChatWorkspace` 承担；全局分页历史、归属、选中和删除状态由 `ConversationHistory` 承担；工作流
+  节点面板、画布、属性/运行面板与拖拽协议分别独立；
 - Feature 实现不得反向导入页面容器；跨 Feature 只能依赖对方公开 `index`，拆分模块不得形成
   循环依赖；这些约束由后端架构测试扫描前端源码；
 - API 客户端是访问后端的唯一入口；

@@ -210,7 +210,8 @@ worker_app -> application/tasks/events -> adapters/mysql|ragflow|bailian|deep_ag
 
 会话、工作流定义和工作流运行路由只保留 HTTP 用例编排；Pydantic DTO 位于
 `api/schemas/`，服务依赖解析集中在 `api/routers/services.py`，会话 SSE 独立位于
-`conversation_events.py`。路由不能重新吸收 Schema、事件流实现或服务装配。
+`conversation_events.py`，历史列表、详情和删除入口独立位于 `conversation_history.py`。路由不能
+重新吸收 Schema、事件流实现或服务装配。
 
 ### 3.2 Application 层
 
@@ -622,7 +623,8 @@ GET    /api/v1/workflow-runs/{run_id}/events
 游标最多 1024 字符；游标使用 URL-safe 的规范 JSON、上下文指纹和校验和封装，绑定资源作用域、
 搜索词和页大小，被修改或跨筛选复用时以 `invalid_page_cursor` 关闭失败，不包含凭据或业务正文。
 
-平台 MySQL 查询按不可变的 `created_at DESC, id DESC` 做 keyset seek，并用组合索引覆盖无筛选
+平台 MySQL 的普通资源查询按不可变的 `created_at DESC, id DESC` 做 keyset seek；会话历史按
+`updated_at DESC, id DESC` 排序，使新消息把会话稳定移动到顶部。两类查询都用组合索引覆盖无筛选
 翻页；每次只读取 `limit + 1` 条判断下一页，不先物化全表。工作流列表先读取一页定义，再分别以
 两条批量查询装载节点和边，因此非空页固定为 3 条 SQL，不按工作流数量增长。名称、标题和运行
 输入采用可命中 B-tree 组合索引的前缀搜索，完整 UUID 与状态走等值索引；不使用 `%关键词%`

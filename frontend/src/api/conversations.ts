@@ -11,6 +11,8 @@ import {
 } from "./pagination";
 
 export type Conversation = components["schemas"]["ConversationResponse"];
+export type ConversationHistoryItem =
+  components["schemas"]["ConversationHistoryItemResponse"];
 export type ConversationMessage = components["schemas"]["MessageResponse"];
 export type ConversationEvent = components["schemas"]["ConversationEventResponse"];
 export type CreateConversationInput = components["schemas"]["CreateConversationBody"];
@@ -55,6 +57,9 @@ const conversationSchema = z.strictObject({
   created_at: timestampSchema,
   updated_at: timestampSchema,
 });
+const conversationHistoryItemSchema = conversationSchema.extend({
+  employee_name: z.string().min(1).nullable(),
+});
 const turnAcceptedSchema = z.strictObject({
   turn_id: z.uuid(),
   user_message: messageSchema,
@@ -88,7 +93,7 @@ const conversationEventSchema = z.strictObject({
   occurred_at: timestampSchema,
 });
 
-const conversationsSchema = cursorPageSchema(conversationSchema);
+const conversationsSchema = cursorPageSchema(conversationHistoryItemSchema);
 const messagesSchema = z.array(messageSchema);
 const conversationEventTypes = [
   "assistant.started",
@@ -98,8 +103,12 @@ const conversationEventTypes = [
   "assistant.stopped",
 ] as const;
 
-export function parseConversationsResponse(data: unknown): CursorPage<Conversation> {
+export function parseConversationsResponse(data: unknown): CursorPage<ConversationHistoryItem> {
   return conversationsSchema.parse(data);
+}
+
+export function parseConversationHistoryItem(data: unknown): ConversationHistoryItem {
+  return conversationHistoryItemSchema.parse(data);
 }
 
 export function parseMessagesResponse(data: unknown): ConversationMessage[] {
@@ -114,7 +123,7 @@ export async function fetchConversations(
   employeeId?: string,
   page: ListPageRequest = {},
   source?: "generic" | "employee",
-): Promise<CursorPage<Conversation>> {
+): Promise<CursorPage<ConversationHistoryItem>> {
   try {
     const response = await apiClient.get<unknown>("/conversations", {
       params: {
@@ -124,6 +133,19 @@ export async function fetchConversations(
       },
     });
     return parseConversationsResponse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function fetchConversation(
+  conversationId: string,
+): Promise<ConversationHistoryItem> {
+  try {
+    const response = await apiClient.get<unknown>(
+      `/conversations/${encodeURIComponent(conversationId)}`,
+    );
+    return parseConversationHistoryItem(response.data);
   } catch (error) {
     throw toApiClientError(error);
   }

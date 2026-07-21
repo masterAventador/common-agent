@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.models import (
     ConversationRow,
+    EmployeeRow,
     MessageCitationRow,
     MessageRow,
 )
@@ -23,6 +24,7 @@ from common_agent.adapters.persistence.timestamps import (
     from_database_datetime,
     to_database_datetime,
 )
+from common_agent.conversations.contracts import ConversationHistoryItem
 from common_agent.domain.conversation import (
     Citation,
     Conversation,
@@ -78,8 +80,18 @@ class SqlAlchemyConversationRepository:
         after: PageAnchor | None,
         employee_id: UUID | None,
         source: ConversationSource | None = None,
-    ) -> PageSlice[Conversation]:
-        statement = select(ConversationRow).where(ConversationRow.tenant_id == self._tenant_id)
+    ) -> PageSlice[ConversationHistoryItem]:
+        statement = (
+            select(ConversationRow, EmployeeRow.name)
+            .outerjoin(
+                EmployeeRow,
+                and_(
+                    EmployeeRow.tenant_id == ConversationRow.tenant_id,
+                    EmployeeRow.id == ConversationRow.employee_id,
+                ),
+            )
+            .where(ConversationRow.tenant_id == self._tenant_id)
+        )
         if employee_id is not None:
             statement = statement.where(ConversationRow.employee_id == str(employee_id))
         if source is not None:
@@ -95,23 +107,29 @@ class SqlAlchemyConversationRepository:
             after_time = to_database_datetime(after.created_at)
             statement = statement.where(
                 or_(
-                    ConversationRow.created_at < after_time,
+                    ConversationRow.updated_at < after_time,
                     and_(
-                        ConversationRow.created_at == after_time,
+                        ConversationRow.updated_at == after_time,
                         ConversationRow.id < after.id,
                     ),
                 )
             )
         rows = tuple(
-            await self._session.scalars(
+            await self._session.execute(
                 statement.order_by(
-                    ConversationRow.created_at.desc(),
+                    ConversationRow.updated_at.desc(),
                     ConversationRow.id.desc(),
                 ).limit(limit + 1)
             )
         )
         return PageSlice(
-            items=tuple(_to_conversation(row) for row in rows[:limit]),
+            items=tuple(
+                ConversationHistoryItem(
+                    conversation=_to_conversation(row),
+                    employee_name=employee_name,
+                )
+                for row, employee_name in rows[:limit]
+            ),
             has_more=len(rows) > limit,
         )
 

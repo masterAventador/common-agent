@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from common_agent.conversations.contracts import (
+    ConversationHistoryItem,
     ConversationTurnAccepted,
     StopAccepted,
     TurnAccepted,
@@ -72,6 +73,10 @@ class ConversationResponse(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+
+
+class ConversationHistoryItemResponse(ConversationResponse):
+    employee_name: str | None
 
 
 class CitationResponse(BaseModel):
@@ -145,6 +150,15 @@ def conversation_response(conversation: Conversation) -> ConversationResponse:
     return ConversationResponse.model_validate(conversation)
 
 
+def conversation_history_response(
+    item: ConversationHistoryItem,
+) -> ConversationHistoryItemResponse:
+    return ConversationHistoryItemResponse(
+        **conversation_response(item.conversation).model_dump(),
+        employee_name=item.employee_name,
+    )
+
+
 def message_response(message: Message) -> MessageResponse:
     return MessageResponse(
         id=message.id,
@@ -200,6 +214,7 @@ def conversation_event_response(event: ConversationEvent) -> ConversationEventRe
 
 __all__ = [
     "ConversationEventResponse",
+    "ConversationHistoryItemResponse",
     "ConversationResponse",
     "ConversationTurnAcceptedResponse",
     "CreateConversationBody",
@@ -209,6 +224,7 @@ __all__ = [
     "StopAcceptedResponse",
     "TurnAcceptedResponse",
     "conversation_event_response",
+    "conversation_history_response",
     "conversation_response",
     "conversation_turn_response",
     "message_response",

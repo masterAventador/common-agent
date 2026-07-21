@@ -1,4 +1,6 @@
-import { expect, test } from "./fixtures/auth";
+import type { Page } from "@playwright/test";
+
+import { expect, platformWriteHeaders, test } from "./fixtures/auth";
 import { selectEmployeeDefaultModel } from "./fixtures/models";
 
 function requiredEnvironment(name: string): string {
@@ -9,6 +11,17 @@ function requiredEnvironment(name: string): string {
 
 const modelName = requiredEnvironment("COMMON_AGENT_E2E_EMPLOYEE_MODEL_NAME");
 const employeeName = requiredEnvironment("COMMON_AGENT_E2E_EMPLOYEE_MODEL_EMPLOYEE_NAME");
+const apiURL = requiredEnvironment("COMMON_AGENT_E2E_API_URL");
+
+async function selectChatModel(page: Page, name: string) {
+  await page.getByRole("combobox", { name: "选择模型" }).click();
+  const option = page
+    .locator(".ant-select-dropdown:visible .ant-select-item-option")
+    .filter({ hasText: name })
+    .first();
+  await expect(option).toBeVisible();
+  await option.click();
+}
 
 test("persists an employee model and routes its real reply through that model", async ({
   page,
@@ -51,6 +64,24 @@ test("persists an employee model and routes its real reply through that model", 
   const createdEmployeeResponse = await employeeResponse;
   expect(createdEmployeeResponse.status()).toBe(201);
   const employee = (await createdEmployeeResponse.json()) as { id: string };
+  const headers = await platformWriteHeaders(page);
+  for (let index = 0; index < 11; index += 1) {
+    const historyResponse = await page.request.post(`${apiURL}/conversations`, {
+      headers,
+      data: {
+        employee_id: employee.id,
+        title: `${employeeName}-历史-${index.toString().padStart(2, "0")}`,
+      },
+    });
+    expect(historyResponse.status()).toBe(201);
+  }
+
+  await page.reload();
+  const historyRegion = page.getByRole("region", { name: "历史会话" });
+  await expect(historyRegion.getByRole("button", { name: "加载更多历史会话" })).toBeVisible();
+  await historyRegion.getByRole("button", { name: "加载更多历史会话" }).click();
+  await expect(historyRegion.getByText(`${employeeName}-历史-00`)).toBeVisible();
+  await expect(historyRegion.getByText(employeeName).first()).toBeVisible();
 
   let employeeCard = page.locator(".employee-card", { hasText: employeeName });
   await expect(employeeCard).toContainText("平台默认模型");
@@ -130,9 +161,12 @@ test("persists an employee model and routes its real reply through that model", 
   await page.getByRole("link", { name: "数字员工" }).click();
   employeeCard = page.locator(".employee-card", { hasText: employeeName });
   await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
+  await expect(page.locator(".chat-model-select")).toContainText(modelName);
+  await selectChatModel(page, "平台默认模型");
+  const prompt = `只输出这个标记：${replyMarker}`;
   await page
     .getByRole("textbox", { name: "消息输入" })
-    .fill(`只输出这个标记：${replyMarker}`);
+    .fill(prompt);
   const sendResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/v1/conversation-turns") &&
@@ -143,5 +177,14 @@ test("persists an employee model and routes its real reply through that model", 
   const answer = page.locator(".chat-message.is-assistant .chat-message-content").last();
   await expect(answer).toContainText(replyMarker, { timeout: 180_000 });
   await expect(page.getByText("正在生成")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "模型管理" }).click();
+  await page
+    .getByRole("region", { name: "历史会话" })
+    .getByRole("link", { name: `打开会话 ${prompt}` })
+    .click();
+  await expect(page.getByRole("heading", { name: employeeName })).toBeVisible();
+  await expect(page.locator(".chat-model-select")).toContainText(modelName);
+  await expect(answer).toContainText(replyMarker);
   expect(pageErrors).toEqual([]);
 });

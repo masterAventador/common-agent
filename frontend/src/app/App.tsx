@@ -35,6 +35,7 @@ import {
 } from "../api/tenants";
 import { AuthGate } from "../features/auth/AuthProvider";
 import { useAuth } from "../features/auth/authContext";
+import { ConversationHistory } from "../features/chat/ConversationHistory";
 
 const { Content, Header, Sider } = Layout;
 const KnowledgeBasesPage = lazy(async () => {
@@ -173,6 +174,7 @@ function AuthenticatedApp() {
             items={menuItems(selectedTenant?.role === "owner")}
           />
         </nav>
+        <ConversationHistory readOnly={selectedTenant?.role === "viewer"} />
       </Sider>
       <Layout>
         <Header className="app-header">

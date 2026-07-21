@@ -199,7 +199,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get Conversation */
+        get: operations["get_conversation_api_v1_conversations__conversation_id__get"];
         put?: never;
         post?: never;
         /** Delete Conversation */
@@ -850,6 +851,33 @@ export interface components {
             turn_id: string;
             type: components["schemas"]["ConversationEventKind"];
         };
+        /** ConversationHistoryItemResponse */
+        ConversationHistoryItemResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Employee Id */
+            employee_id: string | null;
+            /** Employee Name */
+            employee_name: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Model Configuration Id */
+            model_configuration_id: string | null;
+            source: components["schemas"]["ConversationSource"];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** ConversationResponse */
         ConversationResponse: {
             /**
@@ -954,10 +982,10 @@ export interface components {
              */
             role: "editor" | "viewer";
         };
-        /** CursorPageResponse[ConversationResponse] */
-        CursorPageResponse_ConversationResponse_: {
+        /** CursorPageResponse[ConversationHistoryItemResponse] */
+        CursorPageResponse_ConversationHistoryItemResponse_: {
             /** Items */
-            items: components["schemas"]["ConversationResponse"][];
+            items: components["schemas"]["ConversationHistoryItemResponse"][];
             /** Next Cursor */
             next_cursor: string | null;
         };
@@ -2206,7 +2234,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CursorPageResponse_ConversationResponse_"];
+                    "application/json": components["schemas"]["CursorPageResponse_ConversationHistoryItemResponse_"];
                 };
             };
             /** @description Unauthorized */
@@ -2302,6 +2330,77 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_conversation_api_v1_conversations__conversation_id__get: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationHistoryItemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

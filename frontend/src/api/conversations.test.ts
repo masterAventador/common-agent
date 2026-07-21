@@ -5,6 +5,7 @@ import {
   createConversation,
   createConversationTurn,
   deleteConversation,
+  fetchConversation,
   fetchConversationMessages,
   fetchConversations,
   parseConversationEvent,
@@ -34,6 +35,7 @@ const conversation = {
   created_at: "2026-07-20T02:00:00Z",
   updated_at: "2026-07-20T02:00:00Z",
 };
+const historyItem = { ...conversation, employee_name: "知识助理" };
 
 const userMessage = {
   id: "52a34887-e32a-4709-aa32-6835502a8bc8",
@@ -143,7 +145,8 @@ describe("conversation API and SSE boundary", () => {
 
   it("uses only formal conversation list, history, send, stop, and retry endpoints", async () => {
     vi.mocked(apiClient.get)
-      .mockResolvedValueOnce({ data: { items: [conversation], next_cursor: null } })
+      .mockResolvedValueOnce({ data: { items: [historyItem], next_cursor: null } })
+      .mockResolvedValueOnce({ data: historyItem })
       .mockResolvedValueOnce({ data: [userMessage, assistantMessage] });
     vi.mocked(apiClient.post)
       .mockResolvedValueOnce({ data: conversation })
@@ -154,9 +157,10 @@ describe("conversation API and SSE boundary", () => {
     vi.mocked(apiClient.delete).mockResolvedValue({ data: undefined });
 
     await expect(fetchConversations(conversation.employee_id)).resolves.toEqual({
-      items: [conversation],
+      items: [historyItem],
       next_cursor: null,
     });
+    await expect(fetchConversation(conversation.id)).resolves.toEqual(historyItem);
     await expect(
       createConversation({
         conversation_id: conversation.id,
@@ -204,6 +208,10 @@ describe("conversation API and SSE boundary", () => {
     });
     expect(apiClient.get).toHaveBeenNthCalledWith(
       2,
+      `/conversations/${conversation.id}`,
+    );
+    expect(apiClient.get).toHaveBeenNthCalledWith(
+      3,
       `/conversations/${conversation.id}/messages`,
     );
     expect(apiClient.post).toHaveBeenNthCalledWith(

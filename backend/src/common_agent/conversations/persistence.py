@@ -5,6 +5,7 @@ from uuid import UUID
 
 from common_agent.conversations.contracts import (
     ConversationBusy,
+    ConversationHistoryItem,
     ConversationNotFound,
     ConversationRequestConflict,
     MessageNotFound,
@@ -66,7 +67,7 @@ class ConversationPersistence:
         *,
         employee_id: UUID | None = None,
         source: ConversationSource | None = None,
-    ) -> CursorPage[Conversation]:
+    ) -> CursorPage[ConversationHistoryItem]:
         scope = "conversations"
         if employee_id is not None:
             scope = f"conversations-employee-{employee_id}"
@@ -97,7 +98,10 @@ class ConversationPersistence:
                 scope=scope,
                 search=page.search,
                 limit=page.limit,
-                anchor=PageAnchor(created_at=last.created_at, id=str(last.id)),
+                anchor=PageAnchor(
+                    created_at=last.conversation.updated_at,
+                    id=str(last.conversation.id),
+                ),
             )
         return CursorPage(items=result.items, next_cursor=next_cursor)
 
@@ -119,6 +123,13 @@ class ConversationPersistence:
                 await unit_of_work.commit()
         except ConversationAlreadyExists:
             raise ConversationRequestConflict from None
+        return conversation
+
+    async def get(self, conversation_id: UUID) -> Conversation:
+        async with self._unit_of_work_factory() as unit_of_work:
+            conversation = await unit_of_work.conversations.get(conversation_id)
+        if conversation is None:
+            raise ConversationNotFound
         return conversation
 
     async def list_messages(self, conversation_id: UUID) -> tuple[Message, ...]:

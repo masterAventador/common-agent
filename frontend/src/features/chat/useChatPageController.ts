@@ -10,18 +10,16 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   createConversationTurn,
-  deleteConversation,
+  fetchConversation,
   fetchConversationMessages,
-  fetchConversations,
   retryConversationMessage,
   sendConversationMessage,
   stopConversationGeneration,
   subscribeToConversationEvents,
-  type Conversation,
   type ConversationEvent,
   type ConversationMessage,
 } from "../../api/conversations";
-import { fetchEmployees } from "../../api/employees";
+import { fetchEmployee, fetchEmployees } from "../../api/employees";
 import { fetchModelConfigurations } from "../../api/modelConfigurations";
 import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 import { fetchConversationWorkflowRuns } from "../../api/workflowRuns";
@@ -35,16 +33,13 @@ export function useChatPageController() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [draft, setDraft] = useState("");
-  const [deleteNotice, setDeleteNotice] = useState<string>();
   const [streamNotice, setStreamNotice] = useState<string>();
   const [employeeSearch, setEmployeeSearch] = useState("");
-  const [conversationSearch, setConversationSearch] = useState("");
   const [selectedModelConfigurationId, setSelectedModelConfigurationId] = useState("");
   const modelContextRef = useRef("");
   const lastEventSequence = useRef(0);
   const requestedEmployeeId = searchParams.get("employee_id");
   const requestedConversationId = searchParams.get("conversation_id");
-  const contextKey = requestedEmployeeId ? `employee:${requestedEmployeeId}` : "generic";
 
   const employees = useInfiniteQuery({
     queryKey: ["employees", employeeSearch],
@@ -54,11 +49,30 @@ export function useChatPageController() {
     getNextPageParam: nextPageCursor,
     placeholderData: keepPreviousData,
   });
-  const employeeItems = useMemo(() => flattenCursorPages(employees.data), [employees.data]);
-  const selectedEmployee = useMemo(
-    () => employeeItems.find((employee) => employee.id === requestedEmployeeId),
-    [employeeItems, requestedEmployeeId],
+  const listedEmployeeItems = useMemo(() => flattenCursorPages(employees.data), [employees.data]);
+  const selectedConversationQuery = useQuery({
+    queryKey: ["conversation", requestedConversationId],
+    queryFn: () => fetchConversation(requestedConversationId ?? ""),
+    enabled: Boolean(requestedConversationId),
+  });
+  const selectedConversation = selectedConversationQuery.data;
+  const selectedEmployeeId = selectedConversation
+    ? (selectedConversation.employee_id ?? undefined)
+    : (requestedEmployeeId ?? undefined);
+  const selectedEmployeeQuery = useQuery({
+    queryKey: ["employee", selectedEmployeeId],
+    queryFn: () => fetchEmployee(selectedEmployeeId ?? ""),
+    enabled: Boolean(selectedEmployeeId),
+  });
+  const selectedEmployee = selectedEmployeeQuery.data;
+  const employeeItems = useMemo(
+    () =>
+      selectedEmployee && !listedEmployeeItems.some((employee) => employee.id === selectedEmployee.id)
+        ? [selectedEmployee, ...listedEmployeeItems]
+        : listedEmployeeItems,
+    [listedEmployeeItems, selectedEmployee],
   );
+  const contextKey = selectedEmployeeId ? `employee:${selectedEmployeeId}` : "generic";
   const modelConfigurations = useInfiniteQuery({
     queryKey: ["model-configurations", "chat"],
     queryFn: ({ pageParam }) =>
@@ -78,25 +92,6 @@ export function useChatPageController() {
           configuration.id === selectedEmployee?.default_model_configuration_id,
       ),
     [allModelConfigurationItems, selectedEmployee?.default_model_configuration_id],
-  );
-  const conversations = useInfiniteQuery({
-    queryKey: ["conversations", contextKey, conversationSearch],
-    queryFn: ({ pageParam }) =>
-      fetchConversations(
-        requestedEmployeeId ?? undefined,
-        { search: conversationSearch, limit: 20, cursor: pageParam },
-        requestedEmployeeId ? undefined : "generic",
-      ),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: nextPageCursor,
-    placeholderData: keepPreviousData,
-  });
-  const conversationItems = useMemo(
-    () => flattenCursorPages(conversations.data),
-    [conversations.data],
-  );
-  const selectedConversation = conversationItems.find(
-    (conversation) => conversation.id === requestedConversationId,
   );
   const selectedConversationId = requestedConversationId ?? undefined;
   const messages = useQuery({
@@ -194,41 +189,10 @@ export function useChatPageController() {
     return () => subscription.close();
   }, [queryClient, selectedConversationId]);
 
-  const selectConversation = (conversationId: string) => {
-    const conversation = conversationItems.find((item) => item.id === conversationId);
-    if (!conversation) return;
-    setStreamNotice(undefined);
-    setSearchParams(
-      conversation.source === "employee" && conversation.employee_id
-        ? { employee_id: conversation.employee_id, conversation_id: conversation.id }
-        : { conversation_id: conversation.id },
-    );
-  };
   const startNewConversation = () => {
     setStreamNotice(undefined);
-    setSearchParams(requestedEmployeeId ? { employee_id: requestedEmployeeId } : {});
+    setSearchParams(selectedEmployeeId ? { employee_id: selectedEmployeeId } : {});
   };
-
-  const deleteMutation = useMutation({
-    mutationFn: async (conversation: Conversation) => {
-      setDeleteNotice(undefined);
-      await deleteConversation(conversation.id);
-      return conversation;
-    },
-    onSuccess: async (deleted) => {
-      queryClient.removeQueries({
-        queryKey: ["conversation-messages", deleted.id],
-        exact: true,
-      });
-      queryClient.removeQueries({
-        queryKey: ["conversation-workflow-runs", deleted.id],
-        exact: true,
-      });
-      if (selectedConversationId === deleted.id) startNewConversation();
-      setDeleteNotice(`会话“${deleted.title}”已删除`);
-      await queryClient.resetQueries({ queryKey: ["conversations", contextKey] });
-    },
-  });
 
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
@@ -245,7 +209,7 @@ export function useChatPageController() {
       return createConversationTurn({
         conversation_id: crypto.randomUUID(),
         message_id: messageId,
-        employee_id: requestedEmployeeId,
+        employee_id: selectedEmployeeId ?? null,
         model_configuration_id: selectedModelConfigurationId,
         content,
       });
@@ -264,6 +228,16 @@ export function useChatPageController() {
           ),
       );
       if (accepted.conversation) {
+        queryClient.setQueryData(
+          ["conversation", accepted.conversation.id],
+          {
+            ...accepted.conversation,
+            employee_name:
+              accepted.conversation.source === "employee"
+                ? (selectedEmployee?.name ?? null)
+                : null,
+          },
+        );
         setSearchParams(
           accepted.conversation.source === "employee" && accepted.conversation.employee_id
             ? {
@@ -273,6 +247,11 @@ export function useChatPageController() {
             : { conversation_id: accepted.conversation.id },
         );
         await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      } else {
+        await queryClient.invalidateQueries({
+          queryKey: ["conversation", conversationId],
+          exact: true,
+        });
       }
     },
   });
@@ -301,11 +280,6 @@ export function useChatPageController() {
 
   return {
     activeMessage,
-    conversations,
-    conversationItems,
-    conversationSearch,
-    deleteMutation,
-    deleteNotice,
     draft,
     employees,
     employeeItems,
@@ -315,23 +289,25 @@ export function useChatPageController() {
     modelConfigurationItems,
     selectedModelConfigurationId,
     operationError:
-      deleteMutation.error ??
+      selectedConversationQuery.error ??
+      selectedEmployeeQuery.error ??
       sendMutation.error ??
       stopMutation.error ??
       retryMutation.error,
     retryMutation,
     runsByMessageId,
     selectedConversation,
+    selectedConversationQuery,
     selectedConversationId,
     selectedEmployee,
+    selectedEmployeeId,
+    selectedEmployeeQuery,
     requestedEmployeeId,
-    selectConversation,
     selectEmployee: (value: string) =>
       setSearchParams(value === GENERIC_CHAT_VALUE ? {} : { employee_id: value }),
     sendDraft,
     sendMutation,
     setDraft,
-    setConversationSearch,
     setEmployeeSearch,
     setSelectedModelConfigurationId,
     startNewConversation,
