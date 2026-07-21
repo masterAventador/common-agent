@@ -11,6 +11,7 @@ const publicAuthWrites = new Set([
   "/auth/recovery/reset",
 ]);
 let csrfToken = "";
+let tenantId = "";
 
 export function setCsrfToken(token: string): void {
   csrfToken = token;
@@ -18,6 +19,18 @@ export function setCsrfToken(token: string): void {
 
 export function clearCsrfToken(): void {
   csrfToken = "";
+}
+
+export function setTenantId(value: string): void {
+  tenantId = value;
+}
+
+export function getTenantId(): string {
+  return tenantId;
+}
+
+export function clearTenantId(): void {
+  tenantId = "";
 }
 
 export const apiClient = axios.create({
@@ -35,6 +48,9 @@ apiClient.interceptors.request.use((config) => {
   if (csrfToken && !safeMethods.has(method) && !publicAuthWrites.has(path)) {
     config.headers.set("X-CSRF-Token", csrfToken);
   }
+  if (tenantId && !path.startsWith("/auth/") && path !== "/tenants") {
+    config.headers.set("X-Tenant-ID", tenantId);
+  }
   return config;
 });
 
@@ -43,6 +59,7 @@ apiClient.interceptors.response.use(undefined, (error: unknown) => {
     const path = error.config?.url ?? "";
     if (!publicAuthWrites.has(path)) {
       clearCsrfToken();
+      clearTenantId();
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event(AUTHENTICATION_REQUIRED_EVENT));
       }

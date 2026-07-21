@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 from collections import defaultdict
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 from typing import Any, cast
@@ -50,16 +51,20 @@ from common_agent.ports.workflows import (
     WorkflowRunAlreadyExists,
     WorkflowRunRepository,
 )
+from common_agent.tenancy.context import current_tenant
 
 
 class SqlAlchemyWorkflowRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, tenant_id: UUID | None = None) -> None:
         self._session = session
+        self._tenant_id = str(tenant_id or current_tenant().tenant_id)
 
     async def list(self) -> tuple[WorkflowDefinition, ...]:
         rows = tuple(
             await self._session.scalars(
-                select(WorkflowRow).order_by(WorkflowRow.created_at, WorkflowRow.id)
+                select(WorkflowRow)
+                .where(WorkflowRow.tenant_id == self._tenant_id)
+                .order_by(WorkflowRow.created_at, WorkflowRow.id)
             )
         )
         if not rows:
@@ -74,7 +79,7 @@ class SqlAlchemyWorkflowRepository:
         search: str,
         after: PageAnchor | None,
     ) -> PageSlice[WorkflowDefinition]:
-        statement = select(WorkflowRow)
+        statement = select(WorkflowRow).where(WorkflowRow.tenant_id == self._tenant_id)
         if search:
             searched_id = canonical_uuid_search(search)
             statement = statement.where(
@@ -113,18 +118,25 @@ class SqlAlchemyWorkflowRepository:
         )
 
     async def get(self, workflow_id: UUID) -> WorkflowDefinition | None:
-        row = await self._session.get(WorkflowRow, str(workflow_id))
+        row = await self._session.scalar(
+            select(WorkflowRow).where(
+                WorkflowRow.id == str(workflow_id),
+                WorkflowRow.tenant_id == self._tenant_id,
+            )
+        )
         if row is None:
             return None
         node_rows, edge_rows = await self._load_graph_rows((row.id,))
         return _to_domain(row, node_rows[row.id], edge_rows[row.id])
 
     async def add(self, workflow: WorkflowDefinition) -> None:
-        self._session.add(WorkflowRow(**_workflow_values(workflow)))
+        self._session.add(WorkflowRow(tenant_id=self._tenant_id, **_workflow_values(workflow)))
         try:
             await self._session.flush()
-        except IntegrityError:
-            raise WorkflowAlreadyExists from None
+        except IntegrityError as error:
+            if _mysql_error_code(error) == 1062:
+                raise WorkflowAlreadyExists from None
+            raise
         self._session.add_all(_node_rows(workflow))
         await self._session.flush()
         self._session.add_all(_edge_rows(workflow))
@@ -135,7 +147,10 @@ class SqlAlchemyWorkflowRepository:
             CursorResult[Any],
             await self._session.execute(
                 update(WorkflowRow)
-                .where(WorkflowRow.id == str(workflow.id))
+                .where(
+                    WorkflowRow.id == str(workflow.id),
+                    WorkflowRow.tenant_id == self._tenant_id,
+                )
                 .values(
                     name=workflow.name,
                     description=workflow.description,
@@ -186,11 +201,17 @@ class SqlAlchemyWorkflowRepository:
 
 
 class SqlAlchemyWorkflowRunRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, tenant_id: UUID | None = None) -> None:
         self._session = session
+        self._tenant_id = str(tenant_id or current_tenant().tenant_id)
 
     async def get(self, run_id: UUID) -> WorkflowRun | None:
-        row = await self._session.get(WorkflowRunRow, str(run_id))
+        row = await self._session.scalar(
+            select(WorkflowRunRow).where(
+                WorkflowRunRow.id == str(run_id),
+                WorkflowRunRow.tenant_id == self._tenant_id,
+            )
+        )
         return None if row is None else _run_to_domain(row)
 
     async def list_active(self) -> tuple[WorkflowRun, ...]:
@@ -199,7 +220,8 @@ class SqlAlchemyWorkflowRunRepository:
             .where(
                 WorkflowRunRow.status.in_(
                     (WorkflowRunStatus.PENDING.value, WorkflowRunStatus.RUNNING.value)
-                )
+                ),
+                WorkflowRunRow.tenant_id == self._tenant_id,
             )
             .order_by(WorkflowRunRow.created_at, WorkflowRunRow.id)
         )
@@ -208,7 +230,10 @@ class SqlAlchemyWorkflowRunRepository:
     async def list_for_conversation(self, conversation_id: UUID) -> tuple[WorkflowRun, ...]:
         rows = await self._session.scalars(
             select(WorkflowRunRow)
-            .where(WorkflowRunRow.conversation_id == str(conversation_id))
+            .where(
+                WorkflowRunRow.conversation_id == str(conversation_id),
+                WorkflowRunRow.tenant_id == self._tenant_id,
+            )
             .order_by(WorkflowRunRow.created_at, WorkflowRunRow.id)
         )
         return tuple(_run_to_domain(row) for row in rows)
@@ -222,7 +247,8 @@ class SqlAlchemyWorkflowRunRepository:
         after: PageAnchor | None,
     ) -> PageSlice[WorkflowRun]:
         statement = select(WorkflowRunRow).where(
-            WorkflowRunRow.conversation_id == str(conversation_id)
+            WorkflowRunRow.conversation_id == str(conversation_id),
+            WorkflowRunRow.tenant_id == self._tenant_id,
         )
         if search:
             searched_id = canonical_uuid_search(search)
@@ -259,18 +285,23 @@ class SqlAlchemyWorkflowRunRepository:
         )
 
     async def add(self, run: WorkflowRun) -> None:
-        self._session.add(WorkflowRunRow(**_run_values(run)))
+        self._session.add(WorkflowRunRow(tenant_id=self._tenant_id, **_run_values(run)))
         try:
             await self._session.flush()
-        except IntegrityError:
-            raise WorkflowRunAlreadyExists from None
+        except IntegrityError as error:
+            if _mysql_error_code(error) == 1062:
+                raise WorkflowRunAlreadyExists from None
+            raise
 
     async def update(self, run: WorkflowRun) -> bool:
         result = cast(
             CursorResult[Any],
             await self._session.execute(
                 update(WorkflowRunRow)
-                .where(WorkflowRunRow.id == str(run.id))
+                .where(
+                    WorkflowRunRow.id == str(run.id),
+                    WorkflowRunRow.tenant_id == self._tenant_id,
+                )
                 .values(
                     status=run.status.value,
                     output=run.output,
@@ -292,8 +323,9 @@ class SqlAlchemyWorkflowRunRepository:
 
 
 class SqlAlchemyWorkflowUnitOfWork:
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, tenant_id: UUID) -> None:
         self._database = database
+        self._tenant_id = tenant_id
         self._context: AbstractAsyncContextManager[AsyncSession] | None = None
         self._session: AsyncSession | None = None
         self._workflows: WorkflowRepository | None = None
@@ -318,8 +350,8 @@ class SqlAlchemyWorkflowUnitOfWork:
         session = await context.__aenter__()
         self._context = context
         self._session = session
-        self._workflows = SqlAlchemyWorkflowRepository(session)
-        self._workflow_runs = SqlAlchemyWorkflowRunRepository(session)
+        self._workflows = SqlAlchemyWorkflowRepository(session, self._tenant_id)
+        self._workflow_runs = SqlAlchemyWorkflowRunRepository(session, self._tenant_id)
         return self
 
     async def __aexit__(
@@ -345,11 +377,16 @@ class SqlAlchemyWorkflowUnitOfWork:
 
 
 class SqlAlchemyWorkflowUnitOfWorkFactory:
-    def __init__(self, database: Database) -> None:
+    def __init__(
+        self,
+        database: Database,
+        tenant_id_provider: Callable[[], UUID] | None = None,
+    ) -> None:
         self._database = database
+        self._tenant_id_provider = tenant_id_provider or (lambda: current_tenant().tenant_id)
 
     def __call__(self) -> SqlAlchemyWorkflowUnitOfWork:
-        return SqlAlchemyWorkflowUnitOfWork(self._database)
+        return SqlAlchemyWorkflowUnitOfWork(self._database, self._tenant_id_provider())
 
 
 def _workflow_values(workflow: WorkflowDefinition) -> dict[str, object]:
@@ -507,3 +544,8 @@ def _config_from_values(
     return KnowledgeRetrievalNodeConfig(
         knowledge_base_id=values["knowledge_base_id"]  # type: ignore[arg-type]
     )
+
+
+def _mysql_error_code(error: IntegrityError) -> int | None:
+    arguments = getattr(error.orig, "args", ())
+    return arguments[0] if arguments and isinstance(arguments[0], int) else None

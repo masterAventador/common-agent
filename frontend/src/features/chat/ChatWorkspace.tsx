@@ -12,9 +12,11 @@ const { Text, Title } = Typography;
 export function ChatWorkspace({
   controller,
   employee,
+  readOnly = false,
 }: {
   controller: ChatPageController;
   employee: Employee;
+  readOnly?: boolean;
 }) {
   const {
     activeMessage,
@@ -51,6 +53,7 @@ export function ChatWorkspace({
             size="small"
             icon={<PlusOutlined />}
             loading={createMutation.isPending}
+            disabled={readOnly}
             aria-label="新建会话"
             onClick={() => createMutation.mutate()}
           >
@@ -97,7 +100,7 @@ export function ChatWorkspace({
                   compact
                   size="small"
                   disabled={
-                    deleteMutation.isPending ||
+                    readOnly || deleteMutation.isPending ||
                     (selectedConversation?.id === conversation.id && Boolean(activeMessage))
                   }
                   loading={
@@ -151,6 +154,7 @@ export function ChatWorkspace({
                 workflowRuns={runsByMessageId.get(message.id) ?? []}
                 workflows={workflowsById}
                 retrying={retryMutation.isPending && retryMutation.variables === message.id}
+                readOnly={readOnly}
                 onOpenWorkflowRun={openWorkflowRun}
                 onRetry={(messageId) => retryMutation.mutate(messageId)}
               />
@@ -168,10 +172,11 @@ export function ChatWorkspace({
             value={draft}
             autoSize={{ minRows: 2, maxRows: 6 }}
             maxLength={200_000}
-            disabled={!selectedConversation}
+            disabled={readOnly || !selectedConversation}
             placeholder={selectedConversation ? "输入消息，Enter 发送，Shift+Enter 换行" : "请先新建会话"}
             onChange={(event) => setDraft(event.target.value)}
             onPressEnter={(event) => {
+              if (readOnly) return;
               if (event.shiftKey) return;
               event.preventDefault();
               sendDraft();
@@ -184,6 +189,7 @@ export function ChatWorkspace({
                 danger
                 icon={<StopOutlined />}
                 loading={stopMutation.isPending}
+                disabled={readOnly}
                 aria-label="停止生成"
                 onClick={() => stopMutation.mutate()}
               >
@@ -194,7 +200,7 @@ export function ChatWorkspace({
                 type="primary"
                 icon={<SendOutlined />}
                 loading={sendMutation.isPending}
-                disabled={!selectedConversation || !draft.trim()}
+                disabled={readOnly || !selectedConversation || !draft.trim()}
                 aria-label="发送消息"
                 onClick={sendDraft}
               >

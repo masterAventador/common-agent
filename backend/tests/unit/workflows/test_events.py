@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -165,7 +166,7 @@ def test_workflow_event_broker_globally_bounds_subscribers_and_closes_waiters() 
     ],
 )
 def test_workflow_event_broker_rejects_invalid_lifecycle_limits(
-    arguments: dict[str, int],
+    arguments: dict[str, Any],
 ) -> None:
     with pytest.raises(ValueError):
         WorkflowEventBroker(**arguments)

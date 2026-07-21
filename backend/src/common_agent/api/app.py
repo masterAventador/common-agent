@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import UUID
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +19,12 @@ from common_agent.adapters.demo import (
 )
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
-from common_agent.adapters.persistence import Database, SqlAlchemyAuthStore
+from common_agent.adapters.persistence import (
+    Database,
+    SqlAlchemyAuthStore,
+    SqlAlchemyKnowledgeOwnershipStore,
+    SqlAlchemyTenancyStore,
+)
 from common_agent.adapters.persistence.conversations import (
     SqlAlchemyConversationUnitOfWorkFactory,
 )
@@ -38,9 +44,11 @@ from common_agent.api.routers import (
     employee_router,
     knowledge_router,
     system_router,
+    tenant_router,
     workflow_router,
     workflow_run_router,
 )
+from common_agent.api.tenancy import require_tenant_access
 from common_agent.application.resource_deletion import ResourceDeletionService
 from common_agent.application.resource_locks import ResourceMutationGuard
 from common_agent.application.system_service import SystemService
@@ -61,6 +69,14 @@ from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.models.base import TextStreamingModel
 from common_agent.observability import MetricsRegistry, configure_json_logging
+from common_agent.tenancy import (
+    TenancyService,
+    TenantAccess,
+    TenantRole,
+    bind_tenant,
+    current_tenant,
+)
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
 
@@ -81,6 +97,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             login_max_attempts=auth_settings.login_max_attempts,
         ),
     )
+    tenancy_store = SqlAlchemyTenancyStore(database)
+    app.state.tenancy = TenancyService(tenancy_store)
+
+    def tenant_id_provider() -> UUID:
+        return current_tenant().tenant_id
+
+    def key_namespace(key: str) -> str:
+        return f"tenant:{current_tenant().tenant_id}:{key}"
+
     knowledge_adapter: RagFlowKnowledgeService | DemoKnowledgeService | None = None
     runtime: DeepAgentsEmployeeRuntime | DemoEmployeeRuntime | None = None
     conversations: ConversationService | None = None
@@ -93,7 +118,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         workflow_model: TextStreamingModel
         if integration_mode.mode == "demo":
             knowledge_adapter = DemoKnowledgeService(
-                SqlAlchemyDemoKnowledgeUnitOfWorkFactory(database)
+                SqlAlchemyDemoKnowledgeUnitOfWorkFactory(database, tenant_id_provider)
             )
             runtime = DemoEmployeeRuntime()
             demo_workflow_model = DemoWorkflowModel()
@@ -110,11 +135,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             model = BailianChatModelAdapter(ModelSettings.from_env())
             workflow_model = model
-        knowledge_bases = KnowledgeBaseService(knowledge_adapter)
-        resource_guard = ResourceMutationGuard()
+        knowledge_bases = KnowledgeBaseService(
+            knowledge_adapter,
+            ownership=(
+                SqlAlchemyKnowledgeOwnershipStore(database)
+                if integration_mode.mode == "real"
+                else None
+            ),
+            tenant_id_provider=tenant_id_provider,
+        )
+        resource_guard = ResourceMutationGuard(key_namespace)
         app.state.knowledge_bases = knowledge_bases
         app.state.resource_deletions = ResourceDeletionService(
-            SqlAlchemyResourceDeletionStore(database),
+            SqlAlchemyResourceDeletionStore(database, tenant_id_provider),
             knowledge_bases,
             guard=resource_guard,
         )
@@ -123,9 +156,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             model_provider=workflow_model.provider_name,
             knowledge=knowledge_adapter,
         )
-        workflow_events = WorkflowEventBroker()
+        workflow_events = WorkflowEventBroker(
+            key_namespace=lambda run_id: key_namespace(f"workflow-run:{run_id}")
+        )
         workflows = WorkflowService(
-            SqlAlchemyWorkflowUnitOfWorkFactory(database),
+            SqlAlchemyWorkflowUnitOfWorkFactory(database, tenant_id_provider),
             knowledge_bases,
             compiler=LangGraphWorkflowCompiler(
                 create_workflow_node_registry(workflow_model, knowledge_bases)
@@ -141,18 +176,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 tools=WorkflowToolRegistry(workflows),
             )
         employees = EmployeeService(
-            SqlAlchemyEmployeeUnitOfWorkFactory(database),
+            SqlAlchemyEmployeeUnitOfWorkFactory(database, tenant_id_provider),
             knowledge_bases,
             workflows=workflows,
             guard=resource_guard,
         )
         app.state.employees = employees
-        await seed_default_employee(employees)
-        conversation_events = ConversationEventBroker()
+        with bind_tenant(_system_tenant_access(DEFAULT_TENANT_ID)):
+            await seed_default_employee(employees)
+        conversation_events = ConversationEventBroker(
+            key_namespace=lambda conversation_id: key_namespace(f"conversation:{conversation_id}")
+        )
         if runtime is None:
             raise RuntimeError("数字员工运行时未完成装配")
         conversations = ConversationService(
-            SqlAlchemyConversationUnitOfWorkFactory(database),
+            SqlAlchemyConversationUnitOfWorkFactory(database, tenant_id_provider),
             employees=employees,
             knowledge=ConversationKnowledgeResolver(knowledge_adapter),
             runtime=runtime,
@@ -161,13 +199,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.conversation_events = conversation_events
         app.state.conversations = conversations
-        await conversations.recover_interrupted()
-        await workflows.recover_interrupted()
+        for tenant_id in await tenancy_store.list_tenant_ids():
+            with bind_tenant(_system_tenant_access(tenant_id)):
+                await conversations.recover_interrupted()
+                await workflows.recover_interrupted()
         app.state.ready = True
         yield
     finally:
         app.state.ready = False
         app.state.authentication = None
+        app.state.tenancy = None
         app.state.conversations = None
         app.state.conversation_events = None
         app.state.employees = None
@@ -211,6 +252,7 @@ def create_app() -> FastAPI:
     app.state.auth_settings = auth_settings
     app.state.cors_settings = cors
     app.state.authentication = None
+    app.state.tenancy = None
     app.state.ragflow_settings = (
         RagFlowSettings.from_env() if integration_mode.mode == "real" else None
     )
@@ -227,7 +269,8 @@ def create_app() -> FastAPI:
 
     app.include_router(system_router)
     app.include_router(auth_router)
-    protected = [Depends(require_authenticated)]
+    app.include_router(tenant_router)
+    protected = [Depends(require_authenticated), Depends(require_tenant_access)]
     protected_responses: dict[int | str, dict[str, Any]] = {
         401: {"model": ErrorEnvelope},
         403: {"model": ErrorEnvelope},
@@ -258,3 +301,11 @@ def create_app() -> FastAPI:
         responses=protected_responses,
     )
     return app
+
+
+def _system_tenant_access(tenant_id: UUID) -> TenantAccess:
+    return TenantAccess(
+        tenant_id=tenant_id,
+        user_id=UUID(int=0),
+        role=TenantRole.OWNER,
+    )

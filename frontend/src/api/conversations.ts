@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { components } from "./generated/schema";
-import { apiBaseUrl, apiClient } from "./client";
+import { apiBaseUrl, apiClient, getTenantId } from "./client";
 import { toApiClientError } from "./errors";
 import {
   cursorPageSchema,
@@ -200,7 +200,10 @@ export function subscribeToConversationEvents(
   const source = new EventSource(
     `${apiBaseUrl.replace(/\/$/, "")}/conversations/${encodeURIComponent(
       conversationId,
-    )}/events?${new URLSearchParams({ after_sequence: String(afterSequence) })}`,
+    )}/events?${new URLSearchParams({
+      after_sequence: String(afterSequence),
+      tenant_id: getTenantId(),
+    })}`,
     { withCredentials: true },
   );
 

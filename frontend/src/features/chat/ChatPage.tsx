@@ -8,7 +8,7 @@ import { useChatPageController } from "./useChatPageController";
 
 const { Title } = Typography;
 
-export function ChatPage() {
+export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
   const controller = useChatPageController();
   const { employeeItems, employees, selectedEmployee } = controller;
 
@@ -113,7 +113,7 @@ export function ChatPage() {
           className="chat-inline-alert"
         />
       )}
-      <ChatWorkspace controller={controller} employee={selectedEmployee} />
+      <ChatWorkspace controller={controller} employee={selectedEmployee} readOnly={readOnly} />
     </section>
   );
 }

@@ -35,6 +35,10 @@ COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="common-agent-a4-08-knowledge-${RUN_ID}"
 COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN="e2e-bootstrap-token-at-least-32-characters"
 COMMON_AGENT_E2E_AUTH_EMAIL="e2e-owner@example.com"
 COMMON_AGENT_E2E_AUTH_PASSWORD="correct horse battery staple"
+COMMON_AGENT_E2E_TENANT_NAME="common-agent-s10-03-${RUN_ID}"
+COMMON_AGENT_E2E_TENANT_EMPLOYEE_NAME="common-agent-s10-03-employee-${RUN_ID}"
+COMMON_AGENT_E2E_VIEWER_EMAIL="viewer-s10-03-${RUN_ID}@example.com"
+COMMON_AGENT_E2E_VIEWER_PASSWORD="viewer initial password is secure"
 LIGHT_E2E_MEMORY_GIB=12
 REAL_E2E_MEMORY_GIB=32
 ARTIFACT_ROOT="${REPOSITORY_ROOT}/.local/test-artifacts/platform-e2e/${E2E_SUITE}-${RUN_ID}"
@@ -47,7 +51,7 @@ FRONTEND_PID=""
 RAGFLOW_API_KEY=""
 COMMON_AGENT_DATABASE_URL="mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
 
-if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" && "${E2E_SUITE}" != "resource-deletion" && "${E2E_SUITE}" != "list-pagination" ]]; then
+if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" && "${E2E_SUITE}" != "resource-deletion" && "${E2E_SUITE}" != "list-pagination" ]]; then
   echo "不支持的 E2E suite：${E2E_SUITE}" >&2
   exit 2
 fi
@@ -61,7 +65,7 @@ ensure_colima_profile() {
   local memory_gib="${REAL_E2E_MEMORY_GIB}"
   local current_memory_bytes=""
   local current_memory_gib=0
-  if [[ "${E2E_SUITE}" == "auth" || "${E2E_SUITE}" == "demo-chat" || "${E2E_SUITE}" == "frontend-loading" || "${E2E_SUITE}" == "list-pagination" ]]; then
+  if [[ "${E2E_SUITE}" == "auth" || "${E2E_SUITE}" == "tenant-rbac" || "${E2E_SUITE}" == "demo-chat" || "${E2E_SUITE}" == "frontend-loading" || "${E2E_SUITE}" == "list-pagination" ]]; then
     cpus=4
     memory_gib="${LIGHT_E2E_MEMORY_GIB}"
   fi
@@ -148,7 +152,18 @@ cleanup() {
   stop_process "${FRONTEND_PID}"
   stop_process "${BACKEND_PID}"
 
-  if [[ "${E2E_SUITE}" == "demo-chat" ]]; then
+  if [[ "${E2E_SUITE}" == "tenant-rbac" ]]; then
+    if ! (
+      cd "${BACKEND_ROOT}"
+      COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
+      COMMON_AGENT_E2E_TENANT_NAME="${COMMON_AGENT_E2E_TENANT_NAME}" \
+      COMMON_AGENT_E2E_VIEWER_EMAIL="${COMMON_AGENT_E2E_VIEWER_EMAIL}" \
+        "${UV_RUNNER}" run --frozen python -m tests.support.tenant_rbac_e2e_cleanup
+    ); then
+      echo "租户/RBAC E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
+      cleanup_status=1
+    fi
+  elif [[ "${E2E_SUITE}" == "demo-chat" ]]; then
     if ! (
       cd "${BACKEND_ROOT}"
       COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
@@ -297,9 +312,13 @@ export COMMON_AGENT_DATABASE_URL
 export COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN
 export COMMON_AGENT_E2E_AUTH_EMAIL
 export COMMON_AGENT_E2E_AUTH_PASSWORD
+export COMMON_AGENT_E2E_TENANT_NAME
+export COMMON_AGENT_E2E_TENANT_EMPLOYEE_NAME
+export COMMON_AGENT_E2E_VIEWER_EMAIL
+export COMMON_AGENT_E2E_VIEWER_PASSWORD
 export COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN="${COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN}"
 export COMMON_AGENT_E2E_API_URL="http://127.0.0.1:${API_PORT}/api/v1"
-if [[ "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "list-pagination" ]]; then
+if [[ "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "list-pagination" ]]; then
   export COMMON_AGENT_INTEGRATION_MODE="real"
   if ! curl --fail --silent --show-error \
     "${RAGFLOW_BASE_URL}/api/v1/system/version" >/dev/null 2>&1; then
@@ -352,6 +371,10 @@ wait_for_url "http://127.0.0.1:${FRONTEND_PORT}/knowledge-bases"
     COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
     COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
       exec pnpm exec playwright test e2e/auth.spec.ts --config playwright.config.ts
+  elif [[ "${E2E_SUITE}" == "tenant-rbac" ]]; then
+    COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
+      exec pnpm exec playwright test e2e/tenant-rbac.spec.ts --config playwright.config.ts
   elif [[ "${E2E_SUITE}" == "platform" ]]; then
     COMMON_AGENT_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_KNOWLEDGE_NAME}" \
     COMMON_AGENT_E2E_EMPLOYEE_NAME="${COMMON_AGENT_E2E_EMPLOYEE_NAME}" \

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
 from common_agent.adapters.auth.passwords import Argon2PasswordHasher
 from common_agent.auth.models import AuthConfiguration, AuthenticatedSession, StoredAuthUser
 from common_agent.auth.service import AuthenticationError, AuthenticationService
+from common_agent.tenancy import TenantRole
 
 
 @dataclass
@@ -37,6 +38,29 @@ class _FakeAuthStore:
         now: datetime,
     ) -> StoredAuthUser | None:
         if self.users:
+            return None
+        user = StoredAuthUser(
+            id=str(uuid4()),
+            email=email,
+            password_hash=password_hash,
+            is_active=True,
+        )
+        self.users[email] = user
+        self.recovery_digests[user.id] = set(recovery_digests)
+        return user
+
+    async def create_member(
+        self,
+        *,
+        tenant_id: UUID,
+        email: str,
+        password_hash: str,
+        recovery_digests: tuple[str, ...],
+        role: TenantRole,
+        now: datetime,
+    ) -> StoredAuthUser | None:
+        del tenant_id, role, now
+        if email in self.users:
             return None
         user = StoredAuthUser(
             id=str(uuid4()),
@@ -257,6 +281,63 @@ def test_login_is_generic_rate_limited_by_account_and_address_then_recovers() ->
             client_address="127.0.0.1",
         )
         assert issued.email == "owner@example.com"
+
+    import asyncio
+
+    asyncio.run(exercise())
+
+
+def test_owner_can_provision_a_login_account_with_an_explicit_tenant_role() -> None:
+    async def exercise() -> None:
+        store = _FakeAuthStore()
+        clock = _Clock()
+        service = _service(store, clock)
+        await _register(service)
+
+        provisioned = await service.provision_member(
+            tenant_id=UUID("10000000-0000-4000-8000-000000000001"),
+            email="Viewer@Example.com",
+            password="viewer initial password is secure",
+            role=TenantRole.VIEWER,
+        )
+
+        assert provisioned.email == "viewer@example.com"
+        assert provisioned.role is TenantRole.VIEWER
+        assert len(provisioned.recovery_codes) == 8
+        logged_in = await service.login(
+            email="viewer@example.com",
+            password="viewer initial password is secure",
+            client_address="127.0.0.2",
+        )
+        assert logged_in.user_id == provisioned.user_id
+
+        with pytest.raises(AuthenticationError, match="member_conflict"):
+            await service.provision_member(
+                tenant_id=UUID("10000000-0000-4000-8000-000000000001"),
+                email="viewer@example.com",
+                password="another secure initial password",
+                role=TenantRole.EDITOR,
+            )
+
+    import asyncio
+
+    asyncio.run(exercise())
+
+
+def test_member_provisioning_rejects_owner_role() -> None:
+    async def exercise() -> None:
+        store = _FakeAuthStore()
+        service = _service(store, _Clock())
+
+        with pytest.raises(AuthenticationError, match="member_role_invalid"):
+            await service.provision_member(
+                tenant_id=UUID("10000000-0000-4000-8000-000000000001"),
+                email="owner-member@example.com",
+                password="owner member password is secure",
+                role=TenantRole.OWNER,
+            )
+
+        assert store.users == {}
 
     import asyncio
 

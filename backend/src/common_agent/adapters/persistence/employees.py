@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 from typing import Any, cast
@@ -19,15 +20,19 @@ from common_agent.adapters.persistence.timestamps import (
 from common_agent.domain.employee import Employee
 from common_agent.pagination import PageAnchor, PageSlice, canonical_uuid_search
 from common_agent.ports.employees import EmployeeAlreadyExists, EmployeeRepository
+from common_agent.tenancy.context import current_tenant
 
 
 class SqlAlchemyEmployeeRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, tenant_id: UUID | None = None) -> None:
         self._session = session
+        self._tenant_id = str(tenant_id or current_tenant().tenant_id)
 
     async def list(self) -> tuple[Employee, ...]:
         result = await self._session.scalars(
-            select(EmployeeRow).order_by(EmployeeRow.created_at, EmployeeRow.id)
+            select(EmployeeRow)
+            .where(EmployeeRow.tenant_id == self._tenant_id)
+            .order_by(EmployeeRow.created_at, EmployeeRow.id)
         )
         return tuple(_to_domain(row) for row in result)
 
@@ -38,7 +43,7 @@ class SqlAlchemyEmployeeRepository:
         search: str,
         after: PageAnchor | None,
     ) -> PageSlice[Employee]:
-        statement = select(EmployeeRow)
+        statement = select(EmployeeRow).where(EmployeeRow.tenant_id == self._tenant_id)
         if search:
             searched_id = canonical_uuid_search(search)
             statement = statement.where(
@@ -71,11 +76,16 @@ class SqlAlchemyEmployeeRepository:
         )
 
     async def get(self, employee_id: UUID) -> Employee | None:
-        row = await self._session.get(EmployeeRow, str(employee_id))
+        row = await self._session.scalar(
+            select(EmployeeRow).where(
+                EmployeeRow.id == str(employee_id),
+                EmployeeRow.tenant_id == self._tenant_id,
+            )
+        )
         return None if row is None else _to_domain(row)
 
     async def add(self, employee: Employee) -> None:
-        self._session.add(EmployeeRow(**_to_values(employee)))
+        self._session.add(EmployeeRow(tenant_id=self._tenant_id, **_to_values(employee)))
         try:
             await self._session.flush()
         except IntegrityError:
@@ -86,7 +96,10 @@ class SqlAlchemyEmployeeRepository:
             CursorResult[Any],
             await self._session.execute(
                 update(EmployeeRow)
-                .where(EmployeeRow.id == str(employee.id))
+                .where(
+                    EmployeeRow.id == str(employee.id),
+                    EmployeeRow.tenant_id == self._tenant_id,
+                )
                 .values(**_to_values(employee))
             ),
         )
@@ -94,8 +107,9 @@ class SqlAlchemyEmployeeRepository:
 
 
 class SqlAlchemyEmployeeUnitOfWork:
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, tenant_id: UUID) -> None:
         self._database = database
+        self._tenant_id = tenant_id
         self._context: AbstractAsyncContextManager[AsyncSession] | None = None
         self._session: AsyncSession | None = None
         self._employees: EmployeeRepository | None = None
@@ -113,7 +127,7 @@ class SqlAlchemyEmployeeUnitOfWork:
         session = await context.__aenter__()
         self._context = context
         self._session = session
-        self._employees = SqlAlchemyEmployeeRepository(session)
+        self._employees = SqlAlchemyEmployeeRepository(session, self._tenant_id)
         return self
 
     async def __aexit__(
@@ -138,11 +152,16 @@ class SqlAlchemyEmployeeUnitOfWork:
 
 
 class SqlAlchemyEmployeeUnitOfWorkFactory:
-    def __init__(self, database: Database) -> None:
+    def __init__(
+        self,
+        database: Database,
+        tenant_id_provider: Callable[[], UUID] | None = None,
+    ) -> None:
         self._database = database
+        self._tenant_id_provider = tenant_id_provider or (lambda: current_tenant().tenant_id)
 
     def __call__(self) -> SqlAlchemyEmployeeUnitOfWork:
-        return SqlAlchemyEmployeeUnitOfWork(self._database)
+        return SqlAlchemyEmployeeUnitOfWork(self._database, self._tenant_id_provider())
 
 
 def _to_values(employee: Employee) -> dict[str, object]:

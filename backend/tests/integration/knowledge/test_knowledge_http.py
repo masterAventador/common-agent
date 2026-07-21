@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 from collections.abc import Iterator
@@ -9,6 +10,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
 from typing import Any, cast
 
+from sqlalchemy import delete
+
+from common_agent.adapters.persistence.database import Database
+from common_agent.adapters.persistence.models import RagFlowKnowledgeBaseOwnershipRow
 from tests.support.http import (
     assert_error_response,
     authenticated_client,
@@ -172,21 +177,25 @@ def _ragflow_env(base_url: str, *, api_key: str = "layered-test-key") -> dict[st
 
 
 def test_knowledge_routes_use_formal_uvicorn_and_ragflow_adapter() -> None:
-    with (
-        _fake_ragflow() as (ragflow_url, probe),
-        running_api(TEST_DATABASE_URL, env_overrides=_ragflow_env(ragflow_url)) as api_url,
-        authenticated_client(base_url=api_url, timeout=5) as client,
-    ):
-        listed = client.get("/api/v1/knowledge-bases")
-        created = client.post(
-            "/api/v1/knowledge-bases",
-            json={"name": "员工手册", "description": "人事制度"},
-        )
-        uploaded = client.post(
-            "/api/v1/knowledge-bases/kb-1/documents",
-            files={"file": ("policy.md", b"policy bytes", "text/markdown")},
-        )
-        documents = client.get("/api/v1/knowledge-bases/kb-1/documents")
+    asyncio.run(_clear_fake_ownerships())
+    try:
+        with (
+            _fake_ragflow() as (ragflow_url, probe),
+            running_api(TEST_DATABASE_URL, env_overrides=_ragflow_env(ragflow_url)) as api_url,
+            authenticated_client(base_url=api_url, timeout=5) as client,
+        ):
+            listed = client.get("/api/v1/knowledge-bases")
+            created = client.post(
+                "/api/v1/knowledge-bases",
+                json={"name": "员工手册", "description": "人事制度"},
+            )
+            uploaded = client.post(
+                "/api/v1/knowledge-bases/kb-1/documents",
+                files={"file": ("policy.md", b"policy bytes", "text/markdown")},
+            )
+            documents = client.get("/api/v1/knowledge-bases/kb-1/documents")
+    finally:
+        asyncio.run(_clear_fake_ownerships())
 
     assert listed.status_code == 200
     assert listed.json() == {
@@ -219,6 +228,21 @@ def test_knowledge_routes_use_formal_uvicorn_and_ragflow_adapter() -> None:
     assert len(probe.upload_bodies) == 1
     assert b'filename="policy.md"' in probe.upload_bodies[0]
     assert probe.parse_payloads == [{"document_ids": ["doc-1"]}]
+
+
+async def _clear_fake_ownerships() -> None:
+    database = Database(TEST_DATABASE_URL)
+    await database.start()
+    try:
+        async with database.session() as session:
+            await session.execute(
+                delete(RagFlowKnowledgeBaseOwnershipRow).where(
+                    RagFlowKnowledgeBaseOwnershipRow.knowledge_base_id.in_(("kb-1", "kb-2"))
+                )
+            )
+            await session.commit()
+    finally:
+        await database.stop()
 
 
 def test_upload_limits_fail_before_calling_ragflow() -> None:

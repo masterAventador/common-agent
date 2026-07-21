@@ -60,7 +60,7 @@ function employeeFormValues(employee: Employee): EmployeeConfigurationInput {
   };
 }
 
-export function EmployeesPage() {
+export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [editor, setEditor] = useState<EditorState>();
@@ -229,6 +229,7 @@ export function EmployeesPage() {
           type="primary"
           aria-label="创建数字员工"
           icon={<PlusOutlined />}
+          disabled={readOnly}
           onClick={() => setEditor({ mode: "create" })}
         >
           创建数字员工
@@ -321,12 +322,13 @@ export function EmployeesPage() {
                   loading={
                     deleteMutation.isPending && deleteMutation.variables?.id === employee.id
                   }
-                  disabled={deleteMutation.isPending}
+                  disabled={readOnly || deleteMutation.isPending}
                   onConfirm={() => deleteMutation.mutateAsync(employee)}
                 />
                 <Button
                   aria-label={`编辑 ${employee.name}`}
                   icon={<EditOutlined />}
+                  disabled={readOnly}
                   onClick={() => setEditor({ mode: "edit", employee })}
                 >
                   编辑
@@ -362,6 +364,7 @@ export function EmployeesPage() {
         okText={editor?.mode === "edit" ? "保存修改" : "确认创建"}
         cancelText="取消"
         confirmLoading={saveMutation.isPending}
+        okButtonProps={{ disabled: readOnly }}
         onOk={() => form.submit()}
         onCancel={closeEditor}
       >

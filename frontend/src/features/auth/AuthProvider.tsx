@@ -20,9 +20,19 @@ import {
   type RegisterOwnerInput,
   type ResetPasswordInput,
 } from "../../api/auth";
-import { AUTHENTICATION_REQUIRED_EVENT, clearCsrfToken } from "../../api/client";
+import {
+  AUTHENTICATION_REQUIRED_EVENT,
+  clearCsrfToken,
+  clearTenantId,
+  setTenantId,
+} from "../../api/client";
 import type { AuthSessionResponse } from "../../api/contracts";
 import { ApiClientError, getErrorMessage } from "../../api/errors";
+import {
+  createTenant,
+  fetchTenantAccesses,
+  type TenantAccess,
+} from "../../api/tenants";
 import {
   AuthContext,
   useAuth,
@@ -31,11 +41,33 @@ import {
   type AuthPhase,
 } from "./authContext";
 
+function tenantStorageKey(userId: string): string {
+  return `common-agent:selected-tenant:${userId}`;
+}
+
+function readRememberedTenant(userId: string): string | null {
+  try {
+    return window.localStorage.getItem(tenantStorageKey(userId));
+  } catch {
+    return null;
+  }
+}
+
+function rememberTenant(userId: string, tenantId: string): void {
+  try {
+    window.localStorage.setItem(tenantStorageKey(userId), tenantId);
+  } catch {
+    // Browsers may disable storage; the in-memory tenant context remains authoritative.
+  }
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<AuthPhase>("loading");
   const [mode, setMode] = useState<AuthMode>("login");
   const [session, setSession] = useState<AuthSessionResponse | null>(null);
+  const [tenants, setTenants] = useState<readonly TenantAccess[]>([]);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const [registrationAvailable, setRegistrationAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,13 +88,27 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
+  const completeAuthentication = useCallback(async (authenticated: AuthSessionResponse) => {
+    const accesses = await fetchTenantAccesses();
+    const rememberedId = readRememberedTenant(authenticated.user_id);
+    const selected = accesses.find((access) => access.id === rememberedId) ?? accesses[0];
+    if (!selected) {
+      throw new Error("当前账号尚未加入任何工作区");
+    }
+    setTenantId(selected.id);
+    rememberTenant(authenticated.user_id, selected.id);
+    setTenants(accesses);
+    setSelectedTenantId(selected.id);
+    setSession(authenticated);
+    setPhase("authenticated");
+  }, []);
+
   useEffect(() => {
     let active = true;
     void fetchCurrentSession()
-      .then((currentSession) => {
+      .then(async (currentSession) => {
         if (!active) return;
-        setSession(currentSession);
-        setPhase("authenticated");
+        await completeAuthentication(currentSession);
       })
       .catch(async (sessionError: unknown) => {
         if (!active) return;
@@ -77,12 +123,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => {
       active = false;
     };
-  }, [loadAnonymousPolicy]);
+  }, [completeAuthentication, loadAnonymousPolicy]);
 
   useEffect(() => {
     const requireAuthentication = () => {
       clearCsrfToken();
+      clearTenantId();
       setSession(null);
+      setTenants([]);
+      setSelectedTenantId(null);
       queryClient.clear();
       void loadAnonymousPolicy();
     };
@@ -98,15 +147,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setError(null);
       try {
         const authenticated = await loginRequest(input);
-        setSession(authenticated);
-        setPhase("authenticated");
+        await completeAuthentication(authenticated);
       } catch (loginError) {
         setError(getErrorMessage(loginError));
       } finally {
         setBusy(false);
       }
     },
-    [],
+    [completeAuthentication],
   );
 
   const register = useCallback(async (input: RegisterOwnerInput) => {
@@ -116,14 +164,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const registered = await registerOwner(input);
       setRecoveryCodes(registered.recovery_codes);
       setRegistrationAvailable(false);
-      setSession(registered);
-      setPhase("authenticated");
+      await completeAuthentication(registered);
     } catch (registrationError) {
       setError(getErrorMessage(registrationError));
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [completeAuthentication]);
 
   const recover = useCallback(async (input: ResetPasswordInput) => {
     setBusy(true);
@@ -143,7 +190,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setError(null);
     try {
       await logoutRequest();
+      clearTenantId();
       setSession(null);
+      setTenants([]);
+      setSelectedTenantId(null);
       queryClient.clear();
       await loadAnonymousPolicy();
     } catch (logoutError) {
@@ -153,11 +203,55 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, [loadAnonymousPolicy, queryClient]);
 
+  const selectTenant = useCallback(
+    (tenantId: string) => {
+      if (!tenants.some((tenant) => tenant.id === tenantId)) return;
+      setTenantId(tenantId);
+      setSelectedTenantId(tenantId);
+      if (session) {
+        rememberTenant(session.user_id, tenantId);
+      }
+      queryClient.clear();
+    },
+    [queryClient, session, tenants],
+  );
+
+  const createWorkspace = useCallback(
+    async (name: string): Promise<boolean> => {
+      const selected = tenants.find((tenant) => tenant.id === selectedTenantId);
+      if (!selected || selected.role !== "owner") return false;
+      setBusy(true);
+      setError(null);
+      try {
+        const created = await createTenant({
+          organization_id: selected.organization_id,
+          name,
+        });
+        setTenants((current) => [...current, created]);
+        setTenantId(created.id);
+        setSelectedTenantId(created.id);
+        if (session) {
+          rememberTenant(session.user_id, created.id);
+        }
+        queryClient.clear();
+        return true;
+      } catch (workspaceError) {
+        setError(getErrorMessage(workspaceError));
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [queryClient, selectedTenantId, session, tenants],
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       phase,
       mode,
       session,
+      tenants,
+      selectedTenantId,
       registrationAvailable,
       busy,
       error,
@@ -167,11 +261,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       register,
       recover,
       logout,
+      selectTenant,
+      createWorkspace,
       dismissRecoveryCodes: () => setRecoveryCodes([]),
     }),
     [
       authenticate,
       busy,
+      createWorkspace,
       error,
       logout,
       mode,
@@ -181,6 +278,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       register,
       registrationAvailable,
       session,
+      selectedTenantId,
+      selectTenant,
+      tenants,
     ],
   );
 

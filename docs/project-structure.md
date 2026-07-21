@@ -1,7 +1,7 @@
 # 通用 Agent 中台工程结构
 
-> 状态：已确认的 MVP 基线  
-> 确认日期：2026-07-20
+> 状态：MVP 基线与租户隔离结构已确认
+> 确认日期：2026-07-21
 
 ## 1. 核心决策
 
@@ -36,6 +36,7 @@ backend/
 │       ├── api/                 # FastAPI 路由、依赖和错误边界
 │       │   ├── routers/
 │       │   │   ├── auth.py                 # 引导、登录、恢复和注销
+│       │   │   ├── tenants.py              # 工作区列表、创建与成员配置
 │       │   │   ├── system.py
 │       │   │   ├── conversations.py       # 会话 REST 编排
 │       │   │   ├── conversation_events.py # 会话 SSE 边界
@@ -47,6 +48,7 @@ backend/
 │       │   │   └── workflow_runs.py
 │       │   ├── schemas/           # 会话、工作流和运行 HTTP DTO
 │       │   ├── authentication.py  # Cookie、CSRF、Origin 与路由认证依赖
+│       │   ├── tenancy.py         # 租户选择、权限判断与请求上下文
 │       │   ├── app.py            # FastAPI 组合根
 │       │   ├── observability.py  # HTTP 关联、请求日志和进程内指标边界
 │       │   └── server.py         # Uvicorn 进程边界
@@ -59,6 +61,7 @@ backend/
 │       │   └── workflow_run_projection.py # 运行投影
 │       ├── concurrency.py       # 可回收的按 ID 异步锁池
 │       ├── auth/                # 平台身份、会话模型、端口与认证用例
+│       ├── tenancy/             # 组织/租户访问模型、角色、端口与上下文
 │       ├── conversations/       # 会话门面、持久化、运行协调、消息投影与事件
 │       ├── employees/           # 数字员工应用服务与启动 Seed
 │       ├── domain/              # 与第三方无关的会话和能力模型
@@ -118,6 +121,8 @@ api -> application -> domain
 - `api/` 只负责 HTTP/SSE、参数校验、错误转换和 HTTP 可观测边界；
 - `auth/` 定义用户、服务端会话、恢复码及仓储/密码端口；Cookie、Origin 和 CSRF 只在 API
   边界处理，Argon2id 与 SQLAlchemy 分别留在对应适配层；
+- `tenancy/` 定义 Owner/Editor/Viewer、工作区访问解析和 fail-closed 上下文；平台资源仓储、
+  事件与锁以租户命名空间运行，RAGFlow 外部 ID 归属保存在平台 MySQL，不触碰上游内部表；
 - `observability/` 只用标准库定义 JSON 日志、W3C trace context 与进程内有界指标；业务服务
   绑定平台会话/工作流 ID，外围 HTTP 适配器负责把 trace context 传给 RAGFlow 与百炼；
 - `application/` 分别负责“发送消息并生成回复”和“触发工作流”用例；
@@ -169,8 +174,9 @@ frontend/
 └── README.md
 ```
 
-业务区只有聊天工作台、数字员工、知识库与独立工作流设计器；未认证时由真实 `auth` Feature
-阻止业务路由挂载，不为其他未实现能力创建空目录或菜单。工作流画布使用成熟的 React 节点
+业务区只有聊天工作台、数字员工、知识库与独立工作流设计器；未认证或尚未选择工作区时由真实
+`auth` Provider 阻止业务路由挂载，工作区选择和成员配置复用全局壳层，不为其他未实现能力创建
+空目录或菜单。工作流画布使用成熟的 React 节点
 图库，不自行实现缩放、拖拽、连线和命中测试。
 页面容器只组合控制器和展示区域；协议映射、服务端状态、流式/运行状态、画布和属性表单分模块维护。
 架构门禁限制页面容器体量、跨 Feature 私有导入、实现层反向依赖容器和拆分模块循环依赖。

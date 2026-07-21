@@ -1,6 +1,6 @@
 # common-agent
 
-`common-agent` 是一个面向本机开发的通用 AI Agent 中台。MVP 已跑通连续 AI 会话、数字员工、RAGFlow 知识库和最小可视化工作流；当前生产化阶段已增加首位所有者注册、登录与服务端安全会话，企业多租户、RBAC、Skill 市场和远程部署仍不在当前完成范围。
+`common-agent` 是一个面向本机开发的通用 AI Agent 中台。MVP 已跑通连续 AI 会话、数字员工、RAGFlow 知识库和最小可视化工作流；当前生产化阶段已增加安全会话、组织下多工作区、成员账号与 Owner/Editor/Viewer 最小 RBAC。Skill 市场、SSO、细粒度授权和远程部署仍不在当前完成范围。
 
 ## MVP 能力
 
@@ -57,6 +57,8 @@ MySQL/RAGFlow 数据、依赖和官方镜像。
 忽略的 `.local/dev/common-agent-dev/secrets/owner-bootstrap-token` 自动生成并以 `0600`
 保存；两台开发电脑各自拥有本地值，不相互依赖。所有者创建成功后引导入口永久关闭。之后使用
 邮箱和密码登录，浏览器只保存 `HttpOnly` 会话 Cookie，CSRF 令牌只保存在当前页面内存中。
+首位所有者自动拥有默认工作区；可以创建同组织工作区并添加 Editor/Viewer 成员。业务资源、
+事件和 RAGFlow 外部知识库归属按工作区隔离，跨租户 REST/SSE/工具调用由后端关闭失败。
 
 ## 真实知识链路
 

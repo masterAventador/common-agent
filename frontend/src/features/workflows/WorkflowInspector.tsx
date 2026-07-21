@@ -17,6 +17,7 @@ export function WorkflowInspector({
   onKnowledgeSearch,
   onKnowledgePopupScroll,
   editingLocked,
+  readOnly = false,
   runController,
   dispatch,
 }: {
@@ -28,6 +29,7 @@ export function WorkflowInspector({
   onKnowledgeSearch: (value: string) => void;
   onKnowledgePopupScroll: (event: UIEvent<HTMLDivElement>) => void;
   editingLocked: boolean;
+  readOnly?: boolean;
   runController: ReturnType<typeof useWorkflowRun>;
   dispatch: Dispatch<WorkflowEditorAction>;
 }) {
@@ -164,6 +166,7 @@ export function WorkflowInspector({
         dirty={state.dirty}
         nodes={state.nodes}
         controller={runController}
+        readOnly={readOnly}
       />
     </aside>
   );

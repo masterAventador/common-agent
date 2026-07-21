@@ -5,7 +5,7 @@ import re
 import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from common_agent.auth.credentials import (
     create_recovery_codes,
@@ -17,9 +17,11 @@ from common_agent.auth.models import (
     AuthConfiguration,
     AuthenticatedSession,
     IssuedAuthentication,
+    ProvisionedMember,
     StoredAuthUser,
 )
 from common_agent.auth.ports import AuthStore, PasswordHasher
+from common_agent.tenancy.models import TenantRole
 
 _EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+$")
 _DUMMY_PASSWORD_HASH = (
@@ -111,6 +113,37 @@ class AuthenticationService:
             replacement_hash = await asyncio.to_thread(self._password_hasher.hash, password)
             await self._store.replace_password_hash(user.id, replacement_hash)
         return await self._issue_session(user, now=now)
+
+    async def provision_member(
+        self,
+        *,
+        tenant_id: UUID,
+        email: str,
+        password: str,
+        role: TenantRole,
+    ) -> ProvisionedMember:
+        if role is TenantRole.OWNER:
+            raise AuthenticationError("member_role_invalid")
+        normalized_email = normalize_email(email)
+        validate_password(password)
+        password_hash = await asyncio.to_thread(self._password_hasher.hash, password)
+        recovery_codes = create_recovery_codes()
+        user = await self._store.create_member(
+            tenant_id=tenant_id,
+            email=normalized_email,
+            password_hash=password_hash,
+            recovery_digests=tuple(digest_secret(code) for code in recovery_codes),
+            role=role,
+            now=self._clock(),
+        )
+        if user is None:
+            raise AuthenticationError("member_conflict")
+        return ProvisionedMember(
+            user_id=user.id,
+            email=user.email,
+            role=role,
+            recovery_codes=recovery_codes,
+        )
 
     async def authenticate(self, session_token: str) -> AuthenticatedSession:
         if not session_token:

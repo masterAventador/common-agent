@@ -351,6 +351,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tenants */
+        get: operations["list_tenants_api_v1_tenants_get"];
+        put?: never;
+        /** Create Tenant */
+        post: operations["create_tenant_api_v1_tenants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenants/{tenant_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Provision Tenant Member */
+        post: operations["provision_tenant_member_api_v1_tenants__tenant_id__members_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflow-runs": {
         parameters: {
             query?: never;
@@ -651,6 +686,31 @@ export interface components {
             description: string;
             /** Name */
             name: string;
+        };
+        /** CreateTenantBody */
+        CreateTenantBody: {
+            /** Name */
+            name: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+        };
+        /** CreateTenantMemberBody */
+        CreateTenantMemberBody: {
+            /** Email */
+            email: string;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "editor" | "viewer";
         };
         /** CursorPageResponse[ConversationResponse] */
         CursorPageResponse_ConversationResponse_: {
@@ -1059,6 +1119,42 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** TenantAccessResponse */
+        TenantAccessResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            role: components["schemas"]["TenantRole"];
+        };
+        /** TenantMemberProvisioningResponse */
+        TenantMemberProvisioningResponse: {
+            /** Email */
+            email: string;
+            /** Recovery Codes */
+            recovery_codes: string[];
+            role: components["schemas"]["TenantRole"];
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /**
+         * TenantRole
+         * @enum {string}
+         */
+        TenantRole: "owner" | "editor" | "viewer";
         /** TurnAcceptedResponse */
         TurnAcceptedResponse: {
             assistant_message: components["schemas"]["MessageResponse"];
@@ -1528,8 +1624,11 @@ export interface operations {
                 search?: string;
                 limit?: number;
                 cursor?: string | null;
+                tenant_id?: string | null;
             };
-            header?: never;
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1584,8 +1683,12 @@ export interface operations {
     };
     create_conversation_api_v1_conversations_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1662,8 +1765,12 @@ export interface operations {
     };
     delete_conversation_api_v1_conversations__conversation_id__delete: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 conversation_id: string;
             };
@@ -1729,9 +1836,11 @@ export interface operations {
         parameters: {
             query?: {
                 after_sequence?: number;
+                tenant_id?: string | null;
             };
             header?: {
                 "Last-Event-ID"?: string | null;
+                "X-Tenant-ID"?: string | null;
             };
             path: {
                 conversation_id: string;
@@ -1807,8 +1916,12 @@ export interface operations {
     };
     list_messages_api_v1_conversations__conversation_id__messages_get: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 conversation_id: string;
             };
@@ -1874,8 +1987,12 @@ export interface operations {
     };
     send_message_api_v1_conversations__conversation_id__messages_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 conversation_id: string;
             };
@@ -1954,8 +2071,12 @@ export interface operations {
     };
     stop_generation_api_v1_conversations__conversation_id__stop_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 conversation_id: string;
             };
@@ -2025,8 +2146,11 @@ export interface operations {
                 search?: string;
                 limit?: number;
                 cursor?: string | null;
+                tenant_id?: string | null;
             };
-            header?: never;
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -2081,8 +2205,12 @@ export interface operations {
     };
     create_employee_api_v1_employees_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -2168,8 +2296,12 @@ export interface operations {
     };
     get_employee_api_v1_employees__employee_id__get: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 employee_id: string;
             };
@@ -2235,8 +2367,12 @@ export interface operations {
     };
     update_employee_api_v1_employees__employee_id__put: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 employee_id: string;
             };
@@ -2315,8 +2451,12 @@ export interface operations {
     };
     delete_employee_api_v1_employees__employee_id__delete: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 employee_id: string;
             };
@@ -2384,8 +2524,11 @@ export interface operations {
                 search?: string;
                 limit?: number;
                 cursor?: string | null;
+                tenant_id?: string | null;
             };
-            header?: never;
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -2449,8 +2592,12 @@ export interface operations {
     };
     create_knowledge_base_api_v1_knowledge_bases_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -2518,8 +2665,12 @@ export interface operations {
     };
     delete_knowledge_base_api_v1_knowledge_bases__knowledge_base_id__delete: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 knowledge_base_id: string;
             };
@@ -2592,8 +2743,12 @@ export interface operations {
     };
     list_documents_api_v1_knowledge_bases__knowledge_base_id__documents_get: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 knowledge_base_id: string;
             };
@@ -2668,8 +2823,12 @@ export interface operations {
     };
     upload_document_api_v1_knowledge_bases__knowledge_base_id__documents_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 knowledge_base_id: string;
             };
@@ -2766,8 +2925,12 @@ export interface operations {
     };
     retry_message_api_v1_messages__message_id__retry_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 message_id: string;
             };
@@ -2927,6 +3090,157 @@ export interface operations {
             };
         };
     };
+    list_tenants_api_v1_tenants_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantAccessResponse"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_tenant_api_v1_tenants_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTenantBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantAccessResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provision_tenant_member_api_v1_tenants__tenant_id__members_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTenantMemberBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantMemberProvisioningResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_workflow_runs_for_conversation_api_v1_workflow_runs_get: {
         parameters: {
             query: {
@@ -2934,8 +3248,11 @@ export interface operations {
                 search?: string;
                 limit?: number;
                 cursor?: string | null;
+                tenant_id?: string | null;
             };
-            header?: never;
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -2990,8 +3307,12 @@ export interface operations {
     };
     get_workflow_run_api_v1_workflow_runs__run_id__get: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 run_id: string;
             };
@@ -3059,9 +3380,11 @@ export interface operations {
         parameters: {
             query?: {
                 after_sequence?: number;
+                tenant_id?: string | null;
             };
             header?: {
                 "Last-Event-ID"?: string | null;
+                "X-Tenant-ID"?: string | null;
             };
             path: {
                 run_id: string;
@@ -3137,8 +3460,12 @@ export interface operations {
     };
     stop_workflow_run_api_v1_workflow_runs__run_id__stop_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 run_id: string;
             };
@@ -3217,8 +3544,11 @@ export interface operations {
                 search?: string;
                 limit?: number;
                 cursor?: string | null;
+                tenant_id?: string | null;
             };
-            header?: never;
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -3273,8 +3603,12 @@ export interface operations {
     };
     create_workflow_api_v1_workflows_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -3351,8 +3685,12 @@ export interface operations {
     };
     validate_workflow_api_v1_workflows_validate_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -3420,8 +3758,12 @@ export interface operations {
     };
     get_workflow_api_v1_workflows__workflow_id__get: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 workflow_id: string;
             };
@@ -3487,8 +3829,12 @@ export interface operations {
     };
     update_workflow_api_v1_workflows__workflow_id__put: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 workflow_id: string;
             };
@@ -3567,8 +3913,12 @@ export interface operations {
     };
     delete_workflow_api_v1_workflows__workflow_id__delete: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 workflow_id: string;
             };
@@ -3632,8 +3982,12 @@ export interface operations {
     };
     start_workflow_run_api_v1_workflows__workflow_id__runs_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
             path: {
                 workflow_id: string;
             };

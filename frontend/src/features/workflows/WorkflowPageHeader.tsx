@@ -8,8 +8,10 @@ const { Paragraph, Title } = Typography;
 
 export function WorkflowPageHeader({
   controller,
+  readOnly = false,
 }: {
   controller: ReturnType<typeof useWorkflowDesigner>;
+  readOnly?: boolean;
 }) {
   const { state } = controller;
   return (
@@ -29,14 +31,14 @@ export function WorkflowPageHeader({
           resourceKind="工作流"
           resourceName={state.name || "未命名工作流"}
           impact="工作流定义、节点、连线和已终止运行记录都会被永久删除。"
-          disabled={!state.workflowId || controller.activeRun || controller.deleteMutation.isPending}
+          disabled={readOnly || !state.workflowId || controller.activeRun || controller.deleteMutation.isPending}
           loading={controller.deleteMutation.isPending}
           onConfirm={controller.deleteSelectedWorkflow}
         />
         <Button
           icon={<PlusOutlined />}
           aria-label="新建工作流"
-          disabled={controller.activeRun}
+          disabled={readOnly || controller.activeRun}
           onClick={controller.createDraft}
         >
           新建工作流
@@ -46,7 +48,7 @@ export function WorkflowPageHeader({
           icon={<SaveOutlined />}
           aria-label="保存工作流"
           loading={controller.saveMutation.isPending}
-          disabled={controller.activeRun}
+          disabled={readOnly || controller.activeRun}
           onClick={controller.save}
         >
           校验并保存

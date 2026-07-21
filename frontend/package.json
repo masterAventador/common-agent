@@ -17,6 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "bash ../scripts/test-platform-e2e.sh",
     "test:e2e:auth": "COMMON_AGENT_E2E_SUITE=auth bash ../scripts/test-platform-e2e.sh",
+    "test:e2e:tenant-rbac": "COMMON_AGENT_E2E_SUITE=tenant-rbac bash ../scripts/test-platform-e2e.sh",
     "test:e2e:demo": "COMMON_AGENT_E2E_SUITE=demo-chat bash ../scripts/test-platform-e2e.sh",
     "test:e2e:loading": "COMMON_AGENT_E2E_SUITE=frontend-loading bash ../scripts/test-platform-e2e.sh",
     "test:e2e:workflows": "COMMON_AGENT_E2E_SUITE=workflow-designer bash ../scripts/test-platform-e2e.sh",

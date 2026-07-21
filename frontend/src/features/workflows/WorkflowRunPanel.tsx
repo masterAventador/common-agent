@@ -34,11 +34,13 @@ export function WorkflowRunPanel({
   dirty,
   nodes,
   controller,
+  readOnly = false,
 }: {
   workflowId: string | null;
   dirty: boolean;
   nodes: WorkflowEditorNode[];
   controller: WorkflowRunController;
+  readOnly?: boolean;
 }) {
   const run =
     controller.run && controller.run.workflow_id === workflowId ? controller.run : undefined;
@@ -89,7 +91,7 @@ export function WorkflowRunPanel({
           value={controller.input}
           maxLength={200_000}
           rows={5}
-          disabled={active}
+          disabled={readOnly || active}
           placeholder="输入要交给工作流处理的内容"
           onChange={(event) => controller.setInput(event.target.value)}
         />
@@ -100,6 +102,7 @@ export function WorkflowRunPanel({
             danger
             icon={<StopOutlined />}
             loading={controller.stopping}
+            disabled={readOnly}
             aria-label="停止工作流"
             onClick={controller.stop}
           >
@@ -110,7 +113,7 @@ export function WorkflowRunPanel({
             type="primary"
             icon={<PlayCircleOutlined />}
             loading={controller.starting}
-            disabled={!workflowId || dirty || !controller.input.trim()}
+            disabled={readOnly || !workflowId || dirty || !controller.input.trim()}
             aria-label="运行工作流"
             onClick={controller.start}
           >

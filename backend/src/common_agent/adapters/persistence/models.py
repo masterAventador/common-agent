@@ -58,6 +58,66 @@ class PersistenceBase(DeclarativeBase):
     pass
 
 
+class OrganizationRow(PersistenceBase):
+    __tablename__ = "organizations"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(id) = 36 AND id = TRIM(id)", name="ck_organizations_id"),
+        CheckConstraint(
+            "CHAR_LENGTH(name) BETWEEN 1 AND 100 AND name = TRIM(name)",
+            name="ck_organizations_name",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class TenantRow(PersistenceBase):
+    __tablename__ = "tenants"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(id) = 36 AND id = TRIM(id)", name="ck_tenants_id"),
+        CheckConstraint(
+            "CHAR_LENGTH(name) BETWEEN 1 AND 100 AND name = TRIM(name)",
+            name="ck_tenants_name",
+        ),
+        UniqueConstraint("organization_id", "name", name="uq_tenants_organization_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE", name="fk_tenants_organization_id"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class TenantMembershipRow(PersistenceBase):
+    __tablename__ = "tenant_memberships"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('owner', 'editor', 'viewer')",
+            name="ck_tenant_memberships_role",
+        ),
+        Index("ix_tenant_memberships_user", "user_id", "tenant_id"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_tenant_memberships_tenant_id"),
+        primary_key=True,
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("auth_users.id", ondelete="CASCADE", name="fk_tenant_memberships_user_id"),
+        primary_key=True,
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
 class AuthUserRow(PersistenceBase):
     __tablename__ = "auth_users"
     __table_args__ = (
@@ -207,11 +267,17 @@ class DemoKnowledgeBaseRow(PersistenceBase):
             "AND description = TRIM(description)",
             name="ck_demo_knowledge_bases_description",
         ),
-        UniqueConstraint("name", name="uq_demo_knowledge_bases_name"),
-        Index("ix_demo_knowledge_bases_created", "created_at", "id"),
+        UniqueConstraint("tenant_id", "name", name="uq_demo_knowledge_bases_tenant_name"),
+        UniqueConstraint("tenant_id", "id", name="uq_demo_knowledge_bases_tenant_id"),
+        Index("ix_demo_knowledge_bases_tenant_created", "tenant_id", "created_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(KNOWLEDGE_BASE_ID_MAX_LENGTH), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_demo_knowledge_bases_tenant_id"),
+        nullable=False,
+    )
     name: Mapped[str] = mapped_column(String(KNOWLEDGE_BASE_NAME_MAX_LENGTH), nullable=False)
     description: Mapped[str] = mapped_column(
         String(KNOWLEDGE_BASE_DESCRIPTION_MAX_LENGTH), nullable=False
@@ -255,8 +321,15 @@ class DemoKnowledgeDocumentRow(PersistenceBase):
             "AND error_code = TRIM(error_code))",
             name="ck_demo_knowledge_documents_error_code",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "knowledge_base_id"],
+            ["demo_knowledge_bases.tenant_id", "demo_knowledge_bases.id"],
+            name="fk_demo_knowledge_documents_tenant_base",
+            ondelete="CASCADE",
+        ),
         Index(
-            "ix_demo_knowledge_documents_base_created",
+            "ix_demo_knowledge_documents_tenant_base_created",
+            "tenant_id",
             "knowledge_base_id",
             "created_at",
             "id",
@@ -264,13 +337,13 @@ class DemoKnowledgeDocumentRow(PersistenceBase):
     )
 
     id: Mapped[str] = mapped_column(String(KNOWLEDGE_DOCUMENT_ID_MAX_LENGTH), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_demo_knowledge_documents_tenant_id"),
+        nullable=False,
+    )
     knowledge_base_id: Mapped[str] = mapped_column(
         String(KNOWLEDGE_BASE_ID_MAX_LENGTH),
-        ForeignKey(
-            "demo_knowledge_bases.id",
-            ondelete="CASCADE",
-            name="fk_demo_knowledge_documents_base_id",
-        ),
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(KNOWLEDGE_DOCUMENT_NAME_MAX_LENGTH), nullable=False)
@@ -313,11 +386,17 @@ class EmployeeRow(PersistenceBase):
             name="ck_employees_allowed_workflow_ids",
         ),
         CheckConstraint("updated_at >= created_at", name="ck_employees_timestamps"),
-        Index("ix_employees_created", "created_at", "id"),
-        Index("ix_employees_name_created", "name", "created_at", "id"),
+        UniqueConstraint("tenant_id", "id", name="uq_employees_tenant_id"),
+        Index("ix_employees_tenant_created", "tenant_id", "created_at", "id"),
+        Index("ix_employees_tenant_name_created", "tenant_id", "name", "created_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_employees_tenant_id"),
+        nullable=False,
+    )
     name: Mapped[str] = mapped_column(String(EMPLOYEE_NAME_MAX_LENGTH), nullable=False)
     description: Mapped[str] = mapped_column(
         String(EMPLOYEE_DESCRIPTION_MAX_LENGTH), nullable=False
@@ -345,23 +424,53 @@ class ConversationRow(PersistenceBase):
             name="ck_conversations_title",
         ),
         CheckConstraint("updated_at >= created_at", name="ck_conversations_timestamps"),
-        Index("ix_conversations_created", "created_at", "id"),
-        Index("ix_conversations_employee_created", "employee_id", "created_at", "id"),
-        Index("ix_conversations_title_created", "title", "created_at", "id"),
+        ForeignKeyConstraint(
+            ["tenant_id", "employee_id"],
+            ["employees.tenant_id", "employees.id"],
+            name="fk_conversations_tenant_employee",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("tenant_id", "id", name="uq_conversations_tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "id",
+            "employee_id",
+            name="uq_conversations_tenant_id_employee",
+        ),
+        Index("ix_conversations_tenant_created", "tenant_id", "created_at", "id"),
         Index(
-            "ix_conversations_employee_title_created",
+            "ix_conversations_tenant_employee_created",
+            "tenant_id",
+            "employee_id",
+            "created_at",
+            "id",
+        ),
+        Index("ix_conversations_tenant_title_created", "tenant_id", "title", "created_at", "id"),
+        Index(
+            "ix_conversations_tenant_employee_title_created",
+            "tenant_id",
             "employee_id",
             "title",
             "created_at",
             "id",
         ),
-        Index("ix_conversations_employee_updated", "employee_id", "updated_at", "id"),
+        Index(
+            "ix_conversations_tenant_employee_updated",
+            "tenant_id",
+            "employee_id",
+            "updated_at",
+            "id",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_conversations_tenant_id"),
+        nullable=False,
+    )
     employee_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("employees.id", ondelete="RESTRICT", name="fk_conversations_employee_id"),
         nullable=False,
     )
     title: Mapped[str] = mapped_column(String(CONVERSATION_TITLE_MAX_LENGTH), nullable=False)
@@ -410,6 +519,7 @@ class MessageRow(PersistenceBase):
             "sequence_number",
             name="uq_messages_conversation_sequence",
         ),
+        UniqueConstraint("conversation_id", "id", name="uq_messages_conversation_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -492,11 +602,17 @@ class WorkflowRow(PersistenceBase):
             name="ck_workflows_description",
         ),
         CheckConstraint("updated_at >= created_at", name="ck_workflows_timestamps"),
-        Index("ix_workflows_created", "created_at", "id"),
-        Index("ix_workflows_name_created", "name", "created_at", "id"),
+        UniqueConstraint("tenant_id", "id", name="uq_workflows_tenant_id"),
+        Index("ix_workflows_tenant_created", "tenant_id", "created_at", "id"),
+        Index("ix_workflows_tenant_name_created", "tenant_id", "name", "created_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_workflows_tenant_id"),
+        nullable=False,
+    )
     name: Mapped[str] = mapped_column(String(WORKFLOW_NAME_MAX_LENGTH), nullable=False)
     description: Mapped[str] = mapped_column(
         String(WORKFLOW_DESCRIPTION_MAX_LENGTH), nullable=False
@@ -650,15 +766,40 @@ class WorkflowRunRow(PersistenceBase):
             "AND failed_node_id IS NULL AND error_code IS NULL)",
             name="ck_workflow_runs_state",
         ),
-        Index("ix_workflow_runs_workflow_created", "workflow_id", "created_at"),
+        ForeignKeyConstraint(
+            ["tenant_id", "workflow_id"],
+            ["workflows.tenant_id", "workflows.id"],
+            name="fk_workflow_runs_tenant_workflow",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "conversation_id", "employee_id"],
+            ["conversations.tenant_id", "conversations.id", "conversations.employee_id"],
+            name="fk_workflow_runs_tenant_origin",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["conversation_id", "assistant_message_id"],
+            ["messages.conversation_id", "messages.id"],
+            name="fk_workflow_runs_conversation_message",
+            ondelete="CASCADE",
+        ),
         Index(
-            "ix_workflow_runs_conversation_created",
+            "ix_workflow_runs_tenant_workflow_created",
+            "tenant_id",
+            "workflow_id",
+            "created_at",
+        ),
+        Index(
+            "ix_workflow_runs_tenant_conversation_created",
+            "tenant_id",
             "conversation_id",
             "created_at",
             "id",
         ),
         Index(
-            "ix_workflow_runs_conversation_input_created",
+            "ix_workflow_runs_tenant_conversation_input_created",
+            "tenant_id",
             "conversation_id",
             "input",
             "created_at",
@@ -666,19 +807,24 @@ class WorkflowRunRow(PersistenceBase):
             mysql_length={"input": 191},
         ),
         Index(
-            "ix_workflow_runs_conversation_status_created",
+            "ix_workflow_runs_tenant_conversation_status_created",
+            "tenant_id",
             "conversation_id",
             "status",
             "created_at",
             "id",
         ),
-        Index("ix_workflow_runs_status", "status"),
+        Index("ix_workflow_runs_tenant_status", "tenant_id", "status"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_workflow_runs_tenant_id"),
+        nullable=False,
+    )
     workflow_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("workflows.id", ondelete="CASCADE", name="fk_workflow_runs_workflow_id"),
         nullable=False,
     )
     trigger: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -686,11 +832,6 @@ class WorkflowRunRow(PersistenceBase):
     conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     assistant_message_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey(
-            "messages.id",
-            ondelete="CASCADE",
-            name="fk_workflow_runs_assistant_message_id",
-        ),
         nullable=True,
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -710,3 +851,37 @@ class WorkflowRunRow(PersistenceBase):
     started_at: Mapped[datetime | None] = mapped_column(mysql.DATETIME(fsp=6), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(mysql.DATETIME(fsp=6), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class RagFlowKnowledgeBaseOwnershipRow(PersistenceBase):
+    __tablename__ = "ragflow_knowledge_base_ownerships"
+    __table_args__ = (
+        CheckConstraint(
+            f"CHAR_LENGTH(knowledge_base_id) BETWEEN 1 AND {KNOWLEDGE_BASE_ID_MAX_LENGTH} "
+            "AND knowledge_base_id = TRIM(knowledge_base_id)",
+            name="ck_ragflow_knowledge_ownership_id",
+        ),
+        UniqueConstraint(
+            "knowledge_base_id",
+            name="uq_ragflow_knowledge_ownership_external_id",
+        ),
+        Index(
+            "ix_ragflow_knowledge_ownership_tenant",
+            "tenant_id",
+            "knowledge_base_id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_ragflow_knowledge_ownership_tenant_id",
+        ),
+        primary_key=True,
+    )
+    knowledge_base_id: Mapped[str] = mapped_column(
+        String(KNOWLEDGE_BASE_ID_MAX_LENGTH), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)

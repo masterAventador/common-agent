@@ -18,6 +18,8 @@ const bootstrapToken = requiredEnvironment("COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKE
 const email = requiredEnvironment("COMMON_AGENT_E2E_AUTH_EMAIL");
 const password = requiredEnvironment("COMMON_AGENT_E2E_AUTH_PASSWORD");
 const replacementPassword = `${password}-replacement`;
+const memberEmail = "viewer.e2e@example.com";
+const memberPassword = "viewer e2e password is long enough";
 const trustedOrigin = "http://127.0.0.1:18280";
 
 test("bootstraps one owner and rejects session, CSRF, and cross-origin attacks", async ({
@@ -63,6 +65,60 @@ test("bootstraps one owner and rejects session, CSRF, and cross-origin attacks",
   await expect(page.getByRole("heading", { name: "数字员工" })).toBeVisible();
   await expect(page.getByText(email, { exact: true })).toBeVisible();
 
+  await page.getByRole("button", { name: "新建工作区" }).click();
+  const workspaceDialog = page.getByRole("dialog", { name: "新建工作区" });
+  await workspaceDialog.getByLabel("工作区名称").fill("浏览器隔离工作区");
+  const workspaceResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/tenants") &&
+      response.request().method() === "POST",
+  );
+  await workspaceDialog.getByRole("button", { name: /创\s*建/ }).click();
+  expect((await workspaceResponse).status()).toBe(201);
+  await expect(page.getByText(/浏览器隔离工作区/)).toBeVisible();
+
+  await page.getByRole("button", { name: "添加成员" }).click();
+  const memberDialog = page.getByRole("dialog", { name: "添加工作区成员" });
+  await memberDialog.getByLabel("邮箱").fill(memberEmail);
+  await memberDialog.getByLabel("初始密码").fill(memberPassword);
+  const memberResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/v1/tenants/") &&
+      response.url().endsWith("/members") &&
+      response.request().method() === "POST",
+  );
+  await memberDialog.getByRole("button", { name: /创\s*建\s*账\s*号/ }).click();
+  const provisioned = await memberResponse;
+  expect(provisioned.status()).toBe(201);
+  expect((await provisioned.json()) as { role: string }).toMatchObject({ role: "viewer" });
+  const memberRecoveryDialog = page.getByRole("dialog", { name: "成员账号已创建" });
+  await expect(memberRecoveryDialog).toContainText(memberEmail);
+  await expect(memberRecoveryDialog).toContainText(/\w{8}-\w{8}/);
+  await memberRecoveryDialog.getByRole("button", { name: "我已保存" }).click();
+
+  await page.getByRole("button", { name: "退出登录" }).click();
+  await page.getByRole("textbox", { name: "邮箱" }).fill(memberEmail);
+  await page.getByLabel("密码").fill(memberPassword);
+  await page.getByRole("button", { name: /登\s*录/ }).click();
+  await expect(page.getByText("当前工作区为只读模式")).toBeVisible();
+  await expect(page.getByText("访客", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "添加成员" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "创建数字员工" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "退出登录" }).click();
+  await page.getByRole("textbox", { name: "邮箱" }).fill(email);
+  await page.getByLabel("密码").fill(password);
+  const ownerLoginResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/auth/login") &&
+      response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: /登\s*录/ }).click();
+  const ownerLogin = await ownerLoginResponse;
+  expect(ownerLogin.status()).toBe(200);
+  const ownerSession = (await ownerLogin.json()) as { csrf_token: string };
+  await expect(page.getByRole("heading", { name: "数字员工" })).toBeVisible();
+
   const missingCsrf = await page.request.post(`${apiUrl}/employees`, {
     headers: { Origin: trustedOrigin },
     data: { name: "forbidden-without-csrf" },
@@ -76,7 +132,7 @@ test("bootstraps one owner and rejects session, CSRF, and cross-origin attacks",
     headers: {
       Origin: "https://attacker.example",
       "Sec-Fetch-Site": "cross-site",
-      "X-CSRF-Token": registered.csrf_token,
+      "X-CSRF-Token": ownerSession.csrf_token,
     },
     data: { name: "forbidden-cross-origin" },
   });

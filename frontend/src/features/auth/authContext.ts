@@ -6,6 +6,7 @@ import type {
   ResetPasswordInput,
 } from "../../api/auth";
 import type { AuthSessionResponse } from "../../api/contracts";
+import type { TenantAccess } from "../../api/tenants";
 
 export type AuthPhase = "loading" | "anonymous" | "authenticated";
 export type AuthMode = "login" | "register" | "recovery";
@@ -14,6 +15,8 @@ export interface AuthContextValue {
   phase: AuthPhase;
   mode: AuthMode;
   session: AuthSessionResponse | null;
+  tenants: readonly TenantAccess[];
+  selectedTenantId: string | null;
   registrationAvailable: boolean;
   busy: boolean;
   error: string | null;
@@ -23,6 +26,8 @@ export interface AuthContextValue {
   register: (input: RegisterOwnerInput) => Promise<void>;
   recover: (input: ResetPasswordInput) => Promise<void>;
   logout: () => Promise<void>;
+  selectTenant: (tenantId: string) => void;
+  createWorkspace: (name: string) => Promise<boolean>;
   dismissRecoveryCodes: () => void;
 }
 

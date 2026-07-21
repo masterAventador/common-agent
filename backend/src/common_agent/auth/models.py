@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from common_agent.tenancy.models import TenantRole
+
 
 @dataclass(frozen=True, slots=True)
 class AuthConfiguration:
@@ -39,4 +41,12 @@ class IssuedAuthentication:
     csrf_token: str = field(repr=False)
     idle_expires_at: datetime
     absolute_expires_at: datetime
+    recovery_codes: tuple[str, ...] = field(default=(), repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ProvisionedMember:
+    user_id: str
+    email: str
+    role: TenantRole
     recovery_codes: tuple[str, ...] = field(default=(), repr=False)

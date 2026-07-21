@@ -99,7 +99,7 @@ const documentColumns: TableColumnsType<KnowledgeDocument> = [
   },
 ];
 
-export function KnowledgeBasesPage() {
+export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean }) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteNotice, setDeleteNotice] = useState<string>();
@@ -228,6 +228,7 @@ export function KnowledgeBasesPage() {
           type="primary"
           aria-label="创建知识库"
           icon={<PlusOutlined />}
+          disabled={readOnly}
           onClick={() => setCreateOpen(true)}
         >
           创建知识库
@@ -314,7 +315,7 @@ export function KnowledgeBasesPage() {
                     resourceName={activeKnowledgeBase.name}
                     impact="RAGFlow 中的文档、切片和索引都会被永久删除。"
                     loading={deleteMutation.isPending}
-                    disabled={deleteMutation.isPending || uploadMutation.isPending}
+                    disabled={readOnly || deleteMutation.isPending || uploadMutation.isPending}
                     onConfirm={() => deleteMutation.mutateAsync(activeKnowledgeBase)}
                   />
                 )}
@@ -335,6 +336,7 @@ export function KnowledgeBasesPage() {
                   key={fileInputKey}
                   type="file"
                   aria-label="选择文档"
+                  disabled={readOnly}
                   accept={ACCEPTED_DOCUMENTS}
                   onChange={(event) => setSelectedFile(event.target.files?.[0])}
                 />
@@ -342,7 +344,7 @@ export function KnowledgeBasesPage() {
               <Text type="secondary">{selectedFile?.name ?? "尚未选择文件（最大 20 MiB）"}</Text>
               <Button
                 type="primary"
-                disabled={!selectedFile}
+                disabled={readOnly || !selectedFile}
                 loading={uploadMutation.isPending}
                 onClick={() => uploadMutation.mutate()}
               >
@@ -390,6 +392,7 @@ export function KnowledgeBasesPage() {
         okText="确认创建"
         cancelText="取消"
         confirmLoading={createMutation.isPending}
+        okButtonProps={{ disabled: readOnly }}
         onOk={() => form.submit()}
         onCancel={() => {
           setCreateOpen(false);

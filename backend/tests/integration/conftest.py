@@ -3,14 +3,28 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Iterator
+from uuid import UUID
 
 import pytest
 from sqlalchemy.engine import make_url
 
 from common_agent.employees.seeds import DEFAULT_KNOWLEDGE_ASSISTANT_ID
+from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from tests.support.employees import delete_employees_from_database_url
 from tests.support.http import TEST_AUTH_EMAIL
 from tests.support.settings import TEST_DATABASE_URL
+
+
+@pytest.fixture(autouse=True)
+def bind_default_test_tenant() -> Iterator[None]:
+    access = TenantAccess(
+        tenant_id=DEFAULT_TENANT_ID,
+        user_id=UUID("00000000-0000-4000-8000-000000000099"),
+        role=TenantRole.OWNER,
+    )
+    with bind_tenant(access):
+        yield
 
 
 @pytest.fixture(scope="session", autouse=True)

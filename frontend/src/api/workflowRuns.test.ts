@@ -13,6 +13,7 @@ import {
 
 vi.mock("./client", () => ({
   apiBaseUrl: "http://127.0.0.1:18200/api/v1",
+  getTenantId: () => "10000000-0000-4000-8000-000000000001",
   apiClient: {
     get: vi.fn(),
     post: vi.fn(),
@@ -170,7 +171,7 @@ describe("workflow run API and SSE boundary", () => {
     });
     const source = FakeEventSource.latest;
     expect(source?.url).toBe(
-      `http://127.0.0.1:18200/api/v1/workflow-runs/${run.id}/events?after_sequence=2`,
+      `http://127.0.0.1:18200/api/v1/workflow-runs/${run.id}/events?after_sequence=2&tenant_id=10000000-0000-4000-8000-000000000001`,
     );
     expect(source?.eventSourceInit).toEqual({ withCredentials: true });
 

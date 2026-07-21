@@ -24,6 +24,7 @@ from common_agent.domain.workflow import (
     WorkflowNodeType,
 )
 from common_agent.ports.workflows import WorkflowAlreadyExists
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows
 
@@ -263,10 +264,11 @@ def test_workflow_mysql_constraints_reject_unknown_node_and_missing_edge_endpoin
                     await session.execute(
                         text(
                             "INSERT INTO workflows "
-                            "(id, name, description, created_at, updated_at) VALUES "
-                            "(:id, 'direct-write', '', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))"
+                            "(id, tenant_id, name, description, created_at, updated_at) VALUES "
+                            "(:id, :tenant_id, 'direct-write', '', "
+                            "UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))"
                         ),
-                        {"id": workflow_id},
+                        {"id": workflow_id, "tenant_id": str(DEFAULT_TENANT_ID)},
                     )
                     await session.commit()
 

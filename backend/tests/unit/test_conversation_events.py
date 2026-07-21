@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -319,6 +320,6 @@ def test_event_broker_trims_completed_overflow_without_evicting_active_states() 
         {"state_ttl_seconds": 86_401},
     ],
 )
-def test_event_broker_rejects_invalid_lifecycle_limits(arguments: dict[str, int]) -> None:
+def test_event_broker_rejects_invalid_lifecycle_limits(arguments: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         ConversationEventBroker(**arguments)

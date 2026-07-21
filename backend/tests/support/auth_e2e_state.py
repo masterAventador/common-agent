@@ -7,6 +7,7 @@ import os
 from sqlalchemy import text
 
 from common_agent.adapters.persistence.database import Database
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 
 
 def _required(name: str) -> str:
@@ -22,6 +23,10 @@ async def _reset() -> None:
     try:
         async with database.session() as session:
             await session.execute(text("DELETE FROM auth_login_attempts"))
+            await session.execute(
+                text("DELETE FROM tenants WHERE id <> :default_tenant_id"),
+                {"default_tenant_id": str(DEFAULT_TENANT_ID)},
+            )
             await session.execute(text("DELETE FROM auth_users"))
             await session.commit()
     finally:
@@ -59,7 +64,7 @@ def main() -> None:
     arguments = parser.parse_args()
     if arguments.action == "reset":
         asyncio.run(_reset())
-        print("已重置平台 E2E 认证状态")
+        print("已重置平台 E2E 认证与测试工作区状态")
     else:
         asyncio.run(_expire())
         print("已使平台 E2E 会话过期")

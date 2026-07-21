@@ -15,8 +15,12 @@ const authApi = vi.hoisted(() => ({
   registerOwner: vi.fn(),
   resetPassword: vi.fn(),
 }));
+const tenancyApi = vi.hoisted(() => ({
+  fetchTenantAccesses: vi.fn(),
+}));
 
 vi.mock("../../api/auth", () => authApi);
+vi.mock("../../api/tenants", () => tenancyApi);
 
 const session = {
   user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -24,6 +28,13 @@ const session = {
   csrf_token: "csrf-token",
   idle_expires_at: "2026-07-21T03:00:00Z",
   absolute_expires_at: "2026-07-22T02:00:00Z",
+};
+const tenant = {
+  id: "10000000-0000-4000-8000-000000000001",
+  name: "默认工作区",
+  organization_id: "00000000-0000-4000-8000-000000000001",
+  organization_name: "默认组织",
+  role: "owner" as const,
 };
 
 function authenticationRequired() {
@@ -75,6 +86,8 @@ beforeEach(() => {
   authApi.logout.mockReset();
   authApi.registerOwner.mockReset();
   authApi.resetPassword.mockReset();
+  tenancyApi.fetchTenantAccesses.mockReset();
+  tenancyApi.fetchTenantAccesses.mockResolvedValue([tenant]);
 });
 
 describe("authentication gate", () => {

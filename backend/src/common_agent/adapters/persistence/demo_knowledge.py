@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 from typing import cast
+from uuid import UUID
 
 from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.engine import CursorResult
@@ -32,15 +34,17 @@ from common_agent.ports.knowledge import (
     PersistedDemoKnowledgeBase,
     PersistedDemoKnowledgeDocument,
 )
+from common_agent.tenancy.context import current_tenant
 
 
 class SqlAlchemyDemoKnowledgeRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, tenant_id: UUID | None = None) -> None:
         self._session = session
+        self._tenant_id = str(tenant_id or current_tenant().tenant_id)
 
     async def list_knowledge_bases(self) -> tuple[PersistedDemoKnowledgeBase, ...]:
         result = await self._session.execute(
-            _knowledge_base_statement().order_by(
+            _knowledge_base_statement(self._tenant_id).order_by(
                 DemoKnowledgeBaseRow.created_at.desc(),
                 DemoKnowledgeBaseRow.id.desc(),
             )
@@ -57,7 +61,7 @@ class SqlAlchemyDemoKnowledgeRepository:
         search: str,
         after: PageAnchor | None,
     ) -> PageSlice[PersistedDemoKnowledgeBase]:
-        statement = _knowledge_base_statement()
+        statement = _knowledge_base_statement(self._tenant_id)
         if search:
             statement = statement.where(
                 DemoKnowledgeBaseRow.name.startswith(search, autoescape=True)
@@ -90,7 +94,9 @@ class SqlAlchemyDemoKnowledgeRepository:
 
     async def get_knowledge_base(self, knowledge_base_id: str) -> PersistedDemoKnowledgeBase | None:
         result = await self._session.execute(
-            _knowledge_base_statement().where(DemoKnowledgeBaseRow.id == knowledge_base_id)
+            _knowledge_base_statement(self._tenant_id).where(
+                DemoKnowledgeBaseRow.id == knowledge_base_id
+            )
         )
         value = result.one_or_none()
         if value is None:
@@ -102,6 +108,7 @@ class SqlAlchemyDemoKnowledgeRepository:
         self._session.add(
             DemoKnowledgeBaseRow(
                 id=value.summary.id,
+                tenant_id=self._tenant_id,
                 name=value.summary.name,
                 description=value.summary.description,
                 created_at=to_database_datetime(value.created_at),
@@ -116,7 +123,10 @@ class SqlAlchemyDemoKnowledgeRepository:
         result = cast(
             CursorResult[object],
             await self._session.execute(
-                delete(DemoKnowledgeBaseRow).where(DemoKnowledgeBaseRow.id == knowledge_base_id)
+                delete(DemoKnowledgeBaseRow).where(
+                    DemoKnowledgeBaseRow.id == knowledge_base_id,
+                    DemoKnowledgeBaseRow.tenant_id == self._tenant_id,
+                )
             ),
         )
         return bool(result.rowcount)
@@ -126,7 +136,10 @@ class SqlAlchemyDemoKnowledgeRepository:
     ) -> tuple[PersistedDemoKnowledgeDocument, ...]:
         rows = await self._session.scalars(
             select(DemoKnowledgeDocumentRow)
-            .where(DemoKnowledgeDocumentRow.knowledge_base_id == knowledge_base_id)
+            .where(
+                DemoKnowledgeDocumentRow.knowledge_base_id == knowledge_base_id,
+                DemoKnowledgeDocumentRow.tenant_id == self._tenant_id,
+            )
             .order_by(
                 DemoKnowledgeDocumentRow.created_at.desc(),
                 DemoKnowledgeDocumentRow.id.desc(),
@@ -139,6 +152,7 @@ class SqlAlchemyDemoKnowledgeRepository:
         self._session.add(
             DemoKnowledgeDocumentRow(
                 id=document.id,
+                tenant_id=self._tenant_id,
                 knowledge_base_id=document.knowledge_base_id,
                 name=document.name,
                 size_bytes=document.size_bytes,
@@ -155,8 +169,9 @@ class SqlAlchemyDemoKnowledgeRepository:
 
 
 class SqlAlchemyDemoKnowledgeUnitOfWork:
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, tenant_id: UUID) -> None:
         self._database = database
+        self._tenant_id = tenant_id
         self._context: AbstractAsyncContextManager[AsyncSession] | None = None
         self._session: AsyncSession | None = None
         self._knowledge: DemoKnowledgeRepository | None = None
@@ -174,7 +189,7 @@ class SqlAlchemyDemoKnowledgeUnitOfWork:
         session = await context.__aenter__()
         self._context = context
         self._session = session
-        self._knowledge = SqlAlchemyDemoKnowledgeRepository(session)
+        self._knowledge = SqlAlchemyDemoKnowledgeRepository(session, self._tenant_id)
         return self
 
     async def __aexit__(
@@ -199,17 +214,27 @@ class SqlAlchemyDemoKnowledgeUnitOfWork:
 
 
 class SqlAlchemyDemoKnowledgeUnitOfWorkFactory:
-    def __init__(self, database: Database) -> None:
+    def __init__(
+        self,
+        database: Database,
+        tenant_id_provider: Callable[[], UUID] | None = None,
+    ) -> None:
         self._database = database
+        self._tenant_id_provider = tenant_id_provider or (lambda: current_tenant().tenant_id)
 
     def __call__(self) -> SqlAlchemyDemoKnowledgeUnitOfWork:
-        return SqlAlchemyDemoKnowledgeUnitOfWork(self._database)
+        return SqlAlchemyDemoKnowledgeUnitOfWork(self._database, self._tenant_id_provider())
 
 
-def _knowledge_base_statement() -> Select[tuple[DemoKnowledgeBaseRow, int, int]]:
+def _knowledge_base_statement(
+    tenant_id: str,
+) -> Select[tuple[DemoKnowledgeBaseRow, int, int]]:
     document_count = (
         select(func.count(DemoKnowledgeDocumentRow.id))
-        .where(DemoKnowledgeDocumentRow.knowledge_base_id == DemoKnowledgeBaseRow.id)
+        .where(
+            DemoKnowledgeDocumentRow.knowledge_base_id == DemoKnowledgeBaseRow.id,
+            DemoKnowledgeDocumentRow.tenant_id == tenant_id,
+        )
         .correlate(DemoKnowledgeBaseRow)
         .scalar_subquery()
     )
@@ -233,11 +258,16 @@ def _knowledge_base_statement() -> Select[tuple[DemoKnowledgeBaseRow, int, int]]
                 0,
             )
         )
-        .where(DemoKnowledgeDocumentRow.knowledge_base_id == DemoKnowledgeBaseRow.id)
+        .where(
+            DemoKnowledgeDocumentRow.knowledge_base_id == DemoKnowledgeBaseRow.id,
+            DemoKnowledgeDocumentRow.tenant_id == tenant_id,
+        )
         .correlate(DemoKnowledgeBaseRow)
         .scalar_subquery()
     )
-    return select(DemoKnowledgeBaseRow, document_count, parsing_count)
+    return select(DemoKnowledgeBaseRow, document_count, parsing_count).where(
+        DemoKnowledgeBaseRow.tenant_id == tenant_id
+    )
 
 
 def _to_knowledge_base(

@@ -119,6 +119,10 @@ select {
   padding: 28px;
 }
 
+.tenant-readonly-alert {
+  margin-bottom: 16px;
+}
+
 .entry-shell {
   min-height: calc(100vh - 128px);
   padding: 36px;

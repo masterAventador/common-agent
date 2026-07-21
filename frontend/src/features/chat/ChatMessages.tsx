@@ -22,6 +22,7 @@ export function MessageBubble({
   workflowRuns,
   workflows,
   retrying,
+  readOnly = false,
   onOpenWorkflowRun,
   onRetry,
 }: {
@@ -29,6 +30,7 @@ export function MessageBubble({
   workflowRuns: WorkflowRun[];
   workflows: Map<string, Workflow>;
   retrying: boolean;
+  readOnly?: boolean;
   onOpenWorkflowRun: (runId: string) => void;
   onRetry: (messageId: string) => void;
 }) {
@@ -61,6 +63,7 @@ export function MessageBubble({
             size="small"
             icon={<RedoOutlined />}
             loading={retrying}
+            disabled={readOnly}
             aria-label="重试回答"
             onClick={() => onRetry(message.id)}
           >

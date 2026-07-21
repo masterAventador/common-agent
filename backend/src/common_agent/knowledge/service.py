@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import PurePosixPath
+from uuid import UUID
 
 from common_agent.domain.knowledge import (
     CreateKnowledgeBaseRequest,
@@ -12,13 +15,21 @@ from common_agent.domain.knowledge import (
     KnowledgeServiceAvailability,
 )
 from common_agent.knowledge.base import (
+    KnowledgeBaseNotFound,
     KnowledgeConfigurationMissing,
     KnowledgeService,
     KnowledgeServiceUnavailable,
     KnowledgeServiceVersionMismatch,
     PageableKnowledgeService,
 )
-from common_agent.pagination import CursorPage, ListPageRequest
+from common_agent.pagination import (
+    CursorPage,
+    ListPageRequest,
+    decode_offset_cursor,
+    encode_offset_cursor,
+)
+from common_agent.ports.knowledge_ownership import KnowledgeOwnershipStore
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 
 MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024
 
@@ -59,38 +70,105 @@ class DocumentTooLarge(KnowledgeInputError):
 
 
 class KnowledgeBaseService:
-    def __init__(self, knowledge: KnowledgeService) -> None:
+    def __init__(
+        self,
+        knowledge: KnowledgeService,
+        *,
+        ownership: KnowledgeOwnershipStore | None = None,
+        tenant_id_provider: Callable[[], UUID] | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._knowledge = knowledge
+        self._ownership = ownership
+        self._tenant_id_provider = tenant_id_provider or (lambda: DEFAULT_TENANT_ID)
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     async def list_knowledge_bases(self) -> tuple[KnowledgeBaseSummary, ...]:
         await self._ensure_available()
-        return await self._knowledge.list_knowledge_bases()
+        values = await self._knowledge.list_knowledge_bases()
+        ownership = self._ownership
+        if ownership is None:
+            return values
+        tenant_id = self._tenant_id_provider()
+        if tenant_id == DEFAULT_TENANT_ID:
+            await ownership.claim_legacy(
+                tenant_id,
+                tuple(value.id for value in values),
+                now=self._clock(),
+            )
+        allowed = await ownership.list_ids(tenant_id)
+        return tuple(value for value in values if value.id in allowed)
 
     async def page_knowledge_bases(
         self,
         page: ListPageRequest,
     ) -> CursorPage[KnowledgeBaseSummary]:
         await self._ensure_available()
+        if self._ownership is not None:
+            values = await self.list_knowledge_bases()
+            if page.search:
+                search = page.search.casefold()
+                values = tuple(value for value in values if search in value.name.casefold())
+            scope = f"knowledge-bases-{self._tenant_id_provider()}"
+            offset = (
+                0
+                if page.cursor is None
+                else decode_offset_cursor(
+                    page.cursor,
+                    scope=scope,
+                    search=page.search,
+                    limit=page.limit,
+                )
+            )
+            items = values[offset : offset + page.limit]
+            next_offset = offset + len(items)
+            return CursorPage(
+                items=items,
+                next_cursor=(
+                    encode_offset_cursor(
+                        scope=scope,
+                        search=page.search,
+                        limit=page.limit,
+                        offset=next_offset,
+                    )
+                    if next_offset < len(values)
+                    else None
+                ),
+            )
         if not isinstance(self._knowledge, PageableKnowledgeService):
             raise KnowledgeServiceUnavailable()
         return await self._knowledge.page_knowledge_bases(page)
 
     async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
         await self._ensure_available()
+        await self._ensure_owned(knowledge_base_id)
         return await self._knowledge.get_knowledge_base(knowledge_base_id)
 
     async def create_knowledge_base(
         self, request: CreateKnowledgeBaseRequest
     ) -> KnowledgeBaseSummary:
         await self._ensure_available()
-        return await self._knowledge.create_knowledge_base(request)
+        created = await self._knowledge.create_knowledge_base(request)
+        ownership = self._ownership
+        if ownership is not None and not await ownership.claim(
+            self._tenant_id_provider(),
+            created.id,
+            now=self._clock(),
+        ):
+            await self._knowledge.delete_knowledge_base(created.id)
+            raise KnowledgeBaseNotFound()
+        return created
 
     async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
         await self._ensure_available()
+        await self._ensure_owned(knowledge_base_id)
         await self._knowledge.delete_knowledge_base(knowledge_base_id)
+        if self._ownership is not None:
+            await self._ownership.release(self._tenant_id_provider(), knowledge_base_id)
 
     async def list_documents(self, knowledge_base_id: str) -> tuple[KnowledgeDocument, ...]:
         await self._ensure_available()
+        await self._ensure_owned(knowledge_base_id)
         return await self._knowledge.list_documents(knowledge_base_id)
 
     async def upload_document(
@@ -100,11 +178,20 @@ class KnowledgeBaseService:
     ) -> KnowledgeDocument:
         self._validate_upload(upload)
         await self._ensure_available()
+        await self._ensure_owned(knowledge_base_id)
         return await self._knowledge.upload_document(knowledge_base_id, upload)
 
     async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult:
         await self._ensure_available()
+        await self._ensure_owned(request.knowledge_base_id)
         return await self._knowledge.retrieve(request)
+
+    async def _ensure_owned(self, knowledge_base_id: str) -> None:
+        ownership = self._ownership
+        if ownership is not None and not await ownership.owns(
+            self._tenant_id_provider(), knowledge_base_id
+        ):
+            raise KnowledgeBaseNotFound()
 
     async def _ensure_available(self) -> None:
         status = await self._knowledge.status()

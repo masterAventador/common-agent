@@ -413,7 +413,7 @@ def test_mysql_foreign_keys_reject_orphaned_conversations_messages_and_citations
                 async with database.session() as session:
                     await SqlAlchemyConversationRepository(session).add(orphaned_conversation)
 
-            with pytest.raises(DBAPIError):
+            with pytest.raises(PermissionError, match="tenant_access_denied"):
                 async with database.session() as session:
                     await SqlAlchemyMessageRepository(session).add(orphaned_message)
 

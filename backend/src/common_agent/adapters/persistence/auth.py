@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
@@ -13,12 +13,15 @@ from common_agent.adapters.persistence.models import (
     AuthRecoveryCodeRow,
     AuthSessionRow,
     AuthUserRow,
+    TenantMembershipRow,
 )
 from common_agent.adapters.persistence.timestamps import (
     from_database_datetime,
     to_database_datetime,
 )
 from common_agent.auth.models import AuthenticatedSession, StoredAuthUser
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
+from common_agent.tenancy.models import TenantRole
 
 
 class SqlAlchemyAuthStore:
@@ -57,6 +60,14 @@ class SqlAlchemyAuthStore:
             async with self._database.session() as session:
                 session.add(row)
                 await session.flush()
+                session.add(
+                    TenantMembershipRow(
+                        tenant_id=str(DEFAULT_TENANT_ID),
+                        user_id=row.id,
+                        role="owner",
+                        created_at=database_now,
+                    )
+                )
                 session.add_all(
                     AuthRecoveryCodeRow(
                         user_id=row.id,
@@ -78,6 +89,55 @@ class SqlAlchemyAuthStore:
             result = await session.execute(select(AuthUserRow).where(AuthUserRow.email == email))
             row = result.scalar_one_or_none()
             return _stored_user(row) if row is not None else None
+
+    async def create_member(
+        self,
+        *,
+        tenant_id: UUID,
+        email: str,
+        password_hash: str,
+        recovery_digests: tuple[str, ...],
+        role: TenantRole,
+        now: datetime,
+    ) -> StoredAuthUser | None:
+        database_now = to_database_datetime(now)
+        row = AuthUserRow(
+            id=str(uuid4()),
+            email=email,
+            password_hash=password_hash,
+            is_active=True,
+            bootstrap_slot=None,
+            password_changed_at=database_now,
+            created_at=database_now,
+            updated_at=database_now,
+        )
+        try:
+            async with self._database.session() as session:
+                session.add(row)
+                await session.flush()
+                session.add(
+                    TenantMembershipRow(
+                        tenant_id=str(tenant_id),
+                        user_id=row.id,
+                        role=role.value,
+                        created_at=database_now,
+                    )
+                )
+                session.add_all(
+                    AuthRecoveryCodeRow(
+                        user_id=row.id,
+                        code_digest=digest,
+                        created_at=database_now,
+                        consumed_at=None,
+                    )
+                    for digest in recovery_digests
+                )
+                await session.commit()
+        except IntegrityError as error:
+            if _mysql_error_code(error) == 1062:
+                return None
+            raise
+        return _stored_user(row)
 
     async def replace_password_hash(self, user_id: str, password_hash: str) -> None:
         now = to_database_datetime(datetime.now(UTC))

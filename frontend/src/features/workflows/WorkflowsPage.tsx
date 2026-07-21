@@ -9,7 +9,7 @@ import { WorkflowPageHeader } from "./WorkflowPageHeader";
 import { WorkflowSidebar } from "./WorkflowSidebar";
 import { useWorkflowDesigner } from "./useWorkflowDesigner";
 
-export function WorkflowsPage() {
+export function WorkflowsPage({ readOnly = false }: { readOnly?: boolean }) {
   const controller = useWorkflowDesigner();
   const { workflows, state } = controller;
 
@@ -44,7 +44,7 @@ export function WorkflowsPage() {
 
   return (
     <section className="workflows-page">
-      <WorkflowPageHeader controller={controller} />
+      <WorkflowPageHeader controller={controller} readOnly={readOnly} />
 
       {controller.deleteNotice && (
         <Alert
@@ -113,7 +113,7 @@ export function WorkflowsPage() {
         <WorkflowSidebar
           workflows={controller.workflowItems}
           state={state}
-          editingLocked={controller.activeRun}
+          editingLocked={controller.activeRun || readOnly}
           search={controller.workflowSearch}
           onSearch={controller.setWorkflowSearch}
           hasMore={Boolean(workflows.hasNextPage)}
@@ -126,7 +126,7 @@ export function WorkflowsPage() {
           <WorkflowCanvas
             state={state}
             run={controller.visibleRun}
-            editingLocked={controller.activeRun}
+            editingLocked={controller.activeRun || readOnly}
             dispatch={controller.dispatch}
           />
         </ReactFlowProvider>
@@ -147,7 +147,8 @@ export function WorkflowsPage() {
               void controller.knowledgeBases.fetchNextPage();
             }
           }}
-          editingLocked={controller.activeRun}
+          editingLocked={controller.activeRun || readOnly}
+          readOnly={readOnly}
           runController={controller.runController}
           dispatch={controller.dispatch}
         />

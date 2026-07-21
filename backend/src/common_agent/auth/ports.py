@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Protocol
+from uuid import UUID
 
 from common_agent.auth.models import AuthenticatedSession, StoredAuthUser
+from common_agent.tenancy.models import TenantRole
 
 
 class PasswordHasher(Protocol):
@@ -23,6 +25,17 @@ class AuthStore(Protocol):
         email: str,
         password_hash: str,
         recovery_digests: tuple[str, ...],
+        now: datetime,
+    ) -> StoredAuthUser | None: ...
+
+    async def create_member(
+        self,
+        *,
+        tenant_id: UUID,
+        email: str,
+        password_hash: str,
+        recovery_digests: tuple[str, ...],
+        role: TenantRole,
         now: datetime,
     ) -> StoredAuthUser | None: ...
 

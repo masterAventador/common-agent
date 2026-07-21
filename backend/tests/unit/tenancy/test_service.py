@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime
+from uuid import UUID
+
+import pytest
+
+from common_agent.tenancy.models import TenantAccess, TenantRole
+from common_agent.tenancy.service import TenancyError, TenancyService
+
+USER_ID = UUID("20000000-0000-4000-8000-000000000001")
+TENANT_A = UUID("10000000-0000-4000-8000-000000000001")
+TENANT_B = UUID("10000000-0000-4000-8000-000000000002")
+
+
+class FakeTenancyStore:
+    def __init__(self, accesses: tuple[TenantAccess, ...]) -> None:
+        self.accesses = accesses
+
+    async def list_access(self, user_id: UUID) -> tuple[TenantAccess, ...]:
+        return tuple(access for access in self.accesses if access.user_id == user_id)
+
+    async def find_access(self, user_id: UUID, tenant_id: UUID) -> TenantAccess | None:
+        return next(
+            (
+                access
+                for access in self.accesses
+                if access.user_id == user_id and access.tenant_id == tenant_id
+            ),
+            None,
+        )
+
+    async def create_tenant(
+        self,
+        *,
+        owner_user_id: UUID,
+        organization_id: UUID,
+        name: str,
+        now: datetime,
+    ) -> TenantAccess:
+        raise NotImplementedError
+
+
+def test_single_membership_is_selected_when_header_is_absent() -> None:
+    async def exercise() -> None:
+        expected = TenantAccess(TENANT_A, USER_ID, TenantRole.OWNER)
+
+        assert (
+            await TenancyService(FakeTenancyStore((expected,))).resolve(USER_ID, None) == expected
+        )
+
+    asyncio.run(exercise())
+
+
+def test_multiple_memberships_require_an_explicit_tenant() -> None:
+    async def exercise() -> None:
+        service = TenancyService(
+            FakeTenancyStore(
+                (
+                    TenantAccess(TENANT_A, USER_ID, TenantRole.OWNER),
+                    TenantAccess(TENANT_B, USER_ID, TenantRole.EDITOR),
+                )
+            )
+        )
+
+        with pytest.raises(TenancyError, match="tenant_selection_required"):
+            await service.resolve(USER_ID, None)
+
+    asyncio.run(exercise())
+
+
+def test_non_member_tenant_is_rejected() -> None:
+    async def exercise() -> None:
+        service = TenancyService(
+            FakeTenancyStore((TenantAccess(TENANT_A, USER_ID, TenantRole.OWNER),))
+        )
+
+        with pytest.raises(TenancyError, match="tenant_access_denied"):
+            await service.resolve(USER_ID, TENANT_B)
+
+    asyncio.run(exercise())
+
+
+def test_viewer_cannot_write_and_editor_cannot_administer() -> None:
+    async def exercise() -> None:
+        viewer = TenantAccess(TENANT_A, USER_ID, TenantRole.VIEWER)
+        editor = TenantAccess(TENANT_B, USER_ID, TenantRole.EDITOR)
+        service = TenancyService(FakeTenancyStore((viewer, editor)))
+
+        with pytest.raises(TenancyError, match="tenant_write_forbidden"):
+            await service.resolve(USER_ID, TENANT_A, write=True)
+        with pytest.raises(TenancyError, match="tenant_admin_forbidden"):
+            await service.resolve(USER_ID, TENANT_B, administer=True)
+
+    asyncio.run(exercise())

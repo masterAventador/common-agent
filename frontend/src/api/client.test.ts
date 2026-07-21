@@ -5,7 +5,9 @@ import {
   AUTHENTICATION_REQUIRED_EVENT,
   apiClient,
   clearCsrfToken,
+  clearTenantId,
   setCsrfToken,
+  setTenantId,
 } from "./client";
 
 function successfulAdapter(requests: InternalAxiosRequestConfig[]): AxiosAdapter {
@@ -23,6 +25,7 @@ function successfulAdapter(requests: InternalAxiosRequestConfig[]): AxiosAdapter
 
 afterEach(() => {
   clearCsrfToken();
+  clearTenantId();
 });
 
 describe("authenticated API client", () => {
@@ -37,6 +40,20 @@ describe("authenticated API client", () => {
     expect(apiClient.defaults.withCredentials).toBe(true);
     expect(requests[0]?.headers.get("X-CSRF-Token")).toBeUndefined();
     expect(requests[1]?.headers.get("X-CSRF-Token")).toBe("csrf-token-1");
+  });
+
+  it("adds the selected tenant only to protected platform requests", async () => {
+    const requests: InternalAxiosRequestConfig[] = [];
+    const adapter = successfulAdapter(requests);
+    setTenantId("10000000-0000-4000-8000-000000000001");
+
+    await apiClient.get("/employees", { adapter });
+    await apiClient.get("/tenants", { adapter });
+
+    expect(requests[0]?.headers.get("X-Tenant-ID")).toBe(
+      "10000000-0000-4000-8000-000000000001",
+    );
+    expect(requests[1]?.headers.get("X-Tenant-ID")).toBeUndefined();
   });
 
   it("clears CSRF state and notifies the auth gate when a protected request returns 401", async () => {

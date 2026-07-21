@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -92,6 +92,7 @@ class WorkflowEventBroker:
         total_subscriber_limit: int = 1024,
         state_limit: int = 1024,
         state_ttl_seconds: float = 300,
+        key_namespace: Callable[[UUID], str] | None = None,
     ) -> None:
         if history_limit < 1:
             raise ValueError("history_limit must be positive")
@@ -111,7 +112,8 @@ class WorkflowEventBroker:
         self._total_subscriber_limit = total_subscriber_limit
         self._state_limit = state_limit
         self._state_ttl_seconds = state_ttl_seconds
-        self._states: dict[UUID, _WorkflowEventState] = {}
+        self._key_namespace = key_namespace or (lambda run_id: str(run_id))
+        self._states: dict[str, _WorkflowEventState] = {}
         self._lock = asyncio.Lock()
         self._closed = False
 
@@ -120,14 +122,15 @@ class WorkflowEventBroker:
             raise ValueError("after_sequence must not be negative")
         async with self._lock:
             self._ensure_open()
-            state, created = self._state_locked(run_id)
+            key = self._key_namespace(run_id)
+            state, created = self._state_locked(key)
             try:
                 _validate_resume_position(state, after_sequence)
             except WorkflowEventHistoryUnavailable:
                 if created:
-                    self._drop_state_locked(run_id, state)
+                    self._drop_state_locked(key, state)
                 raise
-            self._touch_locked(run_id, state)
+            self._touch_locked(key, state)
 
     async def publish(
         self,
@@ -139,7 +142,8 @@ class WorkflowEventBroker:
         _validate_event(run=run, kind=kind, node_id=node_id)
         async with self._lock:
             self._ensure_open()
-            state, _ = self._state_locked(run.id)
+            key = self._key_namespace(run.id)
+            state, _ = self._state_locked(key)
             event = WorkflowRunEvent(
                 sequence=state.next_sequence,
                 run=run,
@@ -172,7 +176,7 @@ class WorkflowEventBroker:
                     subscriber.get_nowait()
                 subscriber.put_nowait(_OVERFLOW)
             self._trim_lru_locked()
-            self._schedule_cleanup_locked(run.id, state)
+            self._schedule_cleanup_locked(key, state)
             return event
 
     async def stream(
@@ -188,20 +192,21 @@ class WorkflowEventBroker:
         )
         async with self._lock:
             self._ensure_open()
-            state, created = self._state_locked(run_id)
+            key = self._key_namespace(run_id)
+            state, created = self._state_locked(key)
             try:
                 _validate_resume_position(state, after_sequence)
             except WorkflowEventHistoryUnavailable:
                 if created:
-                    self._drop_state_locked(run_id, state)
+                    self._drop_state_locked(key, state)
                 raise
             if len(state.subscribers) >= self._subscriber_limit:
                 if created:
-                    self._drop_state_locked(run_id, state)
+                    self._drop_state_locked(key, state)
                 raise WorkflowEventSubscriberLimitExceeded
             if self._subscriber_count_locked() >= self._total_subscriber_limit:
                 if created:
-                    self._drop_state_locked(run_id, state)
+                    self._drop_state_locked(key, state)
                 raise WorkflowEventSubscriberLimitExceeded
             replay = tuple(event for event in state.history if event.sequence > after_sequence)
             state.subscribers.add(queue)
@@ -220,11 +225,11 @@ class WorkflowEventBroker:
                 yield queued
         finally:
             async with self._lock:
-                current = self._states.get(run_id)
+                current = self._states.get(key)
                 if current is not None:
                     current.subscribers.discard(queue)
                     current.last_accessed = monotonic()
-                    self._schedule_cleanup_locked(run_id, current)
+                    self._schedule_cleanup_locked(key, current)
 
     async def lifecycle_snapshot(self) -> WorkflowEventLifecycleSnapshot:
         async with self._lock:
@@ -249,22 +254,22 @@ class WorkflowEventBroker:
                     subscriber.put_nowait(_OVERFLOW)
             self._states.clear()
 
-    def _state_locked(self, run_id: UUID) -> tuple[_WorkflowEventState, bool]:
+    def _state_locked(self, key: str) -> tuple[_WorkflowEventState, bool]:
         now = monotonic()
         self._prune_expired_locked(now)
-        state = self._states.get(run_id)
+        state = self._states.get(key)
         if state is not None:
             state.last_accessed = now
             return state, False
 
         self._evict_lru_locked()
         state = _WorkflowEventState(last_accessed=now)
-        self._states[run_id] = state
+        self._states[key] = state
         return state, True
 
-    def _touch_locked(self, run_id: UUID, state: _WorkflowEventState) -> None:
+    def _touch_locked(self, key: str, state: _WorkflowEventState) -> None:
         state.last_accessed = monotonic()
-        self._schedule_cleanup_locked(run_id, state)
+        self._schedule_cleanup_locked(key, state)
 
     def _evict_lru_locked(self) -> None:
         while len(self._states) >= self._state_limit:
@@ -307,7 +312,7 @@ class WorkflowEventBroker:
 
     def _schedule_cleanup_locked(
         self,
-        run_id: UUID,
+        key: str,
         state: _WorkflowEventState,
     ) -> None:
         self._cancel_cleanup_locked(state)
@@ -317,34 +322,34 @@ class WorkflowEventBroker:
         state.cleanup_handle = asyncio.get_running_loop().call_later(
             self._state_ttl_seconds,
             self._start_expiry,
-            run_id,
+            key,
             marker,
         )
 
-    def _start_expiry(self, run_id: UUID, marker: float) -> None:
+    def _start_expiry(self, key: str, marker: float) -> None:
         if self._closed:
             return
         asyncio.get_running_loop().create_task(
-            self._expire_state(run_id, marker),
-            name=f"workflow-event-expiry-{run_id}",
+            self._expire_state(key, marker),
+            name=f"workflow-event-expiry-{key}",
         )
 
-    async def _expire_state(self, run_id: UUID, marker: float) -> None:
+    async def _expire_state(self, key: str, marker: float) -> None:
         async with self._lock:
-            state = self._states.get(run_id)
+            state = self._states.get(key)
             if state is None or state.last_accessed != marker:
                 return
             state.cleanup_handle = None
             self._prune_expired_locked()
-            current = self._states.get(run_id)
+            current = self._states.get(key)
             if current is state:
-                self._schedule_cleanup_locked(run_id, state)
+                self._schedule_cleanup_locked(key, state)
 
-    def _drop_state_locked(self, run_id: UUID, state: _WorkflowEventState) -> None:
-        if self._states.get(run_id) is not state:
+    def _drop_state_locked(self, key: str, state: _WorkflowEventState) -> None:
+        if self._states.get(key) is not state:
             return
         self._cancel_cleanup_locked(state)
-        self._states.pop(run_id, None)
+        self._states.pop(key, None)
 
     @staticmethod
     def _cancel_cleanup_locked(state: _WorkflowEventState) -> None:

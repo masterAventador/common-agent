@@ -11,6 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from common_agent.adapters.persistence.database import Database, DatabaseStartupError
 from tests.support.settings import TEST_DATABASE_URL
 
+HEAD_REVISION = "20260721_0014"
+
 
 def _database_url() -> str:
     return os.environ.get(
@@ -42,7 +44,7 @@ def test_empty_mysql_database_is_migrated_and_can_restart() -> None:
             await second.stop()
         return first_revision, second_revision
 
-    assert asyncio.run(exercise()) == ("20260721_0012", "20260721_0012")
+    assert asyncio.run(exercise()) == (HEAD_REVISION, HEAD_REVISION)
 
 
 def test_authentication_tables_are_migrated_with_server_side_secret_boundaries() -> None:
@@ -198,7 +200,8 @@ def test_mysql_migration_failure_is_closed_and_recovers_after_repair() -> None:
 
             async with keeper.session() as session:
                 await session.execute(
-                    text("UPDATE alembic_version SET version_num = '20260721_0012'")
+                    text("UPDATE alembic_version SET version_num = :revision"),
+                    {"revision": HEAD_REVISION},
                 )
                 await session.commit()
             revision_is_broken = False
@@ -209,10 +212,11 @@ def test_mysql_migration_failure_is_closed_and_recovers_after_repair() -> None:
             if revision_is_broken:
                 async with keeper.session() as session:
                     await session.execute(
-                        text("UPDATE alembic_version SET version_num = '20260721_0012'")
+                        text("UPDATE alembic_version SET version_num = :revision"),
+                        {"revision": HEAD_REVISION},
                     )
                     await session.commit()
             await candidate.stop()
             await keeper.stop()
 
-    assert asyncio.run(exercise()) == "20260721_0012"
+    assert asyncio.run(exercise()) == HEAD_REVISION

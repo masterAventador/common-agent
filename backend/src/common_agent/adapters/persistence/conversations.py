@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 from typing import Any, cast
@@ -36,15 +37,19 @@ from common_agent.ports.conversations import (
     MessageRepository,
     MessageSequenceAlreadyExists,
 )
+from common_agent.tenancy.context import current_tenant
 
 
 class SqlAlchemyConversationRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, tenant_id: UUID | None = None) -> None:
         self._session = session
+        self._tenant_id = str(tenant_id or current_tenant().tenant_id)
 
     async def list(self) -> tuple[Conversation, ...]:
         result = await self._session.scalars(
-            select(ConversationRow).order_by(
+            select(ConversationRow)
+            .where(ConversationRow.tenant_id == self._tenant_id)
+            .order_by(
                 ConversationRow.updated_at.desc(),
                 ConversationRow.id,
             )
@@ -54,7 +59,10 @@ class SqlAlchemyConversationRepository:
     async def list_for_employee(self, employee_id: UUID) -> tuple[Conversation, ...]:
         result = await self._session.scalars(
             select(ConversationRow)
-            .where(ConversationRow.employee_id == str(employee_id))
+            .where(
+                ConversationRow.employee_id == str(employee_id),
+                ConversationRow.tenant_id == self._tenant_id,
+            )
             .order_by(ConversationRow.updated_at.desc(), ConversationRow.id)
         )
         return tuple(_to_conversation(row) for row in result)
@@ -67,7 +75,7 @@ class SqlAlchemyConversationRepository:
         after: PageAnchor | None,
         employee_id: UUID | None,
     ) -> PageSlice[Conversation]:
-        statement = select(ConversationRow)
+        statement = select(ConversationRow).where(ConversationRow.tenant_id == self._tenant_id)
         if employee_id is not None:
             statement = statement.where(ConversationRow.employee_id == str(employee_id))
         if search:
@@ -102,11 +110,18 @@ class SqlAlchemyConversationRepository:
         )
 
     async def get(self, conversation_id: UUID) -> Conversation | None:
-        row = await self._session.get(ConversationRow, str(conversation_id))
+        row = await self._session.scalar(
+            select(ConversationRow).where(
+                ConversationRow.id == str(conversation_id),
+                ConversationRow.tenant_id == self._tenant_id,
+            )
+        )
         return None if row is None else _to_conversation(row)
 
     async def add(self, conversation: Conversation) -> None:
-        self._session.add(ConversationRow(**_conversation_values(conversation)))
+        self._session.add(
+            ConversationRow(tenant_id=self._tenant_id, **_conversation_values(conversation))
+        )
         try:
             await self._session.flush()
         except IntegrityError as error:
@@ -119,7 +134,10 @@ class SqlAlchemyConversationRepository:
             CursorResult[Any],
             await self._session.execute(
                 update(ConversationRow)
-                .where(ConversationRow.id == str(conversation.id))
+                .where(
+                    ConversationRow.id == str(conversation.id),
+                    ConversationRow.tenant_id == self._tenant_id,
+                )
                 .values(
                     title=conversation.title,
                     updated_at=to_database_datetime(conversation.updated_at),
@@ -132,21 +150,29 @@ class SqlAlchemyConversationRepository:
         result = cast(
             CursorResult[Any],
             await self._session.execute(
-                delete(ConversationRow).where(ConversationRow.id == str(conversation_id))
+                delete(ConversationRow).where(
+                    ConversationRow.id == str(conversation_id),
+                    ConversationRow.tenant_id == self._tenant_id,
+                )
             ),
         )
         return bool(result.rowcount)
 
 
 class SqlAlchemyMessageRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, tenant_id: UUID | None = None) -> None:
         self._session = session
+        self._tenant_id = str(tenant_id or current_tenant().tenant_id)
 
     async def list_for_conversation(self, conversation_id: UUID) -> tuple[Message, ...]:
         rows = tuple(
             await self._session.scalars(
                 select(MessageRow)
-                .where(MessageRow.conversation_id == str(conversation_id))
+                .join(ConversationRow, ConversationRow.id == MessageRow.conversation_id)
+                .where(
+                    MessageRow.conversation_id == str(conversation_id),
+                    ConversationRow.tenant_id == self._tenant_id,
+                )
                 .order_by(MessageRow.sequence_number, MessageRow.id)
             )
         )
@@ -157,7 +183,9 @@ class SqlAlchemyMessageRepository:
         rows = tuple(
             await self._session.scalars(
                 select(MessageRow)
+                .join(ConversationRow, ConversationRow.id == MessageRow.conversation_id)
                 .where(
+                    ConversationRow.tenant_id == self._tenant_id,
                     MessageRow.role == MessageRole.ASSISTANT.value,
                     MessageRow.status.in_(
                         (MessageStatus.PENDING.value, MessageStatus.STREAMING.value)
@@ -170,15 +198,31 @@ class SqlAlchemyMessageRepository:
         return tuple(_to_message(row, citations.get(row.id, ())) for row in rows)
 
     async def get(self, message_id: UUID) -> Message | None:
-        row = await self._session.get(MessageRow, str(message_id))
+        row = await self._session.scalar(
+            select(MessageRow)
+            .join(ConversationRow, ConversationRow.id == MessageRow.conversation_id)
+            .where(
+                MessageRow.id == str(message_id),
+                ConversationRow.tenant_id == self._tenant_id,
+            )
+        )
         if row is None:
             return None
         citations = await self._citations_for((row,))
         return _to_message(row, citations.get(row.id, ()))
 
     async def add(self, message: Message) -> None:
-        if await self._session.get(MessageRow, str(message.id)) is not None:
+        existing = await self.get(message.id)
+        if existing is not None:
             raise MessageAlreadyExists
+        conversation_exists = await self._session.scalar(
+            select(ConversationRow.id).where(
+                ConversationRow.id == str(message.conversation_id),
+                ConversationRow.tenant_id == self._tenant_id,
+            )
+        )
+        if conversation_exists is None:
+            raise PermissionError("tenant_access_denied")
         self._session.add(MessageRow(**_message_values(message)))
         try:
             await self._session.flush()
@@ -196,7 +240,14 @@ class SqlAlchemyMessageRepository:
             CursorResult[Any],
             await self._session.execute(
                 update(MessageRow)
-                .where(MessageRow.id == str(message.id))
+                .where(
+                    MessageRow.id == str(message.id),
+                    MessageRow.conversation_id.in_(
+                        select(ConversationRow.id).where(
+                            ConversationRow.tenant_id == self._tenant_id
+                        )
+                    ),
+                )
                 .values(
                     content=message.content,
                     status=message.status.value,
@@ -230,8 +281,9 @@ class SqlAlchemyMessageRepository:
 
 
 class SqlAlchemyConversationUnitOfWork:
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, tenant_id: UUID) -> None:
         self._database = database
+        self._tenant_id = tenant_id
         self._context: AbstractAsyncContextManager[AsyncSession] | None = None
         self._session: AsyncSession | None = None
         self._conversations: ConversationRepository | None = None
@@ -256,8 +308,8 @@ class SqlAlchemyConversationUnitOfWork:
         session = await context.__aenter__()
         self._context = context
         self._session = session
-        self._conversations = SqlAlchemyConversationRepository(session)
-        self._messages = SqlAlchemyMessageRepository(session)
+        self._conversations = SqlAlchemyConversationRepository(session, self._tenant_id)
+        self._messages = SqlAlchemyMessageRepository(session, self._tenant_id)
         return self
 
     async def __aexit__(
@@ -283,11 +335,16 @@ class SqlAlchemyConversationUnitOfWork:
 
 
 class SqlAlchemyConversationUnitOfWorkFactory:
-    def __init__(self, database: Database) -> None:
+    def __init__(
+        self,
+        database: Database,
+        tenant_id_provider: Callable[[], UUID] | None = None,
+    ) -> None:
         self._database = database
+        self._tenant_id_provider = tenant_id_provider or (lambda: current_tenant().tenant_id)
 
     def __call__(self) -> SqlAlchemyConversationUnitOfWork:
-        return SqlAlchemyConversationUnitOfWork(self._database)
+        return SqlAlchemyConversationUnitOfWork(self._database, self._tenant_id_provider())
 
 
 def _conversation_values(conversation: Conversation) -> dict[str, object]:
