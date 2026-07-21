@@ -68,6 +68,33 @@ class ApiSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ProxySettings:
+    forwarded_allow_ips: str
+
+    @classmethod
+    def from_env(cls) -> ProxySettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> ProxySettings:
+        runtime = RuntimeEnvironmentSettings.from_mapping(values)
+        configured = values.get(
+            "COMMON_AGENT_TRUSTED_PROXY_IPS",
+            "127.0.0.1" if runtime.environment == "local" else "",
+        ).strip()
+        if runtime.environment == "local":
+            if configured not in {"127.0.0.1", "::1"}:
+                raise ConfigurationError(
+                    "COMMON_AGENT_TRUSTED_PROXY_IPS must contain one loopback proxy locally"
+                )
+        elif configured != "*":
+            raise ConfigurationError(
+                "COMMON_AGENT_TRUSTED_PROXY_IPS must be * behind the private production edge"
+            )
+        return cls(forwarded_allow_ips=configured)
+
+
+@dataclass(frozen=True, slots=True)
 class DatabaseSettings:
     url: str = field(repr=False)
 

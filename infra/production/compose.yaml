@@ -11,6 +11,8 @@ x-app-environment: &app-environment
   COMMON_AGENT_RUNTIME_ENV: production
   COMMON_AGENT_API_HOST: 0.0.0.0
   COMMON_AGENT_API_PORT: "8000"
+  # API 只接入 app-private 内的正式 Edge；Edge 会覆盖客户端转发链。
+  COMMON_AGENT_TRUSTED_PROXY_IPS: "*"
   SSL_CERT_FILE: /run/common-agent/tls/ca-bundle.crt
 
 x-api: &api

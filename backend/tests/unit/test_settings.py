@@ -9,6 +9,7 @@ from common_agent.bootstrap.settings import (
     CorsSettings,
     DatabaseSettings,
     IntegrationModeSettings,
+    ProxySettings,
     RagFlowSettings,
     RuntimeEnvironmentSettings,
 )
@@ -31,6 +32,21 @@ def test_api_settings_accept_project_specific_override() -> None:
 
     assert settings.host == "localhost"
     assert settings.port == 18201
+
+
+def test_proxy_settings_only_trust_loopback_locally_and_require_internal_edge_in_production() -> None:
+    assert ProxySettings.from_mapping({}).forwarded_allow_ips == "127.0.0.1"
+    assert ProxySettings.from_mapping(
+        {
+            "COMMON_AGENT_RUNTIME_ENV": "production",
+            "COMMON_AGENT_TRUSTED_PROXY_IPS": "*",
+        }
+    ).forwarded_allow_ips == "*"
+
+    with pytest.raises(ConfigurationError, match="COMMON_AGENT_TRUSTED_PROXY_IPS"):
+        ProxySettings.from_mapping({"COMMON_AGENT_TRUSTED_PROXY_IPS": "*"})
+    with pytest.raises(ConfigurationError, match="COMMON_AGENT_TRUSTED_PROXY_IPS"):
+        ProxySettings.from_mapping({"COMMON_AGENT_RUNTIME_ENV": "production"})
 
 
 @pytest.mark.parametrize("port", ["not-a-port", "0", "65536"])

@@ -15,6 +15,7 @@ def test_run_api_keeps_uvicorn_inside_http_boundary(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setenv("COMMON_AGENT_API_HOST", "127.0.0.1")
     monkeypatch.setenv("COMMON_AGENT_API_PORT", "18200")
+    monkeypatch.setenv("COMMON_AGENT_TRUSTED_PROXY_IPS", "127.0.0.1")
     monkeypatch.setattr(uvicorn, "run", run)
 
     run_api()
@@ -24,4 +25,5 @@ def test_run_api_keeps_uvicorn_inside_http_boundary(monkeypatch: pytest.MonkeyPa
         "factory": True,
         "host": "127.0.0.1",
         "port": 18200,
+        "forwarded_allow_ips": "127.0.0.1",
     }
