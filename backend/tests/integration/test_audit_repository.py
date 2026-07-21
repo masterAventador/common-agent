@@ -40,6 +40,7 @@ def test_audit_repository_is_append_only_queryable_and_hash_chained() -> None:
                     action=AuditAction.EMPLOYEE_CONFIGURATION_AND_BINDINGS_UPDATED,
                     resource_type=AuditResourceType.EMPLOYEE,
                     resource_id="employee-1",
+                    outcome=AuditOutcome.STARTED,
                 ),
                 retention_until=now + timedelta(days=365),
                 max_events_per_scope=100,

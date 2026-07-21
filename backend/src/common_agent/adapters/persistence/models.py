@@ -280,7 +280,7 @@ class AuditEventRow(PersistenceBase):
         CheckConstraint("CHAR_LENGTH(event_id) = 36", name="ck_audit_events_event_id"),
         CheckConstraint("sequence > 0", name="ck_audit_events_sequence"),
         CheckConstraint(
-            "outcome IN ('succeeded', 'denied', 'failed')",
+            "outcome IN ('started', 'succeeded', 'denied', 'failed')",
             name="ck_audit_events_outcome",
         ),
         CheckConstraint(
@@ -289,7 +289,7 @@ class AuditEventRow(PersistenceBase):
             name="ck_audit_events_resource",
         ),
         CheckConstraint(
-            "(outcome = 'succeeded' AND error_code IS NULL) OR "
+            "(outcome IN ('started', 'succeeded') AND error_code IS NULL) OR "
             "(outcome IN ('denied', 'failed') AND error_code IS NOT NULL)",
             name="ck_audit_events_error",
         ),
