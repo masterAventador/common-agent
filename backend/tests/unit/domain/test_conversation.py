@@ -12,12 +12,166 @@ from common_agent.domain.conversation import (
     MESSAGE_CONTENT_MAX_LENGTH,
     Citation,
     Conversation,
+    ConversationSource,
     ConversationValidationError,
     Message,
     MessageRole,
     MessageStatus,
     MessageTransitionError,
 )
+
+
+def test_generic_conversation_requires_a_persisted_model_without_an_employee() -> None:
+    model_configuration_id = uuid4()
+
+    conversation = Conversation.create_generic(
+        title="通用问答",
+        model_configuration_id=model_configuration_id,
+    )
+
+    assert conversation.source is ConversationSource.GENERIC
+    assert conversation.employee_id is None
+    assert conversation.model_configuration_id == model_configuration_id
+
+
+def test_employee_conversation_keeps_employee_source_without_a_persisted_override() -> None:
+    employee_id = uuid4()
+
+    conversation = Conversation.create(employee_id=employee_id, title="员工问答")
+
+    assert conversation.source is ConversationSource.EMPLOYEE
+    assert conversation.employee_id == employee_id
+    assert conversation.model_configuration_id is None
+
+
+def test_conversation_rejects_mixed_source_references() -> None:
+    employee = Conversation.create(employee_id=uuid4(), title="员工问答")
+    generic = Conversation.create_generic(
+        title="通用问答",
+        model_configuration_id=uuid4(),
+    )
+
+    with pytest.raises(ConversationValidationError) as employee_model:
+        replace(employee, model_configuration_id=uuid4())
+    assert employee_model.value.field == "model_configuration_id"
+
+    with pytest.raises(ConversationValidationError) as generic_employee:
+        replace(generic, employee_id=uuid4())
+    assert generic_employee.value.field == "employee_id"
+
+
+def test_conversation_rejects_invalid_source_missing_model_and_reversed_timestamps() -> None:
+    employee = Conversation.create(employee_id=uuid4(), title="员工问答")
+    generic = Conversation.create_generic(
+        title="通用问答",
+        model_configuration_id=uuid4(),
+    )
+
+    with pytest.raises(ConversationValidationError) as invalid_source:
+        replace(employee, source="employee")  # type: ignore[arg-type]
+    assert invalid_source.value.field == "source"
+
+    with pytest.raises(ConversationValidationError) as missing_model:
+        replace(generic, model_configuration_id=None)
+    assert missing_model.value.field == "model_configuration_id"
+
+    with pytest.raises(ConversationValidationError) as reversed_time:
+        replace(generic, updated_at=generic.created_at - timedelta(microseconds=1))
+    assert reversed_time.value.field == "updated_at"
+
+
+def test_only_generic_conversation_can_persist_a_new_model_selection() -> None:
+    original_model_id = uuid4()
+    selected_model_id = uuid4()
+    generic = Conversation.create_generic(
+        title="通用问答",
+        model_configuration_id=original_model_id,
+    )
+    changed_at = generic.updated_at + timedelta(microseconds=1)
+
+    selected = generic.select_model(selected_model_id, updated_at=changed_at)
+
+    assert selected.model_configuration_id == selected_model_id
+    assert selected.updated_at == changed_at
+
+    with pytest.raises(ConversationValidationError) as employee_selection:
+        Conversation.create(employee_id=uuid4(), title="员工问答").select_model(selected_model_id)
+    assert employee_selection.value.field == "model_configuration_id"
+
+    with pytest.raises(ConversationValidationError) as reversed_time:
+        selected.select_model(original_model_id, updated_at=generic.updated_at)
+    assert reversed_time.value.field == "updated_at"
+
+
+def test_assistant_message_persists_the_actual_turn_model() -> None:
+    model_configuration_id = uuid4()
+
+    assistant = Message.create_assistant(
+        conversation_id=uuid4(),
+        sequence_number=2,
+        model_configuration_id=model_configuration_id,
+        model_identifier="qwen-turbo",
+    )
+
+    assert assistant.model_configuration_id == model_configuration_id
+    assert assistant.model_identifier == "qwen-turbo"
+
+    with pytest.raises(ConversationValidationError) as user_model:
+        replace(
+            Message.create_user(
+                conversation_id=assistant.conversation_id,
+                sequence_number=1,
+                content="问题",
+            ),
+            model_configuration_id=model_configuration_id,
+            model_identifier="qwen-turbo",
+        )
+    assert user_model.value.field == "model_configuration_id"
+
+
+@pytest.mark.parametrize(
+    ("model_configuration_id", "model_identifier", "field"),
+    [
+        (uuid4(), None, "model_configuration_id"),
+        (None, "qwen-turbo", "model_configuration_id"),
+        (uuid4(), "invalid/model", "model_identifier"),
+    ],
+)
+def test_assistant_message_rejects_an_incomplete_or_invalid_model_snapshot(
+    model_configuration_id: UUID | None,
+    model_identifier: str | None,
+    field: str,
+) -> None:
+    with pytest.raises(ConversationValidationError) as captured:
+        Message.create_assistant(
+            conversation_id=uuid4(),
+            sequence_number=2,
+            model_configuration_id=model_configuration_id,
+            model_identifier=model_identifier,
+        )
+
+    assert captured.value.field == field
+
+
+def test_user_message_rejects_citations_and_error_codes() -> None:
+    user = Message.create_user(conversation_id=uuid4(), sequence_number=1, content="问题")
+    citation = Citation(
+        position=1,
+        knowledge_base_id="dataset-1",
+        chunk_id="chunk-1",
+        document_id="document-1",
+        document_name="手册.md",
+        content="可靠片段",
+        score=0.8,
+    )
+
+    with pytest.raises(ConversationValidationError) as citations:
+        replace(user, citations=(citation,))
+    assert citations.value.field == "citations"
+
+    with pytest.raises(ConversationValidationError) as error_code:
+        replace(user, error_code="unexpected")
+    assert error_code.value.field == "error_code"
 
 
 def test_conversation_create_normalizes_title_and_preserves_utc_timestamps() -> None:

@@ -155,15 +155,19 @@ test("blocks live references, unbinds them, and deletes all four resources throu
   await expect(employeeCard).toContainText("已授权 1 个工作流");
 
   await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
+  const conversationTitle = "建立资源引用并只回复已建立";
+  await page.getByRole("textbox", { name: "消息输入" }).fill(conversationTitle);
   const conversationResponse = page.waitForResponse(
     (response) =>
-      response.url().endsWith("/api/v1/conversations") &&
+      response.url().endsWith("/api/v1/conversation-turns") &&
       response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "新建会话" }).click();
+  await page.getByRole("button", { name: "发送消息" }).click();
   const createdConversationResponse = await conversationResponse;
-  expect(createdConversationResponse.status()).toBe(201);
-  const conversation = (await createdConversationResponse.json()) as { id: string };
+  expect(createdConversationResponse.status()).toBe(202);
+  const conversation = (await createdConversationResponse.json()) as {
+    conversation: { id: string };
+  };
 
   await page.getByRole("link", { name: "数字员工" }).click();
   const employeeBlocked = await deleteFromPage(
@@ -265,19 +269,23 @@ test("blocks live references, unbinds them, and deletes all four resources throu
     0,
   );
 
-  await page.goto(`/chat?employee_id=${employee.id}&conversation_id=${conversation.id}`);
-  await expect(page.getByRole("heading", { name: "新会话" })).toBeVisible();
+  await page.goto(
+    `/chat?employee_id=${employee.id}&conversation_id=${conversation.conversation.id}`,
+  );
+  await expect(page.getByRole("heading", { name: conversationTitle })).toBeVisible();
   const deletedConversation = await deleteFromPage(
     page,
     "会话",
-    "新会话",
-    `/api/v1/conversations/${conversation.id}`,
+    conversationTitle,
+    `/api/v1/conversations/${conversation.conversation.id}`,
   );
   expect((await deletedConversation).status()).toBe(204);
-  await expect(page.getByText("会话“新会话”已删除")).toBeVisible();
+  await expect(page.getByText(`会话“${conversationTitle}”已删除`)).toBeVisible();
   await expect(page.getByText("还没有会话")).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("button", { name: "打开会话 新会话" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: `打开会话 ${conversationTitle}` }),
+  ).toHaveCount(0);
 
   await page.getByRole("link", { name: "数字员工" }).click();
   const deletedEmployee = await deleteFromPage(

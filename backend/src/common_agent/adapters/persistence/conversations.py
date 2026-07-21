@@ -26,6 +26,7 @@ from common_agent.adapters.persistence.timestamps import (
 from common_agent.domain.conversation import (
     Citation,
     Conversation,
+    ConversationSource,
     Message,
     MessageRole,
     MessageStatus,
@@ -76,10 +77,13 @@ class SqlAlchemyConversationRepository:
         search: str,
         after: PageAnchor | None,
         employee_id: UUID | None,
+        source: ConversationSource | None = None,
     ) -> PageSlice[Conversation]:
         statement = select(ConversationRow).where(ConversationRow.tenant_id == self._tenant_id)
         if employee_id is not None:
             statement = statement.where(ConversationRow.employee_id == str(employee_id))
+        if source is not None:
+            statement = statement.where(ConversationRow.source == source.value)
         if search:
             searched_id = canonical_uuid_search(search)
             statement = statement.where(
@@ -142,6 +146,11 @@ class SqlAlchemyConversationRepository:
                 )
                 .values(
                     title=conversation.title,
+                    model_configuration_id=(
+                        None
+                        if conversation.model_configuration_id is None
+                        else str(conversation.model_configuration_id)
+                    ),
                     updated_at=to_database_datetime(conversation.updated_at),
                 )
             ),
@@ -361,7 +370,15 @@ class SqlAlchemyConversationUnitOfWorkFactory:
 def _conversation_values(conversation: Conversation) -> dict[str, object]:
     return {
         "id": str(conversation.id),
-        "employee_id": str(conversation.employee_id),
+        "source": conversation.source.value,
+        "employee_id": (
+            None if conversation.employee_id is None else str(conversation.employee_id)
+        ),
+        "model_configuration_id": (
+            None
+            if conversation.model_configuration_id is None
+            else str(conversation.model_configuration_id)
+        ),
         "title": conversation.title,
         "created_at": to_database_datetime(conversation.created_at),
         "updated_at": to_database_datetime(conversation.updated_at),
@@ -377,6 +394,10 @@ def _message_values(message: Message) -> dict[str, object]:
         "content": message.content,
         "status": message.status.value,
         "error_code": message.error_code,
+        "model_configuration_id": (
+            None if message.model_configuration_id is None else str(message.model_configuration_id)
+        ),
+        "model_identifier": message.model_identifier,
         "created_at": to_database_datetime(message.created_at),
         "updated_at": to_database_datetime(message.updated_at),
     }
@@ -401,7 +422,11 @@ def _citation_rows(message: Message) -> list[MessageCitationRow]:
 def _to_conversation(row: ConversationRow) -> Conversation:
     return Conversation(
         id=UUID(row.id),
-        employee_id=UUID(row.employee_id),
+        source=ConversationSource(row.source),
+        employee_id=None if row.employee_id is None else UUID(row.employee_id),
+        model_configuration_id=(
+            None if row.model_configuration_id is None else UUID(row.model_configuration_id)
+        ),
         title=row.title,
         created_at=from_database_datetime(row.created_at),
         updated_at=from_database_datetime(row.updated_at),
@@ -418,6 +443,10 @@ def _to_message(row: MessageRow, citations: tuple[Citation, ...]) -> Message:
         status=MessageStatus(row.status),
         citations=citations,
         error_code=row.error_code,
+        model_configuration_id=(
+            None if row.model_configuration_id is None else UUID(row.model_configuration_id)
+        ),
+        model_identifier=row.model_identifier,
         created_at=from_database_datetime(row.created_at),
         updated_at=from_database_datetime(row.updated_at),
     )

@@ -157,6 +157,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversation-turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Conversation Turn */
+        post: operations["create_conversation_turn_api_v1_conversation_turns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversations": {
         parameters: {
             query?: never;
@@ -840,16 +857,16 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /**
-             * Employee Id
-             * Format: uuid
-             */
-            employee_id: string;
+            /** Employee Id */
+            employee_id: string | null;
             /**
              * Id
              * Format: uuid
              */
             id: string;
+            /** Model Configuration Id */
+            model_configuration_id: string | null;
+            source: components["schemas"]["ConversationSource"];
             /** Title */
             title: string;
             /**
@@ -857,6 +874,16 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * ConversationSource
+         * @enum {string}
+         */
+        ConversationSource: "generic" | "employee";
+        /** ConversationTurnAcceptedResponse */
+        ConversationTurnAcceptedResponse: {
+            conversation: components["schemas"]["ConversationResponse"];
+            turn: components["schemas"]["TurnAcceptedResponse"];
         };
         /** CreateConversationBody */
         CreateConversationBody: {
@@ -869,6 +896,28 @@ export interface components {
             employee_id: string;
             /** Title */
             title: string;
+        };
+        /** CreateConversationTurnBody */
+        CreateConversationTurnBody: {
+            /** Content */
+            content: string;
+            /**
+             * Conversation Id
+             * Format: uuid
+             */
+            conversation_id: string;
+            /** Employee Id */
+            employee_id?: string | null;
+            /**
+             * Message Id
+             * Format: uuid
+             */
+            message_id: string;
+            /**
+             * Model Configuration Id
+             * Format: uuid
+             */
+            model_configuration_id: string;
         };
         /** CreateKnowledgeBaseBody */
         CreateKnowledgeBaseBody: {
@@ -1159,6 +1208,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Model Configuration Id */
+            model_configuration_id: string | null;
+            /** Model Identifier */
+            model_identifier: string | null;
             role: components["schemas"]["MessageRole"];
             /** Sequence Number */
             sequence_number: number;
@@ -1324,6 +1377,8 @@ export interface components {
              * Format: uuid
              */
             message_id: string;
+            /** Model Configuration Id */
+            model_configuration_id?: string | null;
         };
         /** StartNodeConfigBody */
         StartNodeConfigBody: Record<string, never>;
@@ -2045,10 +2100,93 @@ export interface operations {
             };
         };
     };
+    create_conversation_turn_api_v1_conversation_turns_post: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateConversationTurnBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationTurnAcceptedResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_conversations_api_v1_conversations_get: {
         parameters: {
             query?: {
                 employee_id?: string | null;
+                source?: components["schemas"]["ConversationSource"] | null;
                 search?: string;
                 limit?: number;
                 cursor?: string | null;

@@ -130,19 +130,13 @@ test("persists an employee model and routes its real reply through that model", 
   await page.getByRole("link", { name: "数字员工" }).click();
   employeeCard = page.locator(".employee-card", { hasText: employeeName });
   await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
-  const createConversationResponse = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/api/v1/conversations") &&
-      response.request().method() === "POST",
-  );
-  await page.getByRole("button", { name: "新建会话" }).click();
-  expect((await createConversationResponse).status()).toBe(201);
   await page
     .getByRole("textbox", { name: "消息输入" })
     .fill(`只输出这个标记：${replyMarker}`);
   const sendResponse = page.waitForResponse(
     (response) =>
-      response.url().includes("/messages") && response.request().method() === "POST",
+      response.url().endsWith("/api/v1/conversation-turns") &&
+      response.request().method() === "POST",
   );
   await page.getByRole("button", { name: "发送消息" }).click();
   expect((await sendResponse).status()).toBe(202);

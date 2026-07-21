@@ -1,4 +1,4 @@
-import { Alert, Button, Empty, Flex, Input, Skeleton, Tag, Typography } from "antd";
+import { Alert, Button, Empty, Flex, Input, Select, Skeleton, Tag, Typography } from "antd";
 import { Bot, Plus, Send, Square } from "lucide-react";
 
 import type { Employee } from "../../api/employees";
@@ -15,7 +15,7 @@ export function ChatWorkspace({
   readOnly = false,
 }: {
   controller: ChatPageController;
-  employee: Employee;
+  employee?: Employee;
   readOnly?: boolean;
 }) {
   const {
@@ -23,18 +23,20 @@ export function ChatWorkspace({
     conversations,
     conversationItems,
     conversationSearch,
-    createMutation,
     deleteMutation,
     draft,
     messages,
     retryMutation,
     runsByMessageId,
     selectedConversation,
+    selectedModelConfigurationId,
     selectConversation,
     sendDraft,
     sendMutation,
     setDraft,
     setConversationSearch,
+    setSelectedModelConfigurationId,
+    startNewConversation,
     stopMutation,
     workflowsById,
     hasMoreRuns,
@@ -52,10 +54,9 @@ export function ChatWorkspace({
             type="primary"
             size="small"
             icon={<Plus aria-hidden="true" size={15} />}
-            loading={createMutation.isPending}
             disabled={readOnly}
             aria-label="新建会话"
-            onClick={() => createMutation.mutate()}
+            onClick={startNewConversation}
           >
             新建
           </Button>
@@ -126,14 +127,14 @@ export function ChatWorkspace({
       <main className="chat-messages-panel" role="region" aria-label="消息区域">
         <div className="chat-messages-heading">
           <div>
-            <Title level={3}>{selectedConversation?.title ?? "选择一个会话"}</Title>
-            <Text type="secondary">{employee.name}</Text>
+            <Title level={3}>{selectedConversation?.title ?? "新会话"}</Title>
+            <Text type="secondary">{employee?.name ?? "通用 AI"}</Text>
           </div>
           {activeMessage && <Tag color="processing">正在生成</Tag>}
         </div>
         <div className="chat-message-scroll" aria-live="polite">
           {!selectedConversation ? (
-            <Empty description="新建或选择会话后开始提问" />
+            <Empty description="输入第一条消息后会自动创建会话" />
           ) : messages.isPending ? (
             <Skeleton active paragraph={{ rows: 8 }} />
           ) : messages.isError ? (
@@ -172,8 +173,8 @@ export function ChatWorkspace({
             value={draft}
             autoSize={{ minRows: 2, maxRows: 6 }}
             maxLength={200_000}
-            disabled={readOnly || !selectedConversation}
-            placeholder={selectedConversation ? "输入消息，Enter 发送，Shift+Enter 换行" : "请先新建会话"}
+            disabled={readOnly || !selectedModelConfigurationId}
+            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
             onChange={(event) => setDraft(event.target.value)}
             onPressEnter={(event) => {
               if (readOnly) return;
@@ -182,8 +183,31 @@ export function ChatWorkspace({
               sendDraft();
             }}
           />
-          <Flex justify="space-between" align="center" gap={12}>
-            <Text type="secondary">回复、引用和状态都会自动保存，刷新后可恢复。</Text>
+          <Flex justify="space-between" align="center" gap={12} wrap="wrap">
+            <Select
+              aria-label="选择模型"
+              value={selectedModelConfigurationId || undefined}
+              options={controller.modelConfigurationItems.map((configuration) => ({
+                value: configuration.id,
+                label: configuration.display_name,
+              }))}
+              onChange={setSelectedModelConfigurationId}
+              onPopupScroll={(event) => {
+                const target = event.currentTarget;
+                if (
+                  controller.modelConfigurations.hasNextPage &&
+                  !controller.modelConfigurations.isFetchingNextPage &&
+                  target.scrollTop + target.clientHeight >= target.scrollHeight - 16
+                ) {
+                  void controller.modelConfigurations.fetchNextPage();
+                }
+              }}
+              className="chat-model-select"
+              disabled={readOnly || Boolean(activeMessage)}
+            />
+            <Text type="secondary" className="chat-composer-note">
+              本轮回复将使用所选模型，消息和引用会自动保存。
+            </Text>
             {activeMessage ? (
               <Button
                 danger
@@ -200,7 +224,7 @@ export function ChatWorkspace({
                 type="primary"
                 icon={<Send aria-hidden="true" size={15} />}
                 loading={sendMutation.isPending}
-                disabled={readOnly || !selectedConversation || !draft.trim()}
+                disabled={readOnly || !selectedModelConfigurationId || !draft.trim()}
                 aria-label="发送消息"
                 onClick={sendDraft}
               >
@@ -212,9 +236,26 @@ export function ChatWorkspace({
       </main>
 
       <aside className="chat-employee-panel" role="region" aria-label="数字员工信息">
-        <EmployeeDetails employee={employee} />
+        {employee ? <EmployeeDetails employee={employee} /> : <GenericAssistantDetails />}
       </aside>
     </div>
+  );
+}
+
+function GenericAssistantDetails() {
+  return (
+    <>
+      <div className="chat-employee-avatar" aria-hidden="true">
+        <Bot aria-hidden="true" size={23} strokeWidth={1.75} />
+      </div>
+      <Title level={4}>通用 AI</Title>
+      <Text type="secondary">不绑定数字员工，直接使用当前选择的模型持续对话。</Text>
+      <div className="chat-employee-binding">
+        <Tag color="blue">模型可逐轮切换</Tag>
+        <Tag>不检索知识库</Tag>
+      </div>
+      <Alert type="info" showIcon title="发送第一条消息时会自动创建并保存会话" />
+    </>
   );
 }
 

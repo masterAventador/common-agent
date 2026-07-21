@@ -13,6 +13,7 @@ from common_agent.conversations.contracts import (
 )
 from common_agent.domain.conversation import (
     Conversation,
+    ConversationSource,
     Message,
     MessageRole,
     MessageStatus,
@@ -64,8 +65,13 @@ class ConversationPersistence:
         page: ListPageRequest,
         *,
         employee_id: UUID | None = None,
+        source: ConversationSource | None = None,
     ) -> CursorPage[Conversation]:
-        scope = "conversations" if employee_id is None else f"conversations-{employee_id}"
+        scope = "conversations"
+        if employee_id is not None:
+            scope = f"conversations-employee-{employee_id}"
+        elif source is not None:
+            scope = f"conversations-source-{source.value}"
         after = (
             None
             if page.cursor is None
@@ -82,6 +88,7 @@ class ConversationPersistence:
                 search=page.search,
                 after=after,
                 employee_id=employee_id,
+                source=source,
             )
         next_cursor = None
         if result.has_more:
@@ -150,6 +157,8 @@ class ConversationPersistence:
         user_message_id: UUID,
         assistant_message_id: UUID | None = None,
         content: str,
+        model_configuration_id: UUID | None = None,
+        model_identifier: str | None = None,
         task_request: TaskRequest | None = None,
         task_max_attempts: int = 3,
     ) -> PreparedTurn:
@@ -172,6 +181,8 @@ class ConversationPersistence:
                     conversation_id=conversation_id,
                     sequence_number=next_sequence + 1,
                     message_id=assistant_message_id,
+                    model_configuration_id=model_configuration_id,
+                    model_identifier=model_identifier,
                 )
                 if task_request is not None:
                     payload = task_request.payload
@@ -183,7 +194,13 @@ class ConversationPersistence:
                         raise ValueError("conversation task does not match prepared turn")
                 await unit_of_work.messages.add(user_message)
                 await unit_of_work.messages.add(assistant_message)
-                await unit_of_work.conversations.update(conversation.touch())
+                updated_conversation = (
+                    conversation.select_model(model_configuration_id)
+                    if conversation.source is ConversationSource.GENERIC
+                    and model_configuration_id is not None
+                    else conversation.touch()
+                )
+                await unit_of_work.conversations.update(updated_conversation)
                 if task_request is not None:
                     await unit_of_work.tasks.enqueue(
                         task_request,
@@ -195,8 +212,65 @@ class ConversationPersistence:
         except MessageSequenceAlreadyExists:
             raise ConversationRequestConflict from None
         return PreparedTurn(
-            conversation=conversation,
+            conversation=updated_conversation,
             history=(*messages, user_message, assistant_message),
+            user_message=user_message,
+            assistant_message=assistant_message,
+        )
+
+    async def create_first_turn(
+        self,
+        conversation: Conversation,
+        *,
+        user_message_id: UUID,
+        assistant_message_id: UUID,
+        content: str,
+        model_configuration_id: UUID,
+        model_identifier: str,
+        task_request: TaskRequest | None = None,
+        task_max_attempts: int = 3,
+    ) -> PreparedTurn:
+        user_message = Message.create_user(
+            conversation_id=conversation.id,
+            sequence_number=1,
+            content=content,
+            message_id=user_message_id,
+        )
+        assistant_message = Message.create_assistant(
+            conversation_id=conversation.id,
+            sequence_number=2,
+            message_id=assistant_message_id,
+            model_configuration_id=model_configuration_id,
+            model_identifier=model_identifier,
+        )
+        if task_request is not None:
+            payload = task_request.payload
+            if (
+                task_request.aggregate_id != conversation.id
+                or getattr(payload, "user_message_id", None) != user_message.id
+                or getattr(payload, "assistant_message_id", None) != assistant_message.id
+            ):
+                raise ValueError("conversation task does not match prepared turn")
+        try:
+            async with self._unit_of_work_factory() as unit_of_work:
+                await unit_of_work.conversations.add(conversation)
+                await unit_of_work.messages.add(user_message)
+                await unit_of_work.messages.add(assistant_message)
+                if task_request is not None:
+                    await unit_of_work.tasks.enqueue(
+                        task_request,
+                        max_attempts=task_max_attempts,
+                    )
+                await unit_of_work.commit()
+        except ConversationAlreadyExists:
+            raise ConversationRequestConflict from None
+        except MessageAlreadyExists:
+            raise MessageRequestConflict from None
+        except MessageSequenceAlreadyExists:
+            raise ConversationRequestConflict from None
+        return PreparedTurn(
+            conversation=conversation,
+            history=(user_message, assistant_message),
             user_message=user_message,
             assistant_message=assistant_message,
         )

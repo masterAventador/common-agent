@@ -211,6 +211,11 @@ def _classify(
             AuditResourceType.WORKFLOW,
             None,
         ),
+        ("POST", "/api/v1/conversation-turns"): (
+            AuditAction.CONVERSATION_REPLY_STARTED,
+            AuditResourceType.CONVERSATION,
+            None,
+        ),
     }
     matched = exact.get((method, path))
     if matched is not None:

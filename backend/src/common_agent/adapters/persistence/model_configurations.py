@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.models import (
+    ConversationRow,
     EmployeeRow,
+    MessageRow,
     ModelConfigurationReferenceRow,
     ModelConfigurationRow,
 )
@@ -162,7 +164,24 @@ class SqlAlchemyModelConfigurationRepository:
                 EmployeeRow.default_model_configuration_id == str(model_configuration_id),
             )
         )
-        return int(employee_count or 0)
+        conversation_count = await self._session.scalar(
+            select(func.count())
+            .select_from(ConversationRow)
+            .where(
+                ConversationRow.tenant_id == self._tenant_id,
+                ConversationRow.model_configuration_id == str(model_configuration_id),
+            )
+        )
+        message_count = await self._session.scalar(
+            select(func.count())
+            .select_from(MessageRow)
+            .join(ConversationRow, ConversationRow.id == MessageRow.conversation_id)
+            .where(
+                ConversationRow.tenant_id == self._tenant_id,
+                MessageRow.model_configuration_id == str(model_configuration_id),
+            )
+        )
+        return int(employee_count or 0) + int(conversation_count or 0) + int(message_count or 0)
 
 
 class SqlAlchemyModelConfigurationUnitOfWork:

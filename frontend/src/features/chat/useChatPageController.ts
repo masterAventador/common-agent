@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
-  createConversation,
+  createConversationTurn,
   deleteConversation,
   fetchConversationMessages,
   fetchConversations,
@@ -17,15 +17,18 @@ import {
   sendConversationMessage,
   stopConversationGeneration,
   subscribeToConversationEvents,
-  type ConversationEvent,
   type Conversation,
+  type ConversationEvent,
   type ConversationMessage,
 } from "../../api/conversations";
 import { fetchEmployees } from "../../api/employees";
+import { fetchModelConfigurations } from "../../api/modelConfigurations";
 import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 import { fetchConversationWorkflowRuns } from "../../api/workflowRuns";
 import { fetchWorkflows } from "../../api/workflows";
 import { groupWorkflowRunsByMessage, mergeAcceptedTurn, replaceMessage } from "./chatState";
+
+export const GENERIC_CHAT_VALUE = "__generic__";
 
 export function useChatPageController() {
   const queryClient = useQueryClient();
@@ -36,9 +39,12 @@ export function useChatPageController() {
   const [streamNotice, setStreamNotice] = useState<string>();
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
+  const [selectedModelConfigurationId, setSelectedModelConfigurationId] = useState("");
+  const modelContextRef = useRef("");
   const lastEventSequence = useRef(0);
   const requestedEmployeeId = searchParams.get("employee_id");
   const requestedConversationId = searchParams.get("conversation_id");
+  const contextKey = requestedEmployeeId ? `employee:${requestedEmployeeId}` : "generic";
 
   const employees = useInfiniteQuery({
     queryKey: ["employees", employeeSearch],
@@ -50,22 +56,40 @@ export function useChatPageController() {
   });
   const employeeItems = useMemo(() => flattenCursorPages(employees.data), [employees.data]);
   const selectedEmployee = useMemo(
-    () =>
-      employeeItems.find((employee) => employee.id === requestedEmployeeId) ?? employeeItems[0],
+    () => employeeItems.find((employee) => employee.id === requestedEmployeeId),
     [employeeItems, requestedEmployeeId],
   );
-  const conversations = useInfiniteQuery({
-    queryKey: ["conversations", selectedEmployee?.id, conversationSearch],
+  const modelConfigurations = useInfiniteQuery({
+    queryKey: ["model-configurations", "chat"],
     queryFn: ({ pageParam }) =>
-      fetchConversations(selectedEmployee?.id, {
-        search: conversationSearch,
-        limit: 20,
-        cursor: pageParam,
-      }),
+      fetchModelConfigurations({ limit: 100, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+  });
+  const allModelConfigurationItems = useMemo(
+    () => flattenCursorPages(modelConfigurations.data),
+    [modelConfigurations.data],
+  );
+  const modelConfigurationItems = useMemo(
+    () =>
+      allModelConfigurationItems.filter(
+        (configuration) =>
+          configuration.enabled ||
+          configuration.id === selectedEmployee?.default_model_configuration_id,
+      ),
+    [allModelConfigurationItems, selectedEmployee?.default_model_configuration_id],
+  );
+  const conversations = useInfiniteQuery({
+    queryKey: ["conversations", contextKey, conversationSearch],
+    queryFn: ({ pageParam }) =>
+      fetchConversations(
+        requestedEmployeeId ?? undefined,
+        { search: conversationSearch, limit: 20, cursor: pageParam },
+        requestedEmployeeId ? undefined : "generic",
+      ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextPageCursor,
     placeholderData: keepPreviousData,
-    enabled: Boolean(selectedEmployee),
   });
   const conversationItems = useMemo(
     () => flattenCursorPages(conversations.data),
@@ -74,7 +98,7 @@ export function useChatPageController() {
   const selectedConversation = conversationItems.find(
     (conversation) => conversation.id === requestedConversationId,
   );
-  const selectedConversationId = selectedConversation?.id;
+  const selectedConversationId = requestedConversationId ?? undefined;
   const messages = useQuery({
     queryKey: ["conversation-messages", selectedConversationId],
     queryFn: () => fetchConversationMessages(selectedConversationId ?? ""),
@@ -117,23 +141,25 @@ export function useChatPageController() {
     [workflowRunItems],
   );
 
+  const defaultModelConfigurationId =
+    selectedConversation?.source === "generic"
+      ? selectedConversation.model_configuration_id
+      : selectedEmployee?.default_model_configuration_id;
+  const modelContextKey = `${contextKey}:${requestedConversationId ?? "new"}:${
+    defaultModelConfigurationId ?? "first"
+  }`;
   useEffect(() => {
-    if (!employeeItems.length || !selectedEmployee || selectedEmployee.id === requestedEmployeeId) {
-      return;
-    }
-    setSearchParams({ employee_id: selectedEmployee.id }, { replace: true });
-  }, [employeeItems, requestedEmployeeId, selectedEmployee, setSearchParams]);
-
-  useEffect(() => {
-    if (!selectedEmployee || !conversationItems.length || selectedConversation) return;
-    setSearchParams(
-      {
-        employee_id: selectedEmployee.id,
-        conversation_id: conversationItems[0].id,
-      },
-      { replace: true },
+    if (!modelConfigurationItems.length || modelContextRef.current === modelContextKey) return;
+    const availableDefault = modelConfigurationItems.some(
+      (item) => item.id === defaultModelConfigurationId,
     );
-  }, [conversationItems, selectedConversation, selectedEmployee, setSearchParams]);
+    setSelectedModelConfigurationId(
+      availableDefault && defaultModelConfigurationId
+        ? defaultModelConfigurationId
+        : modelConfigurationItems[0].id,
+    );
+    modelContextRef.current = modelContextKey;
+  }, [defaultModelConfigurationId, modelConfigurationItems, modelContextKey]);
 
   useEffect(() => {
     if (!selectedConversationId) return;
@@ -149,7 +175,7 @@ export function useChatPageController() {
         );
         setStreamNotice(undefined);
         if (["assistant.completed", "assistant.failed", "assistant.stopped"].includes(event.type)) {
-          void queryClient.invalidateQueries({ queryKey: ["conversations", selectedEmployee?.id] });
+          void queryClient.invalidateQueries({ queryKey: ["conversations"] });
           void queryClient.invalidateQueries({
             queryKey: ["conversation-workflow-runs", selectedConversationId],
           });
@@ -166,28 +192,22 @@ export function useChatPageController() {
       },
     });
     return () => subscription.close();
-  }, [queryClient, selectedConversationId, selectedEmployee?.id]);
+  }, [queryClient, selectedConversationId]);
 
   const selectConversation = (conversationId: string) => {
-    if (!selectedEmployee) return;
+    const conversation = conversationItems.find((item) => item.id === conversationId);
+    if (!conversation) return;
     setStreamNotice(undefined);
-    setSearchParams({ employee_id: selectedEmployee.id, conversation_id: conversationId });
+    setSearchParams(
+      conversation.source === "employee" && conversation.employee_id
+        ? { employee_id: conversation.employee_id, conversation_id: conversation.id }
+        : { conversation_id: conversation.id },
+    );
   };
-
-  const createMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedEmployee) throw new Error("请先选择数字员工");
-      return createConversation({
-        conversation_id: crypto.randomUUID(),
-        employee_id: selectedEmployee.id,
-        title: "新会话",
-      });
-    },
-    onSuccess: async (created) => {
-      await queryClient.resetQueries({ queryKey: ["conversations", created.employee_id] });
-      selectConversation(created.id);
-    },
-  });
+  const startNewConversation = () => {
+    setStreamNotice(undefined);
+    setSearchParams(requestedEmployeeId ? { employee_id: requestedEmployeeId } : {});
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (conversation: Conversation) => {
@@ -196,8 +216,6 @@ export function useChatPageController() {
       return conversation;
     },
     onSuccess: async (deleted) => {
-      const listKey = ["conversations", deleted.employee_id] as const;
-      const remaining = conversationItems.filter((item) => item.id !== deleted.id);
       queryClient.removeQueries({
         queryKey: ["conversation-messages", deleted.id],
         exact: true,
@@ -206,50 +224,70 @@ export function useChatPageController() {
         queryKey: ["conversation-workflow-runs", deleted.id],
         exact: true,
       });
-      if (selectedConversation?.id === deleted.id) {
-        setStreamNotice(undefined);
-        const next = remaining[0];
-        setSearchParams(
-          next
-            ? { employee_id: deleted.employee_id, conversation_id: next.id }
-            : { employee_id: deleted.employee_id },
-          { replace: true },
-        );
-      }
+      if (selectedConversationId === deleted.id) startNewConversation();
       setDeleteNotice(`会话“${deleted.title}”已删除`);
-      await queryClient.resetQueries({ queryKey: listKey });
+      await queryClient.resetQueries({ queryKey: ["conversations", contextKey] });
     },
   });
 
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
-      if (!selectedConversation) throw new Error("请先创建会话");
-      return sendConversationMessage(selectedConversation.id, {
-        message_id: crypto.randomUUID(),
+      if (!selectedModelConfigurationId) throw new Error("请先选择模型");
+      const messageId = crypto.randomUUID();
+      if (selectedConversationId) {
+        const turn = await sendConversationMessage(selectedConversationId, {
+          message_id: messageId,
+          model_configuration_id: selectedModelConfigurationId,
+          content,
+        });
+        return { conversation: undefined, turn };
+      }
+      return createConversationTurn({
+        conversation_id: crypto.randomUUID(),
+        message_id: messageId,
+        employee_id: requestedEmployeeId,
+        model_configuration_id: selectedModelConfigurationId,
         content,
       });
     },
-    onSuccess: (turn) => {
-      if (!selectedConversation) return;
+    onSuccess: async (accepted) => {
       setDraft("");
+      const conversationId = accepted.conversation?.id ?? selectedConversationId;
+      if (!conversationId) return;
       queryClient.setQueryData<ConversationMessage[]>(
-        ["conversation-messages", selectedConversation.id],
-        (current) => mergeAcceptedTurn(current, turn.user_message, turn.assistant_message),
+        ["conversation-messages", conversationId],
+        (current) =>
+          mergeAcceptedTurn(
+            current,
+            accepted.turn.user_message,
+            accepted.turn.assistant_message,
+          ),
       );
+      if (accepted.conversation) {
+        setSearchParams(
+          accepted.conversation.source === "employee" && accepted.conversation.employee_id
+            ? {
+                employee_id: accepted.conversation.employee_id,
+                conversation_id: accepted.conversation.id,
+              }
+            : { conversation_id: accepted.conversation.id },
+        );
+        await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      }
     },
   });
   const stopMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedConversation) throw new Error("当前没有可停止的会话");
-      return stopConversationGeneration(selectedConversation.id);
+      if (!selectedConversationId) throw new Error("当前没有可停止的会话");
+      return stopConversationGeneration(selectedConversationId);
     },
   });
   const retryMutation = useMutation({
     mutationFn: (messageId: string) => retryConversationMessage(messageId),
     onSuccess: (turn) => {
-      if (!selectedConversation) return;
+      if (!selectedConversationId) return;
       queryClient.setQueryData<ConversationMessage[]>(
-        ["conversation-messages", selectedConversation.id],
+        ["conversation-messages", selectedConversationId],
         (current) => replaceMessage(current, turn.assistant_message),
       );
     },
@@ -266,7 +304,6 @@ export function useChatPageController() {
     conversations,
     conversationItems,
     conversationSearch,
-    createMutation,
     deleteMutation,
     deleteNotice,
     draft,
@@ -274,23 +311,30 @@ export function useChatPageController() {
     employeeItems,
     employeeSearch,
     messages,
+    modelConfigurations,
+    modelConfigurationItems,
+    selectedModelConfigurationId,
     operationError:
       deleteMutation.error ??
-      createMutation.error ??
       sendMutation.error ??
       stopMutation.error ??
       retryMutation.error,
     retryMutation,
     runsByMessageId,
     selectedConversation,
+    selectedConversationId,
     selectedEmployee,
+    requestedEmployeeId,
     selectConversation,
-    selectEmployee: (employeeId: string) => setSearchParams({ employee_id: employeeId }),
+    selectEmployee: (value: string) =>
+      setSearchParams(value === GENERIC_CHAT_VALUE ? {} : { employee_id: value }),
     sendDraft,
     sendMutation,
     setDraft,
     setConversationSearch,
     setEmployeeSearch,
+    setSelectedModelConfigurationId,
+    startNewConversation,
     stopMutation,
     streamNotice,
     workflowsById,

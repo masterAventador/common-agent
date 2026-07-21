@@ -14,8 +14,12 @@ export type Conversation = components["schemas"]["ConversationResponse"];
 export type ConversationMessage = components["schemas"]["MessageResponse"];
 export type ConversationEvent = components["schemas"]["ConversationEventResponse"];
 export type CreateConversationInput = components["schemas"]["CreateConversationBody"];
+export type CreateConversationTurnInput =
+  components["schemas"]["CreateConversationTurnBody"];
 export type SendMessageInput = components["schemas"]["SendMessageBody"];
 export type TurnAccepted = components["schemas"]["TurnAcceptedResponse"];
+export type ConversationTurnAccepted =
+  components["schemas"]["ConversationTurnAcceptedResponse"];
 export type StopAccepted = components["schemas"]["StopAcceptedResponse"];
 
 const timestampSchema = z.iso.datetime({ offset: true });
@@ -37,12 +41,16 @@ const messageSchema = z.strictObject({
   status: z.enum(["pending", "streaming", "completed", "failed", "stopped"]),
   citations: z.array(citationSchema),
   error_code: z.string().min(1).nullable(),
+  model_configuration_id: z.uuid().nullable(),
+  model_identifier: z.string().min(1).nullable(),
   created_at: timestampSchema,
   updated_at: timestampSchema,
 });
 const conversationSchema = z.strictObject({
   id: z.uuid(),
-  employee_id: z.uuid(),
+  source: z.enum(["generic", "employee"]),
+  employee_id: z.uuid().nullable(),
+  model_configuration_id: z.uuid().nullable(),
   title: z.string().min(1),
   created_at: timestampSchema,
   updated_at: timestampSchema,
@@ -52,6 +60,10 @@ const turnAcceptedSchema = z.strictObject({
   user_message: messageSchema,
   assistant_message: messageSchema,
   retry: z.boolean(),
+});
+const conversationTurnAcceptedSchema = z.strictObject({
+  conversation: conversationSchema,
+  turn: turnAcceptedSchema,
 });
 const stopAcceptedSchema = z.strictObject({
   turn_id: z.uuid(),
@@ -101,15 +113,28 @@ export function parseConversationEvent(data: unknown): ConversationEvent {
 export async function fetchConversations(
   employeeId?: string,
   page: ListPageRequest = {},
+  source?: "generic" | "employee",
 ): Promise<CursorPage<Conversation>> {
   try {
     const response = await apiClient.get<unknown>("/conversations", {
       params: {
         ...listPageParams(page),
         ...(employeeId ? { employee_id: employeeId } : {}),
+        ...(source ? { source } : {}),
       },
     });
     return parseConversationsResponse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function createConversationTurn(
+  input: CreateConversationTurnInput,
+): Promise<ConversationTurnAccepted> {
+  try {
+    const response = await apiClient.post<unknown>("/conversation-turns", input);
+    return conversationTurnAcceptedSchema.parse(response.data);
   } catch (error) {
     throw toApiClientError(error);
   }

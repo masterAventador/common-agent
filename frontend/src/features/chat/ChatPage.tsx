@@ -4,31 +4,34 @@ import { MessageSquare, RefreshCw } from "lucide-react";
 import { getErrorMessage } from "../../api/errors";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
 import { ChatWorkspace } from "./ChatWorkspace";
-import { useChatPageController } from "./useChatPageController";
+import { GENERIC_CHAT_VALUE, useChatPageController } from "./useChatPageController";
 
 const { Title } = Typography;
 
 export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
   const controller = useChatPageController();
-  const { employeeItems, employees, selectedEmployee } = controller;
+  const { employeeItems, employees, modelConfigurations, selectedEmployee } = controller;
 
-  if (employees.isPending) {
+  if (modelConfigurations.isPending) {
     return (
       <section className="chat-page" aria-label="AI 会话加载中">
         <Skeleton active paragraph={{ rows: 10 }} />
       </section>
     );
   }
-  if (employees.isError) {
+  if (modelConfigurations.isError) {
     return (
       <section className="chat-page">
         <Alert
           type="error"
           showIcon
-          title="数字员工加载失败"
-          description={getErrorMessage(employees.error)}
+          title="模型配置加载失败"
+          description={getErrorMessage(modelConfigurations.error)}
           action={
-            <Button icon={<RefreshCw aria-hidden="true" size={16} />} onClick={() => void employees.refetch()}>
+            <Button
+              icon={<RefreshCw aria-hidden="true" size={16} />}
+              onClick={() => void modelConfigurations.refetch()}
+            >
               重试加载
             </Button>
           }
@@ -36,10 +39,10 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
       </section>
     );
   }
-  if (!selectedEmployee) {
+  if (!controller.modelConfigurationItems.length) {
     return (
       <section className="chat-page">
-        <Empty description="还没有可用于会话的数字员工" />
+        <Empty description="还没有已启用的模型，请先到模型管理中创建并启用模型" />
       </section>
     );
   }
@@ -53,19 +56,22 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
             <Title level={2}>AI 会话</Title>
           </Space>
           <Typography.Paragraph type="secondary">
-            选择数字员工持续对话，绑定知识库后每次提问都会自动检索。
+            可直接使用通用 AI，也可选择数字员工并自动检索其绑定的知识库。
           </Typography.Paragraph>
         </div>
         <Select
           aria-label="选择数字员工"
-          value={selectedEmployee.id}
+          value={selectedEmployee?.id ?? GENERIC_CHAT_VALUE}
           showSearch
           filterOption={false}
           searchValue={controller.employeeSearch}
-          options={employeeItems.map((employee) => ({
-            value: employee.id,
-            label: employee.name,
-          }))}
+          options={[
+            { value: GENERIC_CHAT_VALUE, label: "通用 AI" },
+            ...employeeItems.map((employee) => ({
+              value: employee.id,
+              label: employee.name,
+            })),
+          ]}
           onSearch={controller.setEmployeeSearch}
           onPopupScroll={(event) => {
             const target = event.currentTarget;
@@ -81,6 +87,17 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
           className="chat-employee-select"
         />
       </Flex>
+
+      {employees.isError && (
+        <Alert
+          type="warning"
+          showIcon
+          title="数字员工加载失败，通用 AI 仍可使用"
+          description={getErrorMessage(employees.error)}
+          action={<Button onClick={() => void employees.refetch()}>重试加载</Button>}
+          className="chat-inline-alert"
+        />
+      )}
 
       {controller.operationError && (
         <Alert

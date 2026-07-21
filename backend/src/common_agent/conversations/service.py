@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from common_agent.application.resource_locks import (
-    ResourceMutationGuard,
-    employee_resource,
-)
+from common_agent.application.resource_locks import ResourceMutationGuard, employee_resource
 from common_agent.concurrency import KeyedLockPool
 from common_agent.conversations.contracts import (
     ConversationBusy,
+    ConversationTurnAccepted,
     EmployeeDirectory,
     KnowledgeResolver,
+    ModelConfigurationDirectory,
     StopAccepted,
     TurnAccepted,
 )
@@ -20,15 +19,13 @@ from common_agent.conversations.events import ConversationEventBroker
 from common_agent.conversations.persistence import ConversationPersistence
 from common_agent.conversations.projection import ConversationMessageProjector
 from common_agent.conversations.runtime import ConversationRuntimeCoordinator
-from common_agent.domain.conversation import Conversation, Message
+from common_agent.conversations.targets import ConversationExecutionTargetResolver
+from common_agent.conversations.turns import ConversationTurnCoordinator
+from common_agent.domain.conversation import Conversation, ConversationSource, Message
 from common_agent.pagination import CursorPage, ListPageRequest
 from common_agent.ports.conversations import ConversationUnitOfWorkFactory
 from common_agent.runtimes.base import EmployeeRuntime
-from common_agent.tasks import (
-    DurableTask,
-    TaskExecutionContext,
-    TaskQueue,
-)
+from common_agent.tasks import DurableTask, TaskExecutionContext, TaskQueue
 
 
 class ConversationService:
@@ -40,6 +37,7 @@ class ConversationService:
         knowledge: KnowledgeResolver,
         runtime: EmployeeRuntime,
         events: ConversationEventBroker,
+        model_configurations: ModelConfigurationDirectory | None = None,
         guard: ResourceMutationGuard | None = None,
         tasks: TaskQueue | None = None,
         tenant_id_provider: Callable[[], UUID] | None = None,
@@ -57,14 +55,26 @@ class ConversationService:
             projector=self._projector,
             locks=self._locks,
         )
+        targets = ConversationExecutionTargetResolver(
+            employees=employees,
+            model_configurations=model_configurations,
+        )
         self._durable = ConversationTaskCoordinator(
             tasks=tasks,
             tenant_id_provider=tenant_id_provider,
             maximum_attempts=task_max_attempts,
-            employees=employees,
+            targets=targets,
             persistence=self._persistence,
             projector=self._projector,
             runtime=self._runs,
+        )
+        self._turns = ConversationTurnCoordinator(
+            persistence=self._persistence,
+            runtime=self._runs,
+            durable=self._durable,
+            targets=targets,
+            locks=self._locks,
+            guard=self._guard,
         )
 
     async def list(self, *, employee_id: UUID | None = None) -> tuple[Conversation, ...]:
@@ -75,8 +85,9 @@ class ConversationService:
         page: ListPageRequest,
         *,
         employee_id: UUID | None = None,
+        source: ConversationSource | None = None,
     ) -> CursorPage[Conversation]:
-        return await self._persistence.page(page, employee_id=employee_id)
+        return await self._persistence.page(page, employee_id=employee_id, source=source)
 
     async def create(
         self,
@@ -108,45 +119,31 @@ class ConversationService:
         *,
         user_message_id: UUID,
         content: str,
+        model_configuration_id: UUID | None = None,
     ) -> TurnAccepted:
-        self._runs.ensure_open()
-        async with self._locks.hold(conversation_id):
-            if self._runs.is_active(conversation_id):
-                raise ConversationBusy
-            conversation, _ = await self._persistence.load(conversation_id)
-            employee = await self._employees.get(conversation.employee_id)
-            turn_id = uuid4()
-            assistant_message_id = uuid4()
-            task_request = self._durable.request(
-                conversation_id=conversation_id,
-                turn_id=turn_id,
-                user_message_id=user_message_id,
-                assistant_message_id=assistant_message_id,
-                retry=False,
-            )
-            prepared = await self._persistence.append_turn(
-                conversation_id,
-                user_message_id=user_message_id,
-                assistant_message_id=assistant_message_id,
-                content=content,
-                task_request=task_request,
-                task_max_attempts=self._durable.maximum_attempts,
-            )
-            if not self._durable.enabled:
-                await self._runs.start(
-                    turn_id=turn_id,
-                    employee=employee,
-                    history=prepared.history,
-                    user_message=prepared.user_message,
-                    assistant_message=prepared.assistant_message,
-                    retry=False,
-                )
-            return TurnAccepted(
-                turn_id=turn_id,
-                user_message=prepared.user_message,
-                assistant_message=prepared.assistant_message,
-                retry=False,
-            )
+        return await self._turns.send(
+            conversation_id,
+            user_message_id=user_message_id,
+            content=content,
+            model_configuration_id=model_configuration_id,
+        )
+
+    async def create_first_turn(
+        self,
+        *,
+        conversation_id: UUID,
+        user_message_id: UUID,
+        employee_id: UUID | None,
+        model_configuration_id: UUID,
+        content: str,
+    ) -> ConversationTurnAccepted:
+        return await self._turns.create_first(
+            conversation_id=conversation_id,
+            user_message_id=user_message_id,
+            employee_id=employee_id,
+            model_configuration_id=model_configuration_id,
+            content=content,
+        )
 
     async def stop(self, conversation_id: UUID) -> StopAccepted:
         async with self._locks.hold(conversation_id):
@@ -155,41 +152,7 @@ class ConversationService:
             return self._runs.stop(conversation_id)
 
     async def retry(self, message_id: UUID) -> TurnAccepted:
-        self._runs.ensure_open()
-        message = await self._persistence.get_message(message_id)
-        async with self._locks.hold(message.conversation_id):
-            if self._runs.is_active(message.conversation_id):
-                raise ConversationBusy
-            prepared = await self._persistence.prepare_retry(message)
-            employee = await self._employees.get(prepared.conversation.employee_id)
-            turn_id = uuid4()
-            task_request = self._durable.request(
-                conversation_id=prepared.conversation.id,
-                turn_id=turn_id,
-                user_message_id=prepared.user_message.id,
-                assistant_message_id=prepared.assistant_message.id,
-                retry=True,
-            )
-            await self._persistence.commit_retry(
-                prepared,
-                task_request=task_request,
-                task_max_attempts=self._durable.maximum_attempts,
-            )
-            if not self._durable.enabled:
-                await self._runs.start(
-                    turn_id=turn_id,
-                    employee=employee,
-                    history=prepared.history,
-                    user_message=prepared.user_message,
-                    assistant_message=prepared.assistant_message,
-                    retry=True,
-                )
-            return TurnAccepted(
-                turn_id=turn_id,
-                user_message=prepared.user_message,
-                assistant_message=prepared.assistant_message,
-                retry=True,
-            )
+        return await self._turns.retry(message_id)
 
     async def execute_reply_task(
         self,

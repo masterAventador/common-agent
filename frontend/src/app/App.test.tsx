@@ -76,6 +76,8 @@ vi.mock("../api/employees", () => ({
       name: "知识助理",
       description: "通用知识问答",
       system_prompt: "直接回答问题。",
+      default_model_configuration_id: "0d4f38a5-bfd1-496f-b99d-fd768a2f3c30",
+      default_model_identifier: "qwen-turbo",
       knowledge_base_id: null,
       allowed_workflow_ids: [],
       created_at: "2026-07-20T02:00:00Z",
@@ -89,6 +91,8 @@ vi.mock("../api/employees", () => ({
 
 vi.mock("../api/conversations", () => ({
   createConversation: vi.fn(),
+  createConversationTurn: vi.fn(),
+  deleteConversation: vi.fn(),
   fetchConversationMessages: vi.fn().mockResolvedValue([]),
   fetchConversations: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
   retryConversationMessage: vi.fn(),
@@ -105,7 +109,18 @@ vi.mock("../api/workflows", () => ({
 }));
 
 vi.mock("../api/modelConfigurations", () => ({
-  fetchModelConfigurations: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
+  fetchModelConfigurations: vi.fn().mockResolvedValue({
+    items: [{
+      id: "0d4f38a5-bfd1-496f-b99d-fd768a2f3c30",
+      display_name: "通用千问 Turbo",
+      provider: "bailian",
+      model_identifier: "qwen-turbo",
+      enabled: true,
+      created_at: "2026-07-20T02:00:00Z",
+      updated_at: "2026-07-20T02:00:00Z",
+    }],
+    next_cursor: null,
+  }),
   createModelConfiguration: vi.fn(),
   deleteModelConfiguration: vi.fn(),
   updateModelConfiguration: vi.fn(),

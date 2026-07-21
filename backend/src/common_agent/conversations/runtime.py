@@ -8,6 +8,7 @@ from uuid import UUID
 
 from common_agent.concurrency import KeyedLockPool
 from common_agent.conversations.contracts import (
+    ConversationExecutionTarget,
     GenerationNotActive,
     KnowledgeResolver,
     StopAccepted,
@@ -15,7 +16,6 @@ from common_agent.conversations.contracts import (
 from common_agent.conversations.events import ConversationEventBroker, ConversationEventKind
 from common_agent.conversations.projection import ConversationMessageProjector, safe_error_code
 from common_agent.domain.conversation import Message, MessageRole, MessageStatus
-from common_agent.domain.employee import Employee
 from common_agent.observability import bind_observation_context, log_event
 from common_agent.runtimes.base import (
     RUNTIME_HISTORY_MAX_CHARACTERS,
@@ -84,7 +84,7 @@ class ConversationRuntimeCoordinator:
         self,
         *,
         turn_id: UUID,
-        employee: Employee,
+        target: ConversationExecutionTarget,
         history: tuple[Message, ...],
         user_message: Message,
         assistant_message: Message,
@@ -100,7 +100,7 @@ class ConversationRuntimeCoordinator:
         active.task = asyncio.create_task(
             self.execute(
                 turn_id=turn_id,
-                employee=employee,
+                target=target,
                 history=history,
                 user_message=user_message,
                 assistant_message=assistant_message,
@@ -131,7 +131,7 @@ class ConversationRuntimeCoordinator:
         self,
         *,
         turn_id: UUID,
-        employee: Employee,
+        target: ConversationExecutionTarget,
         history: tuple[Message, ...],
         user_message: Message,
         assistant_message: Message,
@@ -156,18 +156,18 @@ class ConversationRuntimeCoordinator:
         ):
             log_event(_LOGGER, "conversation.turn.started", status="running")
             try:
-                resolved = await self._knowledge.resolve(employee, user_message)
+                resolved = await self._knowledge.resolve(target, user_message)
                 request = EmployeeRuntimeRequest(
                     conversation_id=conversation_id,
-                    employee_id=employee.id,
+                    employee_id=target.subject_id,
                     assistant_message_id=assistant_message.id,
                     assistant_sequence_number=assistant_message.sequence_number,
-                    model_identifier=employee.default_model_identifier,
-                    system_instruction=employee.system_prompt,
+                    model_identifier=target.model_identifier,
+                    system_instruction=target.system_instruction,
                     history=_runtime_history(history, assistant_message),
                     knowledge_base_id=resolved.knowledge_base_id,
                     knowledge_context=resolved.runtime_chunks,
-                    allowed_workflow_ids=employee.allowed_workflow_ids,
+                    allowed_workflow_ids=target.allowed_workflow_ids,
                 )
                 last_sequence = 0
                 async for event in self._runtime.stream(request, stop=stop):

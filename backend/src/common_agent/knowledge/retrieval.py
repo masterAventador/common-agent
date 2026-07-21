@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from common_agent.domain.conversation import Citation, Message, MessageRole
-from common_agent.domain.employee import Employee
 from common_agent.domain.knowledge import (
     DEFAULT_KNOWLEDGE_SIMILARITY_THRESHOLD,
     DEFAULT_KNOWLEDGE_TOP_K,
@@ -36,18 +36,23 @@ class ResolvedKnowledgeContext:
     citations: tuple[Citation, ...] = field(repr=False)
 
 
+class KnowledgeBoundSubject(Protocol):
+    @property
+    def knowledge_base_id(self) -> str | None: ...
+
+
 class ConversationKnowledgeResolver:
     def __init__(self, knowledge: KnowledgeService) -> None:
         self._knowledge = KnowledgeBaseService(knowledge)
 
     async def resolve(
         self,
-        employee: Employee,
+        subject: KnowledgeBoundSubject,
         user_message: Message,
     ) -> ResolvedKnowledgeContext:
         if user_message.role is not MessageRole.USER:
             raise ConversationKnowledgeRequestInvalid()
-        if employee.knowledge_base_id is None:
+        if subject.knowledge_base_id is None:
             return ResolvedKnowledgeContext(
                 knowledge_base_id=None,
                 runtime_chunks=(),
@@ -57,7 +62,7 @@ class ConversationKnowledgeResolver:
         try:
             result = await self._knowledge.retrieve(
                 KnowledgeRetrievalRequest(
-                    knowledge_base_id=employee.knowledge_base_id,
+                    knowledge_base_id=subject.knowledge_base_id,
                     query=user_message.content,
                     top_k=DEFAULT_KNOWLEDGE_TOP_K,
                     similarity_threshold=DEFAULT_KNOWLEDGE_SIMILARITY_THRESHOLD,
@@ -68,9 +73,9 @@ class ConversationKnowledgeResolver:
         except Exception:
             raise KnowledgeServiceUnavailable() from None
 
-        runtime_chunks, citations = _map_chunks(employee.knowledge_base_id, result)
+        runtime_chunks, citations = _map_chunks(subject.knowledge_base_id, result)
         return ResolvedKnowledgeContext(
-            knowledge_base_id=employee.knowledge_base_id,
+            knowledge_base_id=subject.knowledge_base_id,
             runtime_chunks=runtime_chunks,
             citations=citations,
         )

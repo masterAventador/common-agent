@@ -4,7 +4,7 @@ from types import TracebackType
 from typing import Protocol
 from uuid import UUID
 
-from common_agent.domain.conversation import Conversation, Message
+from common_agent.domain.conversation import Conversation, ConversationSource, Message
 from common_agent.pagination import PageAnchor, PageSlice
 from common_agent.tasks.ports import TaskSubmission
 
@@ -33,6 +33,7 @@ class ConversationRepository(Protocol):
         search: str,
         after: PageAnchor | None,
         employee_id: UUID | None,
+        source: ConversationSource | None = None,
     ) -> PageSlice[Conversation]: ...
 
     async def get(self, conversation_id: UUID) -> Conversation | None: ...

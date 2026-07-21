@@ -12,6 +12,7 @@ const employeeApi = vi.hoisted(() => ({
 }));
 const chatApi = vi.hoisted(() => ({
   createConversation: vi.fn(),
+  createConversationTurn: vi.fn(),
   deleteConversation: vi.fn(),
   fetchConversationMessages: vi.fn(),
   fetchConversations: vi.fn(),
@@ -26,6 +27,9 @@ const chatApi = vi.hoisted(() => ({
       }
     | undefined,
 }));
+const modelConfigurationApi = vi.hoisted(() => ({
+  fetchModelConfigurations: vi.fn(),
+}));
 const workflowRunApi = vi.hoisted(() => ({
   fetchConversationWorkflowRuns: vi.fn(),
 }));
@@ -35,6 +39,7 @@ const workflowApi = vi.hoisted(() => ({
 
 vi.mock("../../api/employees", () => employeeApi);
 vi.mock("../../api/conversations", () => chatApi);
+vi.mock("../../api/modelConfigurations", () => modelConfigurationApi);
 vi.mock("../../api/workflowRuns", () => workflowRunApi);
 vi.mock("../../api/workflows", () => workflowApi);
 
@@ -43,6 +48,8 @@ const employee = {
   name: "知识助理",
   description: "通用知识问答",
   system_prompt: "优先依据知识库回答。",
+  default_model_configuration_id: "0d4f38a5-bfd1-496f-b99d-fd768a2f3c30",
+  default_model_identifier: "qwen-turbo",
   knowledge_base_id: "kb-1",
   allowed_workflow_ids: [],
   created_at: "2026-07-20T02:00:00Z",
@@ -51,10 +58,38 @@ const employee = {
 
 const conversation = {
   id: "a0fcaad2-a53d-40c8-9f64-23298bfacf49",
+  source: "employee" as const,
   employee_id: employee.id,
+  model_configuration_id: null,
   title: "知识问答",
   created_at: "2026-07-20T02:00:00Z",
   updated_at: "2026-07-20T02:00:00Z",
+};
+
+const modelConfiguration = {
+  id: "0d4f38a5-bfd1-496f-b99d-fd768a2f3c30",
+  display_name: "通用千问 Turbo",
+  provider: "bailian" as const,
+  model_identifier: "qwen-turbo",
+  enabled: true,
+  created_at: "2026-07-20T02:00:00Z",
+  updated_at: "2026-07-20T02:00:00Z",
+};
+
+const alternateModelConfiguration = {
+  ...modelConfiguration,
+  id: "f58e6070-57af-4515-82e7-9b29be0c738b",
+  display_name: "通用千问 Max",
+  model_identifier: "qwen-max",
+};
+
+const genericConversation = {
+  ...conversation,
+  id: "c9798edb-d7b5-42d1-b2de-0afd6a83a459",
+  source: "generic" as const,
+  employee_id: null,
+  model_configuration_id: modelConfiguration.id,
+  title: "请介绍一下你自己",
 };
 
 const userMessage = {
@@ -66,6 +101,8 @@ const userMessage = {
   status: "completed" as const,
   citations: [],
   error_code: null,
+  model_configuration_id: null,
+  model_identifier: null,
   created_at: "2026-07-20T02:00:01Z",
   updated_at: "2026-07-20T02:00:01Z",
 };
@@ -75,6 +112,8 @@ const assistantMessage = {
   id: "baeed6a2-d8cb-49ac-8999-393cf2153161",
   sequence_number: 2,
   role: "assistant" as const,
+  model_configuration_id: modelConfiguration.id,
+  model_identifier: modelConfiguration.model_identifier,
   content: "验收标记是 COMMON_AGENT_CHAT_OK。",
   citations: [
     {
@@ -150,11 +189,26 @@ function renderPage() {
   );
 }
 
+function renderGenericPage() {
+  return render(
+    <MemoryRouter initialEntries={["/chat"]}>
+      <Routes>
+        <Route path="/chat" element={<ChatPage />} />
+      </Routes>
+    </MemoryRouter>,
+    { wrapper: TestProviders },
+  );
+}
+
 describe("ChatPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chatApi.streamOptions = undefined;
     employeeApi.fetchEmployees.mockResolvedValue({ items: [employee], next_cursor: null });
+    modelConfigurationApi.fetchModelConfigurations.mockResolvedValue({
+      items: [modelConfiguration],
+      next_cursor: null,
+    });
     chatApi.fetchConversations.mockResolvedValue({ items: [conversation], next_cursor: null });
     chatApi.fetchConversationMessages.mockResolvedValue([userMessage, assistantMessage]);
     workflowRunApi.fetchConversationWorkflowRuns.mockResolvedValue({ items: [], next_cursor: null });
@@ -165,6 +219,122 @@ describe("ChatPage", () => {
         return { close: vi.fn() };
       },
     );
+  });
+
+  it("closes chat when model configurations fail and recovers through the formal retry", async () => {
+    modelConfigurationApi.fetchModelConfigurations
+      .mockRejectedValueOnce(new Error("模型目录暂不可用"))
+      .mockResolvedValue({ items: [modelConfiguration], next_cursor: null });
+    const user = userEvent.setup();
+
+    renderGenericPage();
+
+    expect(await screen.findByText("模型配置加载失败")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "消息输入" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重试加载" }));
+    expect(await screen.findByRole("textbox", { name: "消息输入" })).toBeEnabled();
+  });
+
+  it("keeps a generic draft closed when the workspace has no enabled model", async () => {
+    modelConfigurationApi.fetchModelConfigurations.mockResolvedValue({
+      items: [{ ...modelConfiguration, enabled: false }],
+      next_cursor: null,
+    });
+
+    renderGenericPage();
+
+    expect(
+      await screen.findByText("还没有已启用的模型，请先到模型管理中创建并启用模型"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "消息输入" })).not.toBeInTheDocument();
+  });
+
+  it("opens a blank generic chat and atomically creates the first turn with the selected model", async () => {
+    chatApi.fetchConversations.mockResolvedValue({ items: [], next_cursor: null });
+    chatApi.fetchConversationMessages.mockResolvedValue([]);
+    chatApi.createConversationTurn.mockResolvedValue({
+      conversation: genericConversation,
+      turn: {
+        turn_id: "ecb5103d-b7ca-4484-84e1-ad35ff0d8cad",
+        user_message: {
+          ...userMessage,
+          conversation_id: genericConversation.id,
+          content: "请介绍一下你自己",
+        },
+        assistant_message: {
+          ...assistantMessage,
+          conversation_id: genericConversation.id,
+          content: "",
+          status: "pending",
+          citations: [],
+          model_configuration_id: modelConfiguration.id,
+          model_identifier: modelConfiguration.model_identifier,
+        },
+        retry: false,
+      },
+    });
+    const user = userEvent.setup();
+
+    renderGenericPage();
+
+    expect(await screen.findByRole("heading", { name: "通用 AI" })).toBeInTheDocument();
+    expect(screen.getByTitle(modelConfiguration.display_name)).toBeInTheDocument();
+    const input = screen.getByRole("textbox", { name: "消息输入" });
+    expect(input).toBeEnabled();
+    await user.type(input, "请介绍一下你自己");
+    await user.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() =>
+      expect(chatApi.createConversationTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          employee_id: null,
+          model_configuration_id: modelConfiguration.id,
+          content: "请介绍一下你自己",
+        }),
+      ),
+    );
+    expect(chatApi.createConversation).not.toHaveBeenCalled();
+  });
+
+  it("lets an employee conversation switch the current turn model without changing its default", async () => {
+    modelConfigurationApi.fetchModelConfigurations.mockResolvedValue({
+      items: [modelConfiguration, alternateModelConfiguration],
+      next_cursor: null,
+    });
+    chatApi.fetchConversationMessages.mockResolvedValue([]);
+    chatApi.sendConversationMessage.mockResolvedValue({
+      turn_id: "4dccb75c-6844-49de-a5a8-781416fab7e5",
+      user_message: { ...userMessage, content: "使用 Max 回答" },
+      assistant_message: {
+        ...assistantMessage,
+        content: "",
+        status: "pending",
+        citations: [],
+        model_configuration_id: alternateModelConfiguration.id,
+        model_identifier: alternateModelConfiguration.model_identifier,
+      },
+      retry: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    const modelSelect = await screen.findByRole("combobox", { name: "选择模型" });
+    expect(screen.getByTitle(modelConfiguration.display_name)).toBeInTheDocument();
+    await user.click(modelSelect);
+    await user.click(await screen.findByText(alternateModelConfiguration.display_name));
+    await user.type(screen.getByRole("textbox", { name: "消息输入" }), "使用 Max 回答");
+    await user.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() =>
+      expect(chatApi.sendConversationMessage).toHaveBeenCalledWith(
+        conversation.id,
+        expect.objectContaining({
+          content: "使用 Max 回答",
+          model_configuration_id: alternateModelConfiguration.id,
+        }),
+      ),
+    );
+    expect(employee.default_model_configuration_id).toBe(modelConfiguration.id);
   });
 
   it("renders conversation list, message history with citations, and employee details", async () => {
@@ -239,7 +409,7 @@ describe("ChatPage", () => {
         cursor: undefined,
         limit: 20,
         search: "知识",
-      }),
+      }, undefined),
     );
   });
 
@@ -262,25 +432,38 @@ describe("ChatPage", () => {
     expect(await screen.findByText("运行详情页")).toBeInTheDocument();
   });
 
-  it("creates a conversation from the selected employee", async () => {
-    chatApi.fetchConversations
-      .mockResolvedValueOnce({ items: [], next_cursor: null })
-      .mockResolvedValue({ items: [conversation], next_cursor: null });
+  it("starts an employee draft without persisting an empty conversation and creates it on send", async () => {
     chatApi.fetchConversationMessages.mockResolvedValue([]);
-    chatApi.createConversation.mockResolvedValue(conversation);
+    chatApi.createConversationTurn.mockResolvedValue({
+      conversation,
+      turn: {
+        turn_id: "e0ad1544-ed1d-4099-a6f1-d6378082d35e",
+        user_message: userMessage,
+        assistant_message: {
+          ...assistantMessage,
+          content: "",
+          citations: [],
+          status: "pending",
+        },
+        retry: false,
+      },
+    });
     const user = userEvent.setup();
     renderPage();
 
     await user.click(await screen.findByRole("button", { name: "新建会话" }));
-
+    expect(chatApi.createConversation).not.toHaveBeenCalled();
+    await user.type(screen.getByRole("textbox", { name: "消息输入" }), userMessage.content);
+    await user.click(screen.getByRole("button", { name: "发送消息" }));
     await waitFor(() =>
-      expect(chatApi.createConversation).toHaveBeenCalledWith({
+      expect(chatApi.createConversationTurn).toHaveBeenCalledWith({
         conversation_id: expect.any(String),
+        message_id: expect.any(String),
         employee_id: employee.id,
-        title: "新会话",
+        model_configuration_id: modelConfiguration.id,
+        content: userMessage.content,
       }),
     );
-    expect(await screen.findByRole("heading", { name: "知识问答" })).toBeInTheDocument();
   });
 
   it("confirms conversation deletion and moves to the empty state after the server succeeds", async () => {

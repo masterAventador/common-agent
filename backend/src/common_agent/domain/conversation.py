@@ -7,6 +7,11 @@ from enum import StrEnum
 from math import isfinite
 from uuid import UUID, uuid4
 
+from common_agent.domain.model_configuration import (
+    ModelConfigurationValidationError,
+    normalize_model_identifier,
+)
+
 CONVERSATION_TITLE_MAX_LENGTH = 200
 MESSAGE_CONTENT_MAX_LENGTH = 200_000
 MESSAGE_ERROR_CODE_MAX_LENGTH = 128
@@ -32,6 +37,11 @@ class MessageTransitionError(ValueError):
 class MessageRole(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"
+
+
+class ConversationSource(StrEnum):
+    GENERIC = "generic"
+    EMPLOYEE = "employee"
 
 
 class MessageStatus(StrEnum):
@@ -94,14 +104,28 @@ class Citation:
 @dataclass(frozen=True, slots=True)
 class Conversation:
     id: UUID
-    employee_id: UUID
+    source: ConversationSource
+    employee_id: UUID | None
+    model_configuration_id: UUID | None
     title: str
     created_at: datetime
     updated_at: datetime
 
     def __post_init__(self) -> None:
         _uuid("id", self.id)
-        _uuid("employee_id", self.employee_id)
+        if not isinstance(self.source, ConversationSource):
+            raise ConversationValidationError("source", "不是支持的来源")
+        if self.source is ConversationSource.EMPLOYEE:
+            _uuid("employee_id", self.employee_id)
+            if self.model_configuration_id is not None:
+                raise ConversationValidationError(
+                    "model_configuration_id",
+                    "数字员工会话不能持久化临时模型覆盖",
+                )
+        else:
+            if self.employee_id is not None:
+                raise ConversationValidationError("employee_id", "通用会话不能绑定数字员工")
+            _uuid("model_configuration_id", self.model_configuration_id)
         title = _required_text("title", self.title, CONVERSATION_TITLE_MAX_LENGTH)
         _utc_timestamp("created_at", self.created_at)
         _utc_timestamp("updated_at", self.updated_at)
@@ -121,7 +145,29 @@ class Conversation:
         created_at = now or datetime.now(UTC)
         return cls(
             id=conversation_id or uuid4(),
+            source=ConversationSource.EMPLOYEE,
             employee_id=employee_id,
+            model_configuration_id=None,
+            title=title,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+
+    @classmethod
+    def create_generic(
+        cls,
+        *,
+        title: str,
+        model_configuration_id: UUID,
+        conversation_id: UUID | None = None,
+        now: datetime | None = None,
+    ) -> Conversation:
+        created_at = now or datetime.now(UTC)
+        return cls(
+            id=conversation_id or uuid4(),
+            source=ConversationSource.GENERIC,
+            employee_id=None,
+            model_configuration_id=model_configuration_id,
             title=title,
             created_at=created_at,
             updated_at=created_at,
@@ -141,6 +187,27 @@ class Conversation:
             raise ConversationValidationError("updated_at", "不能早于当前更新时间")
         return replace(self, updated_at=changed_at)
 
+    def select_model(
+        self,
+        model_configuration_id: UUID,
+        *,
+        updated_at: datetime | None = None,
+    ) -> Conversation:
+        if self.source is not ConversationSource.GENERIC:
+            raise ConversationValidationError(
+                "model_configuration_id",
+                "只有通用会话保存模型选择",
+            )
+        changed_at = updated_at or datetime.now(UTC)
+        _utc_timestamp("updated_at", changed_at)
+        if changed_at < self.updated_at:
+            raise ConversationValidationError("updated_at", "不能早于当前更新时间")
+        return replace(
+            self,
+            model_configuration_id=model_configuration_id,
+            updated_at=changed_at,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Message:
@@ -152,6 +219,8 @@ class Message:
     status: MessageStatus
     citations: tuple[Citation, ...]
     error_code: str | None
+    model_configuration_id: UUID | None
+    model_identifier: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -176,12 +245,26 @@ class Message:
         )
         citations = _citations(self.citations)
         error_code = _optional_text("error_code", self.error_code, MESSAGE_ERROR_CODE_MAX_LENGTH)
+        if (self.model_configuration_id is None) != (self.model_identifier is None):
+            raise ConversationValidationError(
+                "model_configuration_id",
+                "模型配置和模型标识必须同时存在",
+            )
+        model_identifier = None
+        if self.model_configuration_id is not None:
+            _uuid("model_configuration_id", self.model_configuration_id)
+            try:
+                model_identifier = normalize_model_identifier(self.model_identifier)
+            except ModelConfigurationValidationError as error:
+                raise ConversationValidationError("model_identifier", error.reason) from error
         _utc_timestamp("created_at", self.created_at)
         _utc_timestamp("updated_at", self.updated_at)
         if self.updated_at < self.created_at:
             raise ConversationValidationError("updated_at", "不能早于创建时间")
 
         if self.role is MessageRole.USER:
+            if self.model_configuration_id is not None:
+                raise ConversationValidationError("model_configuration_id", "用户消息不能绑定模型")
             if self.status is not MessageStatus.COMPLETED:
                 raise ConversationValidationError("status", "用户消息必须直接完成")
             if citations:
@@ -194,6 +277,7 @@ class Message:
         object.__setattr__(self, "content", content)
         object.__setattr__(self, "citations", citations)
         object.__setattr__(self, "error_code", error_code)
+        object.__setattr__(self, "model_identifier", model_identifier)
 
     @property
     def is_terminal(self) -> bool:
@@ -219,6 +303,8 @@ class Message:
             status=MessageStatus.COMPLETED,
             citations=(),
             error_code=None,
+            model_configuration_id=None,
+            model_identifier=None,
             created_at=created_at,
             updated_at=created_at,
         )
@@ -230,6 +316,8 @@ class Message:
         conversation_id: UUID,
         sequence_number: int,
         message_id: UUID | None = None,
+        model_configuration_id: UUID | None = None,
+        model_identifier: str | None = None,
         now: datetime | None = None,
     ) -> Message:
         created_at = now or datetime.now(UTC)
@@ -242,6 +330,8 @@ class Message:
             status=MessageStatus.PENDING,
             citations=(),
             error_code=None,
+            model_configuration_id=model_configuration_id,
+            model_identifier=model_identifier,
             created_at=created_at,
             updated_at=created_at,
         )

@@ -11,6 +11,7 @@ from fastapi import Request, Response
 from common_agent.api.app import create_app
 from common_agent.api.audit import audit_http_request
 from common_agent.audit import (
+    AuditAction,
     AuditEntry,
     AuditEvent,
     AuditIntegrity,
@@ -48,15 +49,19 @@ class _AuditStoreProbe:
         raise AssertionError("not expected")
 
 
-def _request(service: AuditService) -> Request:
+def _request(
+    service: AuditService,
+    *,
+    path: str = "/api/v1/employees",
+) -> Request:
     return Request(
         {
             "type": "http",
             "http_version": "1.1",
             "method": "POST",
             "scheme": "http",
-            "path": "/api/v1/employees",
-            "raw_path": b"/api/v1/employees",
+            "path": path,
+            "raw_path": path.encode(),
             "query_string": b"",
             "headers": [],
             "client": ("127.0.0.1", 12345),
@@ -64,6 +69,28 @@ def _request(service: AuditService) -> Request:
             "app": SimpleNamespace(state=SimpleNamespace(audit=service)),
         }
     )
+
+
+def test_atomic_first_conversation_turn_uses_the_reply_audit_action() -> None:
+    async def scenario() -> _AuditStoreProbe:
+        store = _AuditStoreProbe(fail_on=99)
+
+        async def handler(request: Request) -> Response:
+            del request
+            return Response(status_code=202)
+
+        response = await audit_http_request(
+            _request(AuditService(store), path="/api/v1/conversation-turns"),
+            handler,
+        )
+        assert response.status_code == 202
+        return store
+
+    store = asyncio.run(scenario())
+    assert [entry.action for entry in store.entries] == [
+        AuditAction.CONVERSATION_REPLY_STARTED,
+        AuditAction.CONVERSATION_REPLY_STARTED,
+    ]
 
 
 def test_observability_wraps_the_fail_closed_audit_middleware() -> None:

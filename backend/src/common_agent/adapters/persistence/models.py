@@ -809,10 +809,23 @@ class ConversationRow(PersistenceBase):
             name="ck_conversations_title",
         ),
         CheckConstraint("updated_at >= created_at", name="ck_conversations_timestamps"),
+        CheckConstraint(
+            "(source = 'employee' AND employee_id IS NOT NULL "
+            "AND model_configuration_id IS NULL) OR "
+            "(source = 'generic' AND employee_id IS NULL "
+            "AND model_configuration_id IS NOT NULL)",
+            name="ck_conversations_source_references",
+        ),
         ForeignKeyConstraint(
             ["tenant_id", "employee_id"],
             ["employees.tenant_id", "employees.id"],
             name="fk_conversations_tenant_employee",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "model_configuration_id"],
+            ["model_configurations.tenant_id", "model_configurations.id"],
+            name="fk_conversations_tenant_model_configuration",
             ondelete="RESTRICT",
         ),
         UniqueConstraint("tenant_id", "id", name="uq_conversations_tenant_id"),
@@ -823,6 +836,18 @@ class ConversationRow(PersistenceBase):
             name="uq_conversations_tenant_id_employee",
         ),
         Index("ix_conversations_tenant_created", "tenant_id", "created_at", "id"),
+        Index(
+            "ix_conversations_tenant_source_created",
+            "tenant_id",
+            "source",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_conversations_tenant_model_configuration",
+            "tenant_id",
+            "model_configuration_id",
+        ),
         Index(
             "ix_conversations_tenant_employee_created",
             "tenant_id",
@@ -856,8 +881,10 @@ class ConversationRow(PersistenceBase):
     )
     employee_id: Mapped[str] = mapped_column(
         String(36),
-        nullable=False,
+        nullable=True,
     )
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    model_configuration_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     title: Mapped[str] = mapped_column(String(CONVERSATION_TITLE_MAX_LENGTH), nullable=False)
     created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
@@ -899,12 +926,22 @@ class MessageRow(PersistenceBase):
             name="ck_messages_role_state",
         ),
         CheckConstraint("updated_at >= created_at", name="ck_messages_timestamps"),
+        CheckConstraint(
+            "(role = 'user' AND model_configuration_id IS NULL "
+            "AND model_identifier IS NULL) OR "
+            "(role = 'assistant' AND ((model_configuration_id IS NULL "
+            "AND model_identifier IS NULL) OR (model_configuration_id IS NOT NULL "
+            "AND model_identifier IS NOT NULL AND CHAR_LENGTH(model_identifier) BETWEEN 1 AND "
+            f"{MODEL_IDENTIFIER_MAX_LENGTH} AND model_identifier = TRIM(model_identifier))))",
+            name="ck_messages_model_selection",
+        ),
         UniqueConstraint(
             "conversation_id",
             "sequence_number",
             name="uq_messages_conversation_sequence",
         ),
         UniqueConstraint("conversation_id", "id", name="uq_messages_conversation_id"),
+        Index("ix_messages_model_configuration", "model_configuration_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -919,6 +956,19 @@ class MessageRow(PersistenceBase):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     error_code: Mapped[str | None] = mapped_column(
         String(MESSAGE_ERROR_CODE_MAX_LENGTH), nullable=True
+    )
+    model_configuration_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey(
+            "model_configurations.id",
+            ondelete="RESTRICT",
+            name="fk_messages_model_configuration_id",
+        ),
+        nullable=True,
+    )
+    model_identifier: Mapped[str | None] = mapped_column(
+        String(MODEL_IDENTIFIER_MAX_LENGTH),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)

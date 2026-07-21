@@ -4,9 +4,12 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from common_agent.domain.conversation import Message
+from common_agent.domain.conversation import Conversation, Message
 from common_agent.domain.employee import Employee
-from common_agent.knowledge.retrieval import ResolvedKnowledgeContext
+from common_agent.domain.model_configuration import ModelConfiguration
+from common_agent.knowledge.retrieval import KnowledgeBoundSubject, ResolvedKnowledgeContext
+
+GENERIC_SYSTEM_INSTRUCTION = "你是通用 AI 助手,请准确、清晰地回答用户问题。"
 
 
 class ConversationServiceError(Exception):
@@ -55,12 +58,33 @@ class GenerationNotActive(ConversationServiceError):
     message = "当前会话没有正在生成的回复"
 
 
+class ConversationModelDisabled(ConversationServiceError):
+    code = "conversation_model_disabled"
+    message = "所选模型已停用,请选择当前已启用的模型"
+
+
 @dataclass(frozen=True, slots=True)
 class TurnAccepted:
     turn_id: UUID
     user_message: Message
     assistant_message: Message
     retry: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationTurnAccepted:
+    conversation: Conversation
+    turn: TurnAccepted
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationExecutionTarget:
+    subject_id: UUID
+    model_configuration_id: UUID
+    model_identifier: str
+    system_instruction: str
+    knowledge_base_id: str | None
+    allowed_workflow_ids: tuple[UUID, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,25 +97,34 @@ class EmployeeDirectory(Protocol):
     async def get(self, employee_id: UUID) -> Employee: ...
 
 
+class ModelConfigurationDirectory(Protocol):
+    async def get(self, model_configuration_id: UUID) -> ModelConfiguration: ...
+
+
 class KnowledgeResolver(Protocol):
     async def resolve(
         self,
-        employee: Employee,
+        subject: KnowledgeBoundSubject,
         user_message: Message,
     ) -> ResolvedKnowledgeContext: ...
 
 
 __all__ = [
+    "GENERIC_SYSTEM_INSTRUCTION",
     "ConversationBusy",
+    "ConversationExecutionTarget",
+    "ConversationModelDisabled",
     "ConversationNotFound",
     "ConversationRequestConflict",
     "ConversationServiceError",
+    "ConversationTurnAccepted",
     "EmployeeDirectory",
     "GenerationNotActive",
     "KnowledgeResolver",
     "MessageNotFound",
     "MessageRequestConflict",
     "MessageRetryNotAllowed",
+    "ModelConfigurationDirectory",
     "StopAccepted",
     "TurnAccepted",
 ]

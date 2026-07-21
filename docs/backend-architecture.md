@@ -43,8 +43,9 @@ React
 
 - 第一版只支持阿里百炼，不引入 LiteLLM 或供应商路由；
 - 使用百炼 OpenAI 兼容接口和 `langchain-openai` 的 `ChatOpenAI`；
-- `base_url` 和 API Key 来自后端配置；数字员工聊天模型标识来自该员工在当前租户持久化的模型
-  配置，独立工作流 AI 节点在 S10-07I 前仍使用后端默认模型；
+- `base_url` 和 API Key 来自后端配置；通用会话模型来自该会话当前持久化配置，数字员工默认
+  模型来自员工配置，每轮请求可显式选择当前租户启用模型；独立工作流 AI 节点在 S10-07I 前仍
+  使用后端默认模型；
 - 用户明确批准现有百炼 Demo API Key 只在私有仓库 `backend/.env.demo` 中版本化，且明确选择不轮换；这是唯一凭据例外；
 - API Key 永远不进入前端响应、日志、异常、OpenAPI 样例或测试快照；
 - 模型适配器固定使用锁文件中的 `langchain-openai==1.3.5`，只接受百炼官方
@@ -346,7 +347,9 @@ ModelConfiguration
 ```text
 Conversation
 ├── id: UUID
-├── employee_id: UUID
+├── source: generic | employee
+├── employee_id: UUID | null
+├── model_configuration_id: UUID | null
 ├── title: string
 ├── created_at
 └── updated_at
@@ -360,6 +363,8 @@ Message
 ├── status: pending | streaming | completed | failed | stopped
 ├── citations: list[Citation]
 ├── error_code: string | null
+├── model_configuration_id: UUID | null
+├── model_identifier: string | null
 ├── created_at
 └── updated_at
 
@@ -379,10 +384,15 @@ Citation
 引用只属于已完成的助手消息，按从 1 连续递增的 `position` 保存；失败和停止也要保留，便于
 用户重试和刷新恢复。
 
-平台 MySQL 使用 `conversations`、`messages`、`message_citations` 三张表。会话通过正式外键
-引用平台员工，消息和引用使用级联子记录；角色/状态组合、错误码、长度、时间顺序、会话内
+`generic` 会话不得绑定员工且必须持久化当前模型配置；`employee` 会话必须绑定员工且不保存可
+漂移的会话级模型。助手消息同时保存本轮实际模型配置 ID 和百炼模型标识快照，用户消息的两个
+字段必须为空；因此员工后续改默认模型或通用会话后续切模都不会改写历史事实。
+
+平台 MySQL 使用 `conversations`、`messages`、`message_citations` 三张表。员工会话通过正式外键
+引用平台员工，通用会话通过复合外键引用模型配置，消息和引用使用级联子记录；角色/状态组合、错误码、长度、时间顺序、会话内
 消息序号及引用分数同时由领域模型和数据库约束。Repository 只更新标题或消息运行态等可变
-字段，不允许借更新操作迁移员工、会话归属、序号、角色或创建时间。
+字段；只有通用会话可在每轮提交时更新当前模型，不允许借更新操作迁移来源、员工、会话归属、
+序号、角色或创建时间。
 
 ### 4.4 EmployeeRuntime 会话协议
 
@@ -474,10 +484,12 @@ WorkflowRun
 
 ```text
 用户发送消息
-  -> 校验会话和数字员工
+  -> 已有会话校验来源和执行目标；空白通用对话经原子首轮入口创建会话
+  -> 校验本轮模型属于当前租户且启用；员工临时选择不修改员工默认模型
   -> 同一事务持久化用户消息、助手占位消息与确定性回复任务
   -> 独立 Worker 按租约领取并绑定任务租户
-  -> ConversationKnowledgeResolver 检查员工知识库绑定
+  -> ConversationExecutionTargetResolver 解析通用或员工执行目标及实际模型
+  -> 员工目标由 ConversationKnowledgeResolver 检查知识库绑定；通用目标不执行知识检索
   -> 已绑定时经 KnowledgeBaseService 校验 RAGFlow 可用性/版本
   -> KnowledgeService.retrieve(question)
   -> 把历史消息、系统指令、知识片段和引用交给 EmployeeRuntime
@@ -488,6 +500,11 @@ WorkflowRun
 ```
 
 检索为空不是错误：数字员工应明确说明未找到相关知识，并基于通用能力回答或说明无法确定。RAGFlow 请求失败则本轮回复失败，不静默跳过知识库后假装是知识回答。
+
+`POST /api/v1/conversation-turns` 是空白通用对话的原子首轮入口：同一 MySQL Unit of Work 创建
+会话、完成态用户消息、助手占位和持久任务，任何模型/租户/事务失败均不留下空会话或半轮消息。
+既有会话继续使用消息入口；两者都把助手实际模型快照交给独立 Worker，Worker 不读取可能已变化
+的员工或会话模型来重算本轮选择。
 
 `ConversationKnowledgeResolver` 只接受已完成用户消息。员工未绑定知识库时不访问 RAGFlow，
 并返回 `knowledge_base_id=None`；员工已绑定时，每条消息都先通过 `KnowledgeBaseService`
@@ -559,6 +576,7 @@ DELETE /api/v1/knowledge-bases/{dataset_id}
 
 GET    /api/v1/conversations
 POST   /api/v1/conversations
+POST   /api/v1/conversation-turns
 GET    /api/v1/conversations/{conversation_id}/messages
 POST   /api/v1/conversations/{conversation_id}/messages
 GET    /api/v1/conversations/{conversation_id}/events

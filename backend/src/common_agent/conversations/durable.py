@@ -4,17 +4,14 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from common_agent.conversations.contracts import (
-    EmployeeDirectory,
-    GenerationNotActive,
-    StopAccepted,
-)
+from common_agent.conversations.contracts import GenerationNotActive, StopAccepted
 from common_agent.conversations.persistence import ConversationPersistence
 from common_agent.conversations.projection import ConversationMessageProjector, safe_error_code
 from common_agent.conversations.runtime import (
     ConversationExecutionFailed,
     ConversationRuntimeCoordinator,
 )
+from common_agent.conversations.targets import ConversationExecutionTargetResolver
 from common_agent.domain.conversation import MessageStatus
 from common_agent.tasks import (
     ConversationReplyPayload,
@@ -37,7 +34,7 @@ class ConversationTaskCoordinator:
         tasks: TaskQueue | None,
         tenant_id_provider: Callable[[], UUID] | None,
         maximum_attempts: int,
-        employees: EmployeeDirectory,
+        targets: ConversationExecutionTargetResolver,
         persistence: ConversationPersistence,
         projector: ConversationMessageProjector,
         runtime: ConversationRuntimeCoordinator,
@@ -49,7 +46,7 @@ class ConversationTaskCoordinator:
         self._tasks = tasks
         self._tenant_id_provider = tenant_id_provider
         self.maximum_attempts = maximum_attempts
-        self._employees = employees
+        self._targets = targets
         self._persistence = persistence
         self._projector = projector
         self._runtime = runtime
@@ -136,10 +133,10 @@ class ConversationTaskCoordinator:
         try:
             if task.attempts > 1:
                 assistant_message = await self._projector.restart_execution(assistant_message.id)
-            employee = await self._employees.get(conversation.employee_id)
+            target = await self._targets.for_message(conversation, assistant_message)
             await self._runtime.execute(
                 turn_id=payload.turn_id,
-                employee=employee,
+                target=target,
                 history=messages,
                 user_message=user_message,
                 assistant_message=assistant_message,

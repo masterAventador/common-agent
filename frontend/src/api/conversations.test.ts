@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "./client";
 import {
   createConversation,
+  createConversationTurn,
   deleteConversation,
   fetchConversationMessages,
   fetchConversations,
@@ -26,7 +27,9 @@ vi.mock("./client", () => ({
 
 const conversation = {
   id: "a0fcaad2-a53d-40c8-9f64-23298bfacf49",
+  source: "employee" as const,
   employee_id: "6f3d43e0-6f6d-5a67-9f25-756a0b9ed2ab",
+  model_configuration_id: null,
   title: "知识问答",
   created_at: "2026-07-20T02:00:00Z",
   updated_at: "2026-07-20T02:00:00Z",
@@ -41,6 +44,8 @@ const userMessage = {
   status: "completed" as const,
   citations: [],
   error_code: null,
+  model_configuration_id: null,
+  model_identifier: null,
   created_at: "2026-07-20T02:00:01Z",
   updated_at: "2026-07-20T02:00:01Z",
 };
@@ -50,6 +55,8 @@ const assistantMessage = {
   id: "baeed6a2-d8cb-49ac-8999-393cf2153161",
   sequence_number: 2,
   role: "assistant" as const,
+  model_configuration_id: "0d4f38a5-bfd1-496f-b99d-fd768a2f3c30",
+  model_identifier: "qwen-turbo",
   content: "验收回答",
   citations: [
     {
@@ -140,6 +147,7 @@ describe("conversation API and SSE boundary", () => {
       .mockResolvedValueOnce({ data: [userMessage, assistantMessage] });
     vi.mocked(apiClient.post)
       .mockResolvedValueOnce({ data: conversation })
+      .mockResolvedValueOnce({ data: { conversation, turn } })
       .mockResolvedValueOnce({ data: turn })
       .mockResolvedValueOnce({ data: { turn_id: turn.turn_id, assistant_message_id: assistantMessage.id } })
       .mockResolvedValueOnce({ data: { ...turn, retry: true } });
@@ -161,8 +169,18 @@ describe("conversation API and SSE boundary", () => {
       assistantMessage,
     ]);
     await expect(
+      createConversationTurn({
+        conversation_id: conversation.id,
+        message_id: userMessage.id,
+        employee_id: conversation.employee_id,
+        model_configuration_id: assistantMessage.model_configuration_id,
+        content: userMessage.content,
+      }),
+    ).resolves.toEqual({ conversation, turn });
+    await expect(
       sendConversationMessage(conversation.id, {
         message_id: userMessage.id,
+        model_configuration_id: assistantMessage.model_configuration_id,
         content: userMessage.content,
       }),
     ).resolves.toEqual(turn);
@@ -190,15 +208,30 @@ describe("conversation API and SSE boundary", () => {
     );
     expect(apiClient.post).toHaveBeenNthCalledWith(
       2,
-      `/conversations/${conversation.id}/messages`,
-      { message_id: userMessage.id, content: userMessage.content },
+      "/conversation-turns",
+      {
+        conversation_id: conversation.id,
+        message_id: userMessage.id,
+        employee_id: conversation.employee_id,
+        model_configuration_id: assistantMessage.model_configuration_id,
+        content: userMessage.content,
+      },
     );
     expect(apiClient.post).toHaveBeenNthCalledWith(
       3,
-      `/conversations/${conversation.id}/stop`,
+      `/conversations/${conversation.id}/messages`,
+      {
+        message_id: userMessage.id,
+        model_configuration_id: assistantMessage.model_configuration_id,
+        content: userMessage.content,
+      },
     );
     expect(apiClient.post).toHaveBeenNthCalledWith(
       4,
+      `/conversations/${conversation.id}/stop`,
+    );
+    expect(apiClient.post).toHaveBeenNthCalledWith(
+      5,
       `/messages/${assistantMessage.id}/retry`,
     );
     expect(apiClient.delete).toHaveBeenCalledWith(`/conversations/${conversation.id}`);

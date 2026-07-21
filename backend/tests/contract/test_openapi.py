@@ -186,11 +186,13 @@ def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> Non
         "get",
         "post",
     }
+    assert set(paths["/api/v1/conversation-turns"]) == {"post"}
     assert set(paths["/api/v1/conversations/{conversation_id}/events"]) == {"get"}
     assert set(paths["/api/v1/conversations/{conversation_id}/stop"]) == {"post"}
     assert set(paths["/api/v1/messages/{message_id}/retry"]) == {"post"}
 
     create = paths["/api/v1/conversations"]["post"]
+    create_first_turn = paths["/api/v1/conversation-turns"]["post"]
     send = paths["/api/v1/conversations/{conversation_id}/messages"]["post"]
     stop = paths["/api/v1/conversations/{conversation_id}/stop"]["post"]
     retry = paths["/api/v1/messages/{message_id}/retry"]["post"]
@@ -198,6 +200,9 @@ def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> Non
 
     assert create["responses"]["201"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/ConversationResponse"
+    }
+    assert create_first_turn["responses"]["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ConversationTurnAcceptedResponse"
     }
     for operation in (send, retry):
         assert operation["responses"]["202"]["content"]["application/json"]["schema"] == {
@@ -217,10 +222,21 @@ def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> Non
     )
 
     create_body = schema["components"]["schemas"]["CreateConversationBody"]
+    first_turn_body = schema["components"]["schemas"]["CreateConversationTurnBody"]
     send_body = schema["components"]["schemas"]["SendMessageBody"]
     assert create_body["properties"]["title"]["maxLength"] == 200
     assert send_body["properties"]["content"]["maxLength"] == 200000
     assert set(send_body["required"]) == {"message_id", "content"}
+    assert set(first_turn_body["required"]) == {
+        "content",
+        "conversation_id",
+        "message_id",
+        "model_configuration_id",
+    }
+    conversation = schema["components"]["schemas"]["ConversationResponse"]
+    assert {"source", "employee_id", "model_configuration_id"} <= set(conversation["required"])
+    message = schema["components"]["schemas"]["MessageResponse"]
+    assert {"model_configuration_id", "model_identifier"} <= set(message["required"])
 
 
 def test_openapi_exposes_discriminated_workflow_crud_and_validation_contracts() -> None:

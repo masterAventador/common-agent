@@ -533,14 +533,36 @@
             "type": "string"
           },
           "employee_id": {
-            "format": "uuid",
-            "title": "Employee Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Id"
           },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "model_configuration_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Configuration Id"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ConversationSource"
           },
           "title": {
             "title": "Title",
@@ -554,12 +576,39 @@
         },
         "required": [
           "id",
+          "source",
           "employee_id",
+          "model_configuration_id",
           "title",
           "created_at",
           "updated_at"
         ],
         "title": "ConversationResponse",
+        "type": "object"
+      },
+      "ConversationSource": {
+        "enum": [
+          "generic",
+          "employee"
+        ],
+        "title": "ConversationSource",
+        "type": "string"
+      },
+      "ConversationTurnAcceptedResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation": {
+            "$ref": "#/components/schemas/ConversationResponse"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/TurnAcceptedResponse"
+          }
+        },
+        "required": [
+          "conversation",
+          "turn"
+        ],
+        "title": "ConversationTurnAcceptedResponse",
         "type": "object"
       },
       "CreateConversationBody": {
@@ -594,6 +643,52 @@
           "title"
         ],
         "title": "CreateConversationBody",
+        "type": "object"
+      },
+      "CreateConversationTurnBody": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "employee_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Id"
+          },
+          "message_id": {
+            "format": "uuid",
+            "title": "Message Id",
+            "type": "string"
+          },
+          "model_configuration_id": {
+            "format": "uuid",
+            "title": "Model Configuration Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "message_id",
+          "model_configuration_id",
+          "content"
+        ],
+        "title": "CreateConversationTurnBody",
         "type": "object"
       },
       "CreateKnowledgeBaseBody": {
@@ -1367,6 +1462,29 @@
             "title": "Id",
             "type": "string"
           },
+          "model_configuration_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Configuration Id"
+          },
+          "model_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Identifier"
+          },
           "role": {
             "$ref": "#/components/schemas/MessageRole"
           },
@@ -1392,6 +1510,8 @@
           "status",
           "citations",
           "error_code",
+          "model_configuration_id",
+          "model_identifier",
           "created_at",
           "updated_at"
         ],
@@ -1715,6 +1835,18 @@
             "format": "uuid",
             "title": "Message Id",
             "type": "string"
+          },
+          "model_configuration_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Configuration Id"
           }
         },
         "required": [
@@ -3198,6 +3330,133 @@
         ]
       }
     },
+    "/api/v1/conversation-turns": {
+      "post": {
+        "operationId": "create_conversation_turn_api_v1_conversation_turns_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversationTurnBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationTurnAcceptedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Create Conversation Turn",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
     "/api/v1/conversations": {
       "get": {
         "operationId": "list_conversations_api_v1_conversations_get",
@@ -3217,6 +3476,22 @@
                 }
               ],
               "title": "Employee Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ConversationSource"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
             }
           },
           {

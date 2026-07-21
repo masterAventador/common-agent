@@ -111,19 +111,14 @@ test("designs, runs, triggers, and restores an employee workflow through the rea
   await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
 
   await expect(page).toHaveURL(new RegExp(`/chat\\?employee_id=${createdEmployee.id}$`));
-  const createdConversationResponse = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/api/v1/conversations") && response.request().method() === "POST",
-  );
-  await page.getByRole("button", { name: "新建会话" }).click();
-  expect((await createdConversationResponse).status()).toBe(201);
-
   const employeeMarker = `COMMON_AGENT_W5_08_EMPLOYEE_${Date.now()}`;
   await page
     .getByRole("textbox", { name: "消息输入" })
     .fill(`执行唯一授权工作流，input:${employeeMarker}`);
   const sentResponse = page.waitForResponse(
-    (response) => response.url().includes("/messages") && response.request().method() === "POST",
+    (response) =>
+      response.url().endsWith("/api/v1/conversation-turns") &&
+      response.request().method() === "POST",
   );
   await page.getByRole("button", { name: "发送消息" }).click();
   expect((await sentResponse).status()).toBe(202);
@@ -136,7 +131,9 @@ test("designs, runs, triggers, and restores an employee workflow through the rea
   await expect(runCards.getByText("已完成")).toBeVisible();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "新会话" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: `执行唯一授权工作流，input:${employeeMarker}` }),
+  ).toBeVisible();
   await expect(runCards.getByText(workflowName)).toBeVisible();
   await runCards.getByText(workflowName).click();
   await expect(runCards).toContainText(employeeMarker);

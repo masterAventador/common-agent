@@ -613,6 +613,14 @@ select {
   resize: none;
 }
 
+.chat-model-select {
+  min-width: 190px;
+}
+
+.chat-composer-note {
+  flex: 1;
+}
+
 .chat-employee-panel {
   display: flex;
   flex-direction: column;

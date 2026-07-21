@@ -29,7 +29,7 @@ from common_agent.conversations.service import ConversationService
 from common_agent.domain.conversation import Conversation, Message, MessageStatus
 from common_agent.domain.employee import Employee
 from common_agent.employees.service import EmployeeNotFound
-from common_agent.knowledge.retrieval import ResolvedKnowledgeContext
+from common_agent.knowledge.retrieval import KnowledgeBoundSubject, ResolvedKnowledgeContext
 from common_agent.runtimes.base import (
     EmployeeRuntimeRequest,
     RuntimeEvent,
@@ -79,8 +79,13 @@ class _UnavailableAfterValidationEmployees(_Employees):
 
 
 class _NoKnowledge:
-    async def resolve(self, employee: Employee, user_message: object) -> ResolvedKnowledgeContext:
-        assert employee.knowledge_base_id is None
+    async def resolve(
+        self,
+        subject: KnowledgeBoundSubject,
+        user_message: Message,
+    ) -> ResolvedKnowledgeContext:
+        assert subject.knowledge_base_id is None
+        assert user_message.status is MessageStatus.COMPLETED
         return ResolvedKnowledgeContext(
             knowledge_base_id=None,
             runtime_chunks=(),

@@ -112,13 +112,6 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
   await expect(employeeRegion).toContainText(employeeName);
   await expect(employeeRegion).toContainText("已绑定知识库");
 
-  const createdConversationResponse = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/api/v1/conversations") &&
-      response.request().method() === "POST",
-  );
-  await page.getByRole("button", { name: "新建会话" }).click();
-  expect((await createdConversationResponse).status()).toBe(201);
   await expect(page.getByRole("heading", { name: "新会话" })).toBeVisible();
 
   const prompt =
@@ -126,7 +119,8 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
   await page.getByRole("textbox", { name: "消息输入" }).fill(prompt);
   const sentResponse = page.waitForResponse(
     (response) =>
-      response.url().includes("/messages") && response.request().method() === "POST",
+      response.url().endsWith("/api/v1/conversation-turns") &&
+      response.request().method() === "POST",
   );
   await page.getByRole("button", { name: "发送消息" }).click();
   expect((await sentResponse).status()).toBe(202);
@@ -172,7 +166,7 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
   expect(persistedAnswer).toBeTruthy();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "新会话" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: prompt })).toBeVisible();
   await expect(assistantAnswers.last()).toContainText(persistedAnswer!);
   await expect(page.getByText("generic-knowledge.txt").last()).toBeVisible();
   expect(directRagFlowRequests).toEqual([]);

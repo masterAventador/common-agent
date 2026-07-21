@@ -268,6 +268,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             knowledge=ConversationKnowledgeResolver(knowledge_adapter),
             runtime=runtime,
             events=conversation_events,
+            model_configurations=model_configurations,
             guard=resource_guard,
             tasks=task_queue,
             tenant_id_provider=tenant_id_provider,

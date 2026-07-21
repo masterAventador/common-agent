@@ -6,18 +6,22 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request, status
 
 from common_agent.api.audit import mark_audit_resource
-from common_agent.api.errors import AppError, ErrorEnvelope
+from common_agent.api.errors import ErrorEnvelope
+from common_agent.api.routers.conversation_errors import conversation_error
 from common_agent.api.routers.conversation_events import router as event_router
 from common_agent.api.routers.services import conversation_service
 from common_agent.api.schemas.conversations import (
     ConversationEventResponse,
     ConversationResponse,
+    ConversationTurnAcceptedResponse,
     CreateConversationBody,
+    CreateConversationTurnBody,
     MessageResponse,
     SendMessageBody,
     StopAcceptedResponse,
     TurnAcceptedResponse,
     conversation_response,
+    conversation_turn_response,
     message_response,
     stop_response,
     turn_response,
@@ -27,15 +31,12 @@ from common_agent.audit import AuditResourceType
 from common_agent.conversations.contracts import (
     ConversationBusy,
     ConversationNotFound,
-    ConversationRequestConflict,
     ConversationServiceError,
     GenerationNotActive,
-    MessageNotFound,
-    MessageRequestConflict,
-    MessageRetryNotAllowed,
 )
-from common_agent.domain.conversation import ConversationValidationError
+from common_agent.domain.conversation import ConversationSource, ConversationValidationError
 from common_agent.employees.service import EmployeeNotFound
+from common_agent.model_configurations.service import ModelConfigurationNotFound
 from common_agent.pagination import (
     DEFAULT_PAGE_LIMIT,
     MAX_PAGE_CURSOR_LENGTH,
@@ -49,27 +50,6 @@ router = APIRouter(tags=["conversations"])
 router.include_router(event_router)
 
 
-def conversation_error(error: Exception) -> AppError:
-    if isinstance(error, (ConversationNotFound, MessageNotFound, EmployeeNotFound)):
-        return AppError(error.code, str(error), 404, error.retryable)
-    if isinstance(
-        error,
-        (
-            ConversationBusy,
-            ConversationRequestConflict,
-            MessageRequestConflict,
-            MessageRetryNotAllowed,
-            GenerationNotActive,
-        ),
-    ):
-        return AppError(error.code, str(error), 409, error.retryable)
-    if isinstance(error, ConversationValidationError):
-        return AppError("validation_error", "请求参数不合法", 422, False)
-    if isinstance(error, InvalidPageCursor):
-        return AppError(error.code, error.message, 422, error.retryable)
-    raise TypeError("unsupported conversation application error")
-
-
 @router.get(
     "/api/v1/conversations",
     response_model=CursorPageResponse[ConversationResponse],
@@ -78,6 +58,7 @@ def conversation_error(error: Exception) -> AppError:
 async def list_conversations(
     request: Request,
     employee_id: Annotated[UUID | None, Query()] = None,
+    source: Annotated[ConversationSource | None, Query()] = None,
     search: Annotated[str, Query(max_length=MAX_PAGE_SEARCH_LENGTH)] = "",
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
     cursor: Annotated[str | None, Query(max_length=MAX_PAGE_CURSOR_LENGTH)] = None,
@@ -86,6 +67,7 @@ async def list_conversations(
         page = await conversation_service(request).page(
             ListPageRequest(limit=limit, search=search, cursor=cursor),
             employee_id=employee_id,
+            source=source,
         )
     except InvalidPageCursor as error:
         raise conversation_error(error) from error
@@ -138,6 +120,40 @@ async def create_conversation(
     return conversation_response(conversation)
 
 
+@router.post(
+    "/api/v1/conversation-turns",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ConversationTurnAcceptedResponse,
+    responses={
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def create_conversation_turn(
+    request: Request,
+    body: CreateConversationTurnBody,
+) -> ConversationTurnAcceptedResponse:
+    try:
+        accepted = await conversation_service(request).create_first_turn(
+            conversation_id=body.conversation_id,
+            user_message_id=body.message_id,
+            employee_id=body.employee_id,
+            model_configuration_id=body.model_configuration_id,
+            content=body.content,
+        )
+    except (
+        ConversationServiceError,
+        ConversationValidationError,
+        EmployeeNotFound,
+        ModelConfigurationNotFound,
+    ) as error:
+        raise conversation_error(error) from error
+    mark_audit_resource(request, AuditResourceType.CONVERSATION, accepted.conversation.id)
+    return conversation_turn_response(accepted)
+
+
 @router.get(
     "/api/v1/conversations/{conversation_id}/messages",
     response_model=list[MessageResponse],
@@ -176,6 +192,7 @@ async def send_message(
             conversation_id,
             user_message_id=body.message_id,
             content=body.content,
+            model_configuration_id=body.model_configuration_id,
         )
     except (ConversationServiceError, ConversationValidationError) as error:
         raise conversation_error(error) from error

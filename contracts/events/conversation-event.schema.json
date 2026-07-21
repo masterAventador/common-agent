@@ -95,6 +95,29 @@
           "title": "Id",
           "type": "string"
         },
+        "model_configuration_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Model Configuration Id"
+        },
+        "model_identifier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Model Identifier"
+        },
         "role": {
           "$ref": "#/$defs/MessageRole"
         },
@@ -120,6 +143,8 @@
         "status",
         "citations",
         "error_code",
+        "model_configuration_id",
+        "model_identifier",
         "created_at",
         "updated_at"
       ],

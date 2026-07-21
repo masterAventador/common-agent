@@ -577,6 +577,12 @@ def _conversation_payload(
                 for citation in message.citations
             ],
             "error_code": message.error_code,
+            "model_configuration_id": (
+                None
+                if message.model_configuration_id is None
+                else str(message.model_configuration_id)
+            ),
+            "model_identifier": message.model_identifier,
             "created_at": message.created_at.isoformat(),
             "updated_at": message.updated_at.isoformat(),
         },
@@ -615,6 +621,16 @@ def _conversation_event(sequence: int, request: EventAppendRequest) -> Conversat
             for item in raw_citations
         ),
         error_code=(None if raw_message["error_code"] is None else str(raw_message["error_code"])),
+        model_configuration_id=(
+            None
+            if raw_message.get("model_configuration_id") is None
+            else UUID(str(raw_message["model_configuration_id"]))
+        ),
+        model_identifier=(
+            None
+            if raw_message.get("model_identifier") is None
+            else str(raw_message["model_identifier"])
+        ),
         created_at=datetime.fromisoformat(str(raw_message["created_at"])),
         updated_at=datetime.fromisoformat(str(raw_message["updated_at"])),
     )

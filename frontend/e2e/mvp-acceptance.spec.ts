@@ -47,7 +47,9 @@ async function sendMessage(page: Page, content: string) {
   await page.getByRole("textbox", { name: "消息输入" }).fill(content);
   const response = page.waitForResponse(
     (candidate) =>
-      candidate.url().includes("/messages") && candidate.request().method() === "POST",
+      (candidate.url().endsWith("/api/v1/conversation-turns") ||
+        candidate.url().includes("/messages")) &&
+      candidate.request().method() === "POST",
   );
   await page.getByRole("button", { name: "发送消息" }).click();
   expect((await response).status()).toBe(202);
@@ -126,14 +128,6 @@ test("completes the whole MVP from empty business data through one real user jou
   await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
 
   await expect(page).toHaveURL(new RegExp(`/chat\\?employee_id=${employee.id}$`));
-  const conversationResponse = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/api/v1/conversations") &&
-      response.request().method() === "POST",
-  );
-  await page.getByRole("button", { name: "新建会话" }).click();
-  expect((await conversationResponse).status()).toBe(201);
-
   await sendMessage(
     page,
     "第一轮：根据绑定知识库回答 Common Agent 是什么，并明确输出真实两轮验收标记。",

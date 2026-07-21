@@ -6,12 +6,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
-from common_agent.conversations.contracts import StopAccepted, TurnAccepted
+from common_agent.conversations.contracts import (
+    ConversationTurnAccepted,
+    StopAccepted,
+    TurnAccepted,
+)
 from common_agent.conversations.events import ConversationEvent, ConversationEventKind
 from common_agent.domain.conversation import (
     CONVERSATION_TITLE_MAX_LENGTH,
     MESSAGE_CONTENT_MAX_LENGTH,
     Conversation,
+    ConversationSource,
     Message,
     MessageRole,
     MessageStatus,
@@ -44,13 +49,26 @@ class SendMessageBody(BaseModel):
 
     message_id: UUID
     content: MessageContent
+    model_configuration_id: UUID | None = None
+
+
+class CreateConversationTurnBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_id: UUID
+    message_id: UUID
+    employee_id: UUID | None = None
+    model_configuration_id: UUID
+    content: MessageContent
 
 
 class ConversationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     id: UUID
-    employee_id: UUID
+    source: ConversationSource
+    employee_id: UUID | None
+    model_configuration_id: UUID | None
     title: str
     created_at: datetime
     updated_at: datetime
@@ -79,6 +97,8 @@ class MessageResponse(BaseModel):
     status: MessageStatus
     citations: list[CitationResponse]
     error_code: str | None
+    model_configuration_id: UUID | None
+    model_identifier: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -90,6 +110,13 @@ class TurnAcceptedResponse(BaseModel):
     user_message: MessageResponse
     assistant_message: MessageResponse
     retry: bool
+
+
+class ConversationTurnAcceptedResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    conversation: ConversationResponse
+    turn: TurnAcceptedResponse
 
 
 class StopAcceptedResponse(BaseModel):
@@ -128,6 +155,8 @@ def message_response(message: Message) -> MessageResponse:
         status=message.status,
         citations=[CitationResponse.model_validate(citation) for citation in message.citations],
         error_code=message.error_code,
+        model_configuration_id=message.model_configuration_id,
+        model_identifier=message.model_identifier,
         created_at=message.created_at,
         updated_at=message.updated_at,
     )
@@ -144,6 +173,15 @@ def turn_response(turn: TurnAccepted) -> TurnAcceptedResponse:
 
 def stop_response(stop: StopAccepted) -> StopAcceptedResponse:
     return StopAcceptedResponse.model_validate(stop)
+
+
+def conversation_turn_response(
+    accepted: ConversationTurnAccepted,
+) -> ConversationTurnAcceptedResponse:
+    return ConversationTurnAcceptedResponse(
+        conversation=conversation_response(accepted.conversation),
+        turn=turn_response(accepted.turn),
+    )
 
 
 def conversation_event_response(event: ConversationEvent) -> ConversationEventResponse:
@@ -163,13 +201,16 @@ def conversation_event_response(event: ConversationEvent) -> ConversationEventRe
 __all__ = [
     "ConversationEventResponse",
     "ConversationResponse",
+    "ConversationTurnAcceptedResponse",
     "CreateConversationBody",
+    "CreateConversationTurnBody",
     "MessageResponse",
     "SendMessageBody",
     "StopAcceptedResponse",
     "TurnAcceptedResponse",
     "conversation_event_response",
     "conversation_response",
+    "conversation_turn_response",
     "message_response",
     "stop_response",
     "turn_response",
