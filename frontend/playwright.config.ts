@@ -21,7 +21,11 @@ export default defineConfig({
     headless: true,
     launchOptions: {
       channel: "chromium-headless-shell",
-      args: hostResolverRules ? [`--host-resolver-rules=${hostResolverRules}`] : [],
+      args: [
+        "--headless",
+        "--no-startup-window",
+        ...(hostResolverRules ? [`--host-resolver-rules=${hostResolverRules}`] : []),
+      ],
     },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
