@@ -663,7 +663,7 @@ export interface components {
          * AuditOutcome
          * @enum {string}
          */
-        AuditOutcome: "succeeded" | "denied" | "failed";
+        AuditOutcome: "started" | "succeeded" | "denied" | "failed";
         /** AuditPageResponse */
         AuditPageResponse: {
             /** Items */

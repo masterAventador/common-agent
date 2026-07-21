@@ -34,6 +34,7 @@ class AuditAction(StrEnum):
 
 
 class AuditOutcome(StrEnum):
+    STARTED = "started"
     SUCCEEDED = "succeeded"
     DENIED = "denied"
     FAILED = "failed"
@@ -79,9 +80,9 @@ class AuditEntry:
             or any(character in self.resource_id for character in "\r\n\0")
         ):
             raise ValueError("resource_id must be a safe trimmed identifier")
-        if self.outcome is AuditOutcome.SUCCEEDED:
+        if self.outcome in {AuditOutcome.STARTED, AuditOutcome.SUCCEEDED}:
             if self.error_code is not None:
-                raise ValueError("successful audit entries cannot have an error_code")
+                raise ValueError("started or successful audit entries cannot have an error_code")
         elif self.error_code is None or not _ERROR_PATTERN.fullmatch(self.error_code):
             raise ValueError("denied or failed audit entries require a normalized error_code")
 

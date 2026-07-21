@@ -179,7 +179,7 @@ export function AuditEventsPage() {
               <Space wrap>
                 <Text strong>{`#${event.sequence}`}</Text>
                 <Text>{actionLabels[event.action]}</Text>
-                <Tag color={outcomeColor(event.outcome)}>{event.outcome}</Tag>
+                <Tag color={outcomeColor(event.outcome)}>{outcomeLabel(event.outcome)}</Tag>
               </Space>
               <Text type="secondary">{new Date(event.occurred_at).toLocaleString()}</Text>
             </Flex>
@@ -223,8 +223,18 @@ function toIsoDatetime(value: string | undefined): string | undefined {
   return value === undefined ? undefined : new Date(value).toISOString();
 }
 
-function outcomeColor(outcome: "succeeded" | "denied" | "failed"): string {
+type AuditOutcome = "started" | "succeeded" | "denied" | "failed";
+
+function outcomeColor(outcome: AuditOutcome): string {
+  if (outcome === "started") return "processing";
   if (outcome === "succeeded") return "success";
   if (outcome === "denied") return "warning";
   return "error";
+}
+
+function outcomeLabel(outcome: AuditOutcome): string {
+  if (outcome === "started") return "待核对";
+  if (outcome === "succeeded") return "成功";
+  if (outcome === "denied") return "已拒绝";
+  return "失败";
 }

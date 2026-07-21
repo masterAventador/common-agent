@@ -25,14 +25,65 @@ _LOGGER = logging.getLogger("common_agent.audit")
 
 
 async def audit_http_request(request: Request, call_next: RequestHandler) -> Response:
+    service = getattr(request.app.state, "audit", None)
+    request_id = _request_id(request)
+    trace_id = _trace_id(request)
+    planned = _classify(request, 200)
+    if planned is not None:
+        if not isinstance(service, AuditService):
+            return await _audit_unavailable(request)
+        intent = _entry(
+            request,
+            planned,
+            outcome=AuditOutcome.STARTED,
+            error_code=None,
+            request_id=request_id,
+            trace_id=trace_id,
+        )
+        try:
+            await service.record(intent)
+        except Exception as error:
+            _log_append_failure(intent.action, error, phase="intent")
+            return await _audit_unavailable(request)
+
     response = await call_next(request)
     classification = _classify(request, response.status_code)
-    if classification is None:
-        return response
-    service = getattr(request.app.state, "audit", None)
-    if not isinstance(service, AuditService):
+    if classification is None or not isinstance(service, AuditService):
         return response
 
+    outcome = _outcome(response.status_code)
+    error_code = getattr(request.state, "error_code", None)
+    if outcome is not AuditOutcome.SUCCEEDED and not isinstance(error_code, str):
+        error_code = f"http_{response.status_code}"
+    if outcome is AuditOutcome.SUCCEEDED:
+        error_code = None
+    entry = _entry(
+        request,
+        classification,
+        outcome=outcome,
+        error_code=error_code,
+        request_id=request_id,
+        trace_id=trace_id,
+    )
+    try:
+        await service.record(entry)
+    except Exception as error:
+        # The durable intent was written before an auditable mutation ran. Returning a
+        # synthetic failure after the business response would invite an unsafe retry;
+        # keep the real response and leave the unmatched intent visible for reconciliation.
+        _log_append_failure(entry.action, error, phase="completion")
+    return response
+
+
+def _entry(
+    request: Request,
+    classification: tuple[AuditAction, AuditResourceType | None, str | None],
+    *,
+    outcome: AuditOutcome,
+    error_code: str | None,
+    request_id: UUID,
+    trace_id: str,
+) -> AuditEntry:
     action, resource_type, path_parameter = classification
     marked_type = getattr(request.state, "audit_resource_type", None)
     marked_id = getattr(request.state, "audit_resource_id", None)
@@ -47,43 +98,41 @@ async def audit_http_request(request: Request, call_next: RequestHandler) -> Res
         resource_type = None
         resource_id = None
 
-    outcome = _outcome(response.status_code)
-    error_code = getattr(request.state, "error_code", None)
-    if outcome is not AuditOutcome.SUCCEEDED and not isinstance(error_code, str):
-        error_code = f"http_{response.status_code}"
-    if outcome is AuditOutcome.SUCCEEDED:
-        error_code = None
-
-    entry = AuditEntry(
+    return AuditEntry(
         tenant_id=_tenant_id(request),
         actor_user_id=_actor_user_id(request),
         action=action,
         outcome=outcome,
-        request_id=_request_id(request),
-        trace_id=_trace_id(request),
+        request_id=request_id,
+        trace_id=trace_id,
         resource_type=resource_type,
         resource_id=resource_id,
         error_code=error_code,
         occurred_at=datetime.now(UTC),
     )
-    try:
-        await service.record(entry)
-    except Exception as error:
-        _LOGGER.exception(
-            "audit.event.append_failed",
-            extra={"audit_action": action.value, "exception_type": type(error).__name__},
-        )
-        if response.status_code < 400:
-            return await app_error_handler(
-                request,
-                AppError(
-                    "audit_unavailable",
-                    "审计记录不可用, 请稍后重试",
-                    503,
-                    True,
-                ),
-            )
-    return response
+
+
+def _log_append_failure(action: AuditAction, error: Exception, *, phase: str) -> None:
+    _LOGGER.exception(
+        "audit.event.append_failed",
+        extra={
+            "audit_action": action.value,
+            "audit_phase": phase,
+            "exception_type": type(error).__name__,
+        },
+    )
+
+
+async def _audit_unavailable(request: Request) -> Response:
+    return await app_error_handler(
+        request,
+        AppError(
+            "audit_unavailable",
+            "审计记录不可用, 请稍后重试",
+            503,
+            True,
+        ),
+    )
 
 
 def mark_audit_resource(

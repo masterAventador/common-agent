@@ -62,6 +62,18 @@ describe("audit API", () => {
     await expect(fetchAuditEvents()).rejects.toBeDefined();
   });
 
+  it("accepts a durable started intent when completion has not been recorded", async () => {
+    const started = { ...event, outcome: "started" };
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { items: [started], next_cursor: null },
+    });
+
+    await expect(fetchAuditEvents()).resolves.toEqual({
+      items: [started],
+      next_cursor: null,
+    });
+  });
+
   it("loads integrity and the explicit retention/capacity policy", async () => {
     vi.mocked(apiClient.get)
       .mockResolvedValueOnce({

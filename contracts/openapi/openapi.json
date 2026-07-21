@@ -254,6 +254,7 @@
       },
       "AuditOutcome": {
         "enum": [
+          "started",
           "succeeded",
           "denied",
           "failed"

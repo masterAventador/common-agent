@@ -43,7 +43,7 @@ const auditEventSchema = z.strictObject({
   tenant_id: z.uuid().nullable(),
   actor_user_id: z.uuid().nullable(),
   action: auditActionSchema,
-  outcome: z.enum(["succeeded", "denied", "failed"]),
+  outcome: z.enum(["started", "succeeded", "denied", "failed"]),
   request_id: z.uuid(),
   trace_id: z.string().regex(/^[0-9a-f]{32}$/),
   resource_type: auditResourceTypeSchema.nullable(),

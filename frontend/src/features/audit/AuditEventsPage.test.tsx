@@ -89,6 +89,16 @@ describe("AuditEventsPage", () => {
     });
   });
 
+  it("labels an unmatched durable intent for operator reconciliation", async () => {
+    auditApi.fetchAuditEvents.mockResolvedValue({
+      items: [{ ...event, outcome: "started" }],
+      next_cursor: null,
+    });
+    render(<AuditEventsPage />, { wrapper: Providers });
+
+    expect(await screen.findByText("待核对")).toBeInTheDocument();
+  });
+
   it("queries platform credential events within an explicit time range", async () => {
     const user = userEvent.setup();
     render(<AuditEventsPage />, { wrapper: Providers });
