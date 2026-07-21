@@ -31,6 +31,23 @@ git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
 已有工作区使用 `git submodule update --init --recursive` 初始化。普通 Python/npm 依赖仍分别由
 `backend/uv.lock` 和 `frontend/pnpm-lock.yaml` 冻结，不能用未参与实际安装的源码副本冒充版本锁定。
 
+当前主仓库 gitlink 固定 `third_party/ragflow` 到 commit
+`8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4`，该 commit 精确对应 tag `v0.25.6`。submodule 初始化后
+通常显示 `HEAD (no branch)`，这是 Git 用 detached HEAD 精确复现主仓库 gitlink 的正常行为；
+不能用“当前没有分支名”判断版本未锁定。可用下面五条命令分别查看主仓库记录、工作区 commit、
+精确 tag 和 detached 状态：
+
+```bash
+git submodule status third_party/ragflow
+git ls-tree HEAD third_party/ragflow
+git -C third_party/ragflow rev-parse HEAD
+git -C third_party/ragflow describe --tags --exact-match HEAD
+git -C third_party/ragflow status --short --branch
+```
+
+升级 RAGFlow 时必须先在 submodule 中检出目标正式 tag、完成真实迁移与回归，再由主仓库提交新的
+gitlink；禁止只切 submodule 分支或拉取最新代码而不更新主仓库引用。
+
 ## 日常轻量开发
 
 64 GiB 日常开发机默认使用项目专属的 `demo-light`：同一个 `common-agent-dev` Colima profile

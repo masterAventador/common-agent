@@ -11,12 +11,21 @@
 - 业务节点：Edge、Web、API、Worker 和平台 MySQL；只通过私网 HTTPS 调用 RAGFlow；
 - RAGFlow 节点：官方 RAGFlow 栈及独立 TLS Edge；只向业务节点所在私网开放 HTTPS。
 
-当前业务 Compose 会在切换窗口同时运行蓝绿 API/Web，并短时并存两个 Worker。4C4G 无法为 MySQL、
-Worker、API 与回滚余量提供安全空间，不作为任一节点的生产规格。业务节点以 **4C16G 为最低采购
-线，8C16G 为推荐值**；若将平台 MySQL 再拆为托管数据库，可在 S10-08 压测后重新核算，不能直接
-套用当前结论。RAGFlow 官方最低线为 4C16G/50GB；本项目长期真实链路使用 **8C32G/100GB**，
-并实测完整栈容器峰值约 6.85 GiB、RAGFlow API 单项峰值约 4.16 GiB，因此远程首发推荐
-8C32G，4C16G 只作为低并发起步规格并必须经过 S10-08 容量验收。
+当前业务 Compose 会在切换窗口同时运行蓝绿 API/Web，并短时并存两个 Worker。采购口径固定如下：
+
+| 节点 | 承载组件 | 不接受 | 最低起步规格 | 推荐采购规格 | 系统盘/数据盘 | 采用依据 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 业务节点 | Edge、Web、蓝绿 API、蓝绿 Worker、平台 MySQL | 4C4G | 4C16G | **8C16G** | SSD 不低于 100GB | 需要同时容纳迁移、MySQL、蓝绿切换和上一 release 回滚余量 |
+| RAGFlow 节点 | RAGFlow API、Elasticsearch、MySQL、MinIO、Valkey、TLS Edge | 4C4G | 4C16G | **8C32G** | SSD 不低于 100GB，并按文档量扩容数据盘 | [RAGFlow 官方最低要求](https://github.com/infiniflow/ragflow#self-hosting)为 4C16G/50GB；本项目真实栈按 8C32G/100GB 长期验收 |
+
+明确采购建议是：正式首发购买 **8C16G 业务节点 + 8C32G RAGFlow 节点**。预算受限时可以分别以
+4C16G 起步，但只能用于低并发首发，并且必须先通过 S10-08 容量、长连接和故障压测。现有 4C4G
+不承载业务核心或 RAGFlow，可保留作堡垒机、监控或其他轻量外围用途。若未来把平台 MySQL 拆为
+托管数据库，业务节点规格必须在 S10-08 重新实测，不能直接据此下调。
+
+本机 R8-04 的 30 分钟真实链路中，相关容器合计峰值约 6.85 GiB，RAGFlow API 单项峰值约
+4.16 GiB；这些数据证明 32G 有充足稳定余量，但不能把当前低数据量峰值误当成 8G 生产规格，
+因为远程环境仍需覆盖索引增长、解析峰值、宿主机和滚动发布余量。
 
 业务节点和 RAGFlow 节点不得共享服务端私钥。业务节点只保存自己的 Edge 私钥与用于验证 RAGFlow
 的 CA bundle；RAGFlow 私钥只保存在 RAGFlow 节点。MySQL 只加入 Docker internal 网络；API/Worker
