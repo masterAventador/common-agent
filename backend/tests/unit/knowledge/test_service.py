@@ -24,6 +24,7 @@ from common_agent.knowledge.service import (
     KnowledgeBaseService,
     UnsupportedDocumentType,
 )
+from common_agent.pagination import CursorPage, ListPageRequest
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 
 
@@ -42,12 +43,31 @@ class _KnowledgeProbe:
         self.knowledge_bases: list[KnowledgeBaseSummary] = []
         self.get_calls: list[str] = []
         self.deleted: list[str] = []
+        self.page_calls: list[ListPageRequest] = []
 
     async def status(self) -> KnowledgeServiceStatus:
         return self.status_result
 
     async def list_knowledge_bases(self) -> tuple[KnowledgeBaseSummary, ...]:
         return tuple(self.knowledge_bases)
+
+    async def page_knowledge_bases(
+        self,
+        page: ListPageRequest,
+    ) -> CursorPage[KnowledgeBaseSummary]:
+        self.page_calls.append(page)
+        offset = int(page.cursor or "0")
+        values = tuple(
+            value
+            for value in self.knowledge_bases
+            if not page.search or page.search.casefold() in value.name.casefold()
+        )
+        items = values[offset : offset + page.limit]
+        next_offset = offset + len(items)
+        return CursorPage(
+            items=items,
+            next_cursor=str(next_offset) if next_offset < len(values) else None,
+        )
 
     async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
         self.get_calls.append(knowledge_base_id)
@@ -241,3 +261,36 @@ def test_only_default_tenant_adopts_unclaimed_legacy_ragflow_data() -> None:
 
     asyncio.run(exercise())
     assert ownership.legacy_claims == [(DEFAULT_TENANT_ID, ("legacy",))]
+
+
+def test_tenant_pagination_walks_provider_pages_beyond_the_first_hundred() -> None:
+    class FirstPageOnlyProbe(_KnowledgeProbe):
+        async def list_knowledge_bases(self) -> tuple[KnowledgeBaseSummary, ...]:
+            return tuple(self.knowledge_bases[:100])
+
+    tenant_id = UUID("10000000-0000-4000-8000-000000000005")
+    probe = FirstPageOnlyProbe()
+    probe.knowledge_bases = [
+        KnowledgeBaseSummary(f"kb-{index:03d}", f"制度-{index:03d}", "", 0, 0)
+        for index in range(150)
+    ]
+    ownership = _OwnershipProbe()
+    ownership.values = {tenant_id: {value.id for value in probe.knowledge_bases}}
+    service = KnowledgeBaseService(
+        probe,
+        ownership=ownership,
+        tenant_id_provider=lambda: tenant_id,
+    )
+
+    async def exercise() -> list[str]:
+        cursor: str | None = None
+        collected: list[str] = []
+        while True:
+            page = await service.page_knowledge_bases(ListPageRequest(limit=20, cursor=cursor))
+            collected.extend(value.id for value in page.items)
+            cursor = page.next_cursor
+            if cursor is None:
+                return collected
+
+    assert asyncio.run(exercise()) == [f"kb-{index:03d}" for index in range(150)]
+    assert len(probe.page_calls) >= 2

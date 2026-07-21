@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from uuid import UUID
@@ -85,31 +85,26 @@ class KnowledgeBaseService:
 
     async def list_knowledge_bases(self) -> tuple[KnowledgeBaseSummary, ...]:
         await self._ensure_available()
-        values = await self._knowledge.list_knowledge_bases()
         ownership = self._ownership
         if ownership is None:
-            return values
+            return await self._knowledge.list_knowledge_bases()
         tenant_id = self._tenant_id_provider()
-        if tenant_id == DEFAULT_TENANT_ID:
-            await ownership.claim_legacy(
-                tenant_id,
-                tuple(value.id for value in values),
-                now=self._clock(),
-            )
+        collected: list[KnowledgeBaseSummary] = []
+        async for values in self._provider_pages(search=""):
+            collected.extend(values)
+            await self._claim_legacy(tenant_id, values)
         allowed = await ownership.list_ids(tenant_id)
-        return tuple(value for value in values if value.id in allowed)
+        return tuple(value for value in collected if value.id in allowed)
 
     async def page_knowledge_bases(
         self,
         page: ListPageRequest,
     ) -> CursorPage[KnowledgeBaseSummary]:
         await self._ensure_available()
-        if self._ownership is not None:
-            values = await self.list_knowledge_bases()
-            if page.search:
-                search = page.search.casefold()
-                values = tuple(value for value in values if search in value.name.casefold())
-            scope = f"knowledge-bases-{self._tenant_id_provider()}"
+        ownership = self._ownership
+        if ownership is not None:
+            tenant_id = self._tenant_id_provider()
+            scope = f"knowledge-bases-{tenant_id}"
             offset = (
                 0
                 if page.cursor is None
@@ -120,7 +115,24 @@ class KnowledgeBaseService:
                     limit=page.limit,
                 )
             )
-            items = values[offset : offset + page.limit]
+            allowed = await ownership.list_ids(tenant_id)
+            matched = 0
+            collected: list[KnowledgeBaseSummary] = []
+            async for values in self._provider_pages(search=page.search):
+                await self._claim_legacy(tenant_id, values)
+                if tenant_id == DEFAULT_TENANT_ID:
+                    allowed = await ownership.list_ids(tenant_id)
+                for value in values:
+                    if value.id not in allowed:
+                        continue
+                    if matched >= offset:
+                        collected.append(value)
+                        if len(collected) > page.limit:
+                            break
+                    matched += 1
+                if len(collected) > page.limit:
+                    break
+            items = tuple(collected[: page.limit])
             next_offset = offset + len(items)
             return CursorPage(
                 items=items,
@@ -131,13 +143,57 @@ class KnowledgeBaseService:
                         limit=page.limit,
                         offset=next_offset,
                     )
-                    if next_offset < len(values)
+                    if len(collected) > page.limit
                     else None
                 ),
             )
         if not isinstance(self._knowledge, PageableKnowledgeService):
             raise KnowledgeServiceUnavailable()
         return await self._knowledge.page_knowledge_bases(page)
+
+    async def _provider_pages(
+        self,
+        *,
+        search: str,
+    ) -> AsyncIterator[tuple[KnowledgeBaseSummary, ...]]:
+        if not isinstance(self._knowledge, PageableKnowledgeService):
+            values = await self._knowledge.list_knowledge_bases()
+            if search:
+                normalized = search.casefold()
+                values = tuple(value for value in values if normalized in value.name.casefold())
+            yield values
+            return
+
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+        while True:
+            provider_page = await self._knowledge.page_knowledge_bases(
+                ListPageRequest(limit=100, search=search, cursor=cursor)
+            )
+            next_cursor = provider_page.next_cursor
+            if next_cursor is not None and (
+                not provider_page.items or next_cursor == cursor or next_cursor in seen_cursors
+            ):
+                raise KnowledgeServiceUnavailable()
+            if next_cursor is not None:
+                seen_cursors.add(next_cursor)
+            yield provider_page.items
+            cursor = next_cursor
+            if cursor is None:
+                return
+
+    async def _claim_legacy(
+        self,
+        tenant_id: UUID,
+        values: tuple[KnowledgeBaseSummary, ...],
+    ) -> None:
+        if self._ownership is None or tenant_id != DEFAULT_TENANT_ID or not values:
+            return
+        await self._ownership.claim_legacy(
+            tenant_id,
+            tuple(value.id for value in values),
+            now=self._clock(),
+        )
 
     async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
         await self._ensure_available()
