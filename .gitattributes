@@ -1,2 +1,3 @@
 *.docx binary
 *.pdf binary
+docs/design/*.html binary
