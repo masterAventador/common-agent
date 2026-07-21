@@ -383,7 +383,9 @@ def test_workers_serialize_same_task_across_process_lock_providers() -> None:
         await asyncio.sleep(0)
         assert second_started.is_set() is False
         release_first.set()
-        assert await asyncio.gather(first_task, second_task) == [True, True]
+        first_result, second_result = await asyncio.gather(first_task, second_task)
+        assert first_result is True
+        assert second_result is True
         assert second_started.is_set()
 
     asyncio.run(scenario())
