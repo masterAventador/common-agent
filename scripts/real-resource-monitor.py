@@ -8,7 +8,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +104,7 @@ def _monitor(
         except (OSError, RuntimeError, subprocess.SubprocessError) as error:
             errors.append(
                 {
-                    "at": datetime.now(UTC).isoformat(),
+                    "at": datetime.now(timezone.utc).isoformat(),
                     "elapsed_seconds": f"{elapsed:.3f}",
                     "type": type(error).__name__,
                 }
@@ -135,7 +135,7 @@ def _sample(health_url: str) -> dict[str, Any]:
     memory = _read_vm_memory()
     containers = _read_containers()
     return {
-        "at": datetime.now(UTC).isoformat(),
+        "at": datetime.now(timezone.utc).isoformat(),
         **memory,
         "container_used_bytes": sum(item["memory_bytes"] for item in containers.values()),
         "containers": containers,
