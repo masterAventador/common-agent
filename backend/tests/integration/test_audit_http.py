@@ -4,7 +4,7 @@ import asyncio
 from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.models import AuthUserRow, EmployeeRow
@@ -158,6 +158,39 @@ def test_audit_http_records_mutation_and_permission_denial_without_payloads() ->
         asyncio.run(_cleanup(employee_id=employee_id, viewer_email=viewer_email))
 
 
+def test_audit_storage_failure_blocks_mutation_before_the_formal_handler() -> None:
+    trigger_name = f"trg_test_audit_reject_{uuid4().hex}"
+    employee_name = f"审计关闭失败-{uuid4().hex}"
+    with (
+        running_api(TEST_DATABASE_URL, env_overrides=_DEMO_ENV) as api_url,
+        authenticated_client(base_url=api_url, timeout=15) as owner,
+    ):
+        asyncio.run(_create_rejecting_audit_trigger(trigger_name))
+        try:
+            rejected = owner.post(
+                "/api/v1/employees",
+                headers={"X-Tenant-ID": str(DEFAULT_TENANT_ID)},
+                json={
+                    "name": employee_name,
+                    "description": "审计不可用时不得落业务数据",
+                    "system_prompt": "只用于真实失败注入验收。",
+                    "knowledge_base_id": None,
+                    "allowed_workflow_ids": [],
+                },
+            )
+            assert_error_response(rejected, status=503, code="audit_unavailable")
+        finally:
+            asyncio.run(_drop_trigger(trigger_name))
+
+        listed = owner.get(
+            "/api/v1/employees",
+            headers={"X-Tenant-ID": str(DEFAULT_TENANT_ID)},
+            params={"search": employee_name},
+        )
+        assert listed.status_code == 200
+        assert listed.json()["items"] == []
+
+
 def _member_client(base_url: str, email: str, password: str) -> httpx.Client:
     login_client = httpx.Client(base_url=base_url, timeout=15)
     authenticated = login_client.post(
@@ -189,6 +222,34 @@ async def _cleanup(*, employee_id: UUID | None, viewer_email: str) -> None:
             if employee_id is not None:
                 await session.execute(delete(EmployeeRow).where(EmployeeRow.id == str(employee_id)))
             await session.execute(delete(AuthUserRow).where(AuthUserRow.email == viewer_email))
+            await session.commit()
+    finally:
+        await database.stop()
+
+
+async def _create_rejecting_audit_trigger(trigger_name: str) -> None:
+    database = Database(TEST_DATABASE_URL)
+    await database.start()
+    try:
+        async with database.session() as session:
+            await session.execute(
+                text(
+                    f"CREATE TRIGGER {trigger_name} BEFORE INSERT ON audit_events "
+                    "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+                    "SET MESSAGE_TEXT = 'injected audit failure'"
+                )
+            )
+            await session.commit()
+    finally:
+        await database.stop()
+
+
+async def _drop_trigger(trigger_name: str) -> None:
+    database = Database(TEST_DATABASE_URL)
+    await database.start()
+    try:
+        async with database.session() as session:
+            await session.execute(text(f"DROP TRIGGER IF EXISTS {trigger_name}"))
             await session.commit()
     finally:
         await database.stop()
