@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+    "/api/v1/audit-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Audit Events */
+        get: operations["list_audit_events_api_v1_audit_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit-events/integrity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Verify Audit Integrity */
+        get: operations["verify_audit_integrity_api_v1_audit_events_integrity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit-events/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit Policy */
+        get: operations["audit_policy_api_v1_audit_events_policy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -546,6 +597,94 @@ export interface components {
              */
             type: "ai_chat";
         };
+        /**
+         * AuditAction
+         * @enum {string}
+         */
+        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "knowledge.base.created" | "knowledge.document.uploaded" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
+        /** AuditEventResponse */
+        AuditEventResponse: {
+            action: components["schemas"]["AuditAction"];
+            /** Actor User Id */
+            actor_user_id: string | null;
+            /** Error Code */
+            error_code: string | null;
+            /** Event Hash */
+            event_hash: string;
+            /**
+             * Event Id
+             * Format: uuid
+             */
+            event_id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            outcome: components["schemas"]["AuditOutcome"];
+            /** Previous Hash */
+            previous_hash: string;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Resource Id */
+            resource_id: string | null;
+            resource_type: components["schemas"]["AuditResourceType"] | null;
+            /**
+             * Retention Until
+             * Format: date-time
+             */
+            retention_until: string;
+            /** Sequence */
+            sequence: number;
+            /** Tenant Id */
+            tenant_id: string | null;
+            /** Trace Id */
+            trace_id: string;
+        };
+        /** AuditIntegrityResponse */
+        AuditIntegrityResponse: {
+            /** Broken Sequence */
+            broken_sequence: number | null;
+            /** Event Count */
+            event_count: number;
+            /** First Sequence */
+            first_sequence: number | null;
+            /** Last Hash */
+            last_hash: string;
+            /** Last Sequence */
+            last_sequence: number | null;
+            /** Verified */
+            verified: boolean;
+        };
+        /**
+         * AuditOutcome
+         * @enum {string}
+         */
+        AuditOutcome: "succeeded" | "denied" | "failed";
+        /** AuditPageResponse */
+        AuditPageResponse: {
+            /** Items */
+            items: components["schemas"]["AuditEventResponse"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** AuditPolicyResponse */
+        AuditPolicyResponse: {
+            /** Automatic Deletion */
+            automatic_deletion: boolean;
+            /** Max Events Per Scope */
+            max_events_per_scope: number;
+            /** Retention Days */
+            retention_days: number;
+        };
+        /**
+         * AuditResourceType
+         * @enum {string}
+         */
+        AuditResourceType: "user" | "session" | "tenant" | "employee" | "knowledge_base" | "knowledge_document" | "conversation" | "workflow" | "workflow_run";
         /** AuthPolicyResponse */
         AuthPolicyResponse: {
             /** Registration Available */
@@ -1381,6 +1520,169 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_audit_events_api_v1_audit_events_get: {
+        parameters: {
+            query?: {
+                scope?: "tenant" | "platform";
+                actor_user_id?: string | null;
+                resource_type?: components["schemas"]["AuditResourceType"] | null;
+                resource_id?: string | null;
+                action?: components["schemas"]["AuditAction"] | null;
+                occurred_from?: string | null;
+                occurred_to?: string | null;
+                limit?: number;
+                cursor?: string | null;
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditPageResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    verify_audit_integrity_api_v1_audit_events_integrity_get: {
+        parameters: {
+            query?: {
+                scope?: "tenant" | "platform";
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditIntegrityResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    audit_policy_api_v1_audit_events_policy_get: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditPolicyResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;

@@ -181,6 +181,35 @@ class AuthSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class AuditSettings:
+    retention_days: int
+    maximum_events_per_scope: int
+
+    @classmethod
+    def from_env(cls) -> AuditSettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> AuditSettings:
+        return cls(
+            retention_days=_bounded_auth_int(
+                values,
+                "COMMON_AGENT_AUDIT_RETENTION_DAYS",
+                default=365,
+                minimum=30,
+                maximum=3650,
+            ),
+            maximum_events_per_scope=_bounded_auth_int(
+                values,
+                "COMMON_AGENT_AUDIT_MAX_EVENTS_PER_SCOPE",
+                default=1_000_000,
+                minimum=100,
+                maximum=10_000_000,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class IntegrationModeSettings:
     mode: Literal["real", "demo"]
 

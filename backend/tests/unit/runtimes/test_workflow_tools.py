@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import replace
+from datetime import datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -10,12 +11,24 @@ import pytest
 from common_agent.adapters.agent.workflow_tools import WorkflowToolRegistry
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.application.workflow_service import WorkflowService
+from common_agent.audit import (
+    AuditAction,
+    AuditEntry,
+    AuditEvent,
+    AuditIntegrity,
+    AuditPage,
+    AuditQuery,
+    AuditService,
+    build_audit_event,
+)
 from common_agent.domain.workflow_run import (
     WorkflowRunOrigin,
     WorkflowRunStatus,
     WorkflowRunTrigger,
 )
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.observability import bind_observation_context
+from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
 from tests.support.knowledge import KnowledgeProbe
@@ -27,6 +40,35 @@ ORIGIN = WorkflowRunOrigin(
     conversation_id=uuid4(),
     assistant_message_id=uuid4(),
 )
+TENANT_ACCESS = TenantAccess(tenant_id=uuid4(), user_id=uuid4(), role=TenantRole.OWNER)
+
+
+class AuditStoreProbe:
+    def __init__(self) -> None:
+        self.entries: list[AuditEntry] = []
+
+    async def append(
+        self,
+        entry: AuditEntry,
+        *,
+        retention_until: datetime,
+        max_events_per_scope: int,
+    ) -> AuditEvent:
+        self.entries.append(entry)
+        return build_audit_event(
+            event_id=uuid4(),
+            scope_key=f"tenant:{entry.tenant_id}",
+            sequence=len(self.entries),
+            previous_hash="0" * 64,
+            retention_until=retention_until,
+            entry=entry,
+        )
+
+    async def page(self, query: AuditQuery) -> AuditPage:
+        raise AssertionError("not used")
+
+    async def verify(self, tenant_id: UUID | None) -> AuditIntegrity:
+        raise AssertionError("not used")
 
 
 def _service(*, model: RunModelProbe | None = None) -> WorkflowService:
@@ -63,6 +105,33 @@ def test_resolved_tool_calls_shared_workflow_service_with_employee_trigger() -> 
         assert run.origin == ORIGIN
         assert run.status is WorkflowRunStatus.COMPLETED
         assert run.input == "员工传入的真实参数"
+
+    asyncio.run(exercise())
+
+
+def test_employee_triggered_workflow_run_is_audited_in_the_request_tenant() -> None:
+    async def exercise() -> None:
+        service = _service()
+        workflow = await service.create(workflow_configuration())
+        audit_store = AuditStoreProbe()
+        registry = WorkflowToolRegistry(service, audit=AuditService(audit_store))
+
+        with (
+            bind_tenant(TENANT_ACCESS),
+            bind_observation_context(request_id=str(uuid4())) as context,
+        ):
+            tool = (await registry.resolve((workflow.id,), origin=ORIGIN))[0]
+            payload = json.loads(await tool.ainvoke({"input": "不得进入审计的业务正文"}))
+        await service.aclose()
+
+        assert len(audit_store.entries) == 1
+        entry = audit_store.entries[0]
+        assert entry.action is AuditAction.WORKFLOW_RUN_STARTED
+        assert entry.tenant_id == TENANT_ACCESS.tenant_id
+        assert entry.actor_user_id == TENANT_ACCESS.user_id
+        assert entry.resource_id == payload["run_id"]
+        assert entry.trace_id == context.trace_id
+        assert "不得进入审计的业务正文" not in repr(entry)
 
     asyncio.run(exercise())
 

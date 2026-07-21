@@ -119,6 +119,28 @@ select {
   padding: 28px;
 }
 
+.audit-page {
+  display: grid;
+  gap: 16px;
+}
+
+.audit-filter-card .ant-form {
+  gap: 8px;
+}
+
+.audit-event-list {
+  display: grid;
+  gap: 12px;
+}
+
+.audit-event-metadata {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
 .tenant-readonly-alert {
   margin-bottom: 16px;
 }

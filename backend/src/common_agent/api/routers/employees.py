@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from common_agent.api.audit import mark_audit_resource
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.routers.knowledge import knowledge_error_to_app_error
 from common_agent.api.routers.resource_deletion import (
@@ -16,6 +17,7 @@ from common_agent.api.routers.resource_deletion import (
 from common_agent.api.schemas.pagination import CursorPageResponse
 from common_agent.application.resource_deletion import ResourceDeletionError
 from common_agent.application.workflow_service import WorkflowServiceError
+from common_agent.audit import AuditResourceType
 from common_agent.domain.employee import (
     EMPLOYEE_ALLOWED_WORKFLOWS_MAX_ITEMS,
     EMPLOYEE_DESCRIPTION_MAX_LENGTH,
@@ -171,6 +173,7 @@ async def delete_employee(request: Request, employee_id: UUID) -> None:
         await resource_deletion_service(request).delete_employee(employee_id)
     except ResourceDeletionError as error:
         raise resource_deletion_error(error) from error
+    mark_audit_resource(request, AuditResourceType.EMPLOYEE, employee_id)
 
 
 @router.post(
@@ -198,6 +201,7 @@ async def create_employee(
         WorkflowServiceError,
     ) as error:
         raise _employee_error_to_app_error(error) from error
+    mark_audit_resource(request, AuditResourceType.EMPLOYEE, employee.id)
     return _response(employee)
 
 
@@ -242,4 +246,5 @@ async def update_employee(
         WorkflowServiceError,
     ) as error:
         raise _employee_error_to_app_error(error) from error
+    mark_audit_resource(request, AuditResourceType.EMPLOYEE, employee.id)
     return _response(employee)

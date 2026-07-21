@@ -6,9 +6,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints
 
+from common_agent.api.audit import mark_audit_resource
 from common_agent.api.authentication import authenticate_request, require_authenticated
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.tenancy import tenancy_error_to_app_error, tenancy_service
+from common_agent.audit import AuditResourceType
 from common_agent.auth import (
     AuthenticationError,
     AuthenticationService,
@@ -81,6 +83,13 @@ async def create_tenant(body: CreateTenantBody, request: Request) -> TenantAcces
         )
     except TenancyError as error:
         raise tenancy_error_to_app_error(error) from error
+    mark_audit_resource(
+        request,
+        AuditResourceType.TENANT,
+        created.tenant_id,
+        tenant_id=created.tenant_id,
+        actor_user_id=UUID(session.user_id),
+    )
     return _response(created)
 
 
@@ -124,6 +133,13 @@ async def provision_tenant_member(
         raise AppError("validation_error", "请求参数不合法", 422, False) from error
 
     response.headers["Cache-Control"] = "no-store"
+    mark_audit_resource(
+        request,
+        AuditResourceType.USER,
+        provisioned.user_id,
+        tenant_id=tenant_id,
+        actor_user_id=UUID(session.user_id),
+    )
     return TenantMemberProvisioningResponse(
         user_id=UUID(provisioned.user_id),
         email=provisioned.email,

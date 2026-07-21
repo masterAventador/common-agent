@@ -250,6 +250,109 @@ class AuthLoginAttemptRow(PersistenceBase):
     updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
 
 
+class AuditChainHeadRow(PersistenceBase):
+    __tablename__ = "audit_chain_heads"
+    __table_args__ = (
+        CheckConstraint(
+            "(scope_key = 'platform' AND tenant_id IS NULL) OR "
+            "(scope_key = CONCAT('tenant:', tenant_id) AND tenant_id IS NOT NULL)",
+            name="ck_audit_chain_heads_scope",
+        ),
+        CheckConstraint("event_count >= 0", name="ck_audit_chain_heads_count"),
+        CheckConstraint(
+            "CHAR_LENGTH(last_hash) = 64",
+            name="ck_audit_chain_heads_last_hash",
+        ),
+        UniqueConstraint("tenant_id", name="uq_audit_chain_heads_tenant_id"),
+    )
+
+    scope_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    event_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    last_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class AuditEventRow(PersistenceBase):
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(event_id) = 36", name="ck_audit_events_event_id"),
+        CheckConstraint("sequence > 0", name="ck_audit_events_sequence"),
+        CheckConstraint(
+            "outcome IN ('succeeded', 'denied', 'failed')",
+            name="ck_audit_events_outcome",
+        ),
+        CheckConstraint(
+            "(resource_type IS NULL AND resource_id IS NULL) OR "
+            "(resource_type IS NOT NULL AND resource_id IS NOT NULL)",
+            name="ck_audit_events_resource",
+        ),
+        CheckConstraint(
+            "(outcome = 'succeeded' AND error_code IS NULL) OR "
+            "(outcome IN ('denied', 'failed') AND error_code IS NOT NULL)",
+            name="ck_audit_events_error",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(trace_id) = 32 AND CHAR_LENGTH(previous_hash) = 64 "
+            "AND CHAR_LENGTH(event_hash) = 64",
+            name="ck_audit_events_hashes",
+        ),
+        CheckConstraint(
+            "retention_until > occurred_at",
+            name="ck_audit_events_retention",
+        ),
+        UniqueConstraint("event_id", name="uq_audit_events_event_id"),
+        UniqueConstraint("scope_key", "sequence", name="uq_audit_events_scope_sequence"),
+        Index(
+            "ix_audit_events_tenant_occurred",
+            "tenant_id",
+            "occurred_at",
+            "sequence",
+        ),
+        Index(
+            "ix_audit_events_tenant_actor_occurred",
+            "tenant_id",
+            "actor_user_id",
+            "occurred_at",
+        ),
+        Index(
+            "ix_audit_events_tenant_resource_occurred",
+            "tenant_id",
+            "resource_type",
+            "resource_id",
+            "occurred_at",
+        ),
+        Index("ix_audit_events_retention_until", "retention_until"),
+    )
+
+    storage_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope_key: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey(
+            "audit_chain_heads.scope_key",
+            ondelete="RESTRICT",
+            name="fk_audit_events_scope_key",
+        ),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    tenant_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    actor_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    retention_until: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    previous_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
 class DemoKnowledgeBaseRow(PersistenceBase):
     __tablename__ = "demo_knowledge_bases"
     __table_args__ = (

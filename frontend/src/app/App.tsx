@@ -2,6 +2,7 @@ import {
   ApartmentOutlined,
   CommentOutlined,
   DatabaseOutlined,
+  SafetyCertificateOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
 import {
@@ -47,6 +48,10 @@ const WorkflowsPage = lazy(async () => {
   const module = await import("../features/workflows/WorkflowsPage");
   return { default: module.WorkflowsPage };
 });
+const AuditEventsPage = lazy(async () => {
+  const module = await import("../features/audit/AuditEventsPage");
+  return { default: module.AuditEventsPage };
+});
 
 const entries = [
   {
@@ -69,10 +74,16 @@ const entries = [
     label: "工作流",
     icon: <ApartmentOutlined />,
   },
+  {
+    path: "/audit-events",
+    label: "审计与安全事件",
+    icon: <SafetyCertificateOutlined />,
+    ownerOnly: true,
+  },
 ] as const;
 
-function menuItems(): Array<{ key: string; icon: ReactNode; label: ReactNode }> {
-  return entries.map((entry) => ({
+function menuItems(owner: boolean): Array<{ key: string; icon: ReactNode; label: ReactNode }> {
+  return entries.filter((entry) => !("ownerOnly" in entry) || owner).map((entry) => ({
     key: entry.path,
     icon: entry.icon,
     label: <Link to={entry.path}>{entry.label}</Link>,
@@ -136,7 +147,11 @@ function AuthenticatedApp() {
             <Typography.Text className="brand-subtitle">AI 中台</Typography.Text>
           </div>
         </div>
-        <Menu mode="inline" selectedKeys={[location.pathname]} items={menuItems()} />
+        <Menu
+          mode="inline"
+          selectedKeys={[location.pathname]}
+          items={menuItems(selectedTenant?.role === "owner")}
+        />
       </Sider>
       <Layout>
         <Header className="app-header">
@@ -203,6 +218,16 @@ function AuthenticatedApp() {
               <Route
                 path="/workflows"
                 element={<WorkflowsPage readOnly={selectedTenant?.role === "viewer"} />}
+              />
+              <Route
+                path="/audit-events"
+                element={
+                  selectedTenant?.role === "owner" ? (
+                    <AuditEventsPage />
+                  ) : (
+                    <Navigate to="/chat" replace />
+                  )
+                }
               />
               <Route path="*" element={<Navigate to="/chat" replace />} />
             </Routes>

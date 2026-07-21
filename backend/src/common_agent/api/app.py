@@ -21,6 +21,7 @@ from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.adapters.persistence import (
     Database,
+    SqlAlchemyAuditStore,
     SqlAlchemyAuthStore,
     SqlAlchemyKnowledgeOwnershipStore,
     SqlAlchemyTenancyStore,
@@ -35,10 +36,12 @@ from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeUnitOf
 from common_agent.adapters.persistence.resources import SqlAlchemyResourceDeletionStore
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
+from common_agent.api.audit import audit_http_request
 from common_agent.api.authentication import enforce_request_security, require_authenticated
 from common_agent.api.errors import ErrorEnvelope, error_handlers
 from common_agent.api.observability import observe_http_request
 from common_agent.api.routers import (
+    audit_router,
     auth_router,
     conversation_router,
     employee_router,
@@ -53,8 +56,10 @@ from common_agent.application.resource_deletion import ResourceDeletionService
 from common_agent.application.resource_locks import ResourceMutationGuard
 from common_agent.application.system_service import SystemService
 from common_agent.application.workflow_service import WorkflowService
+from common_agent.audit import AuditPolicy, AuditService
 from common_agent.auth import AuthConfiguration, AuthenticationService
 from common_agent.bootstrap import (
+    AuditSettings,
     AuthSettings,
     CorsSettings,
     DatabaseSettings,
@@ -85,6 +90,14 @@ from common_agent.workflows.nodes.registry import create_workflow_node_registry
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     database: Database = app.state.database
     await database.start()
+    audit_settings: AuditSettings = app.state.audit_settings
+    app.state.audit = AuditService(
+        SqlAlchemyAuditStore(database),
+        AuditPolicy(
+            retention_days=audit_settings.retention_days,
+            max_events_per_scope=audit_settings.maximum_events_per_scope,
+        ),
+    )
     auth_settings: AuthSettings = app.state.auth_settings
     app.state.authentication = AuthenticationService(
         SqlAlchemyAuthStore(database),
@@ -173,7 +186,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if integration_mode.mode != "demo":
             runtime = DeepAgentsEmployeeRuntime(
                 model,
-                tools=WorkflowToolRegistry(workflows),
+                tools=WorkflowToolRegistry(workflows, audit=app.state.audit),
             )
         employees = EmployeeService(
             SqlAlchemyEmployeeUnitOfWorkFactory(database, tenant_id_provider),
@@ -208,6 +221,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         app.state.ready = False
         app.state.authentication = None
+        app.state.audit = None
         app.state.tenancy = None
         app.state.conversations = None
         app.state.conversation_events = None
@@ -239,6 +253,7 @@ def create_app() -> FastAPI:
     database = Database(DatabaseSettings.from_env().url)
     cors = CorsSettings.from_env()
     auth_settings = AuthSettings.from_env()
+    audit_settings = AuditSettings.from_env()
     integration_mode = IntegrationModeSettings.from_env()
     app = FastAPI(
         title="common-agent API",
@@ -250,6 +265,8 @@ def create_app() -> FastAPI:
     app.state.metrics = MetricsRegistry()
     app.state.integration_mode = integration_mode
     app.state.auth_settings = auth_settings
+    app.state.audit_settings = audit_settings
+    app.state.audit = None
     app.state.cors_settings = cors
     app.state.authentication = None
     app.state.tenancy = None
@@ -265,6 +282,7 @@ def create_app() -> FastAPI:
     )
 
     app.middleware("http")(enforce_request_security)
+    app.middleware("http")(audit_http_request)
     app.middleware("http")(observe_http_request)
 
     app.include_router(system_router)
@@ -275,6 +293,11 @@ def create_app() -> FastAPI:
         401: {"model": ErrorEnvelope},
         403: {"model": ErrorEnvelope},
     }
+    app.include_router(
+        audit_router,
+        dependencies=protected,
+        responses=protected_responses,
+    )
     app.include_router(
         knowledge_router,
         dependencies=protected,

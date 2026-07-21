@@ -7,12 +7,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from common_agent.api.audit import mark_audit_resource
 from common_agent.api.authentication import (
     authenticate_request,
     authentication_error_to_app_error,
     require_authenticated,
 )
 from common_agent.api.errors import AppError, ErrorEnvelope
+from common_agent.audit import AuditResourceType
 from common_agent.auth import (
     AuthenticatedSession,
     AuthenticationError,
@@ -21,6 +23,7 @@ from common_agent.auth import (
     PasswordPolicyError,
 )
 from common_agent.bootstrap import AuthSettings
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 
@@ -94,6 +97,13 @@ async def register(
     except (AuthenticationError, PasswordPolicyError) as error:
         raise _request_error(error) from error
     _set_session_cookie(response, request, issued)
+    mark_audit_resource(
+        request,
+        AuditResourceType.USER,
+        issued.user_id,
+        tenant_id=DEFAULT_TENANT_ID,
+        actor_user_id=UUID(issued.user_id),
+    )
     _no_store(response)
     return RegistrationResponse(
         user_id=UUID(issued.user_id),
@@ -120,6 +130,12 @@ async def login(body: LoginBody, request: Request, response: Response) -> AuthSe
     except AuthenticationError as error:
         raise authentication_error_to_app_error(error) from error
     _set_session_cookie(response, request, issued)
+    mark_audit_resource(
+        request,
+        AuditResourceType.USER,
+        issued.user_id,
+        actor_user_id=UUID(issued.user_id),
+    )
     _no_store(response)
     return _issued_session_response(issued)
 
@@ -143,6 +159,13 @@ async def current_session(request: Request, response: Response) -> AuthSessionRe
     responses={401: {"model": ErrorEnvelope}, 403: {"model": ErrorEnvelope}},
 )
 async def logout(request: Request, response: Response) -> None:
+    session = await authenticate_request(request)
+    mark_audit_resource(
+        request,
+        AuditResourceType.USER,
+        session.user_id,
+        actor_user_id=UUID(session.user_id),
+    )
     session_token = getattr(request.state, "auth_session_token", "")
     await _service(request).logout(session_token)
     settings = _settings(request)

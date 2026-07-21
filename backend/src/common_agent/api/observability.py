@@ -31,6 +31,7 @@ async def observe_http_request(request: Request, call_next: RequestHandler) -> R
         request_id=request_id,
         traceparent=request.headers.get("traceparent"),
     ) as context:
+        request.state.trace_id = context.trace_id
         try:
             response = await call_next(request)
         except Exception as error:

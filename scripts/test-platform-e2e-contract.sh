@@ -24,7 +24,11 @@ grep -Fq 'PLATFORM_DOCKER_CONTEXT="${DOCKER_CONTEXT_NAME}"' "${RUNNER}" || \
   fail "E2E 调整内存前没有限定平台栈 Docker context"
 grep -Fq 'infra/ragflow/manage.sh" stop' "${RUNNER}" || \
   fail "E2E 调整内存前没有停止本项目 RAGFlow"
-grep -Fq '"auth" || "${E2E_SUITE}" == "demo-chat"' "${RUNNER}" || \
-  fail "认证 E2E 没有归入轻量档位"
+grep -Fq '"auth" || "${E2E_SUITE}" == "tenant-rbac" || "${E2E_SUITE}" == "audit" || "${E2E_SUITE}" == "demo-chat"' "${RUNNER}" || \
+  fail "认证、租户和审计 E2E 没有归入轻量档位"
+grep -Fq 'e2e/audit.spec.ts' "${RUNNER}" || \
+  fail "E2E 入口没有执行正式审计页面用例"
+grep -Fq 'tests.support.audit_e2e_cleanup' "${RUNNER}" || \
+  fail "审计 E2E 没有登记精确业务数据清理器"
 
 echo "平台 E2E 资源档位契约通过"

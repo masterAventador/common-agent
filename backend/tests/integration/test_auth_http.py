@@ -43,6 +43,7 @@ def _running_auth_api() -> Iterator[str]:
                 "COMMON_AGENT_AUTH_LOGIN_WINDOW_SECONDS": "60",
             },
         ) as base_url:
+            asyncio.run(_clear_authentication())
             yield base_url
     finally:
         asyncio.run(_clear_authentication())

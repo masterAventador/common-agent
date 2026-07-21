@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Header, Query, Request, status
 from fastapi.responses import StreamingResponse
 
+from common_agent.api.audit import mark_audit_resource
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.routers.services import workflow_event_broker, workflow_service
 from common_agent.api.schemas.pagination import CursorPageResponse
@@ -28,6 +29,7 @@ from common_agent.application.workflow_service import (
     WorkflowRunStopAccepted,
     WorkflowServiceError,
 )
+from common_agent.audit import AuditResourceType
 from common_agent.domain.workflow_run import WorkflowRunTrigger, WorkflowRunValidationError
 from common_agent.pagination import (
     DEFAULT_PAGE_LIMIT,
@@ -84,6 +86,7 @@ async def start_workflow_run(
         )
     except (WorkflowServiceError, WorkflowRunValidationError) as error:
         raise workflow_run_error(error) from error
+    mark_audit_resource(request, AuditResourceType.WORKFLOW_RUN, run.id)
     return workflow_run_response(run)
 
 
@@ -148,6 +151,7 @@ async def stop_workflow_run(
         accepted: WorkflowRunStopAccepted = await workflow_service(request).stop_run(run_id)
     except (WorkflowRunNotFound, WorkflowRunNotActive) as error:
         raise workflow_run_error(error) from error
+    mark_audit_resource(request, AuditResourceType.WORKFLOW_RUN, run_id)
     return WorkflowRunStopAcceptedResponse.model_validate(accepted)
 
 

@@ -21,7 +21,7 @@ fail() {
 [[ -f "${CHECKER}" ]] || fail "缺少前端 bundle 预算检查器"
 
 mkdir -p "${FIXTURE_ROOT}/assets" "${FIXTURE_ROOT}/.vite"
-for route in ChatPage EmployeesPage KnowledgeBasesPage WorkflowsPage; do
+for route in ChatPage EmployeesPage KnowledgeBasesPage WorkflowsPage AuditEventsPage; do
   route_file="${route}.js"
   printf 'export const route = true;\n' > "${FIXTURE_ROOT}/assets/${route_file}"
 done
@@ -30,15 +30,41 @@ cat > "${FIXTURE_ROOT}/.vite/manifest.json" <<'JSON'
   "src/features/chat/ChatPage.tsx": {"file":"assets/ChatPage.js","isDynamicEntry":true},
   "src/features/employees/EmployeesPage.tsx": {"file":"assets/EmployeesPage.js","isDynamicEntry":true},
   "src/features/knowledge-bases/KnowledgeBasesPage.tsx": {"file":"assets/KnowledgeBasesPage.js","isDynamicEntry":true},
-  "src/features/workflows/WorkflowsPage.tsx": {"file":"assets/WorkflowsPage.js","isDynamicEntry":true}
+  "src/features/workflows/WorkflowsPage.tsx": {"file":"assets/WorkflowsPage.js","isDynamicEntry":true},
+  "src/features/audit/AuditEventsPage.tsx": {"file":"assets/AuditEventsPage.js","isDynamicEntry":true}
 }
 JSON
 
 node "${CHECKER}" "${FIXTURE_ROOT}" > "${OUTPUT}"
 grep -Fq '最大 JS chunk' "${OUTPUT}" || fail "bundle 分析没有报告最大 chunk"
-for route in /chat /employees /knowledge-bases /workflows; do
+for route in /chat /employees /knowledge-bases /workflows /audit-events; do
   grep -Fq "${route}" "${OUTPUT}" || fail "bundle 分析缺少路由 ${route}"
 done
+
+python3 - "${FIXTURE_ROOT}/.vite/manifest.json" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+manifest = json.loads(path.read_text())
+del manifest["src/features/audit/AuditEventsPage.tsx"]
+path.write_text(json.dumps(manifest))
+PY
+if node "${CHECKER}" "${FIXTURE_ROOT}" > "${OUTPUT}" 2>&1; then
+  fail "缺少审计异步路由时 bundle 分析仍被放行"
+fi
+grep -Fq '/audit-events' "${OUTPUT}" || fail "缺少审计路由时没有可操作错误"
+
+cat > "${FIXTURE_ROOT}/.vite/manifest.json" <<'JSON'
+{
+  "src/features/chat/ChatPage.tsx": {"file":"assets/ChatPage.js","isDynamicEntry":true},
+  "src/features/employees/EmployeesPage.tsx": {"file":"assets/EmployeesPage.js","isDynamicEntry":true},
+  "src/features/knowledge-bases/KnowledgeBasesPage.tsx": {"file":"assets/KnowledgeBasesPage.js","isDynamicEntry":true},
+  "src/features/workflows/WorkflowsPage.tsx": {"file":"assets/WorkflowsPage.js","isDynamicEntry":true},
+  "src/features/audit/AuditEventsPage.tsx": {"file":"assets/AuditEventsPage.js","isDynamicEntry":true}
+}
+JSON
 
 truncate -s 500001 "${FIXTURE_ROOT}/assets/too-large.js"
 if node "${CHECKER}" "${FIXTURE_ROOT}" > "${OUTPUT}" 2>&1; then
@@ -75,4 +101,4 @@ if node "${CHECKER}" "${FIXTURE_ROOT}" > "${OUTPUT}" 2>&1; then
 fi
 grep -Fq 'manifest' "${OUTPUT}" || fail "缺少 manifest 时没有可操作错误"
 
-echo "前端 bundle 分析、四路由与 500 kB 预算契约通过"
+echo "前端 bundle 分析、五路由与 500 kB 预算契约通过"

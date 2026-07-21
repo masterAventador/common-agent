@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, status
 
+from common_agent.api.audit import mark_audit_resource
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.routers.conversation_events import router as event_router
 from common_agent.api.routers.services import conversation_service
@@ -22,6 +23,7 @@ from common_agent.api.schemas.conversations import (
     turn_response,
 )
 from common_agent.api.schemas.pagination import CursorPageResponse
+from common_agent.audit import AuditResourceType
 from common_agent.conversations.service import (
     ConversationBusy,
     ConversationNotFound,
@@ -107,6 +109,7 @@ async def delete_conversation(request: Request, conversation_id: UUID) -> None:
         await conversation_service(request).delete(conversation_id)
     except ConversationBusy as error:
         raise conversation_error(error) from error
+    mark_audit_resource(request, AuditResourceType.CONVERSATION, conversation_id)
 
 
 @router.post(
@@ -176,6 +179,7 @@ async def send_message(
         )
     except (ConversationServiceError, ConversationValidationError) as error:
         raise conversation_error(error) from error
+    mark_audit_resource(request, AuditResourceType.CONVERSATION, conversation_id)
     return turn_response(turn)
 
 

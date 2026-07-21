@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 from collections.abc import Sequence
 from contextlib import suppress
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
@@ -16,6 +18,13 @@ from common_agent.application.workflow_service import (
     WorkflowService,
     WorkflowServiceError,
 )
+from common_agent.audit import (
+    AuditAction,
+    AuditEntry,
+    AuditOutcome,
+    AuditResourceType,
+    AuditService,
+)
 from common_agent.domain.workflow import WorkflowDefinition
 from common_agent.domain.workflow_run import (
     WorkflowRun,
@@ -23,13 +32,16 @@ from common_agent.domain.workflow_run import (
     WorkflowRunStatus,
     WorkflowRunTrigger,
 )
+from common_agent.observability import current_observation_context
+from common_agent.tenancy import current_tenant
 
 
 class WorkflowToolRegistry:
     """Resolve an employee allowlist into immutable, workflow-specific tools."""
 
-    def __init__(self, workflows: WorkflowService) -> None:
+    def __init__(self, workflows: WorkflowService, *, audit: AuditService | None = None) -> None:
         self._workflows = workflows
+        self._audit = audit
 
     async def resolve(
         self,
@@ -58,6 +70,7 @@ class WorkflowToolRegistry:
                     trigger=WorkflowRunTrigger.EMPLOYEE,
                     origin=origin,
                 )
+                await self._record_started(run_id)
                 run = await self._workflows.wait_for_run(run_id)
             except asyncio.CancelledError:
                 with suppress(WorkflowRunNotActive, WorkflowServiceError):
@@ -78,6 +91,33 @@ class WorkflowToolRegistry:
             ),
             handle_tool_error=True,
         )
+
+    async def _record_started(self, run_id: UUID) -> None:
+        if self._audit is None:
+            return
+        access = current_tenant()
+        context = current_observation_context()
+        await self._audit.record(
+            AuditEntry(
+                tenant_id=access.tenant_id,
+                actor_user_id=access.user_id,
+                action=AuditAction.WORKFLOW_RUN_STARTED,
+                outcome=AuditOutcome.SUCCEEDED,
+                request_id=_request_id(context.request_id if context is not None else None),
+                trace_id=context.trace_id if context is not None else secrets.token_hex(16),
+                resource_type=AuditResourceType.WORKFLOW_RUN,
+                resource_id=str(run_id),
+                error_code=None,
+                occurred_at=datetime.now(UTC),
+            )
+        )
+
+
+def _request_id(value: str | None) -> UUID:
+    try:
+        return UUID(value) if value is not None else uuid4()
+    except ValueError:
+        return uuid4()
 
 
 def _tool_result(workflow: WorkflowDefinition, run: WorkflowRun) -> str:

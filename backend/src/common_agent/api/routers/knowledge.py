@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Query, Request, UploadFile, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
+from common_agent.api.audit import mark_audit_resource
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.routers.resource_deletion import (
     resource_deletion_error,
@@ -12,6 +13,7 @@ from common_agent.api.routers.resource_deletion import (
 )
 from common_agent.api.schemas.pagination import CursorPageResponse
 from common_agent.application.resource_deletion import ResourceDeletionError
+from common_agent.audit import AuditResourceType
 from common_agent.domain.knowledge import (
     KNOWLEDGE_BASE_DESCRIPTION_MAX_LENGTH,
     KNOWLEDGE_BASE_NAME_MAX_LENGTH,
@@ -217,6 +219,7 @@ async def create_knowledge_base(
         )
     except KnowledgeServiceError as error:
         raise knowledge_error_to_app_error(error) from error
+    mark_audit_resource(request, AuditResourceType.KNOWLEDGE_BASE, created.id)
     return _knowledge_base_response(created)
 
 
@@ -237,6 +240,7 @@ async def delete_knowledge_base(request: Request, knowledge_base_id: str) -> Non
         raise resource_deletion_error(error) from error
     except KnowledgeServiceError as error:
         raise knowledge_error_to_app_error(error) from error
+    mark_audit_resource(request, AuditResourceType.KNOWLEDGE_BASE, knowledge_base_id)
 
 
 @router.get(
@@ -287,4 +291,5 @@ async def upload_document(
         document = await _application(request).upload_document(knowledge_base_id, upload)
     except (KnowledgeServiceError, KnowledgeInputError) as error:
         raise knowledge_error_to_app_error(error) from error
+    mark_audit_resource(request, AuditResourceType.KNOWLEDGE_DOCUMENT, document.id)
     return _document_response(document)

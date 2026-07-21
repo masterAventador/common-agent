@@ -1,6 +1,6 @@
 # 通用 Agent 中台工程结构
 
-> 状态：MVP 基线与租户隔离结构已确认
+> 状态：MVP 基线、租户隔离与审计结构已确认
 > 确认日期：2026-07-21
 
 ## 1. 核心决策
@@ -36,6 +36,7 @@ backend/
 │       ├── api/                 # FastAPI 路由、依赖和错误边界
 │       │   ├── routers/
 │       │   │   ├── auth.py                 # 引导、登录、恢复和注销
+│       │   │   ├── audit.py                # Owner 审计查询、策略和完整性
 │       │   │   ├── tenants.py              # 工作区列表、创建与成员配置
 │       │   │   ├── system.py
 │       │   │   ├── conversations.py       # 会话 REST 编排
@@ -48,6 +49,7 @@ backend/
 │       │   │   └── workflow_runs.py
 │       │   ├── schemas/           # 会话、工作流和运行 HTTP DTO
 │       │   ├── authentication.py  # Cookie、CSRF、Origin 与路由认证依赖
+│       │   ├── audit.py           # HTTP 审计分类、资源标记与关闭失败边界
 │       │   ├── tenancy.py         # 租户选择、权限判断与请求上下文
 │       │   ├── app.py            # FastAPI 组合根
 │       │   ├── observability.py  # HTTP 关联、请求日志和进程内指标边界
@@ -61,6 +63,7 @@ backend/
 │       │   └── workflow_run_projection.py # 运行投影
 │       ├── concurrency.py       # 可回收的按 ID 异步锁池
 │       ├── auth/                # 平台身份、会话模型、端口与认证用例
+│       ├── audit/               # 固定审计模型、哈希链、策略、端口与服务
 │       ├── tenancy/             # 组织/租户访问模型、角色、端口与上下文
 │       ├── conversations/       # 会话门面、持久化、运行协调、消息投影与事件
 │       ├── employees/           # 数字员工应用服务与启动 Seed
@@ -92,7 +95,7 @@ backend/
 │           ├── knowledge/       # RAGFlow 正式适配器
 │           ├── model/           # 阿里百炼转换与仅适配层可见的 LangChain 桥
 │           ├── workflow/        # LangGraph 编译、状态与节点框架转换
-│           └── persistence/     # MySQL 持久化适配器，含认证与资源事务
+│           └── persistence/     # MySQL 持久化适配器，含认证、审计与资源事务
 ├── migrations/                  # 当前正式数据库迁移
 ├── tests/
 │   ├── unit/
@@ -153,6 +156,7 @@ frontend/
 │   ├── app/                     # Provider、布局和入口
 │   ├── features/
 │   │   ├── auth/                # 首位所有者、登录、恢复与认证门禁
+│   │   ├── audit/               # Owner 审计查询、策略与完整性页面
 │   │   ├── chat/                # 页面编排、Query/SSE 控制器、消息投影与三栏展示
 │   │   ├── employees/           # 数字员工列表、编辑和知识库绑定
 │   │   ├── knowledge-bases/     # 知识库创建、文档上传和解析状态
@@ -174,13 +178,13 @@ frontend/
 └── README.md
 ```
 
-业务区只有聊天工作台、数字员工、知识库与独立工作流设计器；未认证或尚未选择工作区时由真实
+业务区包含聊天工作台、数字员工、知识库、独立工作流设计器，以及仅 Owner 可见的审计事件页；未认证或尚未选择工作区时由真实
 `auth` Provider 阻止业务路由挂载，工作区选择和成员配置复用全局壳层，不为其他未实现能力创建
 空目录或菜单。工作流画布使用成熟的 React 节点
 图库，不自行实现缩放、拖拽、连线和命中测试。
 页面容器只组合控制器和展示区域；协议映射、服务端状态、流式/运行状态、画布和属性表单分模块维护。
 架构门禁限制页面容器体量、跨 Feature 私有导入、实现层反向依赖容器和拆分模块循环依赖。
-Vite 生产构建保留四个路由异步入口并使用入口感知 vendor 分组；manifest 分析同时约束 500,000
+Vite 生产构建保留五个路由异步入口并使用入口感知 vendor 分组；manifest 分析同时约束 500,000
 bytes 单 chunk 和 1,500,000 bytes 单路由首次 JS 图，生产 preview 浏览器验证首屏、切换和复用。
 
 ## 4. 跨端契约

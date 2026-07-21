@@ -12,7 +12,6 @@ from common_agent.employees.seeds import DEFAULT_KNOWLEDGE_ASSISTANT_ID
 from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from tests.support.employees import delete_employees_from_database_url
-from tests.support.http import TEST_AUTH_EMAIL
 from tests.support.settings import TEST_DATABASE_URL
 
 
@@ -29,12 +28,13 @@ def bind_default_test_tenant() -> Iterator[None]:
 
 @pytest.fixture(scope="session", autouse=True)
 def clean_default_employee_after_integration_session() -> Iterator[None]:
-    yield
-
     database_url = os.environ.get("TEST_PLATFORM_DATABASE_URL", TEST_DATABASE_URL)
     database_name = make_url(database_url).database or ""
     if not database_name.endswith("_test"):
         raise RuntimeError("集成测试清理只允许操作名称以 _test 结尾的数据库")
+    asyncio.run(_delete_test_authentication(database_url))
+    yield
+
     asyncio.run(
         delete_employees_from_database_url(
             database_url,
@@ -51,11 +51,10 @@ async def _delete_test_authentication(database_url: str) -> None:
     await database.start()
     try:
         async with database.session() as session:
-            from sqlalchemy import delete
+            from sqlalchemy import text
 
-            from common_agent.adapters.persistence.models import AuthUserRow
-
-            await session.execute(delete(AuthUserRow).where(AuthUserRow.email == TEST_AUTH_EMAIL))
+            await session.execute(text("DELETE FROM auth_login_attempts"))
+            await session.execute(text("DELETE FROM auth_users"))
             await session.commit()
     finally:
         await database.stop()

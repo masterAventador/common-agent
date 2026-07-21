@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, status
 
+from common_agent.api.audit import mark_audit_resource
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.routers.knowledge import knowledge_error_to_app_error
 from common_agent.api.routers.resource_deletion import (
@@ -23,6 +24,7 @@ from common_agent.api.schemas.workflows import (
 )
 from common_agent.application.resource_deletion import ResourceDeletionError
 from common_agent.application.workflow_service import WorkflowNotFound
+from common_agent.audit import AuditResourceType
 from common_agent.domain.workflow import WorkflowValidationError
 from common_agent.knowledge.base import KnowledgeServiceError
 from common_agent.pagination import (
@@ -92,6 +94,7 @@ async def delete_workflow(request: Request, workflow_id: UUID) -> None:
         await resource_deletion_service(request).delete_workflow(workflow_id)
     except ResourceDeletionError as error:
         raise resource_deletion_error(error) from error
+    mark_audit_resource(request, AuditResourceType.WORKFLOW, workflow_id)
 
 
 @router.post(
@@ -118,6 +121,7 @@ async def create_workflow(
         WorkflowValidationError,
     ) as error:
         raise workflow_error(error) from error
+    mark_audit_resource(request, AuditResourceType.WORKFLOW, workflow.id)
     return workflow_response(workflow)
 
 
@@ -185,6 +189,7 @@ async def update_workflow(
         WorkflowValidationError,
     ) as error:
         raise workflow_error(error) from error
+    mark_audit_resource(request, AuditResourceType.WORKFLOW, workflow.id)
     return workflow_response(workflow)
 
 

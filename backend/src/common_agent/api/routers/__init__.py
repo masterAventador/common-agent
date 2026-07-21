@@ -1,3 +1,4 @@
+from common_agent.api.routers.audit import router as audit_router
 from common_agent.api.routers.auth import router as auth_router
 from common_agent.api.routers.conversations import router as conversation_router
 from common_agent.api.routers.employees import router as employee_router
@@ -8,6 +9,7 @@ from common_agent.api.routers.workflow_runs import router as workflow_run_router
 from common_agent.api.routers.workflows import router as workflow_router
 
 __all__ = [
+    "audit_router",
     "auth_router",
     "conversation_router",
     "employee_router",

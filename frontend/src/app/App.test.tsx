@@ -104,11 +104,30 @@ vi.mock("../api/workflows", () => ({
   validateWorkflow: vi.fn(),
 }));
 
+vi.mock("../api/audit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/audit")>()),
+  fetchAuditEvents: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
+  fetchAuditIntegrity: vi.fn().mockResolvedValue({
+    event_count: 0,
+    first_sequence: null,
+    last_sequence: null,
+    last_hash: "0".repeat(64),
+    verified: true,
+    broken_sequence: null,
+  }),
+  fetchAuditPolicy: vi.fn().mockResolvedValue({
+    retention_days: 365,
+    max_events_per_scope: 1_000_000,
+    automatic_deletion: false,
+  }),
+}));
+
 const routes = [
   ["/chat", "AI 会话"],
   ["/employees", "数字员工"],
   ["/knowledge-bases", "知识库"],
   ["/workflows", "工作流"],
+  ["/audit-events", "审计与安全事件"],
 ] as const;
 
 describe("App shell", () => {
