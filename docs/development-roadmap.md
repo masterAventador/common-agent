@@ -1582,7 +1582,7 @@ RAGFlow 外部 ID 归属均按租户关闭失败，REST/SSE/工具调用越权�
   中文按钮可访问名称三项真实交互问题，修复后完成创建员工→Owner 审计页→完整性/策略→资源
   过滤→固定元数据/正文不出现，最终 `1 passed (3.1s)`；未启动或修改 RAGFlow，未调用百炼
 - GREEN：隔离 `common_agent_s1004_test` 后端权威全量 `553 passed, 13 skipped in 97.64s`；覆盖率
-  全量同为 `553 passed, 13 skipped in 189.53s`，总体行 91.36%、分支 72.89%、核心行 93.59%、
+  全量同为 `553 passed, 13 skipped in 187.56s`，总体行 91.35%、分支 72.89%、核心行 93.59%、
   核心分支 75.00%，全部超过冻结阈值。Ruff、266 文件格式、严格 Mypy 250 个源/测试文件、uv
   lock、85 包安全审计、Alembic `0015` head/无漂移及 `0015→0014→0015`、OpenAPI/生成 DTO、
   架构、CI/覆盖率/E2E 入口、ShellCheck 和 Secret 门禁通过。前端 23 files/107 tests，行 87.35%、
