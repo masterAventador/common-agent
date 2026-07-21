@@ -6,13 +6,17 @@ from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from common_agent.adapters.persistence.database import Database
-from common_agent.adapters.persistence.models import EmployeeRow
+from common_agent.adapters.persistence.models import (
+    EmployeeRow,
+    ModelConfigurationReferenceRow,
+    ModelConfigurationRow,
+)
 from common_agent.adapters.persistence.timestamps import (
     from_database_datetime,
     to_database_datetime,
@@ -29,12 +33,12 @@ class SqlAlchemyEmployeeRepository:
         self._tenant_id = str(tenant_id or current_tenant().tenant_id)
 
     async def list(self) -> tuple[Employee, ...]:
-        result = await self._session.scalars(
-            select(EmployeeRow)
+        result = await self._session.execute(
+            _employee_statement()
             .where(EmployeeRow.tenant_id == self._tenant_id)
             .order_by(EmployeeRow.created_at, EmployeeRow.id)
         )
-        return tuple(_to_domain(row) for row in result)
+        return tuple(_to_domain(row, model_identifier) for row, model_identifier in result)
 
     async def page(
         self,
@@ -43,7 +47,7 @@ class SqlAlchemyEmployeeRepository:
         search: str,
         after: PageAnchor | None,
     ) -> PageSlice[Employee]:
-        statement = select(EmployeeRow).where(EmployeeRow.tenant_id == self._tenant_id)
+        statement = _employee_statement().where(EmployeeRow.tenant_id == self._tenant_id)
         if search:
             searched_id = canonical_uuid_search(search)
             statement = statement.where(
@@ -63,7 +67,7 @@ class SqlAlchemyEmployeeRepository:
                 )
             )
         rows = tuple(
-            await self._session.scalars(
+            await self._session.execute(
                 statement.order_by(
                     EmployeeRow.created_at.desc(),
                     EmployeeRow.id.desc(),
@@ -71,39 +75,73 @@ class SqlAlchemyEmployeeRepository:
             )
         )
         return PageSlice(
-            items=tuple(_to_domain(row) for row in rows[:limit]),
+            items=tuple(
+                _to_domain(row, model_identifier) for row, model_identifier in rows[:limit]
+            ),
             has_more=len(rows) > limit,
         )
 
     async def get(self, employee_id: UUID) -> Employee | None:
-        row = await self._session.scalar(
-            select(EmployeeRow).where(
+        result = await self._session.execute(
+            _employee_statement().where(
                 EmployeeRow.id == str(employee_id),
                 EmployeeRow.tenant_id == self._tenant_id,
             )
         )
-        return None if row is None else _to_domain(row)
+        row = result.first()
+        return None if row is None else _to_domain(row[0], row[1])
 
     async def add(self, employee: Employee) -> None:
         self._session.add(EmployeeRow(tenant_id=self._tenant_id, **_to_values(employee)))
+        self._session.add(
+            ModelConfigurationReferenceRow(
+                tenant_id=self._tenant_id,
+                model_configuration_id=str(employee.default_model_configuration_id),
+                resource_type="employee",
+                resource_id=str(employee.id),
+                created_at=to_database_datetime(employee.created_at),
+            )
+        )
         try:
             await self._session.flush()
         except IntegrityError:
             raise EmployeeAlreadyExists from None
 
     async def update(self, employee: Employee) -> bool:
-        result = cast(
-            CursorResult[Any],
+        try:
+            result = cast(
+                CursorResult[Any],
+                await self._session.execute(
+                    update(EmployeeRow)
+                    .where(
+                        EmployeeRow.id == str(employee.id),
+                        EmployeeRow.tenant_id == self._tenant_id,
+                    )
+                    .values(**_to_values(employee))
+                ),
+            )
+            if not result.rowcount:
+                return False
             await self._session.execute(
-                update(EmployeeRow)
-                .where(
-                    EmployeeRow.id == str(employee.id),
-                    EmployeeRow.tenant_id == self._tenant_id,
+                delete(ModelConfigurationReferenceRow).where(
+                    ModelConfigurationReferenceRow.tenant_id == self._tenant_id,
+                    ModelConfigurationReferenceRow.resource_type == "employee",
+                    ModelConfigurationReferenceRow.resource_id == str(employee.id),
                 )
-                .values(**_to_values(employee))
-            ),
-        )
-        return bool(result.rowcount)
+            )
+            self._session.add(
+                ModelConfigurationReferenceRow(
+                    tenant_id=self._tenant_id,
+                    model_configuration_id=str(employee.default_model_configuration_id),
+                    resource_type="employee",
+                    resource_id=str(employee.id),
+                    created_at=to_database_datetime(employee.updated_at),
+                )
+            )
+            await self._session.flush()
+        except IntegrityError:
+            raise EmployeeAlreadyExists from None
+        return True
 
 
 class SqlAlchemyEmployeeUnitOfWork:
@@ -170,6 +208,7 @@ def _to_values(employee: Employee) -> dict[str, object]:
         "name": employee.name,
         "description": employee.description,
         "system_prompt": employee.system_prompt,
+        "default_model_configuration_id": str(employee.default_model_configuration_id),
         "knowledge_base_id": employee.knowledge_base_id,
         "allowed_workflow_ids": [str(workflow_id) for workflow_id in employee.allowed_workflow_ids],
         "created_at": to_database_datetime(employee.created_at),
@@ -177,12 +216,24 @@ def _to_values(employee: Employee) -> dict[str, object]:
     }
 
 
-def _to_domain(row: EmployeeRow) -> Employee:
+def _employee_statement() -> Any:
+    return select(EmployeeRow, ModelConfigurationRow.model_identifier).join(
+        ModelConfigurationRow,
+        and_(
+            ModelConfigurationRow.tenant_id == EmployeeRow.tenant_id,
+            ModelConfigurationRow.id == EmployeeRow.default_model_configuration_id,
+        ),
+    )
+
+
+def _to_domain(row: EmployeeRow, model_identifier: str) -> Employee:
     return Employee(
         id=UUID(row.id),
         name=row.name,
         description=row.description,
         system_prompt=row.system_prompt,
+        default_model_configuration_id=UUID(row.default_model_configuration_id),
+        default_model_identifier=model_identifier,
         knowledge_base_id=row.knowledge_base_id,
         allowed_workflow_ids=tuple(UUID(value) for value in row.allowed_workflow_ids),
         created_at=from_database_datetime(row.created_at),

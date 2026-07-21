@@ -26,7 +26,7 @@ from common_agent.ports.conversations import (
     MessageSequenceAlreadyExists,
 )
 from tests.support.conversations import delete_conversations
-from tests.support.employees import delete_employees
+from tests.support.employees import default_employee_model_fields, delete_employees
 from tests.support.settings import TEST_DATABASE_URL
 
 
@@ -45,7 +45,11 @@ async def _database() -> AsyncIterator[Database]:
 
 
 def _records() -> tuple[Employee, Conversation, Message, Message]:
-    employee = Employee.create(name=f"conversation-{uuid4().hex}", system_prompt="通用指令")
+    employee = Employee.create(
+        name=f"conversation-{uuid4().hex}",
+        system_prompt="通用指令",
+        **default_employee_model_fields(),
+    )
     conversation = Conversation.create(employee_id=employee.id, title="通用会话")
     user = Message.create_user(
         conversation_id=conversation.id,
@@ -161,7 +165,11 @@ def test_repositories_list_and_update_without_owning_transactions() -> None:
 
 
 def test_repositories_list_all_conversations_and_active_assistant_messages() -> None:
-    employee = Employee.create(name=f"conversation-list-{uuid4().hex}", system_prompt="通用指令")
+    employee = Employee.create(
+        name=f"conversation-list-{uuid4().hex}",
+        system_prompt="通用指令",
+        **default_employee_model_fields(),
+    )
     older = Conversation.create(employee_id=employee.id, title="较早会话")
     newer = Conversation.create(
         employee_id=employee.id,

@@ -3,8 +3,14 @@ from __future__ import annotations
 import asyncio
 from uuid import UUID, uuid4
 
-from tests.support.employees import delete_employees_from_database_url
+from tests.support.employees import (
+    DEFAULT_TEST_MODEL_CONFIGURATION_ID,
+    delete_employees_from_database_url,
+)
 from tests.support.http import assert_error_response, authenticated_client, running_api
+from tests.support.model_configuration_e2e_state import (
+    delete_model_configurations_named_from_database_url,
+)
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows_from_database_url
 
@@ -13,14 +19,150 @@ def _body(
     *,
     knowledge_base_id: str | None = None,
     allowed_workflow_ids: list[str] | None = None,
+    default_model_configuration_id: str | None = None,
 ) -> dict[str, object]:
-    return {
+    body: dict[str, object] = {
         "name": "通用助理",
         "description": "与具体业务无关",
         "system_prompt": "根据用户问题提供帮助。",
         "knowledge_base_id": knowledge_base_id,
         "allowed_workflow_ids": allowed_workflow_ids or [],
     }
+    body["default_model_configuration_id"] = default_model_configuration_id or str(
+        DEFAULT_TEST_MODEL_CONFIGURATION_ID
+    )
+    return body
+
+
+def test_employee_persists_an_enabled_tenant_model_reference_through_formal_api() -> None:
+    employee_id: str | None = None
+    model_configuration_id: str | None = None
+    model_name = f"员工默认模型-{uuid4().hex}"
+    try:
+        with (
+            running_api(TEST_DATABASE_URL) as api_url,
+            authenticated_client(base_url=api_url, timeout=5) as client,
+        ):
+            configured = client.post(
+                "/api/v1/model-configurations",
+                json={
+                    "display_name": model_name,
+                    "model_identifier": "qwen-turbo",
+                    "enabled": True,
+                },
+            )
+            assert configured.status_code == 201
+            model_configuration_id = configured.json()["id"]
+
+            created = client.post(
+                "/api/v1/employees",
+                json=_body(default_model_configuration_id=model_configuration_id),
+            )
+            assert created.status_code == 201
+            employee_id = created.json()["id"]
+            assert created.json()["default_model_configuration_id"] == model_configuration_id
+            assert created.json()["default_model_identifier"] == "qwen-turbo"
+
+            restored = client.get(f"/api/v1/employees/{employee_id}")
+            assert restored.status_code == 200
+            assert restored.json()["default_model_configuration_id"] == model_configuration_id
+
+            assert client.delete(f"/api/v1/employees/{employee_id}").status_code == 204
+            employee_id = None
+            assert (
+                client.delete(f"/api/v1/model-configurations/{model_configuration_id}").status_code
+                == 204
+            )
+            model_configuration_id = None
+    finally:
+        if employee_id is not None:
+            asyncio.run(delete_employees_from_database_url(TEST_DATABASE_URL, employee_id))
+        asyncio.run(
+            delete_model_configurations_named_from_database_url(
+                TEST_DATABASE_URL,
+                model_name,
+            )
+        )
+
+    assert employee_id is None
+    assert model_configuration_id is None
+
+
+def test_disabled_employee_model_preserves_existing_binding_and_blocks_new_selection() -> None:
+    employee_id: str | None = None
+    model_name = f"停用员工模型-{uuid4().hex}"
+    try:
+        with (
+            running_api(TEST_DATABASE_URL) as api_url,
+            authenticated_client(base_url=api_url, timeout=5) as client,
+        ):
+            configured = client.post(
+                "/api/v1/model-configurations",
+                json={
+                    "display_name": model_name,
+                    "model_identifier": "qwen-turbo",
+                    "enabled": True,
+                },
+            )
+            assert configured.status_code == 201
+            model_configuration_id = configured.json()["id"]
+            created = client.post(
+                "/api/v1/employees",
+                json=_body(default_model_configuration_id=model_configuration_id),
+            )
+            assert created.status_code == 201
+            employee_id = created.json()["id"]
+
+            disabled = client.put(
+                f"/api/v1/model-configurations/{model_configuration_id}",
+                json={
+                    "display_name": model_name,
+                    "model_identifier": "qwen-turbo",
+                    "enabled": False,
+                },
+            )
+            assert disabled.status_code == 200
+
+            preserved = client.put(
+                f"/api/v1/employees/{employee_id}",
+                json={
+                    **_body(default_model_configuration_id=model_configuration_id),
+                    "description": "停用后仍可保留现有绑定",
+                },
+            )
+            assert preserved.status_code == 200
+            assert preserved.json()["description"] == "停用后仍可保留现有绑定"
+
+            rejected = client.post(
+                "/api/v1/employees",
+                json={
+                    **_body(default_model_configuration_id=model_configuration_id),
+                    "name": "不能新选停用模型",
+                },
+            )
+            assert_error_response(rejected, status=409, code="employee_model_disabled")
+            blocked_delete = client.delete(f"/api/v1/model-configurations/{model_configuration_id}")
+            assert_error_response(
+                blocked_delete,
+                status=409,
+                code="model_configuration_in_use",
+            )
+
+            assert client.delete(f"/api/v1/employees/{employee_id}").status_code == 204
+            employee_id = None
+            assert (
+                client.delete(f"/api/v1/model-configurations/{model_configuration_id}").status_code
+                == 204
+            )
+    finally:
+        if employee_id is not None:
+            asyncio.run(delete_employees_from_database_url(TEST_DATABASE_URL, employee_id))
+        asyncio.run(
+            delete_model_configurations_named_from_database_url(
+                TEST_DATABASE_URL,
+                model_name,
+            )
+        )
 
 
 def _workflow_body() -> dict[str, object]:

@@ -43,8 +43,8 @@ React
 
 - 第一版只支持阿里百炼，不引入 LiteLLM 或供应商路由；
 - 使用百炼 OpenAI 兼容接口和 `langchain-openai` 的 `ChatOpenAI`；
-- `base_url` 和 API Key 来自后端配置；聊天模型标识可以来自当前租户的已启用模型配置，未迁移
-  的既有链路暂时使用后端默认模型；
+- `base_url` 和 API Key 来自后端配置；数字员工聊天模型标识来自该员工在当前租户持久化的模型
+  配置，独立工作流 AI 节点在 S10-07I 前仍使用后端默认模型；
 - 用户明确批准现有百炼 Demo API Key 只在私有仓库 `backend/.env.demo` 中版本化，且明确选择不轮换；这是唯一凭据例外；
 - API Key 永远不进入前端响应、日志、异常、OpenAPI 样例或测试快照；
 - 模型适配器固定使用锁文件中的 `langchain-openai==1.3.5`，只接受百炼官方
@@ -303,13 +303,16 @@ Employee
 ├── name: string
 ├── description: string
 ├── system_prompt: string
+├── default_model_configuration_id: UUID
+├── default_model_identifier: string
 ├── knowledge_base_id: string | null
 ├── allowed_workflow_ids: list[UUID]
 ├── created_at
 └── updated_at
 ```
 
-第一版一个员工最多绑定一个 RAGFlow 知识库。员工未绑定知识库时不执行检索。
+第一版一个员工最多绑定一个 RAGFlow 知识库，并必须绑定当前租户的一个模型配置。员工未绑定
+知识库时不执行检索。模型标识由模型配置联表解析，不在员工表维护第二份可漂移副本。
 
 `Employee` 是与具体业务无关的会话角色配置：只保存名称、说明、系统指令和平台能力引用，
 不保存行业字段、业务任务状态或 automation-tool 的业务模型。`allowed_workflow_ids` 只是对独立
@@ -332,7 +335,8 @@ ModelConfiguration
 字母、数字、点、下划线和连字符，不能把 URL、路径或任意供应商参数带入适配器。列表使用
 `created_at DESC, id DESC` keyset 游标，并可只返回启用配置，筛选条件进入游标作用域。
 
-`model_configuration_references` 是员工、工作流和会话后续绑定模型的统一引用表。删除在同一租户
+`model_configuration_references` 是员工、工作流和会话绑定模型的统一引用表。员工写入与
+`employees.default_model_configuration_id` 和引用表在同一事务更新。删除在同一租户
 分布式资源锁和 MySQL 事务中重新查询引用，有引用时返回 `model_configuration_in_use`；复合外键
 同时阻止跨租户引用和绕过应用层的删除。停用只影响后续新选择，不改写既有引用。测试调用允许在
 启用前执行，以便用户先验证再启用；它不持久化提示词或供应商正文，只审计固定动作与资源 ID。
@@ -385,8 +389,12 @@ Citation
 `EmployeeRuntime` 每次 `stream(request, stop=...)` 只生成同一会话中的一条助手回复，不创建
 任务实体，也不暴露旧任务模型的启动、审批、恢复或产物方法。请求显式携带 Conversation、
 Employee、助手占位消息 ID/序号、员工系统指令、按持久化序号排列的模型可见历史、知识库
-绑定/检索片段和允许调用的工作流 ID；系统指令、历史正文与知识原文彼此分离，适配器不能靠
+绑定/检索片段、员工解析后的模型标识和允许调用的工作流 ID；系统指令、历史正文与知识原文彼此分离，适配器不能靠
 拼接无类型字典猜测来源。
+
+`DeepAgentsEmployeeRuntime` 每轮按请求模型标识从 `BailianChatModelResolver` 取得对应
+`ChatOpenAI`；解析器按模型标识有界复用适配器并在运行时关闭时统一释放客户端。模型配置停用不
+中断已有员工，员工改选或新建时则由 `EmployeeService` 关闭失败。
 
 历史最多 100 条且总计 400,000 字符；知识上下文最多 20 段且总计 120,000 字符。未绑定知识
 库时上下文必须为空；已绑定但检索零命中仍保留 `knowledge_base_id` 并允许空上下文，不能把这
@@ -692,6 +700,7 @@ completed/failed/stopped 都严格提交后发布。停止接口只接受活跃�
 - `model_configuration_not_found`：当前工作区不存在指定模型配置；
 - `model_configuration_conflict`：显示名称或百炼模型标识在当前工作区重复；
 - `model_configuration_in_use`：数字员工、工作流或会话仍引用该模型配置；
+- `employee_model_disabled`：新建员工或切换默认模型时选择了已停用配置；
 - `model_unavailable`：百炼超时、限流或服务错误；
 - `knowledge_service_unavailable`：RAGFlow 不可达；
 - `knowledge_base_not_found`：绑定或节点引用失效；

@@ -11,7 +11,7 @@ from sqlalchemy import text
 from common_agent.adapters.persistence.database import Database
 from common_agent.api.routers.conversations import ConversationEventResponse
 from tests.support.conversations import delete_conversations
-from tests.support.employees import delete_employees
+from tests.support.employees import DEFAULT_TEST_MODEL_CONFIGURATION_ID, delete_employees
 from tests.support.http import authenticated_async_client, running_api
 from tests.support.ragflow import provision_api_key
 from tests.support.settings import TEST_DATABASE_URL
@@ -164,6 +164,7 @@ def _employee_body(name: str, allowed_workflow_ids: list[str]) -> dict[str, obje
             "把用户要求的文本原样作为 input。收到工具结果后只输出 output 字段。"
             "如果没有可用工具,明确说明无权限,绝不能假装已经执行。"
         ),
+        "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
         "knowledge_base_id": None,
         "allowed_workflow_ids": allowed_workflow_ids,
     }

@@ -9,7 +9,7 @@ from common_agent.adapters.persistence.database import Database
 from common_agent.api.routers.conversations import ConversationEventResponse
 from tests.support.conversations import delete_conversations
 from tests.support.demo_knowledge import delete_demo_knowledge_bases
-from tests.support.employees import delete_employees
+from tests.support.employees import DEFAULT_TEST_MODEL_CONFIGURATION_ID, delete_employees
 from tests.support.http import authenticated_async_client, running_api
 from tests.support.settings import TEST_DATABASE_URL
 
@@ -79,6 +79,7 @@ async def _create_demo_state_and_first_turn(
                 "name": f"D8-02 重启员工 {suffix}",
                 "description": "持久语义验收",
                 "system_prompt": "使用绑定知识回答。",
+                "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
                 "knowledge_base_id": knowledge_base_id,
                 "allowed_workflow_ids": [],
             },

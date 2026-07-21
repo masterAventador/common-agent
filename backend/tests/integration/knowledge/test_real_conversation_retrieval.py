@@ -16,6 +16,7 @@ from common_agent.domain.knowledge import (
     DocumentUpload,
 )
 from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
+from tests.support.employees import default_employee_model_fields
 from tests.support.ragflow import delete_dataset, provision_api_key
 
 
@@ -71,6 +72,7 @@ async def _exercise_real_resolver(base_url: str, api_key: str, expected_version:
         employee = Employee.create(
             name="A4-05 知识助理",
             system_prompt="根据绑定知识库回答。",
+            **default_employee_model_fields(),
             knowledge_base_id=dataset.id,
         )
         user_message = Message.create_user(

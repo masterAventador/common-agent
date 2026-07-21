@@ -14,15 +14,21 @@ from common_agent.domain.employee import (
     EmployeeValidationError,
 )
 
+MODEL_CONFIGURATION_ID = UUID("5eb782ad-4fd6-40a6-8668-a9b729340ec9")
+MODEL_IDENTIFIER = "qwen-plus"
+
 
 def test_employee_create_normalizes_generic_configuration() -> None:
     workflow_id = uuid4()
+    model_configuration_id = uuid4()
     before = datetime.now(UTC)
 
     employee = Employee.create(
         name="  通用知识助理  ",
         description="  面向任意领域的会话角色  ",
         system_prompt="  根据可用上下文回答问题。  ",
+        default_model_configuration_id=model_configuration_id,
+        default_model_identifier="qwen-plus",
         knowledge_base_id="  ragflow-dataset-id  ",
         allowed_workflow_ids=[workflow_id],
     )
@@ -31,6 +37,8 @@ def test_employee_create_normalizes_generic_configuration() -> None:
     assert employee.name == "通用知识助理"
     assert employee.description == "面向任意领域的会话角色"
     assert employee.system_prompt == "根据可用上下文回答问题。"
+    assert employee.default_model_configuration_id == model_configuration_id
+    assert employee.default_model_identifier == "qwen-plus"
     assert employee.knowledge_base_id == "ragflow-dataset-id"
     assert employee.allowed_workflow_ids == (workflow_id,)
     assert before <= employee.created_at <= datetime.now(UTC)
@@ -38,13 +46,20 @@ def test_employee_create_normalizes_generic_configuration() -> None:
 
 
 def test_employee_reconfigure_preserves_identity_and_creation_time() -> None:
-    employee = Employee.create(name="助理", system_prompt="原始指令")
+    employee = Employee.create(
+        name="助理",
+        system_prompt="原始指令",
+        default_model_configuration_id=MODEL_CONFIGURATION_ID,
+        default_model_identifier=MODEL_IDENTIFIER,
+    )
     changed_at = employee.updated_at + timedelta(microseconds=1)
 
     changed = employee.reconfigure(
         name="新助理",
         description="新说明",
         system_prompt="新指令",
+        default_model_configuration_id=MODEL_CONFIGURATION_ID,
+        default_model_identifier=MODEL_IDENTIFIER,
         knowledge_base_id=None,
         allowed_workflow_ids=(),
         updated_at=changed_at,
@@ -79,7 +94,12 @@ def test_employee_reconfigure_preserves_identity_and_creation_time() -> None:
     ],
 )
 def test_employee_rejects_invalid_fields(overrides: dict[str, object], field: str) -> None:
-    values: dict[str, object] = {"name": "助理", "system_prompt": "通用系统指令"}
+    values: dict[str, object] = {
+        "name": "助理",
+        "system_prompt": "通用系统指令",
+        "default_model_configuration_id": MODEL_CONFIGURATION_ID,
+        "default_model_identifier": MODEL_IDENTIFIER,
+    }
     values.update(overrides)
 
     with pytest.raises(EmployeeValidationError) as captured:
@@ -95,6 +115,8 @@ def test_employee_rejects_duplicate_workflow_allowlist_entries() -> None:
         Employee.create(
             name="助理",
             system_prompt="通用系统指令",
+            default_model_configuration_id=MODEL_CONFIGURATION_ID,
+            default_model_identifier=MODEL_IDENTIFIER,
             allowed_workflow_ids=[workflow_id, workflow_id],
         )
 
@@ -111,6 +133,8 @@ def test_employee_rejects_non_utc_or_reversed_timestamps() -> None:
             name="助理",
             description="",
             system_prompt="通用系统指令",
+            default_model_configuration_id=MODEL_CONFIGURATION_ID,
+            default_model_identifier=MODEL_IDENTIFIER,
             knowledge_base_id=None,
             allowed_workflow_ids=(),
             created_at=created_at.replace(tzinfo=None),
@@ -124,6 +148,8 @@ def test_employee_rejects_non_utc_or_reversed_timestamps() -> None:
             name="助理",
             description="",
             system_prompt="通用系统指令",
+            default_model_configuration_id=MODEL_CONFIGURATION_ID,
+            default_model_identifier=MODEL_IDENTIFIER,
             knowledge_base_id=None,
             allowed_workflow_ids=(),
             created_at=created_at,

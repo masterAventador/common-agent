@@ -162,6 +162,18 @@ def test_openapi_exposes_generic_employee_crud_contract() -> None:
         "type": "string",
         "format": "uuid",
     }
+    assert properties["default_model_configuration_id"] == {
+        "type": "string",
+        "format": "uuid",
+        "title": "Default Model Configuration Id",
+    }
+    assert "default_model_configuration_id" in configuration["required"]
+
+    response = schema["components"]["schemas"]["EmployeeResponse"]
+    assert {
+        "default_model_configuration_id",
+        "default_model_identifier",
+    } <= set(response["required"])
 
 
 def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> None:

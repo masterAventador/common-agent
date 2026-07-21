@@ -957,6 +957,11 @@ export interface components {
             /** Allowed Workflow Ids */
             allowed_workflow_ids?: string[];
             /**
+             * Default Model Configuration Id
+             * Format: uuid
+             */
+            default_model_configuration_id: string;
+            /**
              * Description
              * @default
              */
@@ -977,6 +982,13 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Default Model Configuration Id
+             * Format: uuid
+             */
+            default_model_configuration_id: string;
+            /** Default Model Identifier */
+            default_model_identifier: string;
             /** Description */
             description: string;
             /**

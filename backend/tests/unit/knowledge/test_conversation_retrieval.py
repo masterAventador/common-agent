@@ -30,6 +30,7 @@ from common_agent.knowledge.retrieval import (
     ConversationKnowledgeResolver,
     ResolvedKnowledgeContext,
 )
+from tests.support.employees import default_employee_model_fields
 
 EMPLOYEE_ID = UUID("ddbdad78-1128-4334-ad02-d28833357529")
 CONVERSATION_ID = UUID("40b8bf77-fd8b-46ca-a103-5bebc29e185e")
@@ -76,6 +77,7 @@ def _employee(*, knowledge_base_id: str | None) -> Employee:
         employee_id=EMPLOYEE_ID,
         name="知识助理",
         system_prompt="根据知识库回答。",
+        **default_employee_model_fields(),
         knowledge_base_id=knowledge_base_id,
         now=NOW,
     )

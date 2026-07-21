@@ -25,6 +25,8 @@ const employee = {
   name: "知识助理",
   description: "通用知识问答",
   system_prompt: "优先依据知识库回答。",
+  default_model_configuration_id: "0d4f38a5-bfd1-496f-b99d-fd768a2f3c30",
+  default_model_identifier: "qwen-plus",
   knowledge_base_id: "kb-1",
   allowed_workflow_ids: [],
   created_at: "2026-07-19T08:00:00Z",
@@ -35,6 +37,7 @@ const input = {
   name: "知识助理",
   description: "通用知识问答",
   system_prompt: "优先依据知识库回答。",
+  default_model_configuration_id: employee.default_model_configuration_id,
   knowledge_base_id: "kb-1",
   allowed_workflow_ids: [],
 };

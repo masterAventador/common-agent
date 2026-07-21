@@ -17,7 +17,7 @@ from common_agent.adapters.persistence.conversations import (
 )
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeRepository
-from common_agent.adapters.persistence.models import EmployeeRow, TenantRow, WorkflowRow
+from common_agent.adapters.persistence.models import TenantRow, WorkflowRow
 from common_agent.adapters.persistence.workflows import (
     SqlAlchemyWorkflowRepository,
     SqlAlchemyWorkflowRunRepository,
@@ -33,6 +33,7 @@ from common_agent.domain.workflow_run import (
 )
 from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant
 from common_agent.tenancy.constants import DEFAULT_ORGANIZATION_ID, DEFAULT_TENANT_ID
+from tests.support.employees import default_employee_model_fields, delete_employees
 from tests.support.settings import TEST_DATABASE_URL
 from tests.unit.workflows.support import workflow_configuration
 
@@ -57,7 +58,11 @@ def test_resource_queries_and_cross_resource_foreign_keys_are_tenant_scoped() ->
     async def exercise() -> None:
         database = Database(_database_url())
         tenant_b = uuid4()
-        employee = Employee.create(name=f"tenant-a-{uuid4().hex}", system_prompt="隔离测试")
+        employee = Employee.create(
+            name=f"tenant-a-{uuid4().hex}",
+            system_prompt="隔离测试",
+            **default_employee_model_fields(),
+        )
         conversation = Conversation.create(employee_id=employee.id, title="越权会话")
         configuration = workflow_configuration()
         workflow = WorkflowDefinition.create(
@@ -129,8 +134,8 @@ def test_resource_queries_and_cross_resource_foreign_keys_are_tenant_scoped() ->
             async with database.session() as session:
                 await session.execute(delete(TenantRow).where(TenantRow.id == str(tenant_b)))
                 await session.execute(delete(WorkflowRow).where(WorkflowRow.id == str(workflow.id)))
-                await session.execute(delete(EmployeeRow).where(EmployeeRow.id == str(employee.id)))
                 await session.commit()
+            await delete_employees(database, employee.id)
             await database.stop()
 
     asyncio.run(exercise())

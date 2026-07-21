@@ -1,4 +1,5 @@
 import { expect, platformWriteHeaders, test } from "./fixtures/auth";
+import { selectEmployeeDefaultModel } from "./fixtures/models";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -20,6 +21,7 @@ test("records and verifies an owner-visible metadata-only audit event", async ({
   await dialog
     .getByRole("textbox", { name: "系统指令" })
     .fill("请求正文和凭据绝不能进入审计记录。");
+  await selectEmployeeDefaultModel(page, dialog);
   const createResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/v1/employees") &&

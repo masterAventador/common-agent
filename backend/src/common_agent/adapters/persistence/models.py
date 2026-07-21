@@ -759,7 +759,18 @@ class EmployeeRow(PersistenceBase):
             name="ck_employees_allowed_workflow_ids",
         ),
         CheckConstraint("updated_at >= created_at", name="ck_employees_timestamps"),
+        ForeignKeyConstraint(
+            ["tenant_id", "default_model_configuration_id"],
+            ["model_configurations.tenant_id", "model_configurations.id"],
+            name="fk_employees_tenant_default_model",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("tenant_id", "id", name="uq_employees_tenant_id"),
+        Index(
+            "ix_employees_tenant_default_model",
+            "tenant_id",
+            "default_model_configuration_id",
+        ),
         Index("ix_employees_tenant_created", "tenant_id", "created_at", "id"),
         Index("ix_employees_tenant_name_created", "tenant_id", "name", "created_at", "id"),
     )
@@ -775,6 +786,7 @@ class EmployeeRow(PersistenceBase):
         String(EMPLOYEE_DESCRIPTION_MAX_LENGTH), nullable=False
     )
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    default_model_configuration_id: Mapped[str] = mapped_column(String(36), nullable=False)
     knowledge_base_id: Mapped[str | None] = mapped_column(
         String(EMPLOYEE_KNOWLEDGE_BASE_ID_MAX_LENGTH), nullable=True
     )

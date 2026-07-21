@@ -28,8 +28,13 @@ from common_agent.domain.employee import (
     EmployeeConfiguration,
     EmployeeValidationError,
 )
-from common_agent.employees.service import EmployeeNotFound, EmployeeService
+from common_agent.employees.service import (
+    EmployeeModelDisabled,
+    EmployeeNotFound,
+    EmployeeService,
+)
 from common_agent.knowledge.base import KnowledgeServiceError
+from common_agent.model_configurations.service import ModelConfigurationNotFound
 from common_agent.pagination import (
     DEFAULT_PAGE_LIMIT,
     MAX_PAGE_CURSOR_LENGTH,
@@ -74,6 +79,7 @@ class EmployeeConfigurationBody(BaseModel):
     name: EmployeeName
     description: EmployeeDescription = ""
     system_prompt: EmployeeSystemPrompt
+    default_model_configuration_id: UUID
     knowledge_base_id: EmployeeKnowledgeBaseId | None = None
     allowed_workflow_ids: list[UUID] = Field(
         default_factory=list,
@@ -88,6 +94,8 @@ class EmployeeResponse(BaseModel):
     name: str
     description: str
     system_prompt: str
+    default_model_configuration_id: UUID
+    default_model_identifier: str
     knowledge_base_id: str | None
     allowed_workflow_ids: list[UUID]
     created_at: datetime
@@ -111,6 +119,7 @@ def _configuration(body: EmployeeConfigurationBody) -> EmployeeConfiguration:
         name=body.name,
         description=body.description,
         system_prompt=body.system_prompt,
+        default_model_configuration_id=body.default_model_configuration_id,
         knowledge_base_id=body.knowledge_base_id,
         allowed_workflow_ids=tuple(body.allowed_workflow_ids),
     )
@@ -125,6 +134,10 @@ def _employee_error_to_app_error(error: Exception) -> AppError:
         return knowledge_error_to_app_error(error)
     if isinstance(error, EmployeeNotFound):
         return AppError(error.code, error.message, 404, error.retryable)
+    if isinstance(error, ModelConfigurationNotFound):
+        return AppError(error.code, error.message, 404, error.retryable)
+    if isinstance(error, EmployeeModelDisabled):
+        return AppError(error.code, error.message, 409, error.retryable)
     if isinstance(error, WorkflowServiceError):
         return AppError(error.code, error.message, 404, error.retryable)
     if isinstance(error, EmployeeAlreadyExists):
@@ -198,6 +211,8 @@ async def create_employee(
         EmployeeAlreadyExists,
         EmployeeValidationError,
         KnowledgeServiceError,
+        ModelConfigurationNotFound,
+        EmployeeModelDisabled,
         WorkflowServiceError,
     ) as error:
         raise _employee_error_to_app_error(error) from error
@@ -243,6 +258,8 @@ async def update_employee(
         EmployeeNotFound,
         EmployeeValidationError,
         KnowledgeServiceError,
+        ModelConfigurationNotFound,
+        EmployeeModelDisabled,
         WorkflowServiceError,
     ) as error:
         raise _employee_error_to_app_error(error) from error

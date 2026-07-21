@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/auth";
+import { selectEmployeeDefaultModel } from "./fixtures/models";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -96,6 +97,7 @@ test("designs, runs, triggers, and restores an employee workflow through the rea
     .fill(
       "用户要求执行工作流时，必须调用唯一可用的工作流工具一次；把 input: 后的文本原样作为 input。工具完成后只回答 output。",
     );
+  await selectEmployeeDefaultModel(page, employeeDialog);
   await employeeDialog.getByRole("combobox", { name: "允许工作流" }).click();
   await page.getByTitle(workflowName).click();
   const createdEmployeeResponse = page.waitForResponse(

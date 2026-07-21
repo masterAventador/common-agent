@@ -20,10 +20,24 @@ const knowledgeApi = vi.hoisted(() => ({
 const workflowApi = vi.hoisted(() => ({
   fetchWorkflows: vi.fn(),
 }));
+const modelApi = vi.hoisted(() => ({
+  fetchModelConfigurations: vi.fn(),
+}));
 
 vi.mock("../../api/employees", () => employeeApi);
 vi.mock("../../api/knowledge", () => knowledgeApi);
 vi.mock("../../api/workflows", () => workflowApi);
+vi.mock("../../api/modelConfigurations", () => modelApi);
+
+const modelConfiguration = {
+  id: "0d4f38a5-bfd1-496f-b99d-fd768a2f3c30",
+  display_name: "Qwen Plus",
+  provider: "bailian",
+  model_identifier: "qwen-plus",
+  enabled: true,
+  created_at: "2026-07-22T04:00:00Z",
+  updated_at: "2026-07-22T04:00:00Z",
+};
 
 const knowledgeBase = {
   id: "kb-1",
@@ -48,6 +62,8 @@ const employee = {
   name: "知识助理",
   description: "通用知识问答",
   system_prompt: "优先依据知识库回答。",
+  default_model_configuration_id: modelConfiguration.id,
+  default_model_identifier: modelConfiguration.model_identifier,
   knowledge_base_id: "kb-1",
   allowed_workflow_ids: [],
   created_at: "2026-07-19T08:00:00Z",
@@ -90,6 +106,10 @@ describe("EmployeesPage", () => {
       next_cursor: null,
     });
     workflowApi.fetchWorkflows.mockResolvedValue({ items: [workflow], next_cursor: null });
+    modelApi.fetchModelConfigurations.mockResolvedValue({
+      items: [modelConfiguration],
+      next_cursor: null,
+    });
   });
 
   it("lists generic employees and resolves their bound knowledge base names", async () => {
@@ -157,6 +177,8 @@ describe("EmployeesPage", () => {
     await user.type(screen.getByRole("textbox", { name: "名称" }), "制度问答助理");
     await user.type(screen.getByRole("textbox", { name: "说明" }), "回答内部制度问题");
     await user.type(screen.getByRole("textbox", { name: "系统指令" }), "只依据可靠资料回答。");
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "默认模型" }));
+    fireEvent.click(await screen.findByTitle("Qwen Plus · qwen-plus"));
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "知识库" }));
     await screen.findByRole("option", { name: "通用产品手册" });
     fireEvent.click(await screen.findByTitle("通用产品手册"));
@@ -170,6 +192,7 @@ describe("EmployeesPage", () => {
         name: "制度问答助理",
         description: "回答内部制度问题",
         system_prompt: "只依据可靠资料回答。",
+        default_model_configuration_id: modelConfiguration.id,
         knowledge_base_id: "kb-1",
         allowed_workflow_ids: [workflow.id],
       }),
@@ -202,6 +225,7 @@ describe("EmployeesPage", () => {
         name: "知识助理",
         description: "更新后的说明",
         system_prompt: "优先依据知识库回答。",
+        default_model_configuration_id: modelConfiguration.id,
         knowledge_base_id: "kb-1",
         allowed_workflow_ids: [],
       }),
@@ -219,6 +243,18 @@ describe("EmployeesPage", () => {
     expect(screen.getByText("知识库服务暂时不可用")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "创建数字员工" }));
     expect(screen.getByRole("combobox", { name: "知识库" })).toBeDisabled();
+  });
+
+  it("fails closed when model options cannot be loaded", async () => {
+    modelApi.fetchModelConfigurations.mockRejectedValue(
+      new Error("模型配置服务暂时不可用"),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("模型选项加载失败")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "创建数字员工" }));
+    expect(screen.getByRole("combobox", { name: "默认模型" })).toBeDisabled();
   });
 
   it("shows existing workflow permissions and disables only that field when workflows fail", async () => {

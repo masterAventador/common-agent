@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/auth";
+import { selectEmployeeDefaultModel } from "./fixtures/models";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -109,6 +110,7 @@ test("completes the whole MVP from empty business data through one real user jou
   await employeeDialog
     .getByRole("textbox", { name: "系统指令" })
     .fill("只依据绑定知识库的可靠资料回答，并保留资料中的验收标记。");
+  await selectEmployeeDefaultModel(page, employeeDialog);
   await employeeDialog.getByRole("combobox", { name: "知识库" }).click();
   await page.getByTitle(knowledgeBaseName).click();
   const employeeResponse = page.waitForResponse(

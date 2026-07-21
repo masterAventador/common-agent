@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures/auth";
+import { selectEmployeeDefaultModel } from "./fixtures/models";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,6 +59,7 @@ test("runs two cited turns and automatically recovers an interrupted durable rep
   await employeeDialog
     .getByRole("textbox", { name: "系统指令" })
     .fill("使用固定知识适配器回答，并保留连续会话上下文。");
+  await selectEmployeeDefaultModel(page, employeeDialog);
   await employeeDialog.getByRole("combobox", { name: "知识库" }).click();
   await page.getByTitle(knowledgeBaseName).click();
   const createdEmployeeResponse = page.waitForResponse(

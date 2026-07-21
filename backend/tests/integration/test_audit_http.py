@@ -7,8 +7,12 @@ import httpx
 from sqlalchemy import delete, text
 
 from common_agent.adapters.persistence.database import Database
-from common_agent.adapters.persistence.models import AuthUserRow, EmployeeRow
+from common_agent.adapters.persistence.models import AuthUserRow
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
+from tests.support.employees import (
+    DEFAULT_TEST_MODEL_CONFIGURATION_ID,
+    delete_employees,
+)
 from tests.support.http import (
     TEST_FRONTEND_ORIGIN,
     assert_error_response,
@@ -36,6 +40,7 @@ def test_audit_http_records_mutation_and_permission_denial_without_payloads() ->
                     "name": f"审计员工-{uuid4().hex}",
                     "description": "审计链路测试",
                     "system_prompt": "绝不记录请求正文。",
+                    "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
                     "knowledge_base_id": None,
                     "allowed_workflow_ids": [],
                 },
@@ -174,6 +179,7 @@ def test_audit_storage_failure_blocks_mutation_before_the_formal_handler() -> No
                     "name": employee_name,
                     "description": "审计不可用时不得落业务数据",
                     "system_prompt": "只用于真实失败注入验收。",
+                    "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
                     "knowledge_base_id": None,
                     "allowed_workflow_ids": [],
                 },
@@ -218,9 +224,9 @@ async def _cleanup(*, employee_id: UUID | None, viewer_email: str) -> None:
     database = Database(TEST_DATABASE_URL)
     await database.start()
     try:
+        if employee_id is not None:
+            await delete_employees(database, employee_id)
         async with database.session() as session:
-            if employee_id is not None:
-                await session.execute(delete(EmployeeRow).where(EmployeeRow.id == str(employee_id)))
             await session.execute(delete(AuthUserRow).where(AuthUserRow.email == viewer_email))
             await session.commit()
     finally:

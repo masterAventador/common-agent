@@ -18,6 +18,10 @@ from common_agent.domain.conversation import (
     MessageRole,
 )
 from common_agent.domain.employee import EMPLOYEE_SYSTEM_PROMPT_MAX_LENGTH
+from common_agent.domain.model_configuration import (
+    ModelConfigurationValidationError,
+    normalize_model_identifier,
+)
 
 RUNTIME_HISTORY_MAX_MESSAGES = 100
 RUNTIME_HISTORY_MAX_CHARACTERS = 400_000
@@ -94,6 +98,7 @@ class EmployeeRuntimeRequest:
     employee_id: UUID
     assistant_message_id: UUID
     assistant_sequence_number: int
+    model_identifier: str
     system_instruction: str = field(repr=False)
     history: tuple[RuntimeConversationMessage, ...] = field(repr=False)
     knowledge_base_id: str | None
@@ -105,6 +110,10 @@ class EmployeeRuntimeRequest:
         _uuid("employee_id", self.employee_id)
         _uuid("assistant_message_id", self.assistant_message_id)
         _positive_integer("assistant_sequence_number", self.assistant_sequence_number)
+        try:
+            model_identifier = normalize_model_identifier(self.model_identifier)
+        except ModelConfigurationValidationError as error:
+            raise RuntimeValidationError("model_identifier", error.reason) from error
         system_instruction = _required_text(
             "system_instruction",
             self.system_instruction,
@@ -126,6 +135,7 @@ class EmployeeRuntimeRequest:
         workflow_ids = _workflow_ids(self.allowed_workflow_ids)
 
         object.__setattr__(self, "system_instruction", system_instruction)
+        object.__setattr__(self, "model_identifier", model_identifier)
         object.__setattr__(self, "history", history)
         object.__setattr__(self, "knowledge_base_id", knowledge_base_id)
         object.__setattr__(self, "knowledge_context", knowledge_context)

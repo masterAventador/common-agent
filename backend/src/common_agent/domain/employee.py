@@ -5,6 +5,11 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from common_agent.domain.model_configuration import (
+    ModelConfigurationValidationError,
+    normalize_model_identifier,
+)
+
 EMPLOYEE_NAME_MAX_LENGTH = 128
 EMPLOYEE_DESCRIPTION_MAX_LENGTH = 1_000
 EMPLOYEE_SYSTEM_PROMPT_MAX_LENGTH = 12_000
@@ -24,10 +29,12 @@ class EmployeeConfiguration:
     name: str
     description: str
     system_prompt: str
+    default_model_configuration_id: UUID
     knowledge_base_id: str | None
     allowed_workflow_ids: tuple[UUID, ...] = ()
 
     def __post_init__(self) -> None:
+        _uuid("default_model_configuration_id", self.default_model_configuration_id)
         object.__setattr__(
             self,
             "allowed_workflow_ids",
@@ -41,6 +48,8 @@ class Employee:
     name: str
     description: str
     system_prompt: str
+    default_model_configuration_id: UUID
+    default_model_identifier: str
     knowledge_base_id: str | None
     allowed_workflow_ids: tuple[UUID, ...]
     created_at: datetime
@@ -56,6 +65,17 @@ class Employee:
         system_prompt = _required_text(
             "system_prompt", self.system_prompt, EMPLOYEE_SYSTEM_PROMPT_MAX_LENGTH
         )
+        default_model_configuration_id = _uuid(
+            "default_model_configuration_id",
+            self.default_model_configuration_id,
+        )
+        try:
+            default_model_identifier = normalize_model_identifier(self.default_model_identifier)
+        except ModelConfigurationValidationError as error:
+            raise EmployeeValidationError(
+                "default_model_identifier",
+                error.reason,
+            ) from error
         knowledge_base_id = _optional_reference(
             "knowledge_base_id",
             self.knowledge_base_id,
@@ -70,6 +90,12 @@ class Employee:
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "description", description)
         object.__setattr__(self, "system_prompt", system_prompt)
+        object.__setattr__(
+            self,
+            "default_model_configuration_id",
+            default_model_configuration_id,
+        )
+        object.__setattr__(self, "default_model_identifier", default_model_identifier)
         object.__setattr__(self, "knowledge_base_id", knowledge_base_id)
         object.__setattr__(self, "allowed_workflow_ids", workflow_ids)
 
@@ -79,6 +105,8 @@ class Employee:
         *,
         name: str,
         system_prompt: str,
+        default_model_configuration_id: UUID,
+        default_model_identifier: str,
         description: str = "",
         knowledge_base_id: str | None = None,
         allowed_workflow_ids: Iterable[UUID] = (),
@@ -91,6 +119,8 @@ class Employee:
             name=name,
             description=description,
             system_prompt=system_prompt,
+            default_model_configuration_id=default_model_configuration_id,
+            default_model_identifier=default_model_identifier,
             knowledge_base_id=knowledge_base_id,
             allowed_workflow_ids=tuple(allowed_workflow_ids),
             created_at=created_at,
@@ -103,6 +133,8 @@ class Employee:
         name: str,
         description: str,
         system_prompt: str,
+        default_model_configuration_id: UUID,
+        default_model_identifier: str,
         knowledge_base_id: str | None,
         allowed_workflow_ids: Iterable[UUID],
         updated_at: datetime | None = None,
@@ -113,6 +145,8 @@ class Employee:
             name=name,
             description=description,
             system_prompt=system_prompt,
+            default_model_configuration_id=default_model_configuration_id,
+            default_model_identifier=default_model_identifier,
             knowledge_base_id=knowledge_base_id,
             allowed_workflow_ids=tuple(allowed_workflow_ids),
             updated_at=changed_at,
@@ -166,3 +200,9 @@ def _utc_timestamp(field: str, value: datetime) -> None:
         raise EmployeeValidationError(field, "必须是时间")
     if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
         raise EmployeeValidationError(field, "必须使用 UTC 时区")
+
+
+def _uuid(field: str, value: object) -> UUID:
+    if not isinstance(value, UUID):
+        raise EmployeeValidationError(field, "必须是 UUID")
+    return value

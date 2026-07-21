@@ -27,7 +27,7 @@ from common_agent.domain.workflow import WorkflowDefinition
 from common_agent.domain.workflow_run import WorkflowRun, WorkflowRunOrigin, WorkflowRunTrigger
 from common_agent.ports.workflows import WorkflowRunAlreadyExists
 from tests.support.conversations import delete_conversations
-from tests.support.employees import delete_employees
+from tests.support.employees import default_employee_model_fields, delete_employees
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows
 from tests.unit.workflows.support import workflow_configuration
@@ -163,7 +163,11 @@ def test_workflow_run_repository_lists_active_and_maps_duplicate_identity() -> N
 
 def test_workflow_run_repository_round_trips_employee_conversation_origin() -> None:
     workflow, _, _ = _records()
-    employee = Employee.create(name="运行来源员工", system_prompt="按要求执行工作流")
+    employee = Employee.create(
+        name="运行来源员工",
+        system_prompt="按要求执行工作流",
+        **default_employee_model_fields(),
+    )
     conversation = Conversation.create(employee_id=employee.id, title="来源会话")
     assistant_message = Message.create_assistant(
         conversation_id=conversation.id,

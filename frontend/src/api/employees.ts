@@ -18,6 +18,10 @@ const employeeSchema = z.strictObject({
   name: z.string().min(1),
   description: z.string(),
   system_prompt: z.string().min(1),
+  default_model_configuration_id: z.uuid(),
+  default_model_identifier: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
   knowledge_base_id: z.string().min(1).nullable(),
   allowed_workflow_ids: z
     .array(z.uuid())

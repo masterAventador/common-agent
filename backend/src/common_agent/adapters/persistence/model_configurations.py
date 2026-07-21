@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.models import (
+    EmployeeRow,
     ModelConfigurationReferenceRow,
     ModelConfigurationRow,
 )
@@ -90,6 +91,15 @@ class SqlAlchemyModelConfigurationRepository:
         )
         return None if row is None else _to_domain(row)
 
+    async def get_by_identifier(self, model_identifier: str) -> ModelConfiguration | None:
+        row = await self._session.scalar(
+            select(ModelConfigurationRow).where(
+                ModelConfigurationRow.model_identifier == model_identifier,
+                ModelConfigurationRow.tenant_id == self._tenant_id,
+            )
+        )
+        return None if row is None else _to_domain(row)
+
     async def add(self, configuration: ModelConfiguration) -> None:
         self._session.add(
             ModelConfigurationRow(
@@ -142,7 +152,17 @@ class SqlAlchemyModelConfigurationRepository:
                 == str(model_configuration_id),
             )
         )
-        return int(count or 0)
+        if count:
+            return int(count)
+        employee_count = await self._session.scalar(
+            select(func.count())
+            .select_from(EmployeeRow)
+            .where(
+                EmployeeRow.tenant_id == self._tenant_id,
+                EmployeeRow.default_model_configuration_id == str(model_configuration_id),
+            )
+        )
+        return int(employee_count or 0)
 
 
 class SqlAlchemyModelConfigurationUnitOfWork:

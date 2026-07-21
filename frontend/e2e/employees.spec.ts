@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures/auth";
+import { selectEmployeeDefaultModel } from "./fixtures/models";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -63,6 +64,7 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
   await employeeDialog
     .getByRole("textbox", { name: "系统指令" })
     .fill("你是通用知识助理，只依据可靠资料回答。");
+  await selectEmployeeDefaultModel(page, employeeDialog);
   await employeeDialog.getByRole("combobox", { name: "知识库" }).click();
   await page.getByTitle(knowledgeBaseName).click();
 

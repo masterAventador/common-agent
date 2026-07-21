@@ -10,11 +10,14 @@ from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.models import (
     AuthUserRow,
     ConversationRow,
-    EmployeeRow,
     TenantMembershipRow,
     TenantRow,
 )
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
+from tests.support.employees import (
+    DEFAULT_TEST_MODEL_CONFIGURATION_ID,
+    delete_employees,
+)
 from tests.support.http import (
     TEST_FRONTEND_ORIGIN,
     assert_error_response,
@@ -119,6 +122,7 @@ def test_tenant_http_isolates_rest_sse_and_viewer_writes() -> None:
                     "name": f"租户 A 员工-{uuid4().hex}",
                     "description": "跨租户关闭失败测试",
                     "system_prompt": "只处理当前工作区数据。",
+                    "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
                     "knowledge_base_id": None,
                     "allowed_workflow_ids": [],
                 },
@@ -168,6 +172,7 @@ def test_tenant_http_isolates_rest_sse_and_viewer_writes() -> None:
                     "name": "Viewer 不可创建",
                     "description": "",
                     "system_prompt": "必须被 RBAC 拒绝。",
+                    "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
                     "knowledge_base_id": None,
                     "allowed_workflow_ids": [],
                 },
@@ -241,8 +246,9 @@ async def _cleanup(
                 await session.execute(
                     delete(ConversationRow).where(ConversationRow.employee_id == str(employee_a))
                 )
-                await session.execute(delete(EmployeeRow).where(EmployeeRow.id == str(employee_a)))
             await session.execute(delete(AuthUserRow).where(AuthUserRow.email == member_email))
             await session.commit()
+        if employee_a is not None:
+            await delete_employees(database, employee_a)
     finally:
         await database.stop()

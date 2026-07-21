@@ -9,7 +9,7 @@ import httpx
 from common_agent.adapters.persistence.database import Database
 from tests.support.conversations import delete_conversations
 from tests.support.demo_knowledge import delete_demo_knowledge_bases
-from tests.support.employees import delete_employees
+from tests.support.employees import DEFAULT_TEST_MODEL_CONFIGURATION_ID, delete_employees
 from tests.support.http import assert_error_response, authenticated_client, running_api
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows
@@ -194,6 +194,7 @@ def _employee_body(
         "name": f"U9 删除员工 {suffix}",
         "description": "引用边界",
         "system_prompt": "只用于删除验收。",
+        "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
         "knowledge_base_id": knowledge_base_id,
         "allowed_workflow_ids": [] if workflow_id is None else [str(workflow_id)],
     }

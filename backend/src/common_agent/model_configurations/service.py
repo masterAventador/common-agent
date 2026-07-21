@@ -106,6 +106,13 @@ class ModelConfigurationService:
             raise ModelConfigurationNotFound
         return result
 
+    async def get_by_identifier(self, model_identifier: str) -> ModelConfiguration:
+        async with self._unit_of_work_factory() as unit_of_work:
+            result = await unit_of_work.model_configurations.get_by_identifier(model_identifier)
+        if result is None:
+            raise ModelConfigurationNotFound
+        return result
+
     async def create(self, value: ModelConfigurationInput) -> ModelConfiguration:
         candidate = ModelConfiguration.create(configuration=value)
         async with (

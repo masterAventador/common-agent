@@ -16,7 +16,7 @@ from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeReposi
 from common_agent.domain.employee import Employee
 from common_agent.pagination import PageAnchor
 from common_agent.ports.employees import EmployeeAlreadyExists
-from tests.support.employees import delete_employees
+from tests.support.employees import default_employee_model_fields, delete_employees
 from tests.support.settings import TEST_DATABASE_URL
 
 
@@ -41,6 +41,7 @@ def test_employee_repository_round_trip_survives_database_restart() -> None:
         system_prompt="优先使用可靠上下文回答。",
         knowledge_base_id=f"ragflow-{uuid4().hex}",
         allowed_workflow_ids=[uuid4(), uuid4()],
+        **default_employee_model_fields(),
     )
 
     async def exercise() -> Employee | None:
@@ -61,12 +62,22 @@ def test_employee_repository_round_trip_survives_database_restart() -> None:
 
 
 def test_employee_repository_lists_and_updates_without_owning_transactions() -> None:
-    first = Employee.create(name=f"first-{uuid4().hex}", system_prompt="第一条通用指令")
-    second = Employee.create(name=f"second-{uuid4().hex}", system_prompt="第二条通用指令")
+    first = Employee.create(
+        name=f"first-{uuid4().hex}",
+        system_prompt="第一条通用指令",
+        **default_employee_model_fields(),
+    )
+    second = Employee.create(
+        name=f"second-{uuid4().hex}",
+        system_prompt="第二条通用指令",
+        **default_employee_model_fields(),
+    )
     changed = second.reconfigure(
         name=second.name,
         description="已更新",
         system_prompt="更新后的通用指令",
+        default_model_configuration_id=second.default_model_configuration_id,
+        default_model_identifier=second.default_model_identifier,
         knowledge_base_id=f"ragflow-{uuid4().hex}",
         allowed_workflow_ids=[uuid4()],
     )
@@ -108,6 +119,7 @@ def test_employee_repository_keyset_page_survives_concurrent_insert_and_anchor_d
             name=f"page-needle-{index}",
             system_prompt="分页测试",
             now=created_at,
+            **default_employee_model_fields(),
         )
         for index in range(1, 6)
     )
@@ -116,6 +128,7 @@ def test_employee_repository_keyset_page_survives_concurrent_insert_and_anchor_d
         name="page-needle-newer",
         system_prompt="分页测试",
         now=created_at + timedelta(seconds=1),
+        **default_employee_model_fields(),
     )
 
     async def exercise() -> tuple[tuple[UUID, ...], tuple[UUID, ...], tuple[UUID, ...]]:
@@ -175,7 +188,11 @@ def test_employee_repository_keyset_page_survives_concurrent_insert_and_anchor_d
 
 
 def test_employee_repository_rollback_does_not_persist_pending_employee() -> None:
-    employee = Employee.create(name=f"rollback-{uuid4().hex}", system_prompt="通用指令")
+    employee = Employee.create(
+        name=f"rollback-{uuid4().hex}",
+        system_prompt="通用指令",
+        **default_employee_model_fields(),
+    )
 
     async def exercise() -> Employee | None:
         async with _database() as database:
@@ -191,7 +208,11 @@ def test_employee_repository_rollback_does_not_persist_pending_employee() -> Non
 
 
 def test_employee_repository_maps_duplicate_identity_without_committing() -> None:
-    employee = Employee.create(name=f"duplicate-{uuid4().hex}", system_prompt="通用指令")
+    employee = Employee.create(
+        name=f"duplicate-{uuid4().hex}",
+        system_prompt="通用指令",
+        **default_employee_model_fields(),
+    )
 
     async def exercise() -> Employee | None:
         async with _database() as database:

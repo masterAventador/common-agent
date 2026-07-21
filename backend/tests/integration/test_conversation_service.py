@@ -39,7 +39,7 @@ from common_agent.runtimes.base import (
 from common_agent.tasks import TaskKind, TaskWorker
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from tests.support.conversations import delete_conversations
-from tests.support.employees import delete_employees
+from tests.support.employees import default_employee_model_fields, delete_employees
 from tests.support.settings import TEST_DATABASE_URL
 
 
@@ -277,7 +277,11 @@ async def _events_until_terminal(
 
 
 def test_service_persists_each_state_before_publishing_monotonic_events() -> None:
-    employee = Employee.create(name=f"service-{uuid4().hex}", system_prompt="直接回答问题")
+    employee = Employee.create(
+        name=f"service-{uuid4().hex}",
+        system_prompt="直接回答问题",
+        **default_employee_model_fields(),
+    )
     conversation_id = uuid4()
 
     async def exercise() -> None:
@@ -337,7 +341,11 @@ def test_service_persists_each_state_before_publishing_monotonic_events() -> Non
 
 
 def test_durable_service_commits_reply_task_and_only_worker_executes_runtime() -> None:
-    employee = Employee.create(name=f"durable-{uuid4().hex}", system_prompt="直接回答问题")
+    employee = Employee.create(
+        name=f"durable-{uuid4().hex}",
+        system_prompt="直接回答问题",
+        **default_employee_model_fields(),
+    )
     conversation_id = uuid4()
 
     async def exercise() -> None:
@@ -407,7 +415,11 @@ def test_durable_service_commits_reply_task_and_only_worker_executes_runtime() -
 
 
 def test_durable_worker_persists_business_failure_when_setup_exhausts_attempts() -> None:
-    employee = Employee.create(name=f"setup-failure-{uuid4().hex}", system_prompt="直接回答问题")
+    employee = Employee.create(
+        name=f"setup-failure-{uuid4().hex}",
+        system_prompt="直接回答问题",
+        **default_employee_model_fields(),
+    )
     conversation_id = uuid4()
 
     async def exercise() -> None:
@@ -459,7 +471,11 @@ def test_durable_worker_persists_business_failure_when_setup_exhausts_attempts()
 
 
 def test_durable_worker_retries_interrupted_reply_without_duplicate_content() -> None:
-    employee = Employee.create(name=f"retry-{uuid4().hex}", system_prompt="直接回答问题")
+    employee = Employee.create(
+        name=f"retry-{uuid4().hex}",
+        system_prompt="直接回答问题",
+        **default_employee_model_fields(),
+    )
     conversation_id = uuid4()
 
     async def exercise() -> None:
@@ -530,7 +546,11 @@ def test_durable_worker_retries_interrupted_reply_without_duplicate_content() ->
 
 
 def test_durable_stop_crosses_api_and_worker_through_persisted_heartbeat() -> None:
-    employee = Employee.create(name=f"stop-{uuid4().hex}", system_prompt="直接回答问题")
+    employee = Employee.create(
+        name=f"stop-{uuid4().hex}",
+        system_prompt="直接回答问题",
+        **default_employee_model_fields(),
+    )
     conversation_id = uuid4()
 
     async def exercise() -> None:
@@ -602,7 +622,11 @@ def test_durable_stop_crosses_api_and_worker_through_persisted_heartbeat() -> No
 
 
 def test_durable_retry_repairs_terminal_event_after_state_commit_succeeds() -> None:
-    employee = Employee.create(name=f"event-{uuid4().hex}", system_prompt="直接回答问题")
+    employee = Employee.create(
+        name=f"event-{uuid4().hex}",
+        system_prompt="直接回答问题",
+        **default_employee_model_fields(),
+    )
     conversation_id = uuid4()
 
     async def exercise() -> None:
@@ -663,7 +687,11 @@ def test_durable_retry_repairs_terminal_event_after_state_commit_succeeds() -> N
 
 
 def test_service_stops_active_turn_retries_same_message_and_rejects_duplicates() -> None:
-    employee = Employee.create(name=f"service-stop-{uuid4().hex}", system_prompt="直接回答问题")
+    employee = Employee.create(
+        name=f"service-stop-{uuid4().hex}",
+        system_prompt="直接回答问题",
+        **default_employee_model_fields(),
+    )
     conversation_id = uuid4()
     user_message_id = uuid4()
 
@@ -738,7 +766,11 @@ def test_service_stops_active_turn_retries_same_message_and_rejects_duplicates()
 
 
 def test_stop_accepted_before_a_late_completion_wins_with_one_persisted_terminal() -> None:
-    employee = Employee.create(name=f"service-race-{uuid4().hex}", system_prompt="直接回答问题")
+    employee = Employee.create(
+        name=f"service-race-{uuid4().hex}",
+        system_prompt="直接回答问题",
+        **default_employee_model_fields(),
+    )
     conversation_id = uuid4()
 
     async def exercise() -> None:
@@ -787,7 +819,11 @@ def test_stop_accepted_before_a_late_completion_wins_with_one_persisted_terminal
 
 
 def test_service_recovers_interrupted_messages_as_persisted_failures() -> None:
-    employee = Employee.create(name=f"service-recover-{uuid4().hex}", system_prompt="直接回答问题")
+    employee = Employee.create(
+        name=f"service-recover-{uuid4().hex}",
+        system_prompt="直接回答问题",
+        **default_employee_model_fields(),
+    )
     conversation = Conversation.create(employee_id=employee.id, title="中断恢复")
     user = Message.create_user(
         conversation_id=conversation.id,
@@ -847,7 +883,11 @@ def test_service_closes_interrupted_or_invalid_streams_and_ignores_late_events(
     expected_status: MessageStatus,
     expected_error: str | None,
 ) -> None:
-    employee = Employee.create(name=f"service-failure-{uuid4().hex}", system_prompt="直接回答问题")
+    employee = Employee.create(
+        name=f"service-failure-{uuid4().hex}",
+        system_prompt="直接回答问题",
+        **default_employee_model_fields(),
+    )
     conversation_id = uuid4()
 
     async def exercise() -> None:

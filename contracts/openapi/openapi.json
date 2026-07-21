@@ -870,6 +870,11 @@
             "title": "Allowed Workflow Ids",
             "type": "array"
           },
+          "default_model_configuration_id": {
+            "format": "uuid",
+            "title": "Default Model Configuration Id",
+            "type": "string"
+          },
           "description": {
             "default": "",
             "maxLength": 1000,
@@ -904,7 +909,8 @@
         },
         "required": [
           "name",
-          "system_prompt"
+          "system_prompt",
+          "default_model_configuration_id"
         ],
         "title": "EmployeeConfigurationBody",
         "type": "object"
@@ -923,6 +929,15 @@
           "created_at": {
             "format": "date-time",
             "title": "Created At",
+            "type": "string"
+          },
+          "default_model_configuration_id": {
+            "format": "uuid",
+            "title": "Default Model Configuration Id",
+            "type": "string"
+          },
+          "default_model_identifier": {
+            "title": "Default Model Identifier",
             "type": "string"
           },
           "description": {
@@ -964,6 +979,8 @@
           "name",
           "description",
           "system_prompt",
+          "default_model_configuration_id",
+          "default_model_identifier",
           "knowledge_base_id",
           "allowed_workflow_ids",
           "created_at",

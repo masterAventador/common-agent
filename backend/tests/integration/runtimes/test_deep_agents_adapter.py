@@ -63,6 +63,20 @@ class _Gateway:
         return error if isinstance(error, ModelServiceError) else None
 
 
+class _ModelResolver:
+    def __init__(self, models: Mapping[str, _Gateway]) -> None:
+        self.models = dict(models)
+        self.requested_identifiers: list[str] = []
+
+    async def resolve(self, model_identifier: str) -> _Gateway:
+        self.requested_identifiers.append(model_identifier)
+        return self.models[model_identifier]
+
+    async def aclose(self) -> None:
+        for model in self.models.values():
+            await model.aclose()
+
+
 class _ToolBindingFakeChatModel(GenericFakeChatModel):
     bound_tool_names: tuple[str, ...] = ()
 
@@ -168,6 +182,36 @@ def test_runtime_builds_safe_agent_and_projects_only_platform_events() -> None:
     assert isinstance(messages, list)
     assert [message.type for message in messages] == ["human", "ai", "human"]
     assert [message.content for message in messages] == ["上一问", "上一答", "当前问题"]
+
+
+def test_runtime_resolves_the_employee_model_identifier_before_building_agent() -> None:
+    selected = _Gateway(_ToolBindingFakeChatModel(messages=iter(["unused"])))
+    resolver = _ModelResolver({"qwen-turbo": selected})
+    captured: dict[str, object] = {}
+
+    def builder(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return _CapturingGraph(chunks=("模型选择成功",))
+
+    runtime = DeepAgentsEmployeeRuntime(resolver, agent_builder=builder)
+
+    async def exercise() -> list[RuntimeEvent]:
+        events = [
+            event
+            async for event in runtime.stream(
+                runtime_request(model_identifier="qwen-turbo"),
+                stop=RuntimeStopToken(),
+            )
+        ]
+        await runtime.aclose()
+        return events
+
+    events = asyncio.run(exercise())
+
+    assert resolver.requested_identifiers == ["qwen-turbo"]
+    assert captured["model"] is selected.langchain_chat_model
+    assert "".join(event.delta or "" for event in events) == "模型选择成功"
+    assert selected.closed is True
 
 
 def test_official_create_deep_agent_streams_without_shell_or_local_filesystem() -> None:

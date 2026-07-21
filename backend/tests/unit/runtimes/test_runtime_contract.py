@@ -67,6 +67,7 @@ def _request(**overrides: object) -> EmployeeRuntimeRequest:
         "employee_id": _EMPLOYEE_ID,
         "assistant_message_id": _ASSISTANT_MESSAGE_ID,
         "assistant_sequence_number": 2,
+        "model_identifier": "qwen-plus",
         "system_instruction": "根据上下文准确回答。",
         "history": (_history_message(),),
         "knowledge_base_id": "kb-1",
@@ -84,6 +85,7 @@ def test_request_keeps_chat_history_instruction_knowledge_and_capabilities_separ
     assert request.employee_id == _EMPLOYEE_ID
     assert request.assistant_message_id == _ASSISTANT_MESSAGE_ID
     assert request.assistant_sequence_number == 2
+    assert request.model_identifier == "qwen-plus"
     assert request.system_instruction == "根据上下文准确回答。"
     assert request.history[-1].role is MessageRole.USER
     assert request.history[-1].content == "当前问题"
@@ -111,6 +113,8 @@ def test_runtime_request_repr_does_not_expose_prompt_history_or_knowledge_conten
         {"employee_id": "not-a-uuid"},
         {"assistant_message_id": "not-a-uuid"},
         {"assistant_sequence_number": 0},
+        {"model_identifier": "   "},
+        {"model_identifier": "qwen plus"},
         {"system_instruction": "   "},
         {"system_instruction": "x" * 12_001},
         {"history": ()},

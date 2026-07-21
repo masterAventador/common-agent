@@ -11,6 +11,11 @@ from common_agent.adapters.agent.workflow_tools import WorkflowToolRegistry
 from common_agent.adapters.demo import DemoEmployeeRuntime, DemoKnowledgeService, DemoWorkflowModel
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
+from common_agent.adapters.model.resolver import BailianChatModelResolver
+from common_agent.adapters.model.verification import (
+    BailianModelConfigurationVerifier,
+    DemoModelConfigurationVerifier,
+)
 from common_agent.adapters.persistence import (
     Database,
     MySqlNamedLockProvider,
@@ -26,6 +31,9 @@ from common_agent.adapters.persistence.demo_knowledge import (
     SqlAlchemyDemoKnowledgeUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeUnitOfWorkFactory
+from common_agent.adapters.persistence.model_configurations import (
+    SqlAlchemyModelConfigurationUnitOfWorkFactory,
+)
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.application.resource_locks import ResourceMutationGuard
@@ -44,6 +52,10 @@ from common_agent.conversations import ConversationEventBroker, ConversationServ
 from common_agent.employees import EmployeeService
 from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.model_configurations import (
+    ModelConfigurationService,
+    ModelConfigurationVerifier,
+)
 from common_agent.models.base import TextStreamingModel
 from common_agent.observability import configure_json_logging
 from common_agent.tasks import TaskKind, TaskWorker, TaskWorkerPool
@@ -74,8 +86,10 @@ async def run_worker(stop: asyncio.Event) -> None:
     conversation_events: ConversationEventBroker | None = None
     demo_workflow_model: DemoWorkflowModel | None = None
     real_model: BailianChatModelAdapter | None = None
+    model_settings: ModelSettings | None = None
     try:
         workflow_model: TextStreamingModel
+        model_configuration_verifier: ModelConfigurationVerifier
         if integration_mode.mode == "demo":
             knowledge_adapter = DemoKnowledgeService(
                 SqlAlchemyDemoKnowledgeUnitOfWorkFactory(database, tenant_id_provider)
@@ -83,6 +97,7 @@ async def run_worker(stop: asyncio.Event) -> None:
             runtime = DemoEmployeeRuntime()
             demo_workflow_model = DemoWorkflowModel()
             workflow_model = demo_workflow_model
+            model_configuration_verifier = DemoModelConfigurationVerifier()
         else:
             ragflow_settings = RagFlowSettings.from_env()
             knowledge_adapter = RagFlowKnowledgeService(
@@ -98,8 +113,10 @@ async def run_worker(stop: asyncio.Event) -> None:
                     else None
                 ),
             )
-            real_model = BailianChatModelAdapter(ModelSettings.from_env())
+            model_settings = ModelSettings.from_env()
+            real_model = BailianChatModelAdapter(model_settings)
             workflow_model = real_model
+            model_configuration_verifier = BailianModelConfigurationVerifier(model_settings)
 
         knowledge_bases = KnowledgeBaseService(
             knowledge_adapter,
@@ -117,6 +134,11 @@ async def run_worker(stop: asyncio.Event) -> None:
             distributed=distributed_locks,
         )
         task_execution_guard = CoordinatedLockPool(distributed=distributed_locks)
+        model_configurations = ModelConfigurationService(
+            SqlAlchemyModelConfigurationUnitOfWorkFactory(database, tenant_id_provider),
+            verifier=model_configuration_verifier,
+            guard=resource_guard,
+        )
         workflow_events = WorkflowEventBroker(
             key_namespace=lambda run_id: key_namespace(f"workflow-run:{run_id}"),
             journal=SqlAlchemyEventJournal(database),
@@ -138,7 +160,7 @@ async def run_worker(stop: asyncio.Event) -> None:
             task_max_attempts=worker_settings.maximum_attempts,
         )
         if integration_mode.mode != "demo":
-            if real_model is None:
+            if real_model is None or model_settings is None:
                 raise RuntimeError("百炼模型尚未完成装配")
             audit = AuditService(
                 SqlAlchemyAuditStore(database),
@@ -148,13 +170,17 @@ async def run_worker(stop: asyncio.Event) -> None:
                 ),
             )
             runtime = DeepAgentsEmployeeRuntime(
-                real_model,
+                BailianChatModelResolver(
+                    model_settings,
+                    initial_model=real_model,
+                ),
                 tools=WorkflowToolRegistry(workflows, audit=audit),
             )
         employees = EmployeeService(
             SqlAlchemyEmployeeUnitOfWorkFactory(database, tenant_id_provider),
             knowledge_bases,
             workflows=workflows,
+            model_configurations=model_configurations,
             guard=resource_guard,
         )
         conversation_events = ConversationEventBroker(

@@ -45,38 +45,52 @@ async def _set_reference(configuration_id: UUID, *, present: bool) -> None:
         await database.stop()
 
 
+async def delete_model_configurations_named(database: Database, *names: str) -> int:
+    async with database.session() as session:
+        configuration_ids = tuple(
+            await session.scalars(
+                select(ModelConfigurationRow.id).where(
+                    ModelConfigurationRow.tenant_id == str(DEFAULT_TENANT_ID),
+                    ModelConfigurationRow.display_name.in_(names),
+                )
+            )
+        )
+        if not configuration_ids:
+            return 0
+        await session.execute(
+            delete(ModelConfigurationReferenceRow).where(
+                ModelConfigurationReferenceRow.tenant_id == str(DEFAULT_TENANT_ID),
+                ModelConfigurationReferenceRow.model_configuration_id.in_(configuration_ids),
+            )
+        )
+        await session.execute(
+            delete(ModelConfigurationRow).where(
+                ModelConfigurationRow.tenant_id == str(DEFAULT_TENANT_ID),
+                ModelConfigurationRow.id.in_(configuration_ids),
+            )
+        )
+        await session.commit()
+        return len(configuration_ids)
+
+
+async def delete_model_configurations_named_from_database_url(
+    database_url: str,
+    *names: str,
+) -> int:
+    database = Database(database_url)
+    await database.start()
+    try:
+        return await delete_model_configurations_named(database, *names)
+    finally:
+        await database.stop()
+
+
 async def _cleanup() -> None:
     model_name = os.environ["COMMON_AGENT_E2E_MODEL_NAME"]
     database = Database(os.environ["COMMON_AGENT_DATABASE_URL"])
     await database.start()
     try:
-        async with database.session() as session:
-            configuration_ids = tuple(
-                await session.scalars(
-                    select(ModelConfigurationRow.id).where(
-                        ModelConfigurationRow.tenant_id == str(DEFAULT_TENANT_ID),
-                        ModelConfigurationRow.display_name.in_(
-                            (model_name, f"{model_name}-已停用")
-                        ),
-                    )
-                )
-            )
-            if configuration_ids:
-                await session.execute(
-                    delete(ModelConfigurationReferenceRow).where(
-                        ModelConfigurationReferenceRow.tenant_id == str(DEFAULT_TENANT_ID),
-                        ModelConfigurationReferenceRow.model_configuration_id.in_(
-                            configuration_ids
-                        ),
-                    )
-                )
-                await session.execute(
-                    delete(ModelConfigurationRow).where(
-                        ModelConfigurationRow.tenant_id == str(DEFAULT_TENANT_ID),
-                        ModelConfigurationRow.id.in_(configuration_ids),
-                    )
-                )
-            await session.commit()
+        await delete_model_configurations_named(database, model_name, f"{model_name}-已停用")
     finally:
         await database.stop()
 

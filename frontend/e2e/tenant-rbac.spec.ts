@@ -1,4 +1,5 @@
 import { expect, platformWriteHeaders, test } from "./fixtures/auth";
+import { selectEmployeeDefaultModel } from "./fixtures/models";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -13,7 +14,7 @@ const employeeName = requiredEnvironment("COMMON_AGENT_E2E_TENANT_EMPLOYEE_NAME"
 const viewerEmail = requiredEnvironment("COMMON_AGENT_E2E_VIEWER_EMAIL");
 const viewerPassword = requiredEnvironment("COMMON_AGENT_E2E_VIEWER_PASSWORD");
 const defaultTenantId = "00000000-0000-4000-8000-000000000002";
-const trustedOrigin = "http://127.0.0.1:18280";
+const trustedOrigin = requiredEnvironment("COMMON_AGENT_E2E_TRUSTED_ORIGIN");
 
 test("creates an isolated workspace and enforces viewer read-only access", async ({
   browser,
@@ -31,12 +32,27 @@ test("creates an isolated workspace and enforces viewer read-only access", async
       response.url().endsWith("/api/v1/tenants") &&
       response.request().method() === "POST",
   );
-  await workspaceDialog.getByRole("button", { name: "创建" }).click();
+  await workspaceDialog.getByRole("button", { name: /创\s*建/ }).click();
   const createdTenant = await createdTenantResponse;
   expect(createdTenant.status()).toBe(201);
   const tenantId = ((await createdTenant.json()) as { id: string }).id;
   await expect(page.getByText(`${tenantName} · 所有者`, { exact: true })).toBeVisible();
 
+  const modelName = `${tenantName}-默认模型`;
+  await page.getByRole("link", { name: "模型管理" }).click();
+  await page.getByRole("button", { name: "创建模型" }).click();
+  const modelDialog = page.getByRole("dialog", { name: "创建模型" });
+  await modelDialog.getByRole("textbox", { name: "显示名称" }).fill(modelName);
+  await modelDialog.getByRole("textbox", { name: "百炼模型标识" }).fill("qwen-plus");
+  const createdModelResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/model-configurations") &&
+      response.request().method() === "POST",
+  );
+  await modelDialog.getByRole("button", { name: "确认创建" }).click();
+  expect((await createdModelResponse).status()).toBe(201);
+
+  await page.getByRole("link", { name: "数字员工" }).click();
   await page.getByRole("button", { name: "创建数字员工" }).click();
   const employeeDialog = page.getByRole("dialog", { name: "创建数字员工" });
   await employeeDialog.getByRole("textbox", { name: "名称" }).fill(employeeName);
@@ -46,6 +62,7 @@ test("creates an isolated workspace and enforces viewer read-only access", async
   await employeeDialog
     .getByRole("textbox", { name: "系统指令" })
     .fill("只处理当前工作区的数据。");
+  await selectEmployeeDefaultModel(page, employeeDialog, modelName);
   const createdEmployeeResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/v1/employees") &&

@@ -22,6 +22,7 @@ def runtime_request(
     knowledge_base_id: str | None = "kb-runtime",
     knowledge_context: tuple[RuntimeKnowledgeChunk, ...] | None = None,
     system_instruction: str = "直接回答问题,不使用工具。",
+    model_identifier: str = "qwen-plus",
 ) -> EmployeeRuntimeRequest:
     history = (
         RuntimeConversationMessage(
@@ -58,6 +59,7 @@ def runtime_request(
         employee_id=EMPLOYEE_ID,
         assistant_message_id=ASSISTANT_MESSAGE_ID,
         assistant_sequence_number=4,
+        model_identifier=model_identifier,
         system_instruction=system_instruction,
         history=history,
         knowledge_base_id=knowledge_base_id,

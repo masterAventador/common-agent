@@ -17,7 +17,10 @@ from deepagents.middleware.filesystem import FilesystemPermission
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langchain_core.tools import BaseTool
 
-from common_agent.adapters.model.langchain import LangChainChatModelProvider
+from common_agent.adapters.model.langchain import (
+    LangChainChatModelProvider,
+    LangChainChatModelResolver,
+)
 from common_agent.domain.conversation import MessageRole
 from common_agent.domain.workflow_run import WorkflowRunOrigin
 from common_agent.models.base import (
@@ -119,16 +122,32 @@ class _AgentGraph(Protocol):
 AgentBuilder = Callable[..., object]
 
 
+class _StaticModelResolver:
+    def __init__(self, model: LangChainChatModelProvider) -> None:
+        self._model = model
+
+    async def resolve(self, model_identifier: str) -> LangChainChatModelProvider:
+        del model_identifier
+        return self._model
+
+    async def aclose(self) -> None:
+        await self._model.aclose()
+
+
 class DeepAgentsEmployeeRuntime:
     def __init__(
         self,
-        model: LangChainChatModelProvider,
+        models: LangChainChatModelResolver | LangChainChatModelProvider,
         *,
         tools: DeepAgentToolResolver | None = None,
         harness_profile_key: str = "openai",
         agent_builder: AgentBuilder = create_deep_agent,
     ) -> None:
-        self._model = model
+        self._models = (
+            _StaticModelResolver(models)
+            if isinstance(models, LangChainChatModelProvider)
+            else models
+        )
         self._tools = tools or DeepAgentToolRegistry()
         self._agent_builder = agent_builder
         self._closed = False
@@ -145,7 +164,7 @@ class DeepAgentsEmployeeRuntime:
         if self._closed:
             return
         self._closed = True
-        await self._model.aclose()
+        await self._models.aclose()
 
     async def stream(
         self,
@@ -158,7 +177,9 @@ class DeepAgentsEmployeeRuntime:
             yield emitter.stop()
             return
 
+        model: LangChainChatModelProvider | None = None
         try:
+            model = await self._models.resolve(request.model_identifier)
             allowed_tools = await self._tools.resolve(
                 request.allowed_workflow_ids,
                 origin=WorkflowRunOrigin(
@@ -170,7 +191,7 @@ class DeepAgentsEmployeeRuntime:
             graph = cast(
                 "_AgentGraph",
                 self._agent_builder(
-                    model=self._model.langchain_chat_model,
+                    model=model.langchain_chat_model,
                     tools=allowed_tools,
                     system_prompt=_system_prompt(request),
                     backend=StateBackend(),
@@ -247,7 +268,10 @@ class DeepAgentsEmployeeRuntime:
         except asyncio.CancelledError:
             raise
         except Exception as error:
-            yield emitter.fail(_safe_error_code(self._model, error, emitted_delta=emitted_delta))
+            if model is None:
+                yield emitter.fail(_DEEP_AGENT_EXECUTION_FAILED)
+            else:
+                yield emitter.fail(_safe_error_code(model, error, emitted_delta=emitted_delta))
         finally:
             await _discard_task(next_task)
             await _discard_task(stop_task)

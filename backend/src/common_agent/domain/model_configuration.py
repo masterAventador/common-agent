@@ -34,16 +34,7 @@ class ModelConfigurationInput:
             self.display_name,
             MODEL_DISPLAY_NAME_MAX_LENGTH,
         )
-        model_identifier = _required_text(
-            "model_identifier",
-            self.model_identifier,
-            MODEL_IDENTIFIER_MAX_LENGTH,
-        )
-        if _MODEL_IDENTIFIER_PATTERN.fullmatch(model_identifier) is None:
-            raise ModelConfigurationValidationError(
-                "model_identifier",
-                "只能包含字母、数字、点、下划线和连字符",
-            )
+        model_identifier = normalize_model_identifier(self.model_identifier)
         if not isinstance(self.enabled, bool):
             raise ModelConfigurationValidationError("enabled", "必须是布尔值")
         object.__setattr__(self, "display_name", display_name)
@@ -120,6 +111,20 @@ def _required_text(field: str, value: object, max_length: int) -> str:
     if len(normalized) > max_length:
         raise ModelConfigurationValidationError(field, f"不能超过 {max_length} 个字符")
     return normalized
+
+
+def normalize_model_identifier(value: object) -> str:
+    model_identifier = _required_text(
+        "model_identifier",
+        value,
+        MODEL_IDENTIFIER_MAX_LENGTH,
+    )
+    if _MODEL_IDENTIFIER_PATTERN.fullmatch(model_identifier) is None:
+        raise ModelConfigurationValidationError(
+            "model_identifier",
+            "只能包含字母、数字、点、下划线和连字符",
+        )
+    return model_identifier
 
 
 def _utc_timestamp(field: str, value: object) -> None:

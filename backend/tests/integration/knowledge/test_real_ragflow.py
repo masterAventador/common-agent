@@ -19,7 +19,7 @@ from common_agent.domain.knowledge import (
     KnowledgeServiceAvailability,
 )
 from common_agent.pagination import ListPageRequest
-from tests.support.employees import delete_employees
+from tests.support.employees import DEFAULT_TEST_MODEL_CONFIGURATION_ID, delete_employees
 from tests.support.http import authenticated_client, running_api
 from tests.support.ragflow import delete_dataset, provision_api_key
 from tests.support.settings import TEST_DATABASE_URL
@@ -308,6 +308,7 @@ def test_real_employee_http_binding_lifecycle() -> None:
                     "name": name,
                     "description": "E3-02 真实绑定验收",
                     "system_prompt": "根据已绑定知识库回答。",
+                    "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
                     "knowledge_base_id": dataset_id,
                 },
             )
@@ -321,6 +322,7 @@ def test_real_employee_http_binding_lifecycle() -> None:
                     "name": f"missing-{uuid4().hex}",
                     "description": "不应落库",
                     "system_prompt": "通用指令",
+                    "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
                     "knowledge_base_id": f"missing-{uuid4().hex}",
                 },
             )
@@ -332,6 +334,7 @@ def test_real_employee_http_binding_lifecycle() -> None:
                     "name": name,
                     "description": "不应覆盖原绑定",
                     "system_prompt": "不应保存的指令",
+                    "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
                     "knowledge_base_id": f"missing-{uuid4().hex}",
                 },
             )

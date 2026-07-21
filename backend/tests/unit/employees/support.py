@@ -4,6 +4,10 @@ from types import TracebackType
 from uuid import UUID
 
 from common_agent.domain.employee import Employee, EmployeeConfiguration
+from common_agent.domain.model_configuration import (
+    ModelConfiguration,
+    ModelConfigurationInput,
+)
 from common_agent.employees.service import EmployeeService
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.pagination import PageAnchor, PageSlice
@@ -23,6 +27,34 @@ class WorkflowDirectoryProbe:
 
             raise WorkflowNotFound
         return object()
+
+
+DEFAULT_MODEL_CONFIGURATION_ID = UUID("5eb782ad-4fd6-40a6-8668-a9b729340ec9")
+
+
+class ModelConfigurationDirectoryProbe:
+    def __init__(self) -> None:
+        default = ModelConfiguration.create(
+            model_configuration_id=DEFAULT_MODEL_CONFIGURATION_ID,
+            configuration=ModelConfigurationInput(
+                display_name="Qwen Plus",
+                model_identifier="qwen-plus",
+                enabled=True,
+            ),
+        )
+        self.values = {default.id: default}
+        self.requested_ids: list[UUID] = []
+
+    async def get(self, model_configuration_id: UUID) -> ModelConfiguration:
+        self.requested_ids.append(model_configuration_id)
+        configured = self.values.get(model_configuration_id)
+        if configured is None:
+            from common_agent.model_configurations.service import (
+                ModelConfigurationNotFound,
+            )
+
+            raise ModelConfigurationNotFound
+        return configured
 
 
 class EmployeeRepositoryProbe:
@@ -114,15 +146,23 @@ def employee_service_with_probes() -> tuple[
     EmployeeUnitOfWorkFactoryProbe,
     KnowledgeProbe,
     WorkflowDirectoryProbe,
+    ModelConfigurationDirectoryProbe,
 ]:
     units = EmployeeUnitOfWorkFactoryProbe()
     knowledge = KnowledgeProbe()
     workflows = WorkflowDirectoryProbe()
+    models = ModelConfigurationDirectoryProbe()
     return (
-        EmployeeService(units, KnowledgeBaseService(knowledge), workflows=workflows),
+        EmployeeService(
+            units,
+            KnowledgeBaseService(knowledge),
+            workflows=workflows,
+            model_configurations=models,
+        ),
         units,
         knowledge,
         workflows,
+        models,
     )
 
 
@@ -130,11 +170,13 @@ def employee_configuration(
     knowledge_base_id: str | None = None,
     *,
     allowed_workflow_ids: tuple[UUID, ...] = (),
+    default_model_configuration_id: UUID = DEFAULT_MODEL_CONFIGURATION_ID,
 ) -> EmployeeConfiguration:
     return EmployeeConfiguration(
         name="通用助理",
         description="与业务无关的会话角色",
         system_prompt="根据可用信息回答问题。",
+        default_model_configuration_id=default_model_configuration_id,
         knowledge_base_id=knowledge_base_id,
         allowed_workflow_ids=allowed_workflow_ids,
     )

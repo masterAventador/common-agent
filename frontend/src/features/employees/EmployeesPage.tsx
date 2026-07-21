@@ -33,6 +33,10 @@ import {
 } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
 import { fetchKnowledgeBases } from "../../api/knowledge";
+import {
+  fetchModelConfigurations,
+  type ModelConfiguration,
+} from "../../api/modelConfigurations";
 import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 import { fetchWorkflows } from "../../api/workflows";
 import {
@@ -49,6 +53,7 @@ function employeeFormValues(employee: Employee): EmployeeConfigurationInput {
     name: employee.name,
     description: employee.description,
     system_prompt: employee.system_prompt,
+    default_model_configuration_id: employee.default_model_configuration_id,
     knowledge_base_id: employee.knowledge_base_id,
     allowed_workflow_ids: employee.allowed_workflow_ids,
   };
@@ -62,6 +67,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [knowledgeSearch, setKnowledgeSearch] = useState("");
   const [workflowSearch, setWorkflowSearch] = useState("");
+  const [modelSearch, setModelSearch] = useState("");
   const [form] = Form.useForm<EmployeeConfigurationInput>();
 
   const employees = useInfiniteQuery({
@@ -88,12 +94,27 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
     getNextPageParam: nextPageCursor,
     placeholderData: keepPreviousData,
   });
+  const modelConfigurations = useInfiniteQuery({
+    queryKey: ["model-configurations", "employee-options", modelSearch],
+    queryFn: ({ pageParam }) =>
+      fetchModelConfigurations(
+        { search: modelSearch, limit: 50, cursor: pageParam },
+        false,
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+    placeholderData: keepPreviousData,
+  });
   const items = useMemo(() => flattenCursorPages(employees.data), [employees.data]);
   const knowledgeItems = useMemo(
     () => flattenCursorPages(knowledgeBases.data),
     [knowledgeBases.data],
   );
   const workflowItems = useMemo(() => flattenCursorPages(workflows.data), [workflows.data]);
+  const modelItems = useMemo(
+    () => flattenCursorPages(modelConfigurations.data),
+    [modelConfigurations.data],
+  );
 
   const knowledgeBaseNames = useMemo(
     () => new Map(knowledgeItems.map((item) => [item.id, item.name])),
@@ -102,6 +123,10 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
   const workflowNames = useMemo(
     () => new Map(workflowItems.map((item) => [item.id, item.name])),
     [workflowItems],
+  );
+  const modelsById = useMemo(
+    () => new Map(modelItems.map((item) => [item.id, item])),
+    [modelItems],
   );
 
   useEffect(() => {
@@ -113,6 +138,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
             name: "",
             description: "",
             system_prompt: "",
+            default_model_configuration_id: undefined,
             knowledge_base_id: null,
             allowed_workflow_ids: [],
           },
@@ -176,6 +202,25 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
       </Tag>
     );
   };
+
+  const defaultModelLabel = (employee: Employee) => {
+    const configured = modelsById.get(employee.default_model_configuration_id);
+    if (configured) {
+      return (
+        <Tag color={configured.enabled ? "cyan" : "warning"}>
+          {configured.display_name}
+          {configured.enabled ? "" : "（已停用）"}
+        </Tag>
+      );
+    }
+    if (modelConfigurations.isPending) return <Tag>正在读取默认模型</Tag>;
+    return <Tag color="warning">{employee.default_model_identifier}</Tag>;
+  };
+
+  const selectableModels = (employee?: Employee): ModelConfiguration[] =>
+    modelItems.filter(
+      (item) => item.enabled || item.id === employee?.default_model_configuration_id,
+    );
 
   if (employees.isPending) {
     return (
@@ -260,6 +305,19 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
         />
       )}
 
+      {modelConfigurations.isError && (
+        <Alert
+          type="warning"
+          showIcon
+          title="模型选项加载失败"
+          description={getErrorMessage(modelConfigurations.error)}
+          action={
+            <Button onClick={() => void modelConfigurations.refetch()}>重试模型</Button>
+          }
+          className="employees-inline-alert"
+        />
+      )}
+
       {deleteNotice && (
         <Alert
           type="success"
@@ -303,6 +361,10 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
               <div className="employee-prompt-preview">
                 <Text type="secondary">系统指令</Text>
                 <Text>{employee.system_prompt}</Text>
+              </div>
+              <div className="employee-prompt-preview">
+                <Text type="secondary">默认模型</Text>
+                <div>{defaultModelLabel(employee)}</div>
               </div>
               <div className="employee-prompt-preview">
                 <Text type="secondary">工作流权限</Text>
@@ -393,6 +455,43 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
             rules={[{ required: true, whitespace: true, message: "请输入系统指令" }]}
           >
             <Input.TextArea placeholder="定义回答风格、边界和信息使用原则" rows={6} />
+          </Form.Item>
+          <Form.Item
+            label="默认模型"
+            name="default_model_configuration_id"
+            rules={[{ required: true, message: "请选择默认模型" }]}
+            extra="仅可选择模型管理中已启用的配置；当前已停用绑定可原样保留。"
+          >
+            <Select
+              disabled={modelConfigurations.isError}
+              loading={modelConfigurations.isPending}
+              placeholder={
+                modelConfigurations.isError
+                  ? "模型配置暂时不可用"
+                  : "选择已启用模型"
+              }
+              showSearch
+              filterOption={false}
+              searchValue={modelSearch}
+              options={selectableModels(
+                editor?.mode === "edit" ? editor.employee : undefined,
+              ).map((item) => ({
+                value: item.id,
+                label: `${item.display_name} · ${item.model_identifier}${item.enabled ? "" : "（已停用，仅保留现有绑定）"}`,
+                disabled: !item.enabled,
+              }))}
+              onSearch={setModelSearch}
+              onPopupScroll={(event) => {
+                const target = event.currentTarget;
+                if (
+                  modelConfigurations.hasNextPage &&
+                  !modelConfigurations.isFetchingNextPage &&
+                  target.scrollTop + target.clientHeight >= target.scrollHeight - 16
+                ) {
+                  void modelConfigurations.fetchNextPage();
+                }
+              }}
+            />
           </Form.Item>
           <Form.Item label="知识库" name="knowledge_base_id">
             <Select

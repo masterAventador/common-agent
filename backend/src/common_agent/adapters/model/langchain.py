@@ -17,3 +17,9 @@ class LangChainChatModelProvider(TextStreamingModel, Protocol):
 
     @property
     def langchain_chat_model(self) -> BaseChatModel: ...
+
+
+class LangChainChatModelResolver(Protocol):
+    async def resolve(self, model_identifier: str) -> LangChainChatModelProvider: ...
+
+    async def aclose(self) -> None: ...

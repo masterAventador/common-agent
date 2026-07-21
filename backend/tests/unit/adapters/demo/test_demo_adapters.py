@@ -61,6 +61,7 @@ def _request(
         employee_id=EMPLOYEE_ID,
         assistant_message_id=assistant_message_id,
         assistant_sequence_number=current_sequence + 1,
+        model_identifier="qwen-plus",
         system_instruction="演示模式系统指令",
         history=(
             *history,

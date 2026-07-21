@@ -162,6 +162,7 @@ class ConversationRuntimeCoordinator:
                     employee_id=employee.id,
                     assistant_message_id=assistant_message.id,
                     assistant_sequence_number=assistant_message.sequence_number,
+                    model_identifier=employee.default_model_identifier,
                     system_instruction=employee.system_prompt,
                     history=_runtime_history(history, assistant_message),
                     knowledge_base_id=resolved.knowledge_base_id,

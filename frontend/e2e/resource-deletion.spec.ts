@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, test } from "./fixtures/auth";
+import { selectEmployeeDefaultModel } from "./fixtures/models";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -135,6 +136,7 @@ test("blocks live references, unbinds them, and deletes all four resources throu
   await employeeDialog
     .getByRole("textbox", { name: "系统指令" })
     .fill("只用于资源删除引用验收。");
+  await selectEmployeeDefaultModel(page, employeeDialog);
   await employeeDialog.getByRole("combobox", { name: "知识库" }).click();
   await page.getByTitle(knowledgeBaseName).click();
   await employeeDialog.getByRole("combobox", { name: "允许工作流" }).click();

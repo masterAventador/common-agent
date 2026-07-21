@@ -13,6 +13,7 @@ from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.models import (
     ConversationRow,
     EmployeeRow,
+    ModelConfigurationReferenceRow,
     WorkflowNodeRow,
     WorkflowRow,
     WorkflowRunRow,
@@ -61,6 +62,13 @@ class SqlAlchemyResourceDeletionStore:
                     blocked_by=LocalDeleteBlock.EMPLOYEE_CONVERSATIONS,
                 )
             try:
+                await session.execute(
+                    delete(ModelConfigurationReferenceRow).where(
+                        ModelConfigurationReferenceRow.tenant_id == tenant_id,
+                        ModelConfigurationReferenceRow.resource_type == "employee",
+                        ModelConfigurationReferenceRow.resource_id == str(employee_id),
+                    )
+                )
                 await session.delete(row)
                 await session.commit()
             except IntegrityError:

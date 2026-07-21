@@ -3,10 +3,8 @@ from __future__ import annotations
 import asyncio
 import os
 
-from sqlalchemy import delete
-
 from common_agent.adapters.persistence.database import Database
-from common_agent.adapters.persistence.models import EmployeeRow
+from tests.support.employees import delete_employees_named
 
 
 async def main() -> None:
@@ -15,9 +13,7 @@ async def main() -> None:
     database = Database(database_url)
     await database.start()
     try:
-        async with database.session() as session:
-            await session.execute(delete(EmployeeRow).where(EmployeeRow.name == employee_name))
-            await session.commit()
+        await delete_employees_named(database, employee_name)
     finally:
         await database.stop()
 

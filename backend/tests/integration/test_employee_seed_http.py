@@ -24,8 +24,9 @@ def test_formal_startup_seeds_once_and_preserves_api_edits_after_restart() -> No
             listed = client.get("/api/v1/employees")
 
             assert seeded.status_code == 200
-            assert seeded.json()["name"] == "知识助理"
-            assert seeded.json()["knowledge_base_id"] is None
+            seeded_payload = seeded.json()
+            assert seeded_payload["name"] == "知识助理"
+            assert seeded_payload["knowledge_base_id"] is None
             assert [
                 item["id"]
                 for item in listed.json()["items"]
@@ -38,6 +39,9 @@ def test_formal_startup_seeds_once_and_preserves_api_edits_after_restart() -> No
                     "name": "用户编辑的知识助理",
                     "description": "用户编辑后的说明",
                     "system_prompt": "保留用户编辑后的系统指令。",
+                    "default_model_configuration_id": seeded_payload[
+                        "default_model_configuration_id"
+                    ],
                     "knowledge_base_id": None,
                 },
             )

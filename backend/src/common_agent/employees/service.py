@@ -7,9 +7,11 @@ from common_agent.application.resource_locks import (
     ResourceMutationGuard,
     employee_resource,
     knowledge_base_resource,
+    model_configuration_resource,
     workflow_resource,
 )
 from common_agent.domain.employee import Employee, EmployeeConfiguration
+from common_agent.domain.model_configuration import ModelConfiguration
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.pagination import (
     CursorPage,
@@ -35,8 +37,17 @@ class EmployeeNotFound(EmployeeServiceError):
     message = "数字员工不存在"
 
 
+class EmployeeModelDisabled(EmployeeServiceError):
+    code = "employee_model_disabled"
+    message = "所选模型已停用，请选择当前可用的模型"  # noqa: RUF001
+
+
 class WorkflowDirectory(Protocol):
     async def get(self, workflow_id: UUID) -> object: ...
+
+
+class ModelConfigurationDirectory(Protocol):
+    async def get(self, model_configuration_id: UUID) -> ModelConfiguration: ...
 
 
 class EmployeeService:
@@ -46,11 +57,13 @@ class EmployeeService:
         knowledge_bases: KnowledgeBaseService,
         *,
         workflows: WorkflowDirectory,
+        model_configurations: ModelConfigurationDirectory,
         guard: ResourceMutationGuard | None = None,
     ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
         self._knowledge_bases = knowledge_bases
         self._workflows = workflows
+        self._model_configurations = model_configurations
         self._guard = guard or ResourceMutationGuard()
 
     async def list(self) -> tuple[Employee, ...]:
@@ -97,10 +110,15 @@ class EmployeeService:
         async with self._guard.hold(*_configuration_resources(configuration)):
             await self._validate_knowledge_base(configuration.knowledge_base_id)
             await self._validate_workflows(configuration.allowed_workflow_ids)
+            model_configuration = await self._validate_model_configuration(
+                configuration.default_model_configuration_id
+            )
             employee = Employee.create(
                 name=configuration.name,
                 description=configuration.description,
                 system_prompt=configuration.system_prompt,
+                default_model_configuration_id=model_configuration.id,
+                default_model_identifier=model_configuration.model_identifier,
                 knowledge_base_id=configuration.knowledge_base_id,
                 allowed_workflow_ids=configuration.allowed_workflow_ids,
             )
@@ -125,11 +143,16 @@ class EmployeeService:
 
             await self._validate_knowledge_base(configuration.knowledge_base_id)
             await self._validate_workflows(configuration.allowed_workflow_ids)
+            model_configuration = await self._validate_model_configuration(
+                configuration.default_model_configuration_id
+            )
             candidate = Employee.create(
                 employee_id=employee_id,
                 name=configuration.name,
                 description=configuration.description,
                 system_prompt=configuration.system_prompt,
+                default_model_configuration_id=model_configuration.id,
+                default_model_identifier=model_configuration.model_identifier,
                 knowledge_base_id=configuration.knowledge_base_id,
                 allowed_workflow_ids=configuration.allowed_workflow_ids,
             )
@@ -153,17 +176,23 @@ class EmployeeService:
             employee_resource(employee_id),
             *_configuration_resources(configuration),
         ):
-            await self.get(employee_id)
+            current = await self.get(employee_id)
             await self._validate_knowledge_base(configuration.knowledge_base_id)
             await self._validate_workflows(configuration.allowed_workflow_ids)
+            model_configuration = await self._validate_model_configuration(
+                configuration.default_model_configuration_id,
+                existing_model_configuration_id=(current.default_model_configuration_id),
+            )
             async with self._unit_of_work_factory() as unit_of_work:
-                current = await unit_of_work.employees.get(employee_id)
-                if current is None:
+                persisted = await unit_of_work.employees.get(employee_id)
+                if persisted is None:
                     raise EmployeeNotFound
-                updated = current.reconfigure(
+                updated = persisted.reconfigure(
                     name=configuration.name,
                     description=configuration.description,
                     system_prompt=configuration.system_prompt,
+                    default_model_configuration_id=model_configuration.id,
+                    default_model_identifier=model_configuration.model_identifier,
                     knowledge_base_id=configuration.knowledge_base_id,
                     allowed_workflow_ids=configuration.allowed_workflow_ids,
                 )
@@ -180,9 +209,26 @@ class EmployeeService:
         for workflow_id in workflow_ids:
             await self._workflows.get(workflow_id)
 
+    async def _validate_model_configuration(
+        self,
+        model_configuration_id: UUID,
+        *,
+        existing_model_configuration_id: UUID | None = None,
+    ) -> ModelConfiguration:
+        model_configuration = await self._model_configurations.get(model_configuration_id)
+        if (
+            not model_configuration.enabled
+            and model_configuration.id != existing_model_configuration_id
+        ):
+            raise EmployeeModelDisabled
+        return model_configuration
+
 
 def _configuration_resources(configuration: EmployeeConfiguration) -> tuple[str, ...]:
-    resources = [workflow_resource(value) for value in configuration.allowed_workflow_ids]
+    resources = [
+        model_configuration_resource(configuration.default_model_configuration_id),
+        *(workflow_resource(value) for value in configuration.allowed_workflow_ids),
+    ]
     if configuration.knowledge_base_id is not None:
         resources.append(knowledge_base_resource(configuration.knowledge_base_id))
     return tuple(resources)

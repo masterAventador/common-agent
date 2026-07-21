@@ -69,6 +69,12 @@ class FakeRepository:
     async def get(self, configuration_id: UUID) -> ModelConfiguration | None:
         return self.items.get(configuration_id)
 
+    async def get_by_identifier(self, model_identifier: str) -> ModelConfiguration | None:
+        return next(
+            (item for item in self.items.values() if item.model_identifier == model_identifier),
+            None,
+        )
+
     async def add(self, configuration: ModelConfiguration) -> None:
         self.items[configuration.id] = configuration
 

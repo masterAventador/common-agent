@@ -8,6 +8,7 @@ import httpx
 from common_agent.adapters.persistence import Database, MySqlNamedLockProvider
 from common_agent.application.resource_locks import ResourceMutationGuard
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
+from tests.support.employees import DEFAULT_TEST_MODEL_CONFIGURATION_ID
 from tests.support.http import authenticated_client, running_apis
 from tests.support.settings import TEST_DATABASE_URL
 
@@ -60,6 +61,7 @@ def test_two_formal_http_instances_wait_for_the_same_mysql_resource_lock() -> No
                 "name": f"多实例互斥-{uuid4().hex}",
                 "description": "创建态",
                 "system_prompt": "保持互斥。",
+                "default_model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
                 "knowledge_base_id": None,
                 "allowed_workflow_ids": [],
             },
@@ -85,6 +87,9 @@ def test_two_formal_http_instances_wait_for_the_same_mysql_resource_lock() -> No
                                     "name": "多实例更新-A",
                                     "description": "来自第一个正式 API",
                                     "system_prompt": "保持互斥。",
+                                    "default_model_configuration_id": str(
+                                        DEFAULT_TEST_MODEL_CONFIGURATION_ID
+                                    ),
                                     "knowledge_base_id": None,
                                     "allowed_workflow_ids": [],
                                 },
@@ -98,6 +103,9 @@ def test_two_formal_http_instances_wait_for_the_same_mysql_resource_lock() -> No
                                     "name": "多实例更新-B",
                                     "description": "来自第二个正式 API",
                                     "system_prompt": "保持互斥。",
+                                    "default_model_configuration_id": str(
+                                        DEFAULT_TEST_MODEL_CONFIGURATION_ID
+                                    ),
                                     "knowledge_base_id": None,
                                     "allowed_workflow_ids": [],
                                 },

@@ -14,8 +14,8 @@ from tests.support.settings import TEST_DATABASE_URL
 
 def _body(
     *,
-    display_name: str = "Qwen Plus",
-    model_identifier: str = "qwen-plus",
+    display_name: str = "Qwen Turbo",
+    model_identifier: str = "qwen-turbo",
     enabled: bool = True,
 ) -> dict[str, object]:
     return {
@@ -38,9 +38,9 @@ def test_model_configuration_crud_uses_formal_uvicorn_mysql_and_survives_restart
             configuration_id = payload["id"]
             assert payload == {
                 "id": configuration_id,
-                "display_name": "Qwen Plus",
+                "display_name": "Qwen Turbo",
                 "provider": "bailian",
-                "model_identifier": "qwen-plus",
+                "model_identifier": "qwen-turbo",
                 "enabled": True,
                 "created_at": payload["created_at"],
                 "updated_at": payload["updated_at"],

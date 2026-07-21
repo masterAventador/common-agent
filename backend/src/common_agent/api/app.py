@@ -19,6 +19,7 @@ from common_agent.adapters.demo import (
 )
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
+from common_agent.adapters.model.resolver import BailianChatModelResolver
 from common_agent.adapters.model.verification import (
     BailianModelConfigurationVerifier,
     DemoModelConfigurationVerifier,
@@ -87,6 +88,9 @@ from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.model_configurations import (
     ModelConfigurationService,
     ModelConfigurationVerifier,
+)
+from common_agent.model_configurations.defaults import (
+    PLATFORM_DEFAULT_MODEL_IDENTIFIER,
 )
 from common_agent.models.base import TextStreamingModel
 from common_agent.observability import MetricsRegistry, configure_json_logging
@@ -189,11 +193,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             distributed=MySqlNamedLockProvider(database),
         )
         app.state.knowledge_bases = knowledge_bases
-        app.state.model_configurations = ModelConfigurationService(
+        model_configurations = ModelConfigurationService(
             SqlAlchemyModelConfigurationUnitOfWorkFactory(database, tenant_id_provider),
             verifier=model_configuration_verifier,
             guard=resource_guard,
         )
+        app.state.model_configurations = model_configurations
         app.state.resource_deletions = ResourceDeletionService(
             SqlAlchemyResourceDeletionStore(database, tenant_id_provider),
             knowledge_bases,
@@ -228,18 +233,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.workflows = workflows
         if integration_mode.mode != "demo":
             runtime = DeepAgentsEmployeeRuntime(
-                model,
+                BailianChatModelResolver(model_settings, initial_model=model),
                 tools=WorkflowToolRegistry(workflows, audit=app.state.audit),
             )
         employees = EmployeeService(
             SqlAlchemyEmployeeUnitOfWorkFactory(database, tenant_id_provider),
             knowledge_bases,
             workflows=workflows,
+            model_configurations=model_configurations,
             guard=resource_guard,
         )
         app.state.employees = employees
         with bind_tenant(_system_tenant_access(DEFAULT_TENANT_ID)):
-            await seed_default_employee(employees)
+            platform_default_model = await model_configurations.get_by_identifier(
+                PLATFORM_DEFAULT_MODEL_IDENTIFIER
+            )
+            await seed_default_employee(
+                employees,
+                default_model_configuration_id=platform_default_model.id,
+            )
         conversation_events = ConversationEventBroker(
             key_namespace=lambda conversation_id: key_namespace(f"conversation:{conversation_id}"),
             journal=SqlAlchemyEventJournal(database),
