@@ -1581,16 +1581,17 @@ RAGFlow 外部 ID 归属均按租户关闭失败，REST/SSE/工具调用越权�
   12 GiB 正式 React/FastAPI/MySQL/Chromium 审计套件先后抓到 Ant Design 过滤器宽度、下拉定位和
   中文按钮可访问名称三项真实交互问题，修复后完成创建员工→Owner 审计页→完整性/策略→资源
   过滤→固定元数据/正文不出现，最终 `1 passed (3.1s)`；未启动或修改 RAGFlow，未调用百炼
-- GREEN：隔离 `common_agent_s1004_test` 后端权威全量 `553 passed, 13 skipped in 97.64s`；覆盖率
+- GREEN：后端权威全量 `553 passed, 13 skipped in 97.64s`；覆盖率
   全量同为 `553 passed, 13 skipped in 187.56s`，总体行 91.35%、分支 72.89%、核心行 93.59%、
   核心分支 75.00%，全部超过冻结阈值。Ruff、266 文件格式、严格 Mypy 250 个源/测试文件、uv
   lock、85 包安全审计、Alembic `0015` head/无漂移及 `0015→0014→0015`、OpenAPI/生成 DTO、
   架构、CI/覆盖率/E2E 入口、ShellCheck 和 Secret 门禁通过。前端 23 files/107 tests，行 87.35%、
   分支 76.04%，ESLint、TypeScript、Build、零高危依赖审计、契约与五路由 bundle 门禁通过；
   最大 chunk 189,644 bytes，审计路由首次 JS 图 1,458,569 bytes
-- 清理与文档：E2E finally 精确删除测试员工并重置认证状态，四次失败截图/Trace 在完成诊断与
-  GREEN 后删除；覆盖率/构建临时产物和隔离测试库已删除，18200、18280、19506 无监听，平台
-  容器和项目专属 Colima 已停止。稳定 Volume、官方镜像、0600 Token、冻结依赖和用户授权的
+- 清理与文档：E2E finally 精确删除测试员工并重置认证状态，失败截图/Trace 在完成诊断与 GREEN
+  后删除；审计事件按禁止删除策略保留，覆盖率/构建/工具缓存等可再生产物已精确删除，18200、
+  18280、19380、19506 无监听，平台/RAGFlow 容器和项目专属 Colima 已停止。稳定 Volume、官方
+  镜像、0600 Token、冻结依赖和用户授权的
   百炼 Demo Key 保留；RAGFlow 官方 v0.25.6 submodule/源码/镜像/容器内文件均未修改。产品范围、
   工程结构、前后端架构、README、OpenAPI、生成 DTO 和本路线图已同步
 - 遗留：无；下一任务 S10-05 以平台自有端口交付持久队列/Worker、至少一次投递、幂等重试、
