@@ -30,7 +30,7 @@ def test_tenant_http_isolates_rest_sse_and_viewer_writes() -> None:
     tenant_b: UUID | None = None
     employee_a: UUID | None = None
     member_email = f"viewer-{uuid4().hex}@example.com"
-    member_password = "viewer initial password is long enough"
+    member_password = "Viewer#8"
     try:
         with (
             running_api(TEST_DATABASE_URL, env_overrides=_DEMO_ENV) as api_url,

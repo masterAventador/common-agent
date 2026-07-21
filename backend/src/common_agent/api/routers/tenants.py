@@ -47,7 +47,7 @@ class CreateTenantMemberBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: Annotated[str, Field(min_length=3, max_length=254)]
-    password: Annotated[SecretStr, Field(min_length=15, max_length=128)]
+    password: Annotated[SecretStr, Field(min_length=8, max_length=128)]
     role: Literal["editor", "viewer"]
 
 

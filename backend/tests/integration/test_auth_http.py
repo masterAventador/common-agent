@@ -14,8 +14,8 @@ from tests.support.settings import TEST_DATABASE_URL
 
 BOOTSTRAP_TOKEN = "integration-bootstrap-token-at-least-32-characters"
 ORIGIN = "http://127.0.0.1:18280"
-PASSWORD = "correct horse battery staple"
-NEW_PASSWORD = "replacement horse battery password"
+PASSWORD = "Owner#28"
+NEW_PASSWORD = "Reset#28"
 
 
 async def _clear_authentication() -> None:

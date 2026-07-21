@@ -38,7 +38,7 @@ class RegisterBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: Annotated[str, Field(min_length=3, max_length=254)]
-    password: Annotated[SecretStr, Field(min_length=15, max_length=128)]
+    password: Annotated[SecretStr, Field(min_length=8, max_length=128)]
     bootstrap_token: Annotated[SecretStr, Field(min_length=1, max_length=256)]
 
 
@@ -54,7 +54,7 @@ class RecoveryResetBody(BaseModel):
 
     email: Annotated[str, Field(min_length=3, max_length=254)]
     recovery_code: Annotated[SecretStr, Field(min_length=17, max_length=17)]
-    new_password: Annotated[SecretStr, Field(min_length=15, max_length=128)]
+    new_password: Annotated[SecretStr, Field(min_length=8, max_length=128)]
 
 
 class AuthSessionResponse(BaseModel):

@@ -238,7 +238,7 @@ describe("App shell", () => {
 
     await user.click(await screen.findByRole("button", { name: "添加成员" }));
     await user.type(screen.getByLabelText("邮箱"), provisioned.email);
-    await user.type(screen.getByLabelText("初始密码"), "viewer initial password is secure");
+    await user.type(screen.getByLabelText("初始密码"), "Viewer#8");
     await user.click(screen.getByRole("button", { name: /创\s*建\s*账\s*号/ }));
 
     await waitFor(() =>
@@ -246,7 +246,7 @@ describe("App shell", () => {
         tenantAccesses[0].id,
         {
           email: provisioned.email,
-          password: "viewer initial password is secure",
+          password: "Viewer#8",
           role: "viewer",
         },
       ),

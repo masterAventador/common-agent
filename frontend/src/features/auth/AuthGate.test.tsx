@@ -131,7 +131,7 @@ describe("authentication gate", () => {
     renderGate();
 
     await user.type(await screen.findByLabelText("邮箱"), "owner@example.com");
-    await user.type(screen.getByLabelText("密码"), "correct horse battery staple");
+    await user.type(screen.getByLabelText("密码"), "Owner#28");
     await user.type(screen.getByLabelText("站点引导凭据"), "bootstrap-token");
     await user.click(screen.getByRole("button", { name: "创建管理员" }));
 
@@ -164,14 +164,14 @@ describe("authentication gate", () => {
     );
     await user.type(screen.getByLabelText("邮箱"), "owner@example.com");
     await user.type(screen.getByLabelText("恢复码"), "ABCDEFGH-JKLMNPQR");
-    await user.type(screen.getByLabelText("新密码"), "replacement horse battery password");
+    await user.type(screen.getByLabelText("新密码"), "Reset#28");
     await user.click(screen.getByRole("button", { name: "重置密码" }));
 
     await waitFor(() =>
       expect(authApi.resetPassword).toHaveBeenCalledWith({
         email: "owner@example.com",
         recovery_code: "ABCDEFGH-JKLMNPQR",
-        new_password: "replacement horse battery password",
+        new_password: "Reset#28",
       }),
     );
     expect(

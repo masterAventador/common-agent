@@ -281,8 +281,8 @@ function AuthenticatedApp() {
           <Form.Item
             label="初始密码"
             name="password"
-            rules={[{ required: true, min: 15, max: 128 }]}
-            extra="至少 15 个字符；成员首次登录后可用恢复码重置。"
+            rules={[{ required: true, min: 8, max: 128 }]}
+            extra="至少 8 个字符；成员首次登录后可用恢复码重置。"
           >
             <Input.Password autoComplete="new-password" />
           </Form.Item>

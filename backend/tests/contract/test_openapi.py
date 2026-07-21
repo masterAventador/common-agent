@@ -60,6 +60,15 @@ def test_openapi_exposes_cookie_session_contract_without_session_tokens() -> Non
     register_password = schema["components"]["schemas"]["RegisterBody"]["properties"]["password"]
     assert register_password["format"] == "password"
     assert register_password["writeOnly"] is True
+    assert register_password["minLength"] == 8
+    reset_password = schema["components"]["schemas"]["RecoveryResetBody"]["properties"][
+        "new_password"
+    ]
+    member_password = schema["components"]["schemas"]["CreateTenantMemberBody"]["properties"][
+        "password"
+    ]
+    assert reset_password["minLength"] == 8
+    assert member_password["minLength"] == 8
 
 
 def test_openapi_documents_authentication_and_csrf_errors_on_protected_routes() -> None:

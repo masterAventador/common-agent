@@ -29,13 +29,17 @@ def test_passwords_use_argon2id_and_verify_without_retaining_plaintext() -> None
 @pytest.mark.parametrize(
     "password",
     [
-        "short-password",
+        "x" * 7,
         "x" * 129,
     ],
 )
 def test_password_policy_rejects_only_unsafe_length_boundaries(password: str) -> None:
     with pytest.raises(PasswordPolicyError):
         validate_password(password)
+
+
+def test_password_policy_accepts_eight_character_minimum() -> None:
+    assert validate_password("Owner#28") == "Owner#28"
 
 
 def test_password_policy_accepts_long_unicode_passphrases_without_normalizing_them() -> None:

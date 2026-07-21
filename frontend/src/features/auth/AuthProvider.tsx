@@ -383,8 +383,8 @@ function RegisterForm({ auth }: { auth: AuthContextValue }) {
       <Form.Item
         label="密码"
         name="password"
-        rules={[{ required: true, min: 15, max: 128 }]}
-        extra="至少 15 个字符"
+        rules={[{ required: true, min: 8, max: 128 }]}
+        extra="至少 8 个字符"
       >
         <Input.Password autoComplete="new-password" />
       </Form.Item>
@@ -410,7 +410,7 @@ function RecoveryForm({ auth }: { auth: AuthContextValue }) {
       <Form.Item
         label="新密码"
         name="new_password"
-        rules={[{ required: true, min: 15, max: 128 }]}
+        rules={[{ required: true, min: 8, max: 128 }]}
       >
         <Input.Password autoComplete="new-password" />
       </Form.Item>
