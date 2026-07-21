@@ -39,6 +39,7 @@ from common_agent.models.base import (
 )
 from common_agent.observability import JsonLogFormatter
 from common_agent.tasks import (
+    DurableTask,
     TaskCancelled,
     TaskExecutionContext,
     TaskFatalError,
@@ -112,6 +113,19 @@ class FailCompletedEventOnce(WorkflowEventBroker):
             self.failed = True
             raise RuntimeError("event journal temporarily unavailable")
         return await super().publish(run=run, kind=kind, node_id=node_id)
+
+
+class DurableStopQueueProbe:
+    def __init__(self) -> None:
+        self.task: DurableTask | None = None
+        self.stop_requests = 0
+
+    async def request_stop_for_aggregate(self, **kwargs: object) -> DurableTask:
+        del kwargs
+        self.stop_requests += 1
+        if self.task is None:
+            raise AssertionError("durable task was not prepared")
+        return replace(self.task, stop_requested=True)
 
 
 def _service(
@@ -315,6 +329,46 @@ def test_durable_workflow_retries_before_persisting_final_failure() -> None:
         assert fatal.value.code == "model_unavailable"
         assert failed.status is WorkflowRunStatus.FAILED
         assert failed.error_code == "model_unavailable"
+
+    asyncio.run(exercise())
+
+
+def test_durable_stop_acceptance_immediately_persists_stopped_summary() -> None:
+    async def exercise() -> None:
+        units = WorkflowUnitOfWorkFactoryProbe()
+        knowledge = KnowledgeProbe()
+        queue = DurableStopQueueProbe()
+        service = WorkflowService(
+            units,
+            KnowledgeBaseService(knowledge),
+            compiler=LangGraphWorkflowCompiler(
+                create_workflow_node_registry(
+                    RunModelProbe(),
+                    KnowledgeBaseService(knowledge),
+                )
+            ),
+            events=WorkflowEventBroker(),
+            tasks=cast(TaskQueue, queue),
+            tenant_id_provider=lambda: DEFAULT_TENANT_ID,
+        )
+        workflow = await service.create(workflow_configuration())
+        run_id = uuid4()
+        await service.start_run(
+            workflow.id,
+            run_id=run_id,
+            input="接受停止后立即收敛摘要",
+            trigger=WorkflowRunTrigger.MANUAL,
+        )
+        request, _ = units.tasks.requests[-1]
+        queue.task = (await units.tasks.enqueue(request, max_attempts=3)).task
+
+        accepted = await service.stop_run(run_id)
+        stopped = await service.get_run(run_id)
+        await service.aclose()
+
+        assert accepted.run_id == run_id
+        assert queue.stop_requests == 1
+        assert stopped.status is WorkflowRunStatus.STOPPED
 
     asyncio.run(exercise())
 

@@ -155,9 +155,9 @@ class WorkflowRunCoordinator:
             return running
 
     async def stop(self, run_id: UUID) -> WorkflowRunStopAccepted:
-        async with self._locks.hold(run_id):
-            run = await self.get(run_id)
-            if self._tasks is not None:
+        if self._tasks is not None:
+            async with self._locks.hold(run_id):
+                run = await self.get(run_id)
                 if run.is_terminal:
                     raise WorkflowRunNotActive
                 try:
@@ -169,7 +169,11 @@ class WorkflowRunCoordinator:
                     )
                 except TaskNotFound:
                     raise WorkflowRunNotActive from None
-                return WorkflowRunStopAccepted(run_id=run_id)
+            await self._run_projection.stop(run_id)
+            return WorkflowRunStopAccepted(run_id=run_id)
+
+        async with self._locks.hold(run_id):
+            run = await self.get(run_id)
             active = self._active.get(run_id)
             if run.is_terminal or active is None:
                 raise WorkflowRunNotActive
