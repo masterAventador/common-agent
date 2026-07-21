@@ -9,6 +9,7 @@ UV_RUNNER="${SCRIPT_DIR}/uv.sh"
 RUNTIME_ROOT="${REPOSITORY_ROOT}/.local/dev/real"
 TOKEN_ROOT="${REPOSITORY_ROOT}/.local/dev/common-agent-dev/secrets"
 RAGFLOW_TOKEN_FILE="${TOKEN_ROOT}/ragflow-api-token"
+AUTH_BOOTSTRAP_TOKEN_FILE="${TOKEN_ROOT}/owner-bootstrap-token"
 BACKEND_LOG="${RUNTIME_ROOT}/backend.log"
 FRONTEND_LOG="${RUNTIME_ROOT}/frontend.log"
 BACKEND_LAUNCH_LABEL="com.masteraventador.common-agent.real.backend"
@@ -53,13 +54,37 @@ require_command() {
 
 require_tools() {
   local command_name
-  for command_name in git uv node npm npx docker colima curl lsof launchctl df awk; do
+  for command_name in git uv node npm npx docker colima curl lsof launchctl df awk openssl stat; do
     require_command "${command_name}"
   done
 }
 
 run_pnpm() {
   npx --yes "pnpm@${PNPM_VERSION}" "$@"
+}
+
+load_auth_bootstrap_token() {
+  local auth_bootstrap_token file_mode
+  if [[ -L "${AUTH_BOOTSTRAP_TOKEN_FILE}" ]]; then
+    echo "首位管理员引导凭据文件不能是符号链接：${AUTH_BOOTSTRAP_TOKEN_FILE}" >&2
+    return 1
+  fi
+  if [[ ! -f "${AUTH_BOOTSTRAP_TOKEN_FILE}" ]]; then
+    mkdir -p "${TOKEN_ROOT}"
+    chmod 700 "${TOKEN_ROOT}"
+    (umask 077; openssl rand -hex 32 >"${AUTH_BOOTSTRAP_TOKEN_FILE}")
+  fi
+  file_mode="$(stat -f '%Lp' "${AUTH_BOOTSTRAP_TOKEN_FILE}")"
+  if [[ "${file_mode}" != "600" ]]; then
+    echo "首位管理员引导凭据文件权限必须是 0600：${AUTH_BOOTSTRAP_TOKEN_FILE}" >&2
+    return 1
+  fi
+  IFS= read -r auth_bootstrap_token <"${AUTH_BOOTSTRAP_TOKEN_FILE}"
+  if ((${#auth_bootstrap_token} < 32 || ${#auth_bootstrap_token} > 256)); then
+    echo "首位管理员引导凭据必须是 32-256 字符：${AUTH_BOOTSTRAP_TOKEN_FILE}" >&2
+    return 1
+  fi
+  printf '%s\n' "${auth_bootstrap_token}"
 }
 
 validate_tool_versions() {
@@ -400,7 +425,8 @@ start_frontend() {
 }
 
 serve_backend() {
-  local ragflow_api_key
+  local auth_bootstrap_token ragflow_api_key
+  auth_bootstrap_token="$(load_auth_bootstrap_token)"
   if [[ ! -f "${RAGFLOW_TOKEN_FILE}" || -L "${RAGFLOW_TOKEN_FILE}" ]]; then
     echo "RAGFlow Token 文件不存在或不安全" >&2
     return 1
@@ -417,6 +443,7 @@ serve_backend() {
     COMMON_AGENT_API_HOST=127.0.0.1 \
     COMMON_AGENT_API_PORT="${API_PORT}" \
     COMMON_AGENT_CORS_ORIGINS="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN="${auth_bootstrap_token}" \
     RAGFLOW_BASE_URL="http://127.0.0.1:${RAGFLOW_API_PORT}" \
     RAGFLOW_API_KEY="${ragflow_api_key}" \
     RAGFLOW_EXPECTED_VERSION=v0.25.6 \
@@ -449,6 +476,7 @@ up() {
   echo "前端：http://127.0.0.1:${FRONTEND_PORT}"
   echo "后端：http://127.0.0.1:${API_PORT}/api/v1"
   echo "RAGFlow：http://127.0.0.1:19381"
+  echo "首次所有者引导凭据文件：${AUTH_BOOTSTRAP_TOKEN_FILE}"
 }
 
 inspect_ragflow_container() {

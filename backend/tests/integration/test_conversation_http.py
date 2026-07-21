@@ -10,7 +10,12 @@ import pytest
 from common_agent.api.routers.conversations import ConversationEventResponse
 from common_agent.employees.seeds import DEFAULT_KNOWLEDGE_ASSISTANT_ID
 from tests.support.conversations import delete_conversations
-from tests.support.http import assert_error_response, running_api
+from tests.support.http import (
+    assert_error_response,
+    authenticated_async_client,
+    authenticated_client,
+    running_api,
+)
 from tests.support.settings import TEST_DATABASE_URL
 
 
@@ -19,7 +24,7 @@ def test_conversation_crud_and_errors_use_formal_uvicorn_mysql_path() -> None:
     try:
         with (
             running_api(TEST_DATABASE_URL) as api_url,
-            httpx.Client(base_url=api_url, timeout=10) as client,
+            authenticated_client(base_url=api_url, timeout=10) as client,
         ):
             created = client.post(
                 "/api/v1/conversations",
@@ -84,7 +89,7 @@ async def _exercise_real_chat(
     conversation_id: UUID,
     user_message_id: UUID,
 ) -> None:
-    async with httpx.AsyncClient(base_url=api_url, timeout=90) as client:
+    async with await authenticated_async_client(base_url=api_url, timeout=90) as client:
         created = await client.post(
             "/api/v1/conversations",
             json={

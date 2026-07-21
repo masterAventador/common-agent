@@ -35,6 +35,12 @@ uv run python -m common_agent
 `20260720_0007` 迁移建立的项目专属 MySQL 表保存，与员工、会话、消息和引用一起在后端重启后
 恢复；Demo 不借此冒充 RAGFlow 解析、向量或重排能力。
 
+除健康、状态与公开认证入口外，平台 API 必须经过服务端会话认证。空库只允许持有一次性引导令牌的请求
+创建首位所有者；密码使用 Argon2id，恢复码和会话令牌只保存摘要。登录成功后后端设置
+`HttpOnly`、`SameSite=Strict` Cookie，前端写请求还必须同时携带当前会话的 CSRF 令牌并通过
+可信 Origin 校验。会话具有空闲与绝对过期、注销撤销和登录速率限制；恢复码只显示一次，使用后
+立即标记为已消费且不能重放。生产环境启用 HTTPS 时必须同时启用 Secure Cookie。
+
 启动时会通过 Alembic 把平台正式 MySQL 升级到 `head` 并执行连接探测。默认连接为 `127.0.0.1:19506/common_agent`，使用 SQLAlchemy async、`aiomysql`、PyMySQL `>=1.1.1` 和 MySQL 8.4 LTS；该实例、端口和 Volume 与 RAGFlow 内部 MySQL 完全隔离。配置只接受带用户名、密码、端口和数据库名的 loopback `mysql+aiomysql` URL。
 
 单独运行迁移时必须显式指定目标，避免误建占位数据库：

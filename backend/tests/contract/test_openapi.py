@@ -31,6 +31,65 @@ def test_openapi_exposes_health_and_stable_error_envelope() -> None:
     assert set(error_schema["required"]) == {"code", "message", "request_id", "retryable"}
 
 
+def test_openapi_exposes_cookie_session_contract_without_session_tokens() -> None:
+    schema = _schema()
+    paths = schema["paths"]
+    auth_paths = {
+        "/api/v1/auth/policy",
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+        "/api/v1/auth/session",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/recovery/reset",
+    }
+    assert auth_paths <= paths.keys()
+
+    session = schema["components"]["schemas"]["AuthSessionResponse"]
+    registration = schema["components"]["schemas"]["RegistrationResponse"]
+    assert set(session["required"]) == {
+        "absolute_expires_at",
+        "csrf_token",
+        "email",
+        "idle_expires_at",
+        "user_id",
+    }
+    assert "session_token" not in session["properties"]
+    assert set(registration["required"]) == {*session["required"], "recovery_codes"}
+    assert "session_token" not in registration["properties"]
+
+    register_password = schema["components"]["schemas"]["RegisterBody"]["properties"]["password"]
+    assert register_password["format"] == "password"
+    assert register_password["writeOnly"] is True
+
+
+def test_openapi_documents_authentication_and_csrf_errors_on_protected_routes() -> None:
+    schema = _schema()
+    public_operations = {
+        ("/api/v1/system/health", "get"),
+        ("/api/v1/system/status", "get"),
+        ("/api/v1/auth/policy", "get"),
+        ("/api/v1/auth/register", "post"),
+        ("/api/v1/auth/login", "post"),
+        ("/api/v1/auth/recovery/reset", "post"),
+    }
+    error_ref = {"$ref": "#/components/schemas/ErrorEnvelope"}
+
+    for path, operations in schema["paths"].items():
+        for method, operation in operations.items():
+            if method not in {"get", "post", "put", "delete", "patch"}:
+                continue
+            if (path, method) in public_operations:
+                continue
+            assert (
+                operation["responses"]["401"]["content"]["application/json"]["schema"] == error_ref
+            )
+            if method in {"post", "put", "delete", "patch"}:
+                assert (
+                    operation["responses"]["403"]["content"]["application/json"]["schema"]
+                    == error_ref
+                )
+
+
 def test_committed_openapi_snapshot_matches_formal_app() -> None:
     committed = json.loads(OPENAPI_SNAPSHOT.read_text(encoding="utf-8"))
 

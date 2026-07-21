@@ -17,6 +17,52 @@ body {
   min-height: 100vh;
 }
 
+.auth-loading,
+.auth-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+}
+
+.auth-page {
+  padding: 40px;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(49, 94, 251, 0.13), transparent 36%),
+    radial-gradient(circle at 80% 90%, rgba(109, 73, 216, 0.12), transparent 34%),
+    #f5f7fb;
+}
+
+.auth-card {
+  width: min(440px, calc(100vw - 48px));
+  border-color: #e2e7f1;
+  box-shadow: 0 24px 70px rgba(21, 35, 71, 0.12);
+}
+
+.auth-card-content {
+  width: 100%;
+}
+
+.auth-heading {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.auth-heading .ant-typography {
+  margin: 0;
+}
+
+.auth-recovery-codes {
+  max-height: 280px;
+  margin: 16px 0 0;
+  padding: 16px;
+  overflow: auto;
+  border-radius: 10px;
+  background: #f5f7fb;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
 button,
 input,
 textarea,

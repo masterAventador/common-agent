@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     Float,
     ForeignKey,
@@ -55,6 +56,138 @@ from common_agent.domain.workflow_run import (
 
 class PersistenceBase(DeclarativeBase):
     pass
+
+
+class AuthUserRow(PersistenceBase):
+    __tablename__ = "auth_users"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(id) = 36 AND id = TRIM(id)", name="ck_auth_users_id"),
+        CheckConstraint(
+            "CHAR_LENGTH(email) BETWEEN 3 AND 254 AND email = LOWER(TRIM(email))",
+            name="ck_auth_users_email",
+        ),
+        CheckConstraint(
+            "password_hash LIKE '$argon2id$%'",
+            name="ck_auth_users_password_hash",
+        ),
+        CheckConstraint(
+            "password_changed_at BETWEEN created_at AND updated_at",
+            name="ck_auth_users_password_changed_at",
+        ),
+        CheckConstraint(
+            "bootstrap_slot IS NULL OR bootstrap_slot = 'owner'",
+            name="ck_auth_users_bootstrap_slot",
+        ),
+        UniqueConstraint("email", name="uq_auth_users_email"),
+        UniqueConstraint("bootstrap_slot", name="uq_auth_users_bootstrap_slot"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    bootstrap_slot: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    password_changed_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class AuthSessionRow(PersistenceBase):
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(id) = 36 AND id = TRIM(id)", name="ck_auth_sessions_id"),
+        CheckConstraint(
+            "CHAR_LENGTH(user_id) = 36 AND user_id = TRIM(user_id)",
+            name="ck_auth_sessions_user_id",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(token_digest) = 64",
+            name="ck_auth_sessions_token_digest",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(csrf_token) = 43",
+            name="ck_auth_sessions_csrf_token",
+        ),
+        CheckConstraint(
+            "last_seen_at >= created_at AND idle_expires_at > last_seen_at "
+            "AND absolute_expires_at >= idle_expires_at",
+            name="ck_auth_sessions_lifetime",
+        ),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= created_at",
+            name="ck_auth_sessions_revoked_at",
+        ),
+        UniqueConstraint("token_digest", name="uq_auth_sessions_token_digest"),
+        Index(
+            "ix_auth_sessions_user_active",
+            "user_id",
+            "revoked_at",
+            "absolute_expires_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("auth_users.id", ondelete="CASCADE", name="fk_auth_sessions_user_id"),
+        nullable=False,
+    )
+    token_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    csrf_token: Mapped[str] = mapped_column(String(43), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    idle_expires_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    absolute_expires_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(mysql.DATETIME(fsp=6), nullable=True)
+
+
+class AuthRecoveryCodeRow(PersistenceBase):
+    __tablename__ = "auth_recovery_codes"
+    __table_args__ = (
+        CheckConstraint(
+            "CHAR_LENGTH(code_digest) = 64",
+            name="ck_auth_recovery_codes_digest",
+        ),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at",
+            name="ck_auth_recovery_codes_consumed_at",
+        ),
+    )
+
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("auth_users.id", ondelete="CASCADE", name="fk_auth_recovery_codes_user_id"),
+        primary_key=True,
+    )
+    code_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(mysql.DATETIME(fsp=6), nullable=True)
+
+
+class AuthLoginAttemptRow(PersistenceBase):
+    __tablename__ = "auth_login_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "CHAR_LENGTH(key_digest) = 64",
+            name="ck_auth_login_attempts_key_digest",
+        ),
+        CheckConstraint(
+            "failure_count >= 0 AND updated_at >= window_started_at",
+            name="ck_auth_login_attempts_state",
+        ),
+        CheckConstraint(
+            "locked_until IS NULL OR locked_until >= updated_at",
+            name="ck_auth_login_attempts_locked_until",
+        ),
+        Index("ix_auth_login_attempts_locked_until", "locked_until"),
+        Index("ix_auth_login_attempts_updated_at", "updated_at"),
+    )
+
+    key_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    failure_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    window_started_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(mysql.DATETIME(fsp=6), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
 
 
 class DemoKnowledgeBaseRow(PersistenceBase):

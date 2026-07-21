@@ -7,6 +7,8 @@ BACKEND_ROOT="${REPOSITORY_ROOT}/backend"
 FRONTEND_ROOT="${REPOSITORY_ROOT}/frontend"
 UV_RUNNER="${SCRIPT_DIR}/uv.sh"
 RUNTIME_ROOT="${REPOSITORY_ROOT}/.local/dev/demo-light"
+TOKEN_ROOT="${REPOSITORY_ROOT}/.local/dev/common-agent-dev/secrets"
+AUTH_BOOTSTRAP_TOKEN_FILE="${TOKEN_ROOT}/owner-bootstrap-token"
 LEGACY_RAGFLOW_CHECKOUT="${REPOSITORY_ROOT}/.local/dev/common-agent-dev/ragflow/upstream/v0.25.6"
 BACKEND_LOG="${RUNTIME_ROOT}/backend.log"
 FRONTEND_LOG="${RUNTIME_ROOT}/frontend.log"
@@ -38,13 +40,37 @@ require_command() {
 
 require_tools() {
   local command_name
-  for command_name in git uv node npm npx docker colima curl lsof launchctl; do
+  for command_name in git uv node npm npx docker colima curl lsof launchctl openssl stat; do
     require_command "${command_name}"
   done
 }
 
 run_pnpm() {
   npx --yes "pnpm@${PNPM_VERSION}" "$@"
+}
+
+load_auth_bootstrap_token() {
+  local auth_bootstrap_token file_mode
+  if [[ -L "${AUTH_BOOTSTRAP_TOKEN_FILE}" ]]; then
+    echo "首位管理员引导凭据文件不能是符号链接：${AUTH_BOOTSTRAP_TOKEN_FILE}" >&2
+    return 1
+  fi
+  if [[ ! -f "${AUTH_BOOTSTRAP_TOKEN_FILE}" ]]; then
+    mkdir -p "${TOKEN_ROOT}"
+    chmod 700 "${TOKEN_ROOT}"
+    (umask 077; openssl rand -hex 32 >"${AUTH_BOOTSTRAP_TOKEN_FILE}")
+  fi
+  file_mode="$(stat -f '%Lp' "${AUTH_BOOTSTRAP_TOKEN_FILE}")"
+  if [[ "${file_mode}" != "600" ]]; then
+    echo "首位管理员引导凭据文件权限必须是 0600：${AUTH_BOOTSTRAP_TOKEN_FILE}" >&2
+    return 1
+  fi
+  IFS= read -r auth_bootstrap_token <"${AUTH_BOOTSTRAP_TOKEN_FILE}"
+  if ((${#auth_bootstrap_token} < 32 || ${#auth_bootstrap_token} > 256)); then
+    echo "首位管理员引导凭据必须是 32-256 字符：${AUTH_BOOTSTRAP_TOKEN_FILE}" >&2
+    return 1
+  fi
+  printf '%s\n' "${auth_bootstrap_token}"
 }
 
 validate_tool_versions() {
@@ -279,6 +305,8 @@ start_frontend() {
 }
 
 serve_backend() {
+  local auth_bootstrap_token
+  auth_bootstrap_token="$(load_auth_bootstrap_token)"
   cd "${BACKEND_ROOT}"
   exec env \
     COMMON_AGENT_INTEGRATION_MODE=demo \
@@ -286,6 +314,7 @@ serve_backend() {
     COMMON_AGENT_API_HOST=127.0.0.1 \
     COMMON_AGENT_API_PORT="${API_PORT}" \
     COMMON_AGENT_CORS_ORIGINS="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN="${auth_bootstrap_token}" \
     .venv/bin/python -m common_agent
 }
 
@@ -312,6 +341,7 @@ up() {
   echo "demo-light 已启动"
   echo "前端：http://127.0.0.1:${FRONTEND_PORT}"
   echo "后端：http://127.0.0.1:${API_PORT}/api/v1"
+  echo "首次所有者引导凭据文件：${AUTH_BOOTSTRAP_TOKEN_FILE}"
 }
 
 status() {

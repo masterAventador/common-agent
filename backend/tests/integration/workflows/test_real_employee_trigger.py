@@ -12,7 +12,7 @@ from common_agent.adapters.persistence.database import Database
 from common_agent.api.routers.conversations import ConversationEventResponse
 from tests.support.conversations import delete_conversations
 from tests.support.employees import delete_employees
-from tests.support.http import running_api
+from tests.support.http import authenticated_async_client, running_api
 from tests.support.ragflow import provision_api_key
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows
@@ -69,7 +69,7 @@ async def _exercise_employee_trigger(
     employee_ids: list[str],
     conversation_ids: list[UUID],
 ) -> None:
-    async with httpx.AsyncClient(base_url=api_url, timeout=180) as client:
+    async with await authenticated_async_client(base_url=api_url, timeout=180) as client:
         workflow = await client.post("/api/v1/workflows", json=_workflow_body())
         assert workflow.status_code == 201
         workflow_id = str(workflow.json()["id"])

@@ -1,9 +1,10 @@
 from typing import Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict
 
 from common_agent import __version__
+from common_agent.api.authentication import require_authenticated
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.application.system_service import (
     ModelConfigurationStatus,
@@ -103,7 +104,12 @@ async def health(request: Request) -> HealthResponse:
     )
 
 
-@router.get("/metrics", response_model=MetricsResponse)
+@router.get(
+    "/metrics",
+    response_model=MetricsResponse,
+    dependencies=[Depends(require_authenticated)],
+    responses={401: {"model": ErrorEnvelope}},
+)
 async def metrics(request: Request) -> MetricsResponse:
     registry = getattr(request.app.state, "metrics", None)
     if not isinstance(registry, MetricsRegistry):

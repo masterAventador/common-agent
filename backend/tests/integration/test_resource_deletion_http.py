@@ -10,7 +10,7 @@ from common_agent.adapters.persistence.database import Database
 from tests.support.conversations import delete_conversations
 from tests.support.demo_knowledge import delete_demo_knowledge_bases
 from tests.support.employees import delete_employees
-from tests.support.http import assert_error_response, running_api
+from tests.support.http import assert_error_response, authenticated_client, running_api
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows
 
@@ -26,7 +26,7 @@ def test_all_resource_delete_apis_enforce_references_cascade_and_idempotency() -
     try:
         with (
             running_api(TEST_DATABASE_URL, env_overrides=_DEMO_ENV) as api_url,
-            httpx.Client(base_url=api_url, timeout=15) as client,
+            authenticated_client(base_url=api_url, timeout=15) as client,
         ):
             knowledge = client.post(
                 "/api/v1/knowledge-bases",

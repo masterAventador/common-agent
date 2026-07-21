@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 MANAGER="${SCRIPT_DIR}/dev.sh"
 
 fail() {
@@ -20,6 +21,17 @@ rg --color=never --fixed-strings --quiet 'COMMON_AGENT_INTEGRATION_MODE=demo' "$
   fail "demo-light 后端没有显式使用 demo 适配器"
 rg --color=never --fixed-strings --quiet 'DEMO_MEMORY_GIB=12' "${MANAGER}" || \
   fail "demo-light 没有固定 12 GiB Colima 预算"
+rg --color=never --fixed-strings --quiet \
+  'AUTH_BOOTSTRAP_TOKEN_FILE="${TOKEN_ROOT}/owner-bootstrap-token"' "${MANAGER}" || \
+  fail "demo-light 没有使用 Git 忽略的项目专属引导凭据文件"
+rg --color=never --fixed-strings --quiet 'openssl rand -hex 32' "${MANAGER}" || \
+  fail "demo-light 没有安全生成首位管理员引导凭据"
+rg --color=never --fixed-strings --quiet "stat -f '%Lp'" "${MANAGER}" || \
+  fail "demo-light 没有检查首位管理员引导凭据文件权限"
+if rg --color=never --quiet \
+  '^COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN=' "${REPOSITORY_ROOT}/backend/.env.demo"; then
+  fail "首位管理员引导凭据不得在私有仓库中版本化"
+fi
 rg --color=never --fixed-strings --quiet 'PNPM_VERSION="11.9.0"' "${MANAGER}" || \
   fail "统一入口没有使用 packageManager 锁定的 pnpm 版本"
 rg --color=never --fixed-strings --quiet 'npx --yes "pnpm@${PNPM_VERSION}"' "${MANAGER}" || \

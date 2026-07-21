@@ -1,5 +1,6 @@
 from common_agent.bootstrap.settings import (
     ApiSettings,
+    AuthSettings,
     ConfigurationError,
     CorsSettings,
     DatabaseSettings,
@@ -10,6 +11,7 @@ from common_agent.bootstrap.settings import (
 
 __all__ = [
     "ApiSettings",
+    "AuthSettings",
     "ConfigurationError",
     "CorsSettings",
     "DatabaseSettings",

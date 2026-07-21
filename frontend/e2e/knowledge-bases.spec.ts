@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures/auth";
 import { Buffer } from "node:buffer";
 import { execFile } from "node:child_process";
 import path from "node:path";
@@ -38,7 +38,7 @@ test("creates a generic knowledge base and shows real completed and failed parsi
   );
   await dialog.getByRole("button", { name: "确认创建" }).click();
   expect((await createdResponse).status()).toBe(201);
-  await expect(page.getByRole("button", { name: new RegExp(knowledgeBaseName) })).toBeVisible();
+  await expect(page.locator(".knowledge-base-item", { hasText: knowledgeBaseName })).toBeVisible();
 
   await page
     .getByLabel("选择文档")
@@ -54,7 +54,7 @@ test("creates a generic knowledge base and shows real completed and failed parsi
   await expect(completedRow.getByText("已完成")).toBeVisible({ timeout: 180_000 });
 
   await page.reload();
-  await expect(page.getByRole("button", { name: new RegExp(knowledgeBaseName) })).toBeVisible();
+  await expect(page.locator(".knowledge-base-item", { hasText: knowledgeBaseName })).toBeVisible();
   await expect(completedRow.getByText("已完成")).toBeVisible();
 
   await page

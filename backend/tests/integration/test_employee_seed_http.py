@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import asyncio
 
-import httpx
-
 from common_agent.employees.seeds import DEFAULT_KNOWLEDGE_ASSISTANT_ID
 from tests.support.employees import delete_employees_from_database_url
-from tests.support.http import running_api, running_apis
+from tests.support.http import authenticated_client, running_api, running_apis
 from tests.support.settings import TEST_DATABASE_URL
 
 
@@ -20,7 +18,7 @@ def test_formal_startup_seeds_once_and_preserves_api_edits_after_restart() -> No
     try:
         with (
             running_api(TEST_DATABASE_URL) as api_url,
-            httpx.Client(base_url=api_url, timeout=5) as client,
+            authenticated_client(base_url=api_url, timeout=5) as client,
         ):
             seeded = client.get(f"/api/v1/employees/{DEFAULT_KNOWLEDGE_ASSISTANT_ID}")
             listed = client.get("/api/v1/employees")
@@ -48,7 +46,7 @@ def test_formal_startup_seeds_once_and_preserves_api_edits_after_restart() -> No
 
         with (
             running_api(TEST_DATABASE_URL) as restarted_url,
-            httpx.Client(base_url=restarted_url, timeout=5) as restarted_client,
+            authenticated_client(base_url=restarted_url, timeout=5) as restarted_client,
         ):
             restored = restarted_client.get(f"/api/v1/employees/{DEFAULT_KNOWLEDGE_ASSISTANT_ID}")
             listed_again = restarted_client.get("/api/v1/employees")
@@ -80,9 +78,14 @@ def test_concurrent_formal_startups_converge_on_one_default_employee() -> None:
         )
     )
     try:
-        with running_apis(TEST_DATABASE_URL, count=2) as api_urls:
+        with (
+            running_apis(TEST_DATABASE_URL, count=2) as api_urls,
+            authenticated_client(base_url=api_urls[0], timeout=5) as first_client,
+            authenticated_client(base_url=api_urls[1], timeout=5) as second_client,
+        ):
             responses = [
-                httpx.get(f"{api_url}/api/v1/employees", timeout=5) for api_url in api_urls
+                first_client.get("/api/v1/employees"),
+                second_client.get("/api/v1/employees"),
             ]
 
         assert all(response.status_code == 200 for response in responses)

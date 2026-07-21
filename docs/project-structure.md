@@ -35,6 +35,7 @@ backend/
 │       ├── bootstrap/           # 配置和依赖装配
 │       ├── api/                 # FastAPI 路由、依赖和错误边界
 │       │   ├── routers/
+│       │   │   ├── auth.py                 # 引导、登录、恢复和注销
 │       │   │   ├── system.py
 │       │   │   ├── conversations.py       # 会话 REST 编排
 │       │   │   ├── conversation_events.py # 会话 SSE 边界
@@ -45,6 +46,7 @@ backend/
 │       │   │   ├── workflows.py
 │       │   │   └── workflow_runs.py
 │       │   ├── schemas/           # 会话、工作流和运行 HTTP DTO
+│       │   ├── authentication.py  # Cookie、CSRF、Origin 与路由认证依赖
 │       │   ├── app.py            # FastAPI 组合根
 │       │   ├── observability.py  # HTTP 关联、请求日志和进程内指标边界
 │       │   └── server.py         # Uvicorn 进程边界
@@ -56,6 +58,7 @@ backend/
 │       │   ├── workflow_runs.py           # 运行协调
 │       │   └── workflow_run_projection.py # 运行投影
 │       ├── concurrency.py       # 可回收的按 ID 异步锁池
+│       ├── auth/                # 平台身份、会话模型、端口与认证用例
 │       ├── conversations/       # 会话门面、持久化、运行协调、消息投影与事件
 │       ├── employees/           # 数字员工应用服务与启动 Seed
 │       ├── domain/              # 与第三方无关的会话和能力模型
@@ -81,11 +84,12 @@ backend/
 │       │   └── retrieval.py
 │       ├── ports/               # 仓储、资源删除、缓存、事件、对象存储与任务端口
 │       └── adapters/            # 数据库、模型及第三方外围适配
+│           ├── auth/            # Argon2id 密码适配器
 │           ├── agent/           # Deep Agents 正式适配器
 │           ├── knowledge/       # RAGFlow 正式适配器
 │           ├── model/           # 阿里百炼转换与仅适配层可见的 LangChain 桥
 │           ├── workflow/        # LangGraph 编译、状态与节点框架转换
-│           └── persistence/     # MySQL 持久化适配器，含资源引用检查/删除事务
+│           └── persistence/     # MySQL 持久化适配器，含认证与资源事务
 ├── migrations/                  # 当前正式数据库迁移
 ├── tests/
 │   ├── unit/
@@ -112,6 +116,8 @@ api -> application -> domain
 ```
 
 - `api/` 只负责 HTTP/SSE、参数校验、错误转换和 HTTP 可观测边界；
+- `auth/` 定义用户、服务端会话、恢复码及仓储/密码端口；Cookie、Origin 和 CSRF 只在 API
+  边界处理，Argon2id 与 SQLAlchemy 分别留在对应适配层；
 - `observability/` 只用标准库定义 JSON 日志、W3C trace context 与进程内有界指标；业务服务
   绑定平台会话/工作流 ID，外围 HTTP 适配器负责把 trace context 传给 RAGFlow 与百炼；
 - `application/` 分别负责“发送消息并生成回复”和“触发工作流”用例；
@@ -141,6 +147,7 @@ frontend/
 ├── src/
 │   ├── app/                     # Provider、布局和入口
 │   ├── features/
+│   │   ├── auth/                # 首位所有者、登录、恢复与认证门禁
 │   │   ├── chat/                # 页面编排、Query/SSE 控制器、消息投影与三栏展示
 │   │   ├── employees/           # 数字员工列表、编辑和知识库绑定
 │   │   ├── knowledge-bases/     # 知识库创建、文档上传和解析状态
@@ -162,7 +169,9 @@ frontend/
 └── README.md
 ```
 
-第一版只有聊天工作台与独立工作流设计器，不为未实现能力创建空 Feature 目录或菜单。工作流画布使用成熟的 React 节点图库，不自行实现缩放、拖拽、连线和命中测试。
+业务区只有聊天工作台、数字员工、知识库与独立工作流设计器；未认证时由真实 `auth` Feature
+阻止业务路由挂载，不为其他未实现能力创建空目录或菜单。工作流画布使用成熟的 React 节点
+图库，不自行实现缩放、拖拽、连线和命中测试。
 页面容器只组合控制器和展示区域；协议映射、服务端状态、流式/运行状态、画布和属性表单分模块维护。
 架构门禁限制页面容器体量、跨 Feature 私有导入、实现层反向依赖容器和拆分模块循环依赖。
 Vite 生产构建保留四个路由异步入口并使用入口感知 vendor 分组；manifest 分析同时约束 500,000

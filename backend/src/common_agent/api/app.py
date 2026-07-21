@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from common_agent import __version__
 from common_agent.adapters.agent.deep_agents import DeepAgentsEmployeeRuntime
 from common_agent.adapters.agent.workflow_tools import WorkflowToolRegistry
+from common_agent.adapters.auth import Argon2PasswordHasher
 from common_agent.adapters.demo import (
     DemoEmployeeRuntime,
     DemoKnowledgeService,
@@ -16,7 +18,7 @@ from common_agent.adapters.demo import (
 )
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
-from common_agent.adapters.persistence import Database
+from common_agent.adapters.persistence import Database, SqlAlchemyAuthStore
 from common_agent.adapters.persistence.conversations import (
     SqlAlchemyConversationUnitOfWorkFactory,
 )
@@ -27,9 +29,11 @@ from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeUnitOf
 from common_agent.adapters.persistence.resources import SqlAlchemyResourceDeletionStore
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
-from common_agent.api.errors import error_handlers
+from common_agent.api.authentication import enforce_request_security, require_authenticated
+from common_agent.api.errors import ErrorEnvelope, error_handlers
 from common_agent.api.observability import observe_http_request
 from common_agent.api.routers import (
+    auth_router,
     conversation_router,
     employee_router,
     knowledge_router,
@@ -41,7 +45,9 @@ from common_agent.application.resource_deletion import ResourceDeletionService
 from common_agent.application.resource_locks import ResourceMutationGuard
 from common_agent.application.system_service import SystemService
 from common_agent.application.workflow_service import WorkflowService
+from common_agent.auth import AuthConfiguration, AuthenticationService
 from common_agent.bootstrap import (
+    AuthSettings,
     CorsSettings,
     DatabaseSettings,
     IntegrationModeSettings,
@@ -63,6 +69,18 @@ from common_agent.workflows.nodes.registry import create_workflow_node_registry
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     database: Database = app.state.database
     await database.start()
+    auth_settings: AuthSettings = app.state.auth_settings
+    app.state.authentication = AuthenticationService(
+        SqlAlchemyAuthStore(database),
+        Argon2PasswordHasher(),
+        AuthConfiguration(
+            bootstrap_token=auth_settings.bootstrap_token.get_secret_value(),
+            session_idle_seconds=auth_settings.session_idle_seconds,
+            session_absolute_seconds=auth_settings.session_absolute_seconds,
+            login_window_seconds=auth_settings.login_window_seconds,
+            login_max_attempts=auth_settings.login_max_attempts,
+        ),
+    )
     knowledge_adapter: RagFlowKnowledgeService | DemoKnowledgeService | None = None
     runtime: DeepAgentsEmployeeRuntime | DemoEmployeeRuntime | None = None
     conversations: ConversationService | None = None
@@ -149,6 +167,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         app.state.ready = False
+        app.state.authentication = None
         app.state.conversations = None
         app.state.conversation_events = None
         app.state.employees = None
@@ -178,6 +197,7 @@ def create_app() -> FastAPI:
     configure_json_logging()
     database = Database(DatabaseSettings.from_env().url)
     cors = CorsSettings.from_env()
+    auth_settings = AuthSettings.from_env()
     integration_mode = IntegrationModeSettings.from_env()
     app = FastAPI(
         title="common-agent API",
@@ -188,23 +208,53 @@ def create_app() -> FastAPI:
     app.state.database = database
     app.state.metrics = MetricsRegistry()
     app.state.integration_mode = integration_mode
+    app.state.auth_settings = auth_settings
+    app.state.cors_settings = cors
+    app.state.authentication = None
     app.state.ragflow_settings = (
         RagFlowSettings.from_env() if integration_mode.mode == "real" else None
     )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(cors.origins),
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
+    app.middleware("http")(enforce_request_security)
     app.middleware("http")(observe_http_request)
 
     app.include_router(system_router)
-    app.include_router(knowledge_router)
-    app.include_router(employee_router)
-    app.include_router(conversation_router)
-    app.include_router(workflow_router)
-    app.include_router(workflow_run_router)
+    app.include_router(auth_router)
+    protected = [Depends(require_authenticated)]
+    protected_responses: dict[int | str, dict[str, Any]] = {
+        401: {"model": ErrorEnvelope},
+        403: {"model": ErrorEnvelope},
+    }
+    app.include_router(
+        knowledge_router,
+        dependencies=protected,
+        responses=protected_responses,
+    )
+    app.include_router(
+        employee_router,
+        dependencies=protected,
+        responses=protected_responses,
+    )
+    app.include_router(
+        conversation_router,
+        dependencies=protected,
+        responses=protected_responses,
+    )
+    app.include_router(
+        workflow_router,
+        dependencies=protected,
+        responses=protected_responses,
+    )
+    app.include_router(
+        workflow_run_router,
+        dependencies=protected,
+        responses=protected_responses,
+    )
     return app

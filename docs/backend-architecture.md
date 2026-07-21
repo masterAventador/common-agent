@@ -6,12 +6,13 @@
 
 ## 1. 建设目标
 
-后端为浏览器提供统一的平台 API，第一版完成四项能力：
+后端为浏览器提供统一的平台 API，MVP 完成四项业务能力，当前生产化阶段再为它们增加统一身份边界：
 
 - 会话式 AI 对话；
 - 数字员工创建、编辑和知识库绑定；
 - RAGFlow 知识库创建、文档上传、解析状态和自动检索；
 - 可视化工作流定义的校验、保存与 LangGraph 执行。
+- 首位所有者注册、登录、恢复与可撤销的服务端安全会话。
 
 普通聊天以 `Conversation` 和 `Message` 为主模型。只有用户或数字员工明确触发工作流时才创建 `WorkflowRun`。
 
@@ -91,6 +92,21 @@ React
 
 任何外围技术依赖都按当前用例需要通过职责清晰的端口接入；`Cache`、`EventBus`、`ObjectStore`、`JobQueue` 以及 Redis、消息队列、对象存储和 Worker 只是示例。只要被正式调用链采用，就必须补齐适用于该技术的健康、失败、恢复、隔离、安全、资源和清理门禁。知识文档、切片、向量和解析产物仍由 RAGFlow 管理。
 
+### 2.6 身份认证与安全会话
+
+- 空数据库仅允许通过后端配置的一次性引导令牌创建首位 `owner`；本机统一入口把它自动生成到
+  Git 忽略、权限 `0600` 的项目专属文件。数据库唯一引导槽与用户记录在同一事务内提交，创建
+  成功后所有后续引导请求关闭失败；
+- 密码由适配层使用 Argon2id 哈希，恢复码和随机会话令牌只保存 SHA-256 摘要，数据库泄露时
+  不提供可直接重放的明文凭据；
+- 登录成功设置 `HttpOnly`、`SameSite=Strict` Cookie，不在 JSON、日志或前端状态中返回会话
+  令牌；会话同时受空闲时限、绝对时限和显式撤销约束；
+- 浏览器写请求除 Cookie 外必须携带内存中的会话 CSRF 令牌，并通过精确 Origin 校验；SSE 只
+  接受同源且已认证的 Cookie；
+- 登录尝试按规范化邮箱和来源地址做时间窗限制，认证失败使用稳定公共错误，不泄露邮箱是否存在；
+  新失败写入时按索引清理已超过时间窗且不再锁定的状态，避免记录永久累积；
+- 恢复码只显示一次、逐枚消费且不能重放，成功重置密码后撤销全部旧会话。
+
 ## 3. 分层与依赖方向
 
 ```text
@@ -112,6 +128,7 @@ application --------------+
 只负责：
 
 - HTTP、multipart 上传和 SSE 边界；
+- 身份 Cookie、CSRF、可信 Origin 与安全响应头；
 - Pydantic 请求/响应校验；
 - 应用错误到稳定错误信封的转换；
 - 请求 ID、W3C trace context、进程内指标、超时和资源释放。
@@ -195,6 +212,7 @@ Python 标准库和 `common_agent` 之外的所有 import 都视为第三方，�
 | Pydantic | `api/`、`bootstrap/` 或 `adapters/knowledge/` |
 | python-dotenv | `bootstrap/` |
 | cryptography | `adapters/` |
+| Argon2 | `adapters/auth/` |
 
 内部依赖同时关闭失败：只有适配器自身和 `api/app.py` 组合根能导入
 `common_agent.adapters`；只有 API、契约导出和根启动入口能导入 `common_agent.api`；
@@ -404,6 +422,13 @@ LangGraph 自己的编译检查是第二道门禁，不能替代平台校验。`
 GET    /api/v1/system/health
 GET    /api/v1/system/status
 GET    /api/v1/system/metrics
+
+GET    /api/v1/auth/policy
+POST   /api/v1/auth/register
+POST   /api/v1/auth/login
+GET    /api/v1/auth/session
+POST   /api/v1/auth/logout
+POST   /api/v1/auth/recovery/reset
 
 GET    /api/v1/employees
 POST   /api/v1/employees

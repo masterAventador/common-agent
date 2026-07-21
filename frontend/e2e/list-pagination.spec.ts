@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, platformWriteHeaders, test } from "./fixtures/auth";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -9,15 +9,14 @@ function requiredEnvironment(name: string): string {
 const apiURL = requiredEnvironment("COMMON_AGENT_E2E_API_URL");
 const prefix = requiredEnvironment("COMMON_AGENT_E2E_LIST_PREFIX");
 
-test("keeps a stable employee cursor chain while rows are inserted and deleted", async ({
-  page,
-  request,
-}) => {
+test("keeps a stable employee cursor chain while rows are inserted and deleted", async ({ page }) => {
   const employeeIds: string[] = [];
   let newerId: string | undefined;
+  const headers = await platformWriteHeaders(page);
   try {
     for (let index = 0; index < 25; index += 1) {
-      const response = await request.post(`${apiURL}/employees`, {
+      const response = await page.request.post(`${apiURL}/employees`, {
+        headers,
         data: {
           name: `${prefix}-${index.toString().padStart(2, "0")}`,
           description: "U9-03 大列表浏览器验收",
@@ -46,9 +45,12 @@ test("keeps a stable employee cursor chain while rows are inserted and deleted",
     await expect(page.getByRole("button", { name: "加载更多数字员工" })).toBeVisible();
 
     const anchorId = employeeIds[5];
-    expect((await request.delete(`${apiURL}/employees/${anchorId}`)).status()).toBe(204);
+    expect(
+      (await page.request.delete(`${apiURL}/employees/${anchorId}`, { headers })).status(),
+    ).toBe(204);
     const newerName = `${prefix}-newer`;
-    const newerResponse = await request.post(`${apiURL}/employees`, {
+    const newerResponse = await page.request.post(`${apiURL}/employees`, {
+      headers,
       data: {
         name: newerName,
         description: "首屏后并发新增",
@@ -84,7 +86,9 @@ test("keeps a stable employee cursor chain while rows are inserted and deleted",
     await expect(cards.first()).toContainText(newerName);
   } finally {
     for (const employeeId of [...employeeIds, ...(newerId ? [newerId] : [])]) {
-      const response = await request.delete(`${apiURL}/employees/${employeeId}`);
+      const response = await page.request.delete(`${apiURL}/employees/${employeeId}`, {
+        headers,
+      });
       expect(response.status()).toBe(204);
     }
   }

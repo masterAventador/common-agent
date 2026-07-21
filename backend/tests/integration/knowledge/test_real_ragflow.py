@@ -20,7 +20,7 @@ from common_agent.domain.knowledge import (
 )
 from common_agent.pagination import ListPageRequest
 from tests.support.employees import delete_employees
-from tests.support.http import running_api
+from tests.support.http import authenticated_client, running_api
 from tests.support.ragflow import delete_dataset, provision_api_key
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows_from_database_url
@@ -220,7 +220,7 @@ def test_real_knowledge_http_lifecycle() -> None:
                     "RAGFLOW_TIMEOUT_SECONDS": "120",
                 },
             ) as api_url,
-            httpx.Client(base_url=api_url, timeout=120) as client,
+            authenticated_client(base_url=api_url, timeout=120) as client,
         ):
             name = f"common-agent-k2-04-{uuid4().hex}"
             created_response = client.post(
@@ -299,7 +299,7 @@ def test_real_employee_http_binding_lifecycle() -> None:
         }
         with (
             running_api(TEST_DATABASE_URL, env_overrides=environment) as api_url,
-            httpx.Client(base_url=api_url, timeout=120) as client,
+            authenticated_client(base_url=api_url, timeout=120) as client,
         ):
             name = f"common-agent-e3-02-{uuid4().hex}"
             created = client.post(
@@ -349,7 +349,7 @@ def test_real_employee_http_binding_lifecycle() -> None:
 
         with (
             running_api(TEST_DATABASE_URL, env_overrides=environment) as restarted_url,
-            httpx.Client(base_url=restarted_url, timeout=120) as restarted_client,
+            authenticated_client(base_url=restarted_url, timeout=120) as restarted_client,
         ):
             restored = restarted_client.get(f"/api/v1/employees/{employee_id}")
             assert restored.status_code == 200
@@ -385,7 +385,7 @@ def test_real_workflow_http_validates_and_persists_knowledge_reference() -> None
         graph = _workflow_body(dataset_id)
         with (
             running_api(TEST_DATABASE_URL, env_overrides=environment) as api_url,
-            httpx.Client(base_url=api_url, timeout=120) as client,
+            authenticated_client(base_url=api_url, timeout=120) as client,
         ):
             validated = client.post("/api/v1/workflows/validate", json=graph)
             assert validated.status_code == 200
@@ -411,7 +411,7 @@ def test_real_workflow_http_validates_and_persists_knowledge_reference() -> None
 
         with (
             running_api(TEST_DATABASE_URL, env_overrides=environment) as restarted_url,
-            httpx.Client(base_url=restarted_url, timeout=120) as restarted_client,
+            authenticated_client(base_url=restarted_url, timeout=120) as restarted_client,
         ):
             restored = restarted_client.get(f"/api/v1/workflows/{workflow_id}")
             assert restored.status_code == 200

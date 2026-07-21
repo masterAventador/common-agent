@@ -1,6 +1,8 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { expect, test } from "./fixtures/auth";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -188,8 +190,7 @@ test("blocks live references, unbinds them, and deletes all four resources throu
 
   await page.getByRole("link", { name: "知识库" }).click();
   await page
-    .locator(".knowledge-base-list")
-    .getByRole("button", { name: new RegExp(knowledgeBaseName) })
+    .locator(".knowledge-base-item", { hasText: knowledgeBaseName })
     .click();
   const employeeKnowledgeBlocked = await deleteFromPage(
     page,
@@ -219,8 +220,7 @@ test("blocks live references, unbinds them, and deletes all four resources throu
 
   await page.getByRole("link", { name: "知识库" }).click();
   await page
-    .locator(".knowledge-base-list")
-    .getByRole("button", { name: new RegExp(knowledgeBaseName) })
+    .locator(".knowledge-base-item", { hasText: knowledgeBaseName })
     .click();
   const workflowKnowledgeBlocked = await deleteFromPage(
     page,
@@ -248,8 +248,7 @@ test("blocks live references, unbinds them, and deletes all four resources throu
 
   await page.getByRole("link", { name: "知识库" }).click();
   await page
-    .locator(".knowledge-base-list")
-    .getByRole("button", { name: new RegExp(knowledgeBaseName) })
+    .locator(".knowledge-base-item", { hasText: knowledgeBaseName })
     .click();
   const deletedKnowledge = await deleteFromPage(
     page,
@@ -260,11 +259,9 @@ test("blocks live references, unbinds them, and deletes all four resources throu
   expect((await deletedKnowledge).status()).toBe(204);
   await expect(page.getByText(`知识库“${knowledgeBaseName}”已删除`)).toBeVisible();
   await page.reload();
-  await expect(
-    page
-      .locator(".knowledge-base-list")
-      .getByRole("button", { name: new RegExp(knowledgeBaseName) }),
-  ).toHaveCount(0);
+  await expect(page.locator(".knowledge-base-item", { hasText: knowledgeBaseName })).toHaveCount(
+    0,
+  );
 
   await page.goto(`/chat?employee_id=${employee.id}&conversation_id=${conversation.id}`);
   await expect(page.getByRole("heading", { name: "新会话" })).toBeVisible();

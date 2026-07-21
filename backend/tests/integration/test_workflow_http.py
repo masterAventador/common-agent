@@ -3,9 +3,7 @@ from __future__ import annotations
 import asyncio
 from uuid import UUID, uuid4
 
-import httpx
-
-from tests.support.http import assert_error_response, running_api
+from tests.support.http import assert_error_response, authenticated_client, running_api
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows_from_database_url
 
@@ -61,7 +59,7 @@ def test_workflow_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
     try:
         with (
             running_api(TEST_DATABASE_URL) as api_url,
-            httpx.Client(base_url=api_url, timeout=5) as client,
+            authenticated_client(base_url=api_url, timeout=5) as client,
         ):
             created = client.post("/api/v1/workflows", json=_body())
             assert created.status_code == 201
@@ -86,7 +84,7 @@ def test_workflow_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
 
         with (
             running_api(TEST_DATABASE_URL) as restarted_url,
-            httpx.Client(base_url=restarted_url, timeout=5) as restarted_client,
+            authenticated_client(base_url=restarted_url, timeout=5) as restarted_client,
         ):
             restored = restarted_client.get(f"/api/v1/workflows/{workflow_id}")
             assert restored.status_code == 200
@@ -99,7 +97,7 @@ def test_workflow_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
 def test_workflow_validate_returns_complete_graph_issues_without_writing() -> None:
     with (
         running_api(TEST_DATABASE_URL) as api_url,
-        httpx.Client(base_url=api_url, timeout=5) as client,
+        authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         valid = client.post("/api/v1/workflows/validate", json=_body())
         invalid = client.post(
@@ -126,7 +124,7 @@ def test_workflow_schema_and_missing_resources_use_stable_errors() -> None:
 
     with (
         running_api(TEST_DATABASE_URL) as api_url,
-        httpx.Client(base_url=api_url, timeout=5) as client,
+        authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         responses = (
             client.post("/api/v1/workflows", json=invalid_type),
@@ -153,7 +151,7 @@ def test_invalid_graph_and_missing_knowledge_configuration_fail_without_write() 
 
     with (
         running_api(TEST_DATABASE_URL) as api_url,
-        httpx.Client(base_url=api_url, timeout=5) as client,
+        authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         rejected_graph = client.post("/api/v1/workflows", json=invalid_graph)
         rejected_knowledge = client.post("/api/v1/workflows", json=knowledge_graph)

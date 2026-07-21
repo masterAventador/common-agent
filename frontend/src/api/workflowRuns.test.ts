@@ -54,7 +54,10 @@ class FakeEventSource {
   readonly close = vi.fn();
   onerror: ((event: Event) => void) | null = null;
 
-  constructor(readonly url: string) {
+  constructor(
+    readonly url: string,
+    readonly eventSourceInit?: EventSourceInit,
+  ) {
     FakeEventSource.latest = this;
   }
 
@@ -169,6 +172,7 @@ describe("workflow run API and SSE boundary", () => {
     expect(source?.url).toBe(
       `http://127.0.0.1:18200/api/v1/workflow-runs/${run.id}/events?after_sequence=2`,
     );
+    expect(source?.eventSourceInit).toEqual({ withCredentials: true });
 
     source?.emit("workflow.node.started", event);
     source?.emit("workflow.run.completed", { ...event, schema_version: "2" });

@@ -4,11 +4,13 @@ import {
   DatabaseOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import { Layout, Menu, Space, Tag, Typography } from "antd";
+import { Button, Layout, Menu, Space, Tag, Typography } from "antd";
 import { lazy, Suspense, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { SystemStatus } from "../components/SystemStatus";
+import { AuthGate } from "../features/auth/AuthProvider";
+import { useAuth } from "../features/auth/authContext";
 
 const { Content, Header, Sider } = Layout;
 const KnowledgeBasesPage = lazy(async () => {
@@ -60,7 +62,16 @@ function menuItems(): Array<{ key: string; icon: ReactNode; label: ReactNode }> 
 }
 
 export function App() {
+  return (
+    <AuthGate>
+      <AuthenticatedApp />
+    </AuthGate>
+  );
+}
+
+function AuthenticatedApp() {
   const location = useLocation();
+  const auth = useAuth();
 
   return (
     <Layout className="app-layout">
@@ -84,7 +95,10 @@ export function App() {
           </div>
           <Space size={8}>
             <SystemStatus />
-            <Tag color="processing">无登录 · 本机联调</Tag>
+            <Tag color="processing">{auth.session?.email}</Tag>
+            <Button size="small" loading={auth.busy} onClick={() => void auth.logout()}>
+              退出登录
+            </Button>
           </Space>
         </Header>
         <Content className="app-content">

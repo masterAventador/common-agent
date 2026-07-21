@@ -1,4 +1,6 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+
+import { expect, test } from "./fixtures/auth";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -85,7 +87,7 @@ test("builds, validates, persists, and reloads a workflow through the real desig
   );
   await knowledgeDialog.getByRole("button", { name: "确认创建" }).click();
   expect((await knowledgeResponse).status()).toBe(201);
-  await expect(page.getByRole("button", { name: new RegExp(knowledgeBaseName) })).toBeVisible();
+  await expect(page.locator(".knowledge-base-item", { hasText: knowledgeBaseName })).toBeVisible();
 
   await page.getByRole("link", { name: "工作流" }).click();
   await expect(page.getByRole("heading", { name: "工作流" })).toBeVisible();

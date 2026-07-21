@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures/auth";
 
 const routes = [
   { path: "/chat", heading: "AI 会话", link: "AI 会话" },

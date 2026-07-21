@@ -1,6 +1,6 @@
 # common-agent
 
-`common-agent` 是一个面向本机开发的通用 AI Agent 中台。第一版优先跑通连续 AI 会话、数字员工、RAGFlow 知识库和最小可视化工作流，不包含登录鉴权、Skill 市场、企业多租户或远程部署。
+`common-agent` 是一个面向本机开发的通用 AI Agent 中台。MVP 已跑通连续 AI 会话、数字员工、RAGFlow 知识库和最小可视化工作流；当前生产化阶段已增加首位所有者注册、登录与服务端安全会话，企业多租户、RBAC、Skill 市场和远程部署仍不在当前完成范围。
 
 ## MVP 能力
 
@@ -52,6 +52,11 @@ scripts/dev.sh clean
 pnpm；macOS 前后端进程使用项目专属 launchd 标签托管，`stop/clean` 不按模糊进程名停止其他项目。
 `clean` 删除本入口的进程、容器、日志和已被 submodule 取代的旧 RAGFlow checkout，但保留
 MySQL/RAGFlow 数据、依赖和官方镜像。
+
+空数据库首次打开会进入“创建首位所有者”页面。一次性引导令牌由统一启动脚本在工作区内 Git
+忽略的 `.local/dev/common-agent-dev/secrets/owner-bootstrap-token` 自动生成并以 `0600`
+保存；两台开发电脑各自拥有本地值，不相互依赖。所有者创建成功后引导入口永久关闭。之后使用
+邮箱和密码登录，浏览器只保存 `HttpOnly` 会话 Cookie，CSRF 令牌只保存在当前页面内存中。
 
 ## 真实知识链路
 

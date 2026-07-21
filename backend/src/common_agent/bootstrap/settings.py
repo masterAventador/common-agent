@@ -109,6 +109,78 @@ class CorsSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class AuthSettings:
+    bootstrap_token: SecretStr
+    session_idle_seconds: int
+    session_absolute_seconds: int
+    login_window_seconds: int
+    login_max_attempts: int
+    cookie_secure: bool
+
+    @property
+    def session_cookie_name(self) -> str:
+        if self.cookie_secure:
+            return "__Host-common-agent-session"
+        return "common_agent_session"
+
+    @classmethod
+    def from_env(cls) -> AuthSettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> AuthSettings:
+        raw_bootstrap_token = values.get("COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN", "").strip()
+        if raw_bootstrap_token and not 32 <= len(raw_bootstrap_token) <= 256:
+            raise ConfigurationError(
+                "COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN must be between 32 and 256 characters"
+            )
+
+        session_idle_seconds = _bounded_auth_int(
+            values,
+            "COMMON_AGENT_AUTH_SESSION_IDLE_SECONDS",
+            default=1800,
+            minimum=300,
+            maximum=3600,
+        )
+        session_absolute_seconds = _bounded_auth_int(
+            values,
+            "COMMON_AGENT_AUTH_SESSION_ABSOLUTE_SECONDS",
+            default=43200,
+            minimum=3600,
+            maximum=86400,
+        )
+        if session_absolute_seconds < session_idle_seconds:
+            raise ConfigurationError(
+                "COMMON_AGENT_AUTH_SESSION_ABSOLUTE_SECONDS must not be shorter than idle time"
+            )
+
+        return cls(
+            bootstrap_token=SecretStr(raw_bootstrap_token),
+            session_idle_seconds=session_idle_seconds,
+            session_absolute_seconds=session_absolute_seconds,
+            login_window_seconds=_bounded_auth_int(
+                values,
+                "COMMON_AGENT_AUTH_LOGIN_WINDOW_SECONDS",
+                default=900,
+                minimum=60,
+                maximum=3600,
+            ),
+            login_max_attempts=_bounded_auth_int(
+                values,
+                "COMMON_AGENT_AUTH_LOGIN_MAX_ATTEMPTS",
+                default=5,
+                minimum=3,
+                maximum=20,
+            ),
+            cookie_secure=_strict_bool(
+                values,
+                "COMMON_AGENT_AUTH_COOKIE_SECURE",
+                default=False,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class IntegrationModeSettings:
     mode: Literal["real", "demo"]
 
@@ -324,6 +396,33 @@ def _bounded_int(
     if not 0 <= value <= maximum:
         raise ConfigurationError(f"{key} must be between 0 and {maximum}")
     return value
+
+
+def _bounded_auth_int(
+    values: Mapping[str, str],
+    key: str,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    raw_value = values.get(key, str(default))
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ConfigurationError(f"{key} must be an integer") from error
+    if not minimum <= value <= maximum:
+        raise ConfigurationError(f"{key} must be between {minimum} and {maximum}")
+    return value
+
+
+def _strict_bool(values: Mapping[str, str], key: str, *, default: bool) -> bool:
+    raw_value = values.get(key, str(default)).strip().lower()
+    if raw_value == "true":
+        return True
+    if raw_value == "false":
+        return False
+    raise ConfigurationError(f"{key} must be true or false")
 
 
 def _is_bailian_host(host: str) -> bool:

@@ -201,6 +201,7 @@ export function subscribeToConversationEvents(
     `${apiBaseUrl.replace(/\/$/, "")}/conversations/${encodeURIComponent(
       conversationId,
     )}/events?${new URLSearchParams({ after_sequence: String(afterSequence) })}`,
+    { withCredentials: true },
   );
 
   const handleEvent = (rawEvent: Event) => {

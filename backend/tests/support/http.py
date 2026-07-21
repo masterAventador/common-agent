@@ -16,6 +16,16 @@ from uuid import UUID
 import httpx
 import pytest
 
+TEST_AUTH_BOOTSTRAP_TOKEN = "test-bootstrap-token-that-is-at-least-32-characters"
+TEST_AUTH_EMAIL = "integration-owner@example.com"
+TEST_AUTH_PASSWORD = "integration owner password is long enough"
+TEST_FRONTEND_ORIGIN = "http://127.0.0.1:18280"
+_PUBLIC_AUTH_WRITES = {
+    "/api/v1/auth/register",
+    "/api/v1/auth/login",
+    "/api/v1/auth/recovery/reset",
+}
+
 
 def available_port() -> int:
     with socket.socket() as listener:
@@ -29,6 +39,96 @@ def assert_error_response(response: httpx.Response, *, status: int, code: str) -
     body = response.json()
     assert body["code"] == code
     assert set(body) == {"code", "message", "request_id", "retryable"}
+
+
+def authenticated_client(
+    *,
+    base_url: str,
+    timeout: float,
+) -> httpx.Client:
+    csrf_token = ""
+
+    def authorize(request: httpx.Request) -> None:
+        nonlocal csrf_token
+        if request.method in {"GET", "HEAD", "OPTIONS"}:
+            return
+        request.headers.setdefault("Origin", TEST_FRONTEND_ORIGIN)
+        if csrf_token and request.url.path not in _PUBLIC_AUTH_WRITES:
+            request.headers.setdefault("X-CSRF-Token", csrf_token)
+
+    with httpx.Client(base_url=base_url, timeout=timeout) as login_client:
+        policy = login_client.get("/api/v1/auth/policy")
+        policy.raise_for_status()
+        if policy.json()["registration_available"]:
+            authenticated = login_client.post(
+                "/api/v1/auth/register",
+                headers={"Origin": TEST_FRONTEND_ORIGIN},
+                json={
+                    "email": TEST_AUTH_EMAIL,
+                    "password": TEST_AUTH_PASSWORD,
+                    "bootstrap_token": TEST_AUTH_BOOTSTRAP_TOKEN,
+                },
+            )
+        else:
+            authenticated = login_client.post(
+                "/api/v1/auth/login",
+                headers={"Origin": TEST_FRONTEND_ORIGIN},
+                json={"email": TEST_AUTH_EMAIL, "password": TEST_AUTH_PASSWORD},
+            )
+        authenticated.raise_for_status()
+        csrf_token = str(authenticated.json()["csrf_token"])
+        cookies = httpx.Cookies(login_client.cookies)
+    return httpx.Client(
+        base_url=base_url,
+        timeout=timeout,
+        cookies=cookies,
+        event_hooks={"request": [authorize]},
+    )
+
+
+async def authenticated_async_client(
+    *,
+    base_url: str,
+    timeout: float,
+) -> httpx.AsyncClient:
+    csrf_token = ""
+
+    async def authorize(request: httpx.Request) -> None:
+        nonlocal csrf_token
+        if request.method in {"GET", "HEAD", "OPTIONS"}:
+            return
+        request.headers.setdefault("Origin", TEST_FRONTEND_ORIGIN)
+        if csrf_token and request.url.path not in _PUBLIC_AUTH_WRITES:
+            request.headers.setdefault("X-CSRF-Token", csrf_token)
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as login_client:
+        policy = await login_client.get("/api/v1/auth/policy")
+        policy.raise_for_status()
+        if policy.json()["registration_available"]:
+            authenticated = await login_client.post(
+                "/api/v1/auth/register",
+                headers={"Origin": TEST_FRONTEND_ORIGIN},
+                json={
+                    "email": TEST_AUTH_EMAIL,
+                    "password": TEST_AUTH_PASSWORD,
+                    "bootstrap_token": TEST_AUTH_BOOTSTRAP_TOKEN,
+                },
+            )
+        else:
+            authenticated = await login_client.post(
+                "/api/v1/auth/login",
+                headers={"Origin": TEST_FRONTEND_ORIGIN},
+                json={"email": TEST_AUTH_EMAIL, "password": TEST_AUTH_PASSWORD},
+            )
+        authenticated.raise_for_status()
+        csrf_token = str(authenticated.json()["csrf_token"])
+        cookies = httpx.Cookies(login_client.cookies)
+    return httpx.AsyncClient(
+        base_url=base_url,
+        timeout=timeout,
+        cookies=cookies,
+        event_hooks={"request": [authorize]},
+    )
 
 
 @contextmanager
@@ -85,6 +185,7 @@ def _start_api(
 ) -> subprocess.Popen[str]:
     env = os.environ.copy()
     env["COMMON_AGENT_DATABASE_URL"] = database_url
+    env["COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN"] = TEST_AUTH_BOOTSTRAP_TOKEN
     if env.get("TEST_BAILIAN_REAL") != "1":
         env.update(
             {

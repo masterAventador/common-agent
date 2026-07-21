@@ -5,6 +5,21 @@ import { describe, expect, it, vi } from "vitest";
 import { AppProviders } from "./AppProviders";
 import { App } from "./App";
 
+vi.mock("../api/auth", () => ({
+  fetchAuthPolicy: vi.fn().mockResolvedValue({ registration_available: false }),
+  fetchCurrentSession: vi.fn().mockResolvedValue({
+    user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    email: "owner@example.com",
+    csrf_token: "csrf-token",
+    idle_expires_at: "2026-07-21T03:00:00Z",
+    absolute_expires_at: "2026-07-22T02:00:00Z",
+  }),
+  login: vi.fn(),
+  logout: vi.fn(),
+  registerOwner: vi.fn(),
+  resetPassword: vi.fn(),
+}));
+
 vi.mock("../api/system", () => ({
   fetchSystemStatus: vi.fn().mockResolvedValue({
     backend: "available",

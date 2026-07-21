@@ -10,7 +10,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from tests.support.http import running_api
+from tests.support.http import authenticated_client, running_api
 from tests.support.ragflow import delete_dataset, provision_api_key
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows_from_database_url
@@ -43,7 +43,7 @@ def test_real_workflow_run_http_uses_ragflow_langgraph_and_bailian() -> None:
     try:
         with (
             running_api(TEST_DATABASE_URL, env_overrides=environment) as api_url,
-            httpx.Client(base_url=api_url, timeout=180) as client,
+            authenticated_client(base_url=api_url, timeout=180) as client,
         ):
             created_dataset = client.post(
                 "/api/v1/knowledge-bases",
@@ -127,7 +127,7 @@ def test_real_workflow_run_http_uses_ragflow_langgraph_and_bailian() -> None:
 
         with (
             running_api(TEST_DATABASE_URL, env_overrides=environment) as restarted_url,
-            httpx.Client(base_url=restarted_url, timeout=180) as restarted,
+            authenticated_client(base_url=restarted_url, timeout=180) as restarted,
         ):
             restored = restarted.get(f"/api/v1/workflow-runs/{completed_run_id}")
             assert restored.status_code == 200

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures/auth";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,7 +38,7 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
   );
   await knowledgeDialog.getByRole("button", { name: "确认创建" }).click();
   expect((await knowledgeResponse).status()).toBe(201);
-  await expect(page.getByRole("button", { name: new RegExp(knowledgeBaseName) })).toBeVisible();
+  await expect(page.locator(".knowledge-base-item", { hasText: knowledgeBaseName })).toBeVisible();
 
   await page
     .getByLabel("选择文档")

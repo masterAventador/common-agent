@@ -42,7 +42,48 @@ def test_empty_mysql_database_is_migrated_and_can_restart() -> None:
             await second.stop()
         return first_revision, second_revision
 
-    assert asyncio.run(exercise()) == ("20260721_0009", "20260721_0009")
+    assert asyncio.run(exercise()) == ("20260721_0012", "20260721_0012")
+
+
+def test_authentication_tables_are_migrated_with_server_side_secret_boundaries() -> None:
+    async def exercise() -> dict[str, set[str]]:
+        database = Database(_database_url())
+        await database.start()
+        try:
+            async with database.session() as session:
+                result = await session.execute(
+                    text(
+                        "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN "
+                        "('auth_users', 'auth_sessions', 'auth_recovery_codes', "
+                        "'auth_login_attempts')"
+                    )
+                )
+                columns: dict[str, set[str]] = {}
+                for table_name, column_name in result.all():
+                    columns.setdefault(str(table_name), set()).add(str(column_name))
+                return columns
+        finally:
+            await database.stop()
+
+    columns = asyncio.run(exercise())
+
+    assert columns["auth_users"] >= {"email", "password_hash", "password_changed_at"}
+    assert "password" not in columns["auth_users"]
+    assert columns["auth_sessions"] >= {
+        "token_digest",
+        "csrf_token",
+        "idle_expires_at",
+        "absolute_expires_at",
+        "revoked_at",
+    }
+    assert "token" not in columns["auth_sessions"]
+    assert columns["auth_recovery_codes"] >= {"code_digest", "consumed_at"}
+    assert columns["auth_login_attempts"] >= {
+        "key_digest",
+        "failure_count",
+        "locked_until",
+    }
 
 
 def test_mysql_session_rolls_back_failed_transaction() -> None:
@@ -157,7 +198,7 @@ def test_mysql_migration_failure_is_closed_and_recovers_after_repair() -> None:
 
             async with keeper.session() as session:
                 await session.execute(
-                    text("UPDATE alembic_version SET version_num = '20260721_0009'")
+                    text("UPDATE alembic_version SET version_num = '20260721_0012'")
                 )
                 await session.commit()
             revision_is_broken = False
@@ -168,10 +209,10 @@ def test_mysql_migration_failure_is_closed_and_recovers_after_repair() -> None:
             if revision_is_broken:
                 async with keeper.session() as session:
                     await session.execute(
-                        text("UPDATE alembic_version SET version_num = '20260721_0009'")
+                        text("UPDATE alembic_version SET version_num = '20260721_0012'")
                     )
                     await session.commit()
             await candidate.stop()
             await keeper.stop()
 
-    assert asyncio.run(exercise()) == "20260721_0009"
+    assert asyncio.run(exercise()) == "20260721_0012"

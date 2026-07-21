@@ -3,10 +3,8 @@ from __future__ import annotations
 import asyncio
 from uuid import UUID, uuid4
 
-import httpx
-
 from tests.support.employees import delete_employees_from_database_url
-from tests.support.http import assert_error_response, running_api
+from tests.support.http import assert_error_response, authenticated_client, running_api
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows_from_database_url
 
@@ -43,7 +41,7 @@ def test_employee_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
     try:
         with (
             running_api(TEST_DATABASE_URL) as api_url,
-            httpx.Client(base_url=api_url, timeout=5) as client,
+            authenticated_client(base_url=api_url, timeout=5) as client,
         ):
             workflow = client.post("/api/v1/workflows", json=_workflow_body())
             assert workflow.status_code == 201
@@ -78,7 +76,7 @@ def test_employee_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
 
         with (
             running_api(TEST_DATABASE_URL) as restarted_url,
-            httpx.Client(base_url=restarted_url, timeout=5) as restarted_client,
+            authenticated_client(base_url=restarted_url, timeout=5) as restarted_client,
         ):
             restored = restarted_client.get(f"/api/v1/employees/{employee_id}")
             assert restored.status_code == 200
@@ -97,7 +95,7 @@ def test_employee_http_cursor_is_stable_across_concurrent_insert_and_anchor_dele
     try:
         with (
             running_api(TEST_DATABASE_URL) as api_url,
-            httpx.Client(base_url=api_url, timeout=5) as client,
+            authenticated_client(base_url=api_url, timeout=5) as client,
         ):
             for index in range(4):
                 created = client.post(
@@ -165,7 +163,7 @@ def test_employee_http_cursor_is_stable_across_concurrent_insert_and_anchor_dele
 def test_employee_validation_and_missing_resources_use_stable_errors() -> None:
     with (
         running_api(TEST_DATABASE_URL) as api_url,
-        httpx.Client(base_url=api_url, timeout=5) as client,
+        authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         blank_name = client.post("/api/v1/employees", json={**_body(), "name": "   "})
         missing_workflow = client.post(
@@ -195,7 +193,7 @@ def test_binding_without_knowledge_configuration_fails_closed_without_write() ->
     name = f"missing-config-{uuid4().hex}"
     with (
         running_api(TEST_DATABASE_URL) as api_url,
-        httpx.Client(base_url=api_url, timeout=5) as client,
+        authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         rejected = client.post(
             "/api/v1/employees",
@@ -219,7 +217,7 @@ def test_binding_when_knowledge_service_is_unavailable_fails_closed_without_writ
                 "RAGFLOW_TIMEOUT_SECONDS": "0.2",
             },
         ) as api_url,
-        httpx.Client(base_url=api_url, timeout=5) as client,
+        authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         rejected = client.post(
             "/api/v1/employees",

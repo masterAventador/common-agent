@@ -2,6 +2,7 @@ import pytest
 
 from common_agent.bootstrap.settings import (
     ApiSettings,
+    AuthSettings,
     ConfigurationError,
     CorsSettings,
     DatabaseSettings,
@@ -116,6 +117,52 @@ def test_cors_settings_default_to_project_frontend_origin() -> None:
 def test_cors_settings_reject_public_or_remote_origin() -> None:
     with pytest.raises(ConfigurationError, match="loopback"):
         CorsSettings.from_mapping({"COMMON_AGENT_CORS_ORIGINS": "https://example.com"})
+
+
+def test_auth_settings_default_to_closed_registration_and_bounded_sessions() -> None:
+    settings = AuthSettings.from_mapping({})
+
+    assert settings.bootstrap_token.get_secret_value() == ""
+    assert settings.session_idle_seconds == 1800
+    assert settings.session_absolute_seconds == 43200
+    assert settings.login_window_seconds == 900
+    assert settings.login_max_attempts == 5
+    assert settings.cookie_secure is False
+
+
+def test_auth_settings_accept_secure_bootstrap_without_leaking_token() -> None:
+    token = "bootstrap-token-that-is-at-least-32-characters"
+
+    settings = AuthSettings.from_mapping(
+        {
+            "COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN": token,
+            "COMMON_AGENT_AUTH_COOKIE_SECURE": "true",
+            "COMMON_AGENT_AUTH_SESSION_IDLE_SECONDS": "1200",
+            "COMMON_AGENT_AUTH_SESSION_ABSOLUTE_SECONDS": "7200",
+        }
+    )
+
+    assert settings.bootstrap_token.get_secret_value() == token
+    assert settings.cookie_secure is True
+    assert settings.session_idle_seconds == 1200
+    assert settings.session_absolute_seconds == 7200
+    assert token not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN", "too-short"),
+        ("COMMON_AGENT_AUTH_COOKIE_SECURE", "sometimes"),
+        ("COMMON_AGENT_AUTH_SESSION_IDLE_SECONDS", "59"),
+        ("COMMON_AGENT_AUTH_SESSION_ABSOLUTE_SECONDS", "3599"),
+        ("COMMON_AGENT_AUTH_LOGIN_WINDOW_SECONDS", "not-a-number"),
+        ("COMMON_AGENT_AUTH_LOGIN_MAX_ATTEMPTS", "0"),
+    ],
+)
+def test_auth_settings_reject_unsafe_values(name: str, value: str) -> None:
+    with pytest.raises(ConfigurationError, match=name):
+        AuthSettings.from_mapping({name: value})
 
 
 def test_integration_mode_defaults_to_real_and_accepts_explicit_demo() -> None:

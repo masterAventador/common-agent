@@ -10,7 +10,7 @@ from common_agent.api.routers.conversations import ConversationEventResponse
 from tests.support.conversations import delete_conversations
 from tests.support.demo_knowledge import delete_demo_knowledge_bases
 from tests.support.employees import delete_employees
-from tests.support.http import running_api
+from tests.support.http import authenticated_async_client, running_api
 from tests.support.settings import TEST_DATABASE_URL
 
 _DEMO_ENV = {"COMMON_AGENT_INTEGRATION_MODE": "demo"}
@@ -50,7 +50,7 @@ async def _create_demo_state_and_first_turn(
     suffix: str,
     conversation_id: UUID,
 ) -> tuple[str, UUID]:
-    async with httpx.AsyncClient(base_url=api_url, timeout=30) as client:
+    async with await authenticated_async_client(base_url=api_url, timeout=30) as client:
         created_knowledge = await client.post(
             "/api/v1/knowledge-bases",
             json={"name": f"D8-02 重启知识库 {suffix}", "description": "持久语义验收"},
@@ -110,7 +110,7 @@ async def _assert_state_and_second_turn_after_restart(
     employee_id: UUID,
     conversation_id: UUID,
 ) -> None:
-    async with httpx.AsyncClient(base_url=api_url, timeout=30) as client:
+    async with await authenticated_async_client(base_url=api_url, timeout=30) as client:
         knowledge_bases = await client.get("/api/v1/knowledge-bases")
         assert knowledge_bases.status_code == 200
         assert knowledge_base_id in {str(item["id"]) for item in knowledge_bases.json()["items"]}

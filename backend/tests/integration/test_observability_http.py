@@ -6,13 +6,12 @@ import time
 from pathlib import Path
 from uuid import UUID, uuid4
 
-import httpx
 import pytest
 
 from common_agent.adapters.persistence.database import Database
 from common_agent.employees.seeds import DEFAULT_KNOWLEDGE_ASSISTANT_ID
 from tests.support.conversations import delete_conversations
-from tests.support.http import running_api
+from tests.support.http import authenticated_client, running_api
 from tests.support.settings import TEST_DATABASE_URL
 
 
@@ -35,7 +34,7 @@ def test_formal_http_trace_metrics_and_json_logs_are_correlated_and_safe(
             env_overrides={"COMMON_AGENT_INTEGRATION_MODE": "demo"},
             log_path=log_path,
         ) as base_url,
-        httpx.Client(base_url=base_url, timeout=5) as client,
+        authenticated_client(base_url=base_url, timeout=5) as client,
     ):
         health = client.get(
             "/api/v1/system/health",

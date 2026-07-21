@@ -1,4 +1,6 @@
-import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+import { expect, platformWriteHeaders, test } from "./fixtures/auth";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -17,11 +19,13 @@ const failureKnowledgeName = requiredEnvironment(
 );
 
 async function createAiWorkflow(
-  request: APIRequestContext,
+  page: Page,
+  headers: Record<string, string>,
   name: string,
   prompt: string,
 ): Promise<string> {
-  const response = await request.post(`${apiUrl}/workflows`, {
+  const response = await page.request.post(`${apiUrl}/workflows`, {
+    headers,
     data: {
       name,
       description: "W5-06 手动运行 UI 生产同路径验收",
@@ -45,8 +49,12 @@ async function createAiWorkflow(
   return ((await response.json()) as { id: string }).id;
 }
 
-async function createFailureWorkflow(request: APIRequestContext): Promise<string> {
-  const knowledgeResponse = await request.post(`${apiUrl}/knowledge-bases`, {
+async function createFailureWorkflow(
+  page: Page,
+  headers: Record<string, string>,
+): Promise<string> {
+  const knowledgeResponse = await page.request.post(`${apiUrl}/knowledge-bases`, {
+    headers,
     data: {
       name: failureKnowledgeName,
       description: "W5-06 真实失效知识库",
@@ -55,7 +63,8 @@ async function createFailureWorkflow(request: APIRequestContext): Promise<string
   expect(knowledgeResponse.status()).toBe(201);
   const knowledgeBaseId = ((await knowledgeResponse.json()) as { id: string }).id;
 
-  const workflowResponse = await request.post(`${apiUrl}/workflows`, {
+  const workflowResponse = await page.request.post(`${apiUrl}/workflows`, {
+    headers,
     data: {
       name: failureWorkflowName,
       description: "W5-06 失败节点展示验收",
@@ -77,7 +86,7 @@ async function createFailureWorkflow(request: APIRequestContext): Promise<string
   });
   expect(workflowResponse.status()).toBe(201);
 
-  const deleted = await request.delete(`${ragFlowUrl}/api/v1/datasets`, {
+  const deleted = await page.request.delete(`${ragFlowUrl}/api/v1/datasets`, {
     headers: { Authorization: `Bearer ${ragFlowApiKey}` },
     data: { ids: [knowledgeBaseId] },
   });
@@ -99,10 +108,7 @@ async function runFromPage(page: Page, input: string): Promise<{ id: string }> {
   return (await response.json()) as { id: string };
 }
 
-test("runs, stops, fails, and restores workflow summaries through the real UI", async ({
-  page,
-  request,
-}) => {
+test("runs, stops, fails, and restores workflow summaries through the real UI", async ({ page }) => {
   test.setTimeout(300_000);
   await page.setViewportSize({ width: 1720, height: 1000 });
   const directRagFlowRequests: string[] = [];
@@ -112,17 +118,20 @@ test("runs, stops, fails, and restores workflow summaries through the real UI", 
     }
   });
 
+  const headers = await platformWriteHeaders(page);
   await createAiWorkflow(
-    request,
+    page,
+    headers,
     successWorkflowName,
     "无论用户输入什么，只输出标记 COMMON_AGENT_WORKFLOW_UI_REAL_OK，不要输出其他内容。",
   );
   await createAiWorkflow(
-    request,
+    page,
+    headers,
     stopWorkflowName,
     "从 1 开始逐个输出整数直到 10000，每个数字用逗号分隔，不得省略。",
   );
-  await createFailureWorkflow(request);
+  await createFailureWorkflow(page, headers);
 
   await page.goto("/workflows");
   await expect(page.getByRole("heading", { name: "工作流" })).toBeVisible();

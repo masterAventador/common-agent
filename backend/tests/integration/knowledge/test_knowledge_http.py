@@ -9,9 +9,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
 from typing import Any, cast
 
-import httpx
-
-from tests.support.http import assert_error_response, available_port, running_api
+from tests.support.http import (
+    assert_error_response,
+    authenticated_client,
+    available_port,
+    running_api,
+)
 from tests.support.settings import TEST_DATABASE_URL
 
 _MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024
@@ -172,7 +175,7 @@ def test_knowledge_routes_use_formal_uvicorn_and_ragflow_adapter() -> None:
     with (
         _fake_ragflow() as (ragflow_url, probe),
         running_api(TEST_DATABASE_URL, env_overrides=_ragflow_env(ragflow_url)) as api_url,
-        httpx.Client(base_url=api_url, timeout=5) as client,
+        authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         listed = client.get("/api/v1/knowledge-bases")
         created = client.post(
@@ -222,7 +225,7 @@ def test_upload_limits_fail_before_calling_ragflow() -> None:
     with (
         _fake_ragflow() as (ragflow_url, probe),
         running_api(TEST_DATABASE_URL, env_overrides=_ragflow_env(ragflow_url)) as api_url,
-        httpx.Client(base_url=api_url, timeout=10) as client,
+        authenticated_client(base_url=api_url, timeout=10) as client,
     ):
         empty = client.post(
             "/api/v1/knowledge-bases/kb-1/documents",
@@ -255,7 +258,7 @@ def test_create_validation_and_missing_knowledge_base_use_safe_errors() -> None:
     with (
         _fake_ragflow() as (ragflow_url, _),
         running_api(TEST_DATABASE_URL, env_overrides=_ragflow_env(ragflow_url)) as api_url,
-        httpx.Client(base_url=api_url, timeout=5) as client,
+        authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         blank_name = client.post(
             "/api/v1/knowledge-bases",
@@ -269,11 +272,14 @@ def test_create_validation_and_missing_knowledge_base_use_safe_errors() -> None:
 
 
 def test_knowledge_service_unavailable_is_retryable_and_safe() -> None:
-    with running_api(
-        TEST_DATABASE_URL,
-        env_overrides=_ragflow_env("http://127.0.0.1:1"),
-    ) as api_url:
-        response = httpx.get(f"{api_url}/api/v1/knowledge-bases", timeout=5)
+    with (
+        running_api(
+            TEST_DATABASE_URL,
+            env_overrides=_ragflow_env("http://127.0.0.1:1"),
+        ) as api_url,
+        authenticated_client(base_url=api_url, timeout=5) as client,
+    ):
+        response = client.get("/api/v1/knowledge-bases")
 
     assert_error_response(response, status=503, code="knowledge_service_unavailable")
     assert response.json()["retryable"] is True
@@ -286,8 +292,9 @@ def test_knowledge_service_missing_configuration_is_permanent_and_safe() -> None
             TEST_DATABASE_URL,
             env_overrides=_ragflow_env(ragflow_url, api_key=""),
         ) as api_url,
+        authenticated_client(base_url=api_url, timeout=5) as client,
     ):
-        response = httpx.get(f"{api_url}/api/v1/knowledge-bases", timeout=5)
+        response = client.get("/api/v1/knowledge-bases")
 
     assert_error_response(response, status=503, code="configuration_missing")
     assert response.json()["retryable"] is False
@@ -297,9 +304,10 @@ def test_ragflow_version_mismatch_fails_closed_before_business_request() -> None
     with (
         _fake_ragflow() as (ragflow_url, probe),
         running_api(TEST_DATABASE_URL, env_overrides=_ragflow_env(ragflow_url)) as api_url,
+        authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         probe.version = "v0.26.0"
-        response = httpx.get(f"{api_url}/api/v1/knowledge-bases", timeout=5)
+        response = client.get("/api/v1/knowledge-bases")
 
     assert_error_response(response, status=503, code="knowledge_service_version_mismatch")
     assert response.json()["retryable"] is False

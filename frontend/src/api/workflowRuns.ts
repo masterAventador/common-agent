@@ -163,6 +163,7 @@ export function subscribeToWorkflowRunEvents(
     `${apiBaseUrl.replace(/\/$/, "")}/workflow-runs/${encodeURIComponent(
       runId,
     )}/events?${new URLSearchParams({ after_sequence: String(afterSequence) })}`,
+    { withCredentials: true },
   );
   const handleEvent = (rawEvent: Event) => {
     try {

@@ -3,6 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 MANAGER="${SCRIPT_DIR}/real.sh"
 
 fail() {
@@ -20,6 +21,16 @@ grep -Fq 'COMMON_AGENT_INTEGRATION_MODE=real' "${MANAGER}" || \
   fail "real 后端没有显式使用 real 适配器"
 grep -Fq 'REAL_MEMORY_GIB=32' "${MANAGER}" || \
   fail "real 入口没有固定暂定 32 GiB Colima 预算"
+grep -Fq 'AUTH_BOOTSTRAP_TOKEN_FILE="${TOKEN_ROOT}/owner-bootstrap-token"' "${MANAGER}" || \
+  fail "real 入口没有复用 Git 忽略的项目专属引导凭据文件"
+grep -Fq 'openssl rand -hex 32' "${MANAGER}" || \
+  fail "real 入口没有安全生成首位管理员引导凭据"
+grep -Fq "stat -f '%Lp'" "${MANAGER}" || \
+  fail "real 入口没有检查首位管理员引导凭据文件权限"
+if grep -Eq '^COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN=' \
+  "${REPOSITORY_ROOT}/backend/.env.demo"; then
+  fail "首位管理员引导凭据不得在私有仓库中版本化"
+fi
 grep -Fq 'DOCKER_CONTEXT_NAME="colima-common-agent-dev"' "${MANAGER}" || \
   fail "real 入口没有使用项目专属 Docker context"
 grep -Fq '"${RAGFLOW_MANAGER}" up' "${MANAGER}" || \

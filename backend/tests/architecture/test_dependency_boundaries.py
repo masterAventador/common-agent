@@ -53,6 +53,10 @@ _BOUNDARIES = (
         frozenset({"cryptography"}),
         (("adapters",),),
     ),
+    _Boundary(
+        frozenset({"argon2"}),
+        (("adapters", "auth"),),
+    ),
 )
 
 
