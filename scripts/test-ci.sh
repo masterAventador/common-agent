@@ -51,12 +51,14 @@ for expected in \
   './scripts/test-ci.sh' \
   './scripts/test-coverage.sh' \
   './scripts/test-frontend-bundle.sh' \
+  './scripts/test-secrets.sh' \
   'pnpm test:e2e:loading' \
   "rg --files -g '*.sh' -g '!third_party/**' | xargs shellcheck"; do
   grep -Fq "${expected}" "${WORKFLOW}" || fail "CI 缺少门禁：${expected}"
 done
 
 grep -Fq 'submodules: recursive' "${WORKFLOW}" || fail "CI 没有检出固定 RAGFlow submodule"
+grep -Fq 'fetch-depth: 0' "${WORKFLOW}" || fail "Secret 门禁没有检出完整 Git 历史"
 grep -Fq 'version: 0.11.16' "${WORKFLOW}" || fail "CI 没有固定 uv 版本"
 grep -Fq 'version: 11.9.0' "${WORKFLOW}" || fail "CI 没有固定 pnpm 版本"
 grep -Fq 'cache-dependency-glob: backend/uv.lock' "${WORKFLOW}" || \

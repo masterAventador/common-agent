@@ -38,7 +38,7 @@ React
 - 第一版只支持阿里百炼，不引入 LiteLLM 或供应商路由；
 - 使用百炼 OpenAI 兼容接口和 `langchain-openai` 的 `ChatOpenAI`；
 - `base_url`、模型名和 API Key 来自后端配置；
-- 用户已批准测试 API Key 写入私有仓库的 `backend/.env.demo`，这是唯一凭据例外；
+- 用户明确批准现有百炼 Demo API Key 只在私有仓库 `backend/.env.demo` 中版本化，且明确选择不轮换；这是唯一凭据例外；
 - API Key 永远不进入前端响应、日志、异常、OpenAPI 样例或测试快照；
 - 模型适配器固定使用锁文件中的 `langchain-openai==1.3.5`，只接受百炼官方
   `compatible-mode/v1` HTTPS 地址；每个适配器显式创建独立同步/异步 HTTP 客户端，关闭一轮

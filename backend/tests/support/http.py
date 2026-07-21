@@ -85,6 +85,14 @@ def _start_api(
 ) -> subprocess.Popen[str]:
     env = os.environ.copy()
     env["COMMON_AGENT_DATABASE_URL"] = database_url
+    if env.get("TEST_BAILIAN_REAL") != "1":
+        env.update(
+            {
+                "BAILIAN_API_KEY": "integration-test-secret",
+                "BAILIAN_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "BAILIAN_MODEL": "integration-test-model",
+            }
+        )
     if env_overrides is not None:
         env.update(env_overrides)
     return subprocess.Popen(

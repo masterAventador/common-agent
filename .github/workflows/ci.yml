@@ -126,6 +126,7 @@ jobs:
       - name: Checkout with fixed third-party sources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          fetch-depth: 0
           submodules: recursive
 
       - name: Install uv and Python
@@ -176,6 +177,7 @@ jobs:
           ./scripts/test-ci.sh
           ./scripts/test-coverage.sh
           ./scripts/test-frontend-bundle.sh
+          ./scripts/test-secrets.sh
 
       - name: Check shell scripts
         run: rg --files -g '*.sh' -g '!third_party/**' | xargs shellcheck

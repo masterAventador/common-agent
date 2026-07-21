@@ -7,7 +7,7 @@ Python/FastAPI 后端工程。B1-01 会在此建立 Python 3.12、uv、`src` lay
 - 浏览器只调用本后端公开 API；
 - 领域与应用层不依赖第三方 SDK；
 - 数据库、中间件、模型、RAGFlow、Deep Agents 和 LangGraph 通过正式端口/适配层接入；
-- 本目录不保存本机运行数据、上传文件、日志或除已授权百炼 Demo Key 外的凭据。
+- 本目录不保存本机运行数据、上传文件、日志或除用户明确授权的现有百炼 Demo Key 外的凭据。
 
 ## 工具链
 
@@ -121,7 +121,15 @@ MySQL 同时约束名称、标识、节点类型、JSON 类型、序号、时间
 调用方，因此不预建消息队列或 Worker；一旦并发、重试或调度需求进入路线图，再让同一
 `WorkflowService` 端口接入真实基础设施并按生产同路径重新验收。
 
-`ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。`.env.demo` 只保存用户明确批准的测试模型、HTTPS Base URL 和 Demo Key；Key 使用 `SecretStr`，不得进入 repr、JSON、日志、异常或前端响应。Base URL 只接受百炼官方 `compatible-mode/v1` HTTPS 地址，禁止 URL 凭据、查询参数和非官方主机。
+`ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。
+用户明确要求现有 Demo Key 继续随私有仓库版本化，方便两台开发电脑直接使用；它是唯一获准的
+凭据例外，不轮换、不作废，也不要求额外本机 Secret 文件。Key 使用 `SecretStr`，不得进入 repr、
+JSON、日志、异常或前端响应。Base URL 只接受百炼官方 `compatible-mode/v1` HTTPS 地址，禁止
+URL 凭据、查询参数和非官方主机。
+
+`scripts/test-secrets.sh` 会对该唯一授权值计算不回显的指纹，并扫描当前源码、Git 全历史、
+日志/Trace、后端 wheel/sdist 与前端生产产物；除 `backend/.env.demo` 及其历史外，任何复制都会
+关闭失败。普通集成测试强制使用固定假 Key，只有显式真实百炼验收才读取版本化配置。
 
 `BailianChatModelAdapter` 使用锁定的 `langchain-openai==1.3.5` 构造正式 `ChatOpenAI`，通过 `stream_text()` 暴露增量文本，并通过 `chat_model` 把同一个模型实例交给 Deep Agents 适配层。每个适配器显式创建独立同步/异步 HTTP 客户端，关闭当前实例不会关闭其他会话使用的客户端。总请求超时、流式逐块超时与重试次数分别由 `BAILIAN_TIMEOUT_SECONDS`、`BAILIAN_STREAM_CHUNK_TIMEOUT_SECONDS` 和 `BAILIAN_MAX_RETRIES` 控制，默认 `60/60/2`，最大 `300/300/3`；认证、请求拒绝、限流、超时、5xx、流中断和空输出都会转换成不含上游响应体或凭据的稳定平台错误。持有适配器的 lifespan 必须调用幂等 `aclose()` 释放自有模型客户端。
 
