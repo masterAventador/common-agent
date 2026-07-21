@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -93,7 +94,10 @@ def test_platform_layers_do_not_reach_out_to_api_or_adapters() -> None:
         tree = ast.parse(source_file.read_text(encoding="utf-8"), filename=str(source_file))
         for line, module in _imports(tree):
             if module == "common_agent.adapters" or module.startswith("common_agent.adapters."):
-                if relative.parts[0] == "adapters" or relative == Path("api/app.py"):
+                if relative.parts[0] == "adapters" or relative in {
+                    Path("api/app.py"),
+                    Path("worker_app.py"),
+                }:
                     continue
                 violations.append(f"{relative}:{line}:{module} (adapter dependency points outward)")
             if module == "common_agent.api" or module.startswith("common_agent.api."):
@@ -129,6 +133,17 @@ def test_relative_imports_are_treated_as_platform_imports() -> None:
         (1, "common_agent.server"),
         (2, "common_agent.bootstrap"),
     )
+
+
+def test_formal_composition_uses_persistent_events_and_an_independent_worker() -> None:
+    source_root = Path(__file__).parents[2] / "src" / "common_agent"
+    api_source = (source_root / "api" / "app.py").read_text(encoding="utf-8")
+
+    assert "SqlAlchemyEventJournal" in api_source
+    assert "SqlAlchemyTaskQueue" in api_source
+    assert ".recover_interrupted()" not in api_source
+    assert importlib.util.find_spec("common_agent.worker_app") is not None
+    assert importlib.util.find_spec("common_agent.worker_main") is not None
 
 
 def _imports(tree: ast.AST) -> tuple[tuple[int, str], ...]:

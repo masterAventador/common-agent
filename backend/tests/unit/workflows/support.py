@@ -20,6 +20,7 @@ from common_agent.domain.workflow_run import WorkflowRun, WorkflowRunStatus
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.pagination import PageAnchor, PageSlice
 from common_agent.ports.workflows import WorkflowAlreadyExists, WorkflowRunAlreadyExists
+from common_agent.tasks import TaskEnqueueResult, TaskRequest
 from tests.support.knowledge import KnowledgeProbe
 
 
@@ -134,14 +135,45 @@ class WorkflowRunRepositoryProbe:
         return True
 
 
+class TaskSubmissionProbe:
+    def __init__(self) -> None:
+        self.requests: list[tuple[TaskRequest, int]] = []
+
+    async def enqueue(
+        self,
+        request: TaskRequest,
+        *,
+        max_attempts: int,
+    ) -> TaskEnqueueResult:
+        from common_agent.tasks import DurableTask, TaskState
+
+        self.requests.append((request, max_attempts))
+        task = DurableTask(
+            request=request,
+            state=TaskState.PENDING,
+            attempts=0,
+            max_attempts=max_attempts,
+            available_at=request.created_at,
+            lease_owner=None,
+            lease_token=None,
+            lease_until=None,
+            stop_requested=False,
+            error_code=None,
+            updated_at=request.created_at,
+        )
+        return TaskEnqueueResult(task=task, created=True)
+
+
 class WorkflowUnitOfWorkProbe:
     def __init__(
         self,
         repository: WorkflowRepositoryProbe,
         run_repository: WorkflowRunRepositoryProbe,
+        tasks: TaskSubmissionProbe,
     ) -> None:
         self.workflows = repository
         self.workflow_runs = run_repository
+        self.tasks = tasks
         self.commit_count = 0
 
     async def __aenter__(self) -> WorkflowUnitOfWorkProbe:
@@ -163,10 +195,11 @@ class WorkflowUnitOfWorkFactoryProbe:
     def __init__(self) -> None:
         self.repository = WorkflowRepositoryProbe()
         self.run_repository = WorkflowRunRepositoryProbe()
+        self.tasks = TaskSubmissionProbe()
         self.units: list[WorkflowUnitOfWorkProbe] = []
 
     def __call__(self) -> WorkflowUnitOfWorkProbe:
-        unit = WorkflowUnitOfWorkProbe(self.repository, self.run_repository)
+        unit = WorkflowUnitOfWorkProbe(self.repository, self.run_repository, self.tasks)
         self.units.append(unit)
         return unit
 

@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from collections import deque
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from time import monotonic
-from uuid import UUID
+from typing import cast
+from uuid import NAMESPACE_URL, UUID, uuid5
 
-from common_agent.domain.workflow_run import WorkflowRun, WorkflowRunStatus
+from common_agent.domain.workflow_run import (
+    WorkflowRun,
+    WorkflowRunOrigin,
+    WorkflowRunStatus,
+    WorkflowRunTrigger,
+)
+from common_agent.events import EventAppendRequest, EventJournal, EventStreamKind
 
 
 class WorkflowEventKind(StrEnum):
@@ -93,6 +102,11 @@ class WorkflowEventBroker:
         state_limit: int = 1024,
         state_ttl_seconds: float = 300,
         key_namespace: Callable[[UUID], str] | None = None,
+        journal: EventJournal | None = None,
+        tenant_id_provider: Callable[[], UUID] | None = None,
+        persistent_poll_seconds: float = 0.1,
+        retention_days: int = 30,
+        maximum_events_per_stream: int = 100_000,
     ) -> None:
         if history_limit < 1:
             raise ValueError("history_limit must be positive")
@@ -106,6 +120,14 @@ class WorkflowEventBroker:
             raise ValueError("state_limit must be positive")
         if state_ttl_seconds <= 0 or state_ttl_seconds > 86_400:
             raise ValueError("state_ttl_seconds must be between 0 and 86400")
+        if (journal is None) != (tenant_id_provider is None):
+            raise ValueError("journal and tenant_id_provider must be configured together")
+        if not 0 < persistent_poll_seconds <= 10:
+            raise ValueError("persistent_poll_seconds must be between 0 and 10")
+        if not 1 <= retention_days <= 3650:
+            raise ValueError("retention_days must be between 1 and 3650")
+        if not 100 <= maximum_events_per_stream <= 1_000_000:
+            raise ValueError("maximum_events_per_stream must be between 100 and 1000000")
         self._history_limit = history_limit
         self._subscriber_queue_limit = subscriber_queue_limit
         self._subscriber_limit = subscriber_limit
@@ -113,6 +135,12 @@ class WorkflowEventBroker:
         self._state_limit = state_limit
         self._state_ttl_seconds = state_ttl_seconds
         self._key_namespace = key_namespace or (lambda run_id: str(run_id))
+        self._journal = journal
+        self._tenant_id_provider = tenant_id_provider
+        self._persistent_poll_seconds = persistent_poll_seconds
+        self._retention_days = retention_days
+        self._maximum_events_per_stream = maximum_events_per_stream
+        self._persistent_subscribers = 0
         self._states: dict[str, _WorkflowEventState] = {}
         self._lock = asyncio.Lock()
         self._closed = False
@@ -120,6 +148,10 @@ class WorkflowEventBroker:
     async def validate_resume(self, run_id: UUID, *, after_sequence: int = 0) -> None:
         if after_sequence < 0:
             raise ValueError("after_sequence must not be negative")
+        if self._journal is not None:
+            self._ensure_open()
+            await self._validate_persistent_resume(run_id, after_sequence)
+            return
         async with self._lock:
             self._ensure_open()
             key = self._key_namespace(run_id)
@@ -140,6 +172,9 @@ class WorkflowEventBroker:
         node_id: str | None = None,
     ) -> WorkflowRunEvent:
         _validate_event(run=run, kind=kind, node_id=node_id)
+        if self._journal is not None:
+            self._ensure_open()
+            return await self._publish_persistent(run=run, kind=kind, node_id=node_id)
         async with self._lock:
             self._ensure_open()
             key = self._key_namespace(run.id)
@@ -187,6 +222,10 @@ class WorkflowEventBroker:
     ) -> AsyncGenerator[WorkflowRunEvent, None]:
         if after_sequence < 0:
             raise ValueError("after_sequence must not be negative")
+        if self._journal is not None:
+            async for event in self._stream_persistent(run_id, after_sequence=after_sequence):
+                yield event
+            return
         queue: asyncio.Queue[WorkflowRunEvent | object] = asyncio.Queue(
             maxsize=self._subscriber_queue_limit
         )
@@ -240,6 +279,84 @@ class WorkflowEventBroker:
                 subscriber_count=sum(len(state.subscribers) for state in self._states.values()),
                 retained_event_count=sum(len(state.history) for state in self._states.values()),
             )
+
+    async def _publish_persistent(
+        self,
+        *,
+        run: WorkflowRun,
+        kind: WorkflowEventKind,
+        node_id: str | None,
+    ) -> WorkflowRunEvent:
+        tenant_id = self._persistent_tenant_id
+        occurred_at = datetime.now(UTC)
+        payload = _workflow_payload(run=run, node_id=node_id)
+        event_key = _durable_event_key(run.id, kind.value, payload)
+        durable = await self._persistent_journal.append(
+            EventAppendRequest(
+                event_id=uuid5(
+                    NAMESPACE_URL,
+                    f"common-agent:{tenant_id}:workflow:{run.id}:{event_key}",
+                ),
+                tenant_id=tenant_id,
+                stream_kind=EventStreamKind.WORKFLOW,
+                stream_id=run.id,
+                event_key=event_key,
+                event_type=kind.value,
+                payload=payload,
+                occurred_at=occurred_at,
+            ),
+            retention_until=occurred_at + timedelta(days=self._retention_days),
+            maximum_events_per_stream=self._maximum_events_per_stream,
+        )
+        return _workflow_event(durable.sequence, durable.request)
+
+    async def _validate_persistent_resume(self, run_id: UUID, after_sequence: int) -> None:
+        bounds = await self._persistent_journal.bounds(
+            tenant_id=self._persistent_tenant_id,
+            stream_kind=EventStreamKind.WORKFLOW,
+            stream_id=run_id,
+        )
+        if bounds is None:
+            if after_sequence != 0:
+                raise WorkflowEventHistoryUnavailable
+            return
+        earliest, latest = bounds
+        if after_sequence > latest or after_sequence < earliest - 1:
+            raise WorkflowEventHistoryUnavailable
+
+    async def _stream_persistent(
+        self,
+        run_id: UUID,
+        *,
+        after_sequence: int,
+    ) -> AsyncGenerator[WorkflowRunEvent, None]:
+        await self._validate_persistent_resume(run_id, after_sequence)
+        async with self._lock:
+            self._ensure_open()
+            if self._persistent_subscribers >= self._total_subscriber_limit:
+                raise WorkflowEventSubscriberLimitExceeded
+            self._persistent_subscribers += 1
+        current_sequence = after_sequence
+        try:
+            while True:
+                self._ensure_open()
+                batch = await self._persistent_journal.read(
+                    tenant_id=self._persistent_tenant_id,
+                    stream_kind=EventStreamKind.WORKFLOW,
+                    stream_id=run_id,
+                    after_sequence=current_sequence,
+                    limit=self._subscriber_queue_limit,
+                )
+                if not batch:
+                    await asyncio.sleep(self._persistent_poll_seconds)
+                    continue
+                for durable in batch:
+                    event = _workflow_event(durable.sequence, durable.request)
+                    current_sequence = event.sequence
+                    yield event
+        finally:
+            async with self._lock:
+                self._persistent_subscribers -= 1
 
     async def aclose(self) -> None:
         async with self._lock:
@@ -362,6 +479,18 @@ class WorkflowEventBroker:
         if self._closed:
             raise RuntimeError("workflow event broker is closed")
 
+    @property
+    def _persistent_journal(self) -> EventJournal:
+        if self._journal is None:
+            raise RuntimeError("persistent event journal is not configured")
+        return self._journal
+
+    @property
+    def _persistent_tenant_id(self) -> UUID:
+        if self._tenant_id_provider is None:
+            raise RuntimeError("persistent tenant provider is not configured")
+        return self._tenant_id_provider()
+
 
 def _validate_event(
     *,
@@ -407,3 +536,84 @@ def _validate_resume_position(state: _WorkflowEventState, after_sequence: int) -
     earliest = state.history[0].sequence if state.history else latest + 1
     if after_sequence > latest or (state.history and after_sequence < earliest - 1):
         raise WorkflowEventHistoryUnavailable
+
+
+def _workflow_payload(*, run: WorkflowRun, node_id: str | None) -> dict[str, object]:
+    origin: dict[str, object] | None = None
+    if run.origin is not None:
+        origin = {
+            "employee_id": str(run.origin.employee_id),
+            "conversation_id": str(run.origin.conversation_id),
+            "assistant_message_id": str(run.origin.assistant_message_id),
+        }
+    return {
+        "run": {
+            "id": str(run.id),
+            "workflow_id": str(run.workflow_id),
+            "trigger": run.trigger.value,
+            "status": run.status.value,
+            "input": run.input,
+            "output": run.output,
+            "current_node_id": run.current_node_id,
+            "completed_node_ids": list(run.completed_node_ids),
+            "failed_node_id": run.failed_node_id,
+            "error_code": run.error_code,
+            "origin": origin,
+            "created_at": run.created_at.isoformat(),
+            "started_at": run.started_at.isoformat() if run.started_at is not None else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at is not None else None,
+            "updated_at": run.updated_at.isoformat(),
+        },
+        "node_id": node_id,
+    }
+
+
+def _durable_event_key(run_id: UUID, event_type: str, payload: dict[str, object]) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return f"{run_id}:{event_type}:{digest}"
+
+
+def _workflow_event(sequence: int, request: EventAppendRequest) -> WorkflowRunEvent:
+    payload = request.payload
+    raw = cast(dict[str, object], payload["run"])
+    raw_origin = cast(dict[str, object] | None, raw["origin"])
+    origin = (
+        None
+        if raw_origin is None
+        else WorkflowRunOrigin(
+            employee_id=UUID(str(raw_origin["employee_id"])),
+            conversation_id=UUID(str(raw_origin["conversation_id"])),
+            assistant_message_id=UUID(str(raw_origin["assistant_message_id"])),
+        )
+    )
+    run = WorkflowRun(
+        id=UUID(str(raw["id"])),
+        workflow_id=UUID(str(raw["workflow_id"])),
+        trigger=WorkflowRunTrigger(str(raw["trigger"])),
+        status=WorkflowRunStatus(str(raw["status"])),
+        input=str(raw["input"]),
+        output=str(raw["output"]),
+        current_node_id=None if raw["current_node_id"] is None else str(raw["current_node_id"]),
+        completed_node_ids=tuple(
+            str(value) for value in cast(list[object], raw["completed_node_ids"])
+        ),
+        failed_node_id=None if raw["failed_node_id"] is None else str(raw["failed_node_id"]),
+        error_code=None if raw["error_code"] is None else str(raw["error_code"]),
+        origin=origin,
+        created_at=datetime.fromisoformat(str(raw["created_at"])),
+        started_at=(
+            None if raw["started_at"] is None else datetime.fromisoformat(str(raw["started_at"]))
+        ),
+        finished_at=(
+            None if raw["finished_at"] is None else datetime.fromisoformat(str(raw["finished_at"]))
+        ),
+        updated_at=datetime.fromisoformat(str(raw["updated_at"])),
+    )
+    return WorkflowRunEvent(
+        sequence=sequence,
+        run=run,
+        kind=WorkflowEventKind(request.event_type),
+        node_id=None if payload["node_id"] is None else str(payload["node_id"]),
+        occurred_at=request.occurred_at,
+    )

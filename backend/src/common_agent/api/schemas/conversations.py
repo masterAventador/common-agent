@@ -6,8 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
+from common_agent.conversations.contracts import StopAccepted, TurnAccepted
 from common_agent.conversations.events import ConversationEvent, ConversationEventKind
-from common_agent.conversations.service import StopAccepted, TurnAccepted
 from common_agent.domain.conversation import (
     CONVERSATION_TITLE_MAX_LENGTH,
     MESSAGE_CONTENT_MAX_LENGTH,

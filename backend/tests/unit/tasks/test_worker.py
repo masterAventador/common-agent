@@ -1,0 +1,393 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime, timedelta
+from typing import cast
+from uuid import UUID, uuid4
+
+import pytest
+
+from common_agent.tasks import (
+    ConversationReplyPayload,
+    DurableTask,
+    TaskBacklog,
+    TaskCancelled,
+    TaskEnqueueResult,
+    TaskExecutionContext,
+    TaskKind,
+    TaskLeaseState,
+    TaskRequest,
+    TaskRetryableError,
+    TaskState,
+    TaskWorker,
+    TaskWorkerPool,
+)
+
+NOW = datetime(2026, 7, 21, 7, 0, tzinfo=UTC)
+
+
+class QueueProbe:
+    def __init__(self, task: DurableTask) -> None:
+        self.task = task
+        self.claimed = False
+        self.retried: list[tuple[UUID, str, datetime]] = []
+        self.completed: list[UUID] = []
+        self.cancelled: list[UUID] = []
+        self.claimed_kinds: frozenset[TaskKind] | None = None
+
+    async def enqueue(
+        self,
+        request: TaskRequest,
+        *,
+        max_attempts: int,
+    ) -> TaskEnqueueResult:
+        raise AssertionError("not expected")
+
+    async def get(self, task_id: UUID) -> DurableTask:
+        raise AssertionError("not expected")
+
+    async def claim(
+        self,
+        *,
+        worker_id: str,
+        now: datetime,
+        lease_for: timedelta,
+        kinds: frozenset[TaskKind] | None = None,
+    ) -> DurableTask | None:
+        self.claimed_kinds = kinds
+        if self.claimed:
+            return None
+        self.claimed = True
+        return self.task
+
+    async def heartbeat(
+        self,
+        task_id: UUID,
+        *,
+        worker_id: str,
+        lease_token: UUID,
+        now: datetime,
+        lease_for: timedelta,
+    ) -> TaskLeaseState:
+        return TaskLeaseState(owned=True, stop_requested=False)
+
+    async def complete(
+        self,
+        task_id: UUID,
+        *,
+        worker_id: str,
+        lease_token: UUID,
+        now: datetime,
+    ) -> bool:
+        self.completed.append(task_id)
+        return True
+
+    async def retry(
+        self,
+        task_id: UUID,
+        *,
+        worker_id: str,
+        lease_token: UUID,
+        error_code: str,
+        available_at: datetime,
+        now: datetime,
+    ) -> bool:
+        self.retried.append((task_id, error_code, available_at))
+        return True
+
+    async def fail(
+        self,
+        task_id: UUID,
+        *,
+        worker_id: str,
+        lease_token: UUID,
+        error_code: str,
+        now: datetime,
+    ) -> bool:
+        raise AssertionError("not expected")
+
+    async def cancel(
+        self,
+        task_id: UUID,
+        *,
+        worker_id: str,
+        lease_token: UUID,
+        now: datetime,
+    ) -> bool:
+        self.cancelled.append(task_id)
+        return True
+
+    async def request_stop(self, task_id: UUID, *, now: datetime) -> DurableTask:
+        raise AssertionError("not expected")
+
+    async def request_stop_for_aggregate(
+        self,
+        *,
+        tenant_id: UUID,
+        kind: TaskKind,
+        aggregate_id: UUID,
+        now: datetime,
+    ) -> DurableTask:
+        raise AssertionError("not expected")
+
+    async def backlog(self) -> TaskBacklog:
+        raise AssertionError("not expected")
+
+
+def _task(*, attempts: int = 1, max_attempts: int = 3) -> DurableTask:
+    conversation_id = uuid4()
+    request = TaskRequest(
+        task_id=uuid4(),
+        tenant_id=uuid4(),
+        kind=TaskKind.CONVERSATION_REPLY,
+        idempotency_key=f"conversation:{conversation_id}:reply",
+        aggregate_id=conversation_id,
+        payload=ConversationReplyPayload(
+            conversation_id=conversation_id,
+            turn_id=uuid4(),
+            user_message_id=uuid4(),
+            assistant_message_id=uuid4(),
+            retry=False,
+        ),
+        created_at=NOW,
+    )
+    return DurableTask(
+        request=request,
+        state=TaskState.RUNNING,
+        attempts=attempts,
+        max_attempts=max_attempts,
+        available_at=NOW,
+        lease_owner="worker-a",
+        lease_token=uuid4(),
+        lease_until=NOW + timedelta(seconds=30),
+        stop_requested=False,
+        error_code=None,
+        updated_at=NOW,
+    )
+
+
+def test_worker_rejects_unsafe_or_inconsistent_runtime_configuration() -> None:
+    task = _task()
+    queue = QueueProbe(task)
+
+    async def handle(claimed: DurableTask, context: TaskExecutionContext) -> None:
+        del claimed, context
+
+    handlers = {TaskKind.CONVERSATION_REPLY: handle}
+    with pytest.raises(ValueError, match="worker_id"):
+        TaskWorker(queue, handlers=handlers, worker_id=" ")
+    with pytest.raises(ValueError, match="handlers"):
+        TaskWorker(queue, handlers={}, worker_id="worker-a")
+    with pytest.raises(ValueError, match="lease_for"):
+        TaskWorker(
+            queue,
+            handlers=handlers,
+            worker_id="worker-a",
+            lease_for=timedelta(seconds=2),
+        )
+    with pytest.raises(ValueError, match="base_retry_delay"):
+        TaskWorker(
+            queue,
+            handlers=handlers,
+            worker_id="worker-a",
+            base_retry_delay=timedelta(0),
+        )
+    with pytest.raises(ValueError, match="maximum_retry_delay"):
+        TaskWorker(
+            queue,
+            handlers=handlers,
+            worker_id="worker-a",
+            base_retry_delay=timedelta(seconds=2),
+            maximum_retry_delay=timedelta(seconds=1),
+        )
+    with pytest.raises(ValueError, match="heartbeat_interval"):
+        TaskWorker(
+            queue,
+            handlers=handlers,
+            worker_id="worker-a",
+            lease_for=timedelta(seconds=4),
+            heartbeat_interval=timedelta(seconds=2),
+        )
+
+
+def test_worker_completes_a_claimed_task_once() -> None:
+    async def scenario() -> None:
+        task = _task()
+        queue = QueueProbe(task)
+        handled: list[UUID] = []
+
+        async def handle(claimed: DurableTask, context: TaskExecutionContext) -> None:
+            assert context.stop_requested is False
+            handled.append(claimed.request.task_id)
+
+        worker = TaskWorker(
+            queue,
+            handlers={TaskKind.CONVERSATION_REPLY: handle},
+            worker_id="worker-a",
+            lease_for=timedelta(seconds=30),
+            clock=lambda: NOW,
+        )
+        assert await worker.run_once() is True
+        assert await worker.run_once() is False
+        assert handled == [task.request.task_id]
+        assert queue.claimed_kinds == frozenset({TaskKind.CONVERSATION_REPLY})
+        assert queue.completed == [task.request.task_id]
+
+    asyncio.run(scenario())
+
+
+def test_worker_retries_with_bounded_exponential_backoff() -> None:
+    async def scenario() -> None:
+        task = _task(attempts=2, max_attempts=4)
+        queue = QueueProbe(task)
+
+        async def handle(claimed: DurableTask, context: TaskExecutionContext) -> None:
+            raise TaskRetryableError("model_temporarily_unavailable")
+
+        worker = TaskWorker(
+            queue,
+            handlers={TaskKind.CONVERSATION_REPLY: handle},
+            worker_id="worker-a",
+            lease_for=timedelta(seconds=30),
+            base_retry_delay=timedelta(seconds=5),
+            maximum_retry_delay=timedelta(seconds=60),
+            clock=lambda: NOW,
+        )
+        assert await worker.run_once() is True
+        assert queue.retried == [
+            (task.request.task_id, "model_temporarily_unavailable", NOW + timedelta(seconds=10))
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_worker_persists_cancelled_state_and_context_implements_stop_signals() -> None:
+    async def scenario() -> None:
+        task = _task()
+        queue = QueueProbe(task)
+
+        async def handle(claimed: DurableTask, context: TaskExecutionContext) -> None:
+            del claimed
+            assert context.is_requested is False
+            context.request_stop()
+            await context.wait()
+            raise TaskCancelled
+
+        worker = TaskWorker(
+            queue,
+            handlers={TaskKind.CONVERSATION_REPLY: handle},
+            worker_id="worker-a",
+            lease_for=timedelta(seconds=30),
+            clock=lambda: NOW,
+        )
+
+        assert await worker.run_once() is True
+        assert queue.cancelled == [task.request.task_id]
+        assert queue.completed == []
+
+    asyncio.run(scenario())
+
+
+def test_worker_cancels_stale_handler_without_writing_after_lease_loss() -> None:
+    class LeaseLostQueue(QueueProbe):
+        async def heartbeat(
+            self,
+            task_id: UUID,
+            *,
+            worker_id: str,
+            lease_token: UUID,
+            now: datetime,
+            lease_for: timedelta,
+        ) -> TaskLeaseState:
+            return TaskLeaseState(owned=False, stop_requested=False)
+
+    async def scenario() -> None:
+        task = _task()
+        queue = LeaseLostQueue(task)
+        handler_cancelled = asyncio.Event()
+
+        async def handle(claimed: DurableTask, context: TaskExecutionContext) -> None:
+            del claimed, context
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                handler_cancelled.set()
+                raise
+
+        worker = TaskWorker(
+            queue,
+            handlers={TaskKind.CONVERSATION_REPLY: handle},
+            worker_id="worker-a",
+            lease_for=timedelta(seconds=3),
+            heartbeat_interval=timedelta(milliseconds=10),
+            clock=lambda: NOW,
+        )
+
+        assert await asyncio.wait_for(worker.run_once(), timeout=0.2) is True
+        assert handler_cancelled.is_set()
+        assert queue.completed == []
+        assert queue.cancelled == []
+        assert queue.retried == []
+
+    asyncio.run(scenario())
+
+
+def test_worker_pool_polls_until_stopped_and_closes_every_slot() -> None:
+    class WorkerProbe:
+        def __init__(self, stop: asyncio.Event) -> None:
+            self.stop = stop
+            self.calls = 0
+
+        async def run_once(self) -> bool:
+            self.calls += 1
+            await asyncio.sleep(0)
+            if self.calls >= 2:
+                self.stop.set()
+            return self.calls == 1
+
+    async def scenario() -> None:
+        stop = asyncio.Event()
+        probes = (WorkerProbe(stop), WorkerProbe(stop))
+        pool = TaskWorkerPool(
+            tuple(cast(TaskWorker, probe) for probe in probes),
+            poll_interval_seconds=0.001,
+        )
+
+        await asyncio.wait_for(pool.run(stop), timeout=1)
+
+        assert all(probe.calls >= 1 for probe in probes)
+
+    asyncio.run(scenario())
+
+
+def test_worker_pool_cancels_inflight_claims_on_process_shutdown() -> None:
+    class BlockingWorker:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.cancelled = False
+
+        async def run_once(self) -> bool:
+            self.started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+            return True
+
+    async def scenario() -> None:
+        stop = asyncio.Event()
+        probe = BlockingWorker()
+        pool = TaskWorkerPool(
+            (cast(TaskWorker, probe),),
+            poll_interval_seconds=0.001,
+        )
+        running = asyncio.create_task(pool.run(stop))
+        await asyncio.wait_for(probe.started.wait(), timeout=1)
+
+        stop.set()
+        await asyncio.wait_for(running, timeout=1)
+
+        assert probe.cancelled is True
+
+    asyncio.run(scenario())

@@ -48,6 +48,11 @@ rg --color=never --fixed-strings --quiet \
   'FRONTEND_LAUNCH_LABEL="com.masteraventador.common-agent.demo-light.frontend"' \
   "${MANAGER}" || fail "demo-light 前端没有项目专属进程标签"
 rg --color=never --fixed-strings --quiet \
+  'WORKER_LAUNCH_LABEL="com.masteraventador.common-agent.demo-light.worker"' \
+  "${MANAGER}" || fail "demo-light Worker 没有项目专属进程标签"
+rg --color=never --fixed-strings --quiet '.venv/bin/python -m common_agent.worker_main' \
+  "${MANAGER}" || fail "demo-light 没有启动独立持久 Worker"
+rg --color=never --fixed-strings --quiet \
   'LEGACY_RAGFLOW_CHECKOUT="${REPOSITORY_ROOT}/.local/dev/common-agent-dev/ragflow/upstream/v0.25.6"' \
   "${MANAGER}" || fail "统一清理没有精确收回被 submodule 取代的旧 checkout"
 rg --color=never --fixed-strings --quiet 'infra/platform/manage.sh" down' "${MANAGER}" || \

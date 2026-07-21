@@ -141,12 +141,21 @@ def running_api(
     port = available_port()
     log_file = log_path.open("w+", encoding="utf-8") if log_path is not None else None
     process = _start_api(database_url, port, env_overrides, stdout=log_file)
+    worker: subprocess.Popen[str] | None = None
     base_url = f"http://127.0.0.1:{port}"
 
     try:
         _wait_for_api(process, base_url, startup_log=log_file)
+        worker = _start_worker(
+            database_url,
+            env_overrides,
+            stdout=log_file if log_file is not None else subprocess.DEVNULL,
+        )
+        _wait_for_worker(worker)
         yield base_url
     finally:
+        if worker is not None:
+            _stop_process(worker)
         _stop_api(process)
         if log_file is not None:
             log_file.close()
@@ -165,13 +174,18 @@ def running_apis(
     while len(ports) < count:
         ports.add(available_port())
     processes = [_start_api(database_url, port, env_overrides) for port in sorted(ports)]
+    worker: subprocess.Popen[str] | None = None
     base_urls = tuple(f"http://127.0.0.1:{port}" for port in sorted(ports))
 
     try:
         for process, base_url in zip(processes, base_urls, strict=True):
             _wait_for_api(process, base_url)
+        worker = _start_worker(database_url, env_overrides)
+        _wait_for_worker(worker)
         yield base_urls
     finally:
+        if worker is not None:
+            _stop_process(worker)
         for process in processes:
             _stop_api(process)
 
@@ -183,19 +197,7 @@ def _start_api(
     *,
     stdout: IO[str] | int | None = subprocess.PIPE,
 ) -> subprocess.Popen[str]:
-    env = os.environ.copy()
-    env["COMMON_AGENT_DATABASE_URL"] = database_url
-    env["COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN"] = TEST_AUTH_BOOTSTRAP_TOKEN
-    if env.get("TEST_BAILIAN_REAL") != "1":
-        env.update(
-            {
-                "BAILIAN_API_KEY": "integration-test-secret",
-                "BAILIAN_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                "BAILIAN_MODEL": "integration-test-model",
-            }
-        )
-    if env_overrides is not None:
-        env.update(env_overrides)
+    env = _runtime_env(database_url, env_overrides)
     return subprocess.Popen(
         [
             sys.executable,
@@ -213,6 +215,49 @@ def _start_api(
         text=True,
         env=env,
     )
+
+
+def _start_worker(
+    database_url: str,
+    env_overrides: Mapping[str, str] | None,
+    *,
+    stdout: IO[str] | int | None = subprocess.DEVNULL,
+) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        [sys.executable, "-m", "common_agent.worker_main"],
+        stdout=stdout,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=_runtime_env(database_url, env_overrides),
+    )
+
+
+def _runtime_env(
+    database_url: str,
+    env_overrides: Mapping[str, str] | None,
+) -> dict[str, str]:
+    env = os.environ.copy()
+    env["COMMON_AGENT_DATABASE_URL"] = database_url
+    env["COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN"] = TEST_AUTH_BOOTSTRAP_TOKEN
+    if env.get("TEST_BAILIAN_REAL") != "1":
+        env.update(
+            {
+                "BAILIAN_API_KEY": "integration-test-secret",
+                "BAILIAN_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "BAILIAN_MODEL": "integration-test-model",
+            }
+        )
+    if env_overrides is not None:
+        env.update(env_overrides)
+    return env
+
+
+def _wait_for_worker(process: subprocess.Popen[str]) -> None:
+    deadline = time.monotonic() + 0.25
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            pytest.fail("Durable worker exited before becoming ready")
+        time.sleep(0.01)
 
 
 def _wait_for_api(
@@ -242,6 +287,10 @@ def _wait_for_api(
 
 
 def _stop_api(process: subprocess.Popen[str]) -> None:
+    _stop_process(process)
+
+
+def _stop_process(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
     process.terminate()

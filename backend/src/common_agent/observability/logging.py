@@ -79,7 +79,7 @@ class JsonLogFormatter(logging.Formatter):
 def configure_json_logging(*, level: int = logging.INFO) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(JsonLogFormatter())
-    for logger_name in ("common_agent", "uvicorn", "uvicorn.error", "alembic"):
+    for logger_name in ("", "common_agent", "uvicorn", "uvicorn.error", "alembic"):
         logger = logging.getLogger(logger_name)
         logger.handlers = [handler]
         logger.setLevel(level)

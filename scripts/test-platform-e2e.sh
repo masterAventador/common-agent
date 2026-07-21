@@ -44,10 +44,12 @@ LIGHT_E2E_MEMORY_GIB=12
 REAL_E2E_MEMORY_GIB=32
 ARTIFACT_ROOT="${REPOSITORY_ROOT}/.local/test-artifacts/platform-e2e/${E2E_SUITE}-${RUN_ID}"
 BACKEND_LOG="${ARTIFACT_ROOT}/backend.log"
+WORKER_LOG="${ARTIFACT_ROOT}/worker.log"
 FRONTEND_LOG="${ARTIFACT_ROOT}/frontend.log"
 RAGFLOW_PROVISION_LOG="${ARTIFACT_ROOT}/ragflow-provision.log"
 PLAYWRIGHT_PID=""
 BACKEND_PID=""
+WORKER_PID=""
 FRONTEND_PID=""
 RAGFLOW_API_KEY=""
 COMMON_AGENT_DATABASE_URL="mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
@@ -151,6 +153,7 @@ cleanup() {
 
   stop_process "${PLAYWRIGHT_PID}"
   stop_process "${FRONTEND_PID}"
+  stop_process "${WORKER_PID}"
   stop_process "${BACKEND_PID}"
 
   if [[ "${E2E_SUITE}" == "tenant-rbac" ]]; then
@@ -364,6 +367,16 @@ wait_for_url "http://127.0.0.1:${API_PORT}/api/v1/system/health"
   cd "${BACKEND_ROOT}"
   "${UV_RUNNER}" run --frozen python -m tests.support.auth_e2e_state reset
 )
+(
+  cd "${BACKEND_ROOT}"
+  exec "${UV_RUNNER}" run --frozen python -m common_agent.worker_main
+) >"${WORKER_LOG}" 2>&1 &
+WORKER_PID=$!
+sleep 1
+if ! kill -0 "${WORKER_PID}" >/dev/null 2>&1; then
+  echo "平台 E2E 独立 Worker 启动失败：${WORKER_LOG}" >&2
+  exit 1
+fi
 
 (
   cd "${FRONTEND_ROOT}"

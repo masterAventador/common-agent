@@ -7,6 +7,7 @@ from uuid import UUID
 from common_agent.domain.workflow import WorkflowDefinition
 from common_agent.domain.workflow_run import WorkflowRun
 from common_agent.pagination import PageAnchor, PageSlice
+from common_agent.tasks.ports import TaskSubmission
 
 
 class WorkflowAlreadyExists(Exception):
@@ -62,6 +63,9 @@ class WorkflowUnitOfWork(Protocol):
 
     @property
     def workflow_runs(self) -> WorkflowRunRepository: ...
+
+    @property
+    def tasks(self) -> TaskSubmission: ...
 
     async def __aenter__(self) -> WorkflowUnitOfWork: ...
 

@@ -19,6 +19,7 @@ from common_agent.pagination import (
     encode_keyset_cursor,
 )
 from common_agent.ports.workflows import WorkflowRunAlreadyExists, WorkflowUnitOfWorkFactory
+from common_agent.tasks import TaskRequest
 from common_agent.workflows.errors import WorkflowExecutionStopped
 from common_agent.workflows.events import WorkflowEventBroker, WorkflowEventKind
 from common_agent.workflows.execution import WorkflowExecutionResult
@@ -80,10 +81,23 @@ class WorkflowRunProjection:
             )
         return CursorPage(items=result.items, next_cursor=next_cursor)
 
-    async def create(self, run: WorkflowRun) -> None:
+    async def create(
+        self,
+        run: WorkflowRun,
+        *,
+        task_request: TaskRequest | None = None,
+        task_max_attempts: int = 3,
+    ) -> None:
         try:
             async with self._unit_of_work_factory() as unit_of_work:
                 await unit_of_work.workflow_runs.add(run)
+                if task_request is not None:
+                    if task_request.aggregate_id != run.id:
+                        raise ValueError("workflow task does not match run")
+                    await unit_of_work.tasks.enqueue(
+                        task_request,
+                        max_attempts=task_max_attempts,
+                    )
                 await unit_of_work.commit()
         except WorkflowRunAlreadyExists:
             raise WorkflowRunConflict from None
@@ -92,6 +106,28 @@ class WorkflowRunProjection:
         running = run.start()
         await self._update(running)
         return running
+
+    async def restart_execution(self, run: WorkflowRun) -> WorkflowRun:
+        restarted = run.restart_execution()
+        await self._update(restarted)
+        return restarted
+
+    async def republish_terminal(self, run: WorkflowRun) -> None:
+        if run.status.value == "completed":
+            await self._event_broker.publish(run=run, kind=WorkflowEventKind.RUN_COMPLETED)
+            return
+        if run.status.value == "stopped":
+            await self._event_broker.publish(run=run, kind=WorkflowEventKind.RUN_STOPPED)
+            return
+        if run.status.value != "failed":
+            raise ValueError("only terminal workflow runs can be republished")
+        if run.failed_node_id is not None:
+            await self._event_broker.publish(
+                run=run,
+                kind=WorkflowEventKind.NODE_FAILED,
+                node_id=run.failed_node_id,
+            )
+        await self._event_broker.publish(run=run, kind=WorkflowEventKind.RUN_FAILED)
 
     async def recover_interrupted(self) -> int:
         async with self._unit_of_work_factory() as unit_of_work:

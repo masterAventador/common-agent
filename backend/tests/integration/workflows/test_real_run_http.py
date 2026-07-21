@@ -80,7 +80,7 @@ def test_real_workflow_run_http_uses_ragflow_langgraph_and_bailian() -> None:
                 },
             )
             assert accepted.status_code == 202
-            assert accepted.json()["status"] == "running"
+            assert accepted.json()["status"] == "pending"
             completed = _terminal(client, completed_run_id)
             assert completed["status"] == "completed"
             assert marker in str(completed["output"])

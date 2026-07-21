@@ -1,6 +1,6 @@
 # 通用 Agent 中台后端架构
 
-> 状态：MVP 基线已完成，身份、租户/RBAC 与不可篡改审计已落地
+> 状态：MVP 基线已完成，身份、租户/RBAC、不可篡改审计与持久 Worker 已落地
 > 确认日期：2026-07-21
 > 运行范围：本机 FastAPI + 按需平台基础设施 + 本机 RAGFlow，外部只调用阿里百炼
 
@@ -15,6 +15,7 @@
 - 首位所有者注册、登录、恢复与可撤销的服务端安全会话。
 - 组织下的多工作区、成员角色与五类业务资源的租户隔离。
 - 固定元数据、租户隔离且不可原地篡改的审计与安全事件。
+- MySQL 持久任务/事件、独立 Worker、租约恢复与跨进程 SSE 续传。
 
 普通聊天以 `Conversation` 和 `Message` 为主模型。只有用户或数字员工明确触发工作流时才创建 `WorkflowRun`。
 
@@ -22,16 +23,17 @@
 
 ### 2.1 模块化后端与可演进运行单元
 
-最小启动形态使用一个 FastAPI 进程；当当前用例需要长任务、并发隔离、可靠重试、恢复或其他工程能力时，可以加入合适的技术组件，不需要把技术选型视为新的产品功能。下图中的组件只是当前可预见示例，不构成白名单：
+当前启动形态把请求接入与长任务执行拆成 FastAPI 和独立 Worker 两类进程；二者共享平台端口与
+MySQL 权威状态，不共享进程内任务。技术选型仍不构成产品功能或固定白名单：
 
 ```text
 React
   -> FastAPI
-       -> Repository（平台独立 MySQL）
-       -> Cache / Message Queue / Object Storage / Worker（按实际需要）
-       -> RAGFlow（知识文档、解析和检索）
-       -> Deep Agents + 阿里百炼（数字员工回复）
-       -> LangGraph（独立工作流）
+       -> Repository + TaskQueue + EventJournal（平台独立 MySQL）
+       -> 独立 Worker
+            -> RAGFlow（知识文档、解析和检索）
+            -> Deep Agents + 阿里百炼（数字员工回复）
+            -> LangGraph（独立工作流）
 ```
 
 文件解析由 RAGFlow 自己的独立 Docker 栈处理。FastAPI 只发起官方 API 请求和轮询状态，不直连 RAGFlow 的 MySQL、Redis、检索引擎或对象存储。
@@ -90,10 +92,15 @@ React
 - 工作流定义和运行摘要；
 - Demo 模式的知识库、文档正文与解析终态；
 - RAGFlow 知识库的租户归属映射。
+- 会话回复/工作流运行任务、租约/停止状态，以及可恢复的会话/工作流事件序列。
 
 平台正式持久化使用独立 MySQL 8.4 LTS，通过 SQLAlchemy async、`aiomysql`、PyMySQL `>=1.1.1` 与 Alembic 接入，固定开发入口为 `127.0.0.1:19506/common_agent`。领域与应用层只依赖仓储端口；平台 MySQL 使用专属容器、端口、Volume 和资源限制，与 RAGFlow 内部 MySQL 完全隔离。SQLite 和其他数据库不能替代当前正式 MySQL 的完成验收。
 
-任何外围技术依赖都按当前用例需要通过职责清晰的端口接入；`Cache`、`EventBus`、`ObjectStore`、`JobQueue` 以及 Redis、消息队列、对象存储和 Worker 只是示例。只要被正式调用链采用，就必须补齐适用于该技术的健康、失败、恢复、隔离、安全、资源和清理门禁。知识文档、切片、向量和解析产物仍由 RAGFlow 管理。
+`TaskQueue`、`TaskSubmission` 与 `EventJournal` 是平台自有端口，当前由 MySQL
+`durable_tasks/durable_event_streams/durable_events` 实现，不引入 Redis/MQ，也不复用 RAGFlow
+内部 Valkey。业务占位与任务在同一个 Unit of Work 原子提交；事件按租户与聚合串行分配序号。
+任何未来外围实现仍必须补齐健康、失败、恢复、隔离、安全、容量和清理门禁。知识文档、切片、
+向量和解析产物继续只由 RAGFlow 管理。
 
 ### 2.6 身份认证与安全会话
 
@@ -159,6 +166,8 @@ application --------------+
  +-> knowledge ----------->+ adapters/ragflow
  +-> workflows ----------->+ adapters/workflow/langgraph
  +-> ports ---------------->+ adapters/mysql|redis|queue|object_store
+
+worker_app -> application/tasks/events -> adapters/mysql|ragflow|bailian|deep_agents|langgraph
 ```
 
 ### 3.1 API 层
@@ -192,6 +201,11 @@ application --------------+
 - `ResourceDeletionService`：统一执行会话、员工、知识库和工作流的引用安全删除；
 - `SystemService`：报告后端、百炼和 RAGFlow 真实状态。
 
+API 中的会话发送和工作流启动只创建权威业务占位与持久任务，不调用模型或编译器；独立
+`worker_app` 按任务租户绑定关闭失败的系统上下文，再调用同一个服务门面执行。会话任务与工作流
+任务按类型领取，默认八个槽位由会话和工作流各保留四个消费者，避免数字员工等待子工作流时
+耗尽全部消费者，也避免工作流积压饥饿。
+
 `ConversationService` 与 `WorkflowService` 是保持公开调用面的薄门面，不承载全部实现：
 
 - 会话由 `ConversationPersistence` 管理事务读写与重试准备，`ConversationRuntimeCoordinator`
@@ -217,8 +231,8 @@ application --------------+
 
 资源创建、引用变更、运行启动与删除共享 `ResourceMutationGuard`，按员工、知识库和工作流键排序
 持锁；应用服务先在锁内重新检查引用，再提交本地事务或调用 RAGFlow，避免同一进程内出现“检查
-通过后新增引用”的竞态。该锁只覆盖当前单 FastAPI 进程，多实例互斥与跨 Worker 幂等由
-S10-05 的持久任务/事件边界交付，不能把进程锁当成分布式锁。
+通过后新增引用”的竞态。该锁只覆盖当前进程；跨 API/Worker 的执行互斥由 MySQL 原子业务提交、
+任务幂等键、`FOR UPDATE SKIP LOCKED`、租约和随机栅栏令牌保证，不能把进程锁当成分布式锁。
 
 ### 3.3 Domain 层
 
@@ -401,16 +415,17 @@ WorkflowRun
 
 前端位置只用于设计器显示，不影响执行顺序；执行顺序只由通过校验的边决定。
 `workflow_runs` 是平台 MySQL 中的权威运行摘要，客户端生成的 `run_id` 是手动运行幂等边界；
-节点开始、完成以及运行终态每次都先提交摘要，再发布进程内 SSE 事件。首版交互式运行由当前
-FastAPI 进程托管，不为尚不存在的并发或可靠投递需求预建队列与 Worker；应用关闭时协作停止
-活跃运行，启动时把遗留 `pending/running` 收敛为 `failed/workflow_run_interrupted`。
+节点开始、完成以及运行终态每次都先提交摘要，再写入持久 SSE 事件。启动运行时在同一事务提交
+`pending` 摘要与确定性任务；独立 Worker 领取后才进入 `running` 并编译执行。进程关闭只取消
+本进程执行，租约到期后由任一 Worker 接管；用户停止则持久写入停止意图并由心跳传给当前持有者。
 
 ## 5. AI 会话链路
 
 ```text
 用户发送消息
   -> 校验会话和数字员工
-  -> 持久化用户消息与助手占位消息
+  -> 同一事务持久化用户消息、助手占位消息与确定性回复任务
+  -> 独立 Worker 按租约领取并绑定任务租户
   -> ConversationKnowledgeResolver 检查员工知识库绑定
   -> 已绑定时经 KnowledgeBaseService 校验 RAGFlow 可用性/版本
   -> KnowledgeService.retrieve(question)
@@ -418,7 +433,7 @@ FastAPI 进程托管，不为尚不存在的并发或可靠投递需求预建队
   -> Deep Agents 调用阿里百炼
   -> 如模型调用授权工作流工具，经同一个 WorkflowService 运行并等待持久化终态
   -> 每个 Runtime delta/终态先写回助手消息和引用并提交 MySQL
-  -> 再转换并发布 assistant.delta / assistant.completed 等平台 SSE 事件
+  -> 再把 assistant.delta / assistant.completed 等平台事件追加到持久序列
 ```
 
 检索为空不是错误：数字员工应明确说明未找到相关知识，并基于通用能力回答或说明无法确定。RAGFlow 请求失败则本轮回复失败，不静默跳过知识库后假装是知识回答。
@@ -512,7 +527,7 @@ GET    /api/v1/workflow-runs/{run_id}/events
 
 | 资源 | 删除前检查 | 成功后的子资源 | 阻断语义 |
 | --- | --- | --- | --- |
-| 会话 | 当前进程无活跃回复 | 消息、引用、由该会话触发的员工工作流运行级联删除 | 活跃回复返回 `conversation_busy` |
+| 会话 | MySQL 中没有 `pending/streaming` 助手消息 | 消息、引用、由该会话触发的员工工作流运行级联删除 | 活跃回复返回 `conversation_busy` |
 | 数字员工 | 没有会话引用 | 员工记录删除 | 有会话返回 `employee_in_use_by_conversations` |
 | 知识库 | 没有员工绑定或工作流节点引用 | RAGFlow 数据集及其文档/索引由官方 API 删除；Demo 文档外键级联 | 分别返回 `knowledge_base_in_use_by_employees` / `knowledge_base_in_use_by_workflows` |
 | 工作流 | 不在员工 allowlist，且没有 `pending/running` 运行 | 定义、节点、边和已终止运行级联删除 | 分别返回 `workflow_in_use_by_employees` / `workflow_has_active_runs` |
@@ -583,37 +598,40 @@ workflow.run.stopped
 每个会话事件包含固定 `schema_version=1`、`conversation_id`、`message_id`、`turn_id`、会话内
 单调 `sequence`、时间和已持久化的消息快照；delta 事件额外包含本次文本增量，重试开始事件
 带 `retry=true`。SSE 的 `id` 与 payload sequence 一致，支持 `after_sequence` 和
-`Last-Event-ID` 回放进程内保留历史。无法续传时前端必须重新读取 MySQL 权威消息历史，不能猜测
+`Last-Event-ID` 从 MySQL 持久序列跨 API/Worker 重启回放。无法续传时前端必须重新读取 MySQL 权威消息历史，不能猜测
 丢失内容。前端只消费平台事件，不解析 LangGraph 或 Deep Agents 原始事件。
 
 每个工作流事件包含固定 `schema_version=1`、`run_id`、`workflow_id`、运行内单调
 `sequence`、可选 `node_id`、时间和已提交的完整 `WorkflowRun` 快照。工作流 SSE 同样支持
-`after_sequence` 与 `Last-Event-ID` 回放当前进程保留历史；历史丢失或应用重启后，客户端以
+`after_sequence` 与 `Last-Event-ID` 回放 MySQL 持久历史；历史超过保留期或出现缺口时，客户端以
 `GET /api/v1/workflow-runs/{run_id}` 的 MySQL 摘要为权威，不从缺失事件推测终态。
 
-两类进程内 Broker 都有相同的生命周期预算：每个 ID 最多保留 512 个事件、每个订阅队列最多
-128 项、每个 ID 最多 64 个订阅者，整个进程最多 1024 个订阅者；没有活跃运行和订阅者的
-状态最多保留 1024 个，按 LRU 淘汰并在空闲 300 秒后由可取消定时器回收。活动会话/运行和
-正在消费的 SSE 不会被 TTL/LRU 误删；活动数瞬时超过保留预算时只保护真实活动状态，转入终态
-后立即收敛。容量淘汰和 TTL 不改变原有历史缺口语义，慢消费者仍关闭并要求重连，不会静默
-跳过事件。应用关闭会先停止服务任务，再取消 Broker 定时器、关闭订阅者并清空状态。
+正式 Broker 使用每流最多 100,000 个事件、默认 30 天保留标记和整个 API 进程最多 1,024 个
+持久订阅者；每个订阅者按最多 128 条一批轮询，不在 API 内复制无界历史。达到流容量时关闭失败，
+保留边界造成缺口时返回 `event_history_unavailable`。未装配 Journal 的分层测试 Broker 继续使用
+每 ID 512 条、每订阅队列 128 条、每 ID 64 个订阅者、全局 1,024 个订阅者及 300 秒 TTL/LRU，
+两种实现共享完全相同的平台事件协议。
 
 会话和工作流的按 ID 串行区使用引用计数锁池；持有者、等待者及取消中的等待者离开后，最后
 一个引用会安全删除锁项。因此大量一次性会话/运行不会在进程内永久留下 `asyncio.Lock`，同一
 ID 的并发互斥语义保持不变。
 
-发送接口先在一个 Conversation Unit of Work 中提交用户消息、助手占位和会话更新时间，再
-发布 started 并启动后台生成；后续每个事件也严格“提交后发布”。客户端生成的用户
+发送接口在一个 Conversation Unit of Work 中原子提交用户消息、助手占位、会话更新时间和任务；
+Worker 领取后发布 started，后续每个事件也严格“提交后发布”。客户端生成的用户
 `message_id` 是重复提交边界，同一会话有活跃助手消息时拒绝第二次发送。停止只发出停止意图，
 最终 stopped 仍由正式运行时收敛并持久化；重试只允许最后一条 failed/stopped 助手消息，复用
-原消息 ID/序号并清空不完整内容。应用重启时把遗留 pending/streaming 恢复为
-`failed/generation_interrupted`。
+原消息 ID/序号并清空不完整内容。运行中进程消失后任务由租约恢复，不提前把消息写成失败。
 
-手动运行接口先用客户端 `run_id` 提交 `pending`，再提交 `running`、发布 started 并启动后台
-LangGraph；重复 ID 返回冲突且绝不重复执行。节点 started/completed 和最终
+手动运行接口用客户端 `run_id` 原子提交 `pending` 摘要与任务；Worker 领取后提交 `running`、
+发布 started 并启动 LangGraph。重复 ID 返回冲突且绝不重复入队。节点 started/completed 和最终
 completed/failed/stopped 都严格提交后发布。停止接口只接受活跃运行并设置协作式停止意图，
-当前节点与停止信号竞速，停止胜出后取消节点任务并由运行服务持久化 stopped；应用重启不伪造
-已丢失事件，而是把中断摘要收敛为稳定失败。
+当前节点与持久停止信号竞速，停止胜出后取消节点任务并由运行服务持久化 stopped；Worker 崩溃
+不伪造终态，租约到期后重启执行并清除上一尝试的部分节点进度。
+
+任务语义为至少一次：同一租户幂等键只创建一条记录；领取使用行锁跳过已占用任务，有限重试采用
+有界指数退避。租约心跳同时传播停止意图；租约丢失会直接取消旧处理器且不写任务/业务停止终态，
+完成、失败和取消都必须携带当前随机栅栏令牌。最终业务终态已提交但事件追加中断时，重试只补写
+确定性终态事件，不再次调用模型或执行工作流副作用。
 
 ## 9. 错误语义
 
@@ -626,8 +644,8 @@ completed/failed/stopped 都严格提交后发布。停止接口只接受活跃�
 - `document_upload_failed`：文件上传失败；
 - `workflow_invalid`：节点图不合法；
 - `workflow_run_conflict`：客户端运行 ID 已经提交；
-- `workflow_run_not_active`：运行已终止或不在当前进程中，不能停止；
-- `workflow_run_interrupted`：应用重启时恢复到的中断运行；
+- `workflow_run_not_active`：运行已终止或没有可停止的持久任务；
+- `event_history_unavailable`：请求序号不存在或已超过持久事件保留边界；
 - 节点执行失败：摘要保存模型、知识库或工作流层稳定错误码；
 - `conversation_busy`：同一会话已有回复在生成；
 - `resource_not_found`：资源不存在；
@@ -649,7 +667,10 @@ completed/failed/stopped 都严格提交后发布。停止接口只接受活跃�
 | RAGFlow Web | `127.0.0.1:19381` |
 | Playwright 测试 | 操作系统随机空闲端口 |
 
-稳定开发栈使用 `common-agent-dev` 命名空间，其中 RAGFlow 相关服务使用 `common-agent-ragflow-*` 前缀，平台自有数据库、缓存、队列、对象存储和 Worker 使用 `common-agent-platform-*` 前缀。平台 MySQL 数据、上传临时文件、服务 Volume 映射和日志统一放在根目录 `.local/`；平台 MySQL 与 RAGFlow 使用不同的 Compose project、容器、网络和 Volume。
+稳定开发栈使用 `common-agent-dev` 命名空间，其中 RAGFlow 相关服务使用
+`common-agent-ragflow-*` 前缀；平台 MySQL 使用 `common-agent-platform-*`，API 与 Worker 使用
+互不冲突的项目专属 launchd 标签和日志。平台 MySQL 数据、上传临时文件、服务 Volume 映射和
+日志统一放在根目录 `.local/`；平台 MySQL 与 RAGFlow 使用不同的 Compose project、容器、网络和 Volume。
 
 RAGFlow 固定为官方 `v0.25.6` 及其 tag 提交
 `8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4`，以 `third_party/ragflow` 官方 Git submodule

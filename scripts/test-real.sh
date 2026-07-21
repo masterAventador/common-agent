@@ -33,6 +33,10 @@ if grep -Eq '^COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN=' \
 fi
 grep -Fq 'DOCKER_CONTEXT_NAME="colima-common-agent-dev"' "${MANAGER}" || \
   fail "real 入口没有使用项目专属 Docker context"
+grep -Fq 'WORKER_LAUNCH_LABEL="com.masteraventador.common-agent.real.worker"' "${MANAGER}" || \
+  fail "real Worker 没有项目专属进程标签"
+grep -Fq '.venv/bin/python -m common_agent.worker_main' "${MANAGER}" || \
+  fail "real 入口没有启动独立持久 Worker"
 grep -Fq '"${RAGFLOW_MANAGER}" up' "${MANAGER}" || \
   fail "real 入口没有启动官方 RAGFlow 栈"
 grep -Fq '"${RAGFLOW_MANAGER}" migrate-native-volumes' "${MANAGER}" || \

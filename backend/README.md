@@ -19,11 +19,12 @@ uv run ruff format --check .
 uv run mypy src tests
 ```
 
-先启动平台正式 MySQL，再启动本机 API：
+先启动平台正式 MySQL，再分别启动本机 API 与独立 Worker：
 
 ```bash
 ../infra/platform/manage.sh up
 uv run python -m common_agent
+uv run python -m common_agent.worker_main
 ```
 
 默认只监听 `127.0.0.1:18200`，可通过根目录 `.env.example` 中的同名环境变量覆盖；非 loopback 地址会被拒绝。
@@ -83,15 +84,16 @@ of Work 并提交 MySQL；失效引用或外围服务失败都会关闭失败且
 
 会话公开入口位于 `/api/v1/conversations`：支持创建/列表、消息历史、发送、停止、失败或已停止
 消息重试，以及 `/{conversation_id}/events` SSE。发送请求必须携带客户端生成的 `message_id`；
-平台先原子提交用户消息和助手占位消息，再启动知识检索与 Deep Agents。每个 delta/终态也先更新
+平台在同一个 MySQL 事务内提交用户消息、助手占位和持久回复任务，再由独立 Worker 启动知识检索
+与 Deep Agents。每个 delta/终态也先更新
 MySQL 并提交，之后才发布带 `schema_version/conversation_id/message_id/turn_id/sequence` 的
-平台事件。SSE 可通过 `after_sequence` 或 `Last-Event-ID` 续传；历史已淘汰或进程重启后不能续传
+持久平台事件。SSE 可通过 `after_sequence` 或 `Last-Event-ID` 跨 API/Worker 重启续传；历史已过保留期不能续传
 时返回 `event_history_unavailable`，调用方应重新加载权威消息历史。
 
 同一会话同时只允许一个活跃回复；重复 `message_id`、并发发送、无活跃生成时停止和非法重试均
 返回稳定冲突码。停止后重试复用原助手消息身份和序号，清空上次不完整内容，不重复写用户消息。
-应用关闭时先请求所有活跃运行停止再释放模型客户端；启动时把上次进程遗留的
-`pending/streaming` 助手消息恢复为 `failed/generation_interrupted`，避免页面永久显示生成中。
+停止意图写入任务记录并由租约心跳传给执行中的 Worker；进程关闭只中断本机执行，任务在租约
+到期后由其他 Worker 接管，不把进程关闭伪装成用户停止，也不把可恢复消息提前写成失败。
 
 工作流定义由 `20260720_0004` 迁移建立 `workflows`、`workflow_nodes` 和 `workflow_edges`。
 节点画布坐标使用独立数值列，按节点类型判别的业务配置单独保存为 JSON 对象；节点和边保留
@@ -118,14 +120,14 @@ MySQL 同时约束名称、标识、节点类型、JSON 类型、序号、时间
 `GET /api/v1/workflow-runs/{run_id}`、`POST /api/v1/workflow-runs/{run_id}/stop` 和
 `GET /api/v1/workflow-runs/{run_id}/events` SSE。客户端生成的 `run_id` 是幂等边界；运行输入、
 当前/已完成/失败节点、最终输出、稳定错误码和时间均由 MySQL 摘要保存。节点与终态事件严格在
-对应摘要提交后发布，事件携带 `schema_version=1` 和完整已提交快照，可按 `after_sequence` 或
-`Last-Event-ID` 续传当前进程内历史，无法续传时调用方重新读取摘要。
+对应摘要提交后写入持久事件日志，事件携带 `schema_version=1` 和完整已提交快照，可按
+`after_sequence` 或 `Last-Event-ID` 跨进程续传，无法续传时调用方重新读取摘要。
 
-当前 MVP 的交互式工作流由 FastAPI 进程内异步任务托管：停止信号与当前 LangGraph 节点执行
-竞速，停止胜出后取消节点并持久化 stopped；应用优雅关闭先请求活跃运行停止，启动时把遗留
-`pending/running` 收敛为 `failed/workflow_run_interrupted`。现阶段没有需要跨进程可靠投递的
-调用方，因此不预建消息队列或 Worker；一旦并发、重试或调度需求进入路线图，再让同一
-`WorkflowService` 端口接入真实基础设施并按生产同路径重新验收。
+会话回复和工作流运行由 `20260721_0016` 建立的 `durable_tasks` 承载；业务占位/运行摘要与任务
+在同一个 Unit of Work 中原子提交。独立 Worker 用 `FOR UPDATE SKIP LOCKED`、有限重试、指数
+退避、租约心跳和随机栅栏令牌领取任务；旧租约不能提交任务终态，丢失租约会取消旧执行。默认
+八个消费者在会话/工作流间均分保留槽位，避免等待子工作流的会话占满全部消费者。用户停止使用同一任务记录的持久
+意图，进程崩溃则在租约过期后自动接管；业务投影与事件使用确定性幂等键修复提交后中断。
 
 `ModelSettings.from_env()` 默认读取版本化的 `.env.demo`，并允许同名 `BAILIAN_*` 环境变量覆盖。
 用户明确要求现有 Demo Key 继续随私有仓库版本化，方便两台开发电脑直接使用；它是唯一获准的

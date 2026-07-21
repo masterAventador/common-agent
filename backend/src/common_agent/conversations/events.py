@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from collections import deque
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from time import monotonic
-from uuid import UUID
+from typing import cast
+from uuid import NAMESPACE_URL, UUID, uuid5
 
-from common_agent.domain.conversation import Message, MessageStatus
+from common_agent.domain.conversation import Citation, Message, MessageRole, MessageStatus
+from common_agent.events import EventAppendRequest, EventJournal, EventStreamKind
 
 
 class ConversationEventKind(StrEnum):
@@ -93,6 +97,11 @@ class ConversationEventBroker:
         state_limit: int = 1024,
         state_ttl_seconds: float = 300,
         key_namespace: Callable[[UUID], str] | None = None,
+        journal: EventJournal | None = None,
+        tenant_id_provider: Callable[[], UUID] | None = None,
+        persistent_poll_seconds: float = 0.1,
+        retention_days: int = 30,
+        maximum_events_per_stream: int = 100_000,
     ) -> None:
         if history_limit < 1:
             raise ValueError("history_limit must be positive")
@@ -106,6 +115,14 @@ class ConversationEventBroker:
             raise ValueError("state_limit must be positive")
         if state_ttl_seconds <= 0 or state_ttl_seconds > 86_400:
             raise ValueError("state_ttl_seconds must be between 0 and 86400")
+        if (journal is None) != (tenant_id_provider is None):
+            raise ValueError("journal and tenant_id_provider must be configured together")
+        if not 0 < persistent_poll_seconds <= 10:
+            raise ValueError("persistent_poll_seconds must be between 0 and 10")
+        if not 1 <= retention_days <= 3650:
+            raise ValueError("retention_days must be between 1 and 3650")
+        if not 100 <= maximum_events_per_stream <= 1_000_000:
+            raise ValueError("maximum_events_per_stream must be between 100 and 1000000")
         self._history_limit = history_limit
         self._subscriber_queue_limit = subscriber_queue_limit
         self._subscriber_limit = subscriber_limit
@@ -113,6 +130,12 @@ class ConversationEventBroker:
         self._state_limit = state_limit
         self._state_ttl_seconds = state_ttl_seconds
         self._key_namespace = key_namespace or (lambda conversation_id: str(conversation_id))
+        self._journal = journal
+        self._tenant_id_provider = tenant_id_provider
+        self._persistent_poll_seconds = persistent_poll_seconds
+        self._retention_days = retention_days
+        self._maximum_events_per_stream = maximum_events_per_stream
+        self._persistent_subscribers = 0
         self._states: dict[str, _ConversationState] = {}
         self._lock = asyncio.Lock()
         self._closed = False
@@ -120,6 +143,10 @@ class ConversationEventBroker:
     async def validate_resume(self, conversation_id: UUID, *, after_sequence: int = 0) -> None:
         if after_sequence < 0:
             raise ValueError("after_sequence must not be negative")
+        if self._journal is not None:
+            self._ensure_open()
+            await self._validate_persistent_resume(conversation_id, after_sequence)
+            return
         async with self._lock:
             self._ensure_open()
             key = self._key_namespace(conversation_id)
@@ -142,6 +169,15 @@ class ConversationEventBroker:
         retry: bool = False,
     ) -> ConversationEvent:
         _validate_event(message=message, kind=kind, delta=delta, retry=retry)
+        if self._journal is not None:
+            self._ensure_open()
+            return await self._publish_persistent(
+                turn_id=turn_id,
+                message=message,
+                kind=kind,
+                delta=delta,
+                retry=retry,
+            )
         async with self._lock:
             self._ensure_open()
             key = self._key_namespace(message.conversation_id)
@@ -191,6 +227,13 @@ class ConversationEventBroker:
     ) -> AsyncGenerator[ConversationEvent, None]:
         if after_sequence < 0:
             raise ValueError("after_sequence must not be negative")
+        if self._journal is not None:
+            async for event in self._stream_persistent(
+                conversation_id,
+                after_sequence=after_sequence,
+            ):
+                yield event
+            return
         queue: asyncio.Queue[ConversationEvent | object] = asyncio.Queue(
             maxsize=self._subscriber_queue_limit
         )
@@ -244,6 +287,96 @@ class ConversationEventBroker:
                 subscriber_count=sum(len(state.subscribers) for state in self._states.values()),
                 retained_event_count=sum(len(state.history) for state in self._states.values()),
             )
+
+    async def _publish_persistent(
+        self,
+        *,
+        turn_id: UUID,
+        message: Message,
+        kind: ConversationEventKind,
+        delta: str | None,
+        retry: bool,
+    ) -> ConversationEvent:
+        journal = self._persistent_journal
+        tenant_id = self._persistent_tenant_id
+        occurred_at = datetime.now(UTC)
+        payload = _conversation_payload(
+            turn_id=turn_id,
+            message=message,
+            delta=delta,
+            retry=retry,
+        )
+        event_key = _durable_event_key(message.id, kind.value, payload)
+        durable = await journal.append(
+            EventAppendRequest(
+                event_id=uuid5(
+                    NAMESPACE_URL,
+                    f"common-agent:{tenant_id}:conversation:{message.conversation_id}:{event_key}",
+                ),
+                tenant_id=tenant_id,
+                stream_kind=EventStreamKind.CONVERSATION,
+                stream_id=message.conversation_id,
+                event_key=event_key,
+                event_type=kind.value,
+                payload=payload,
+                occurred_at=occurred_at,
+            ),
+            retention_until=occurred_at + timedelta(days=self._retention_days),
+            maximum_events_per_stream=self._maximum_events_per_stream,
+        )
+        return _conversation_event(durable.sequence, durable.request)
+
+    async def _validate_persistent_resume(
+        self,
+        conversation_id: UUID,
+        after_sequence: int,
+    ) -> None:
+        bounds = await self._persistent_journal.bounds(
+            tenant_id=self._persistent_tenant_id,
+            stream_kind=EventStreamKind.CONVERSATION,
+            stream_id=conversation_id,
+        )
+        if bounds is None:
+            if after_sequence != 0:
+                raise EventHistoryUnavailable
+            return
+        earliest, latest = bounds
+        if after_sequence > latest or after_sequence < earliest - 1:
+            raise EventHistoryUnavailable
+
+    async def _stream_persistent(
+        self,
+        conversation_id: UUID,
+        *,
+        after_sequence: int,
+    ) -> AsyncGenerator[ConversationEvent, None]:
+        await self._validate_persistent_resume(conversation_id, after_sequence)
+        async with self._lock:
+            self._ensure_open()
+            if self._persistent_subscribers >= self._total_subscriber_limit:
+                raise EventSubscriberLimitExceeded
+            self._persistent_subscribers += 1
+        current_sequence = after_sequence
+        try:
+            while True:
+                self._ensure_open()
+                batch = await self._persistent_journal.read(
+                    tenant_id=self._persistent_tenant_id,
+                    stream_kind=EventStreamKind.CONVERSATION,
+                    stream_id=conversation_id,
+                    after_sequence=current_sequence,
+                    limit=self._subscriber_queue_limit,
+                )
+                if not batch:
+                    await asyncio.sleep(self._persistent_poll_seconds)
+                    continue
+                for durable in batch:
+                    event = _conversation_event(durable.sequence, durable.request)
+                    current_sequence = event.sequence
+                    yield event
+        finally:
+            async with self._lock:
+                self._persistent_subscribers -= 1
 
     async def aclose(self) -> None:
         async with self._lock:
@@ -370,6 +503,18 @@ class ConversationEventBroker:
         if self._closed:
             raise RuntimeError("conversation event broker is closed")
 
+    @property
+    def _persistent_journal(self) -> EventJournal:
+        if self._journal is None:
+            raise RuntimeError("persistent event journal is not configured")
+        return self._journal
+
+    @property
+    def _persistent_tenant_id(self) -> UUID:
+        if self._tenant_id_provider is None:
+            raise RuntimeError("persistent tenant provider is not configured")
+        return self._tenant_id_provider()
+
 
 def _validate_event(
     *,
@@ -401,3 +546,84 @@ def _validate_resume_position(state: _ConversationState, after_sequence: int) ->
     earliest = state.history[0].sequence if state.history else latest + 1
     if after_sequence > latest or (state.history and after_sequence < earliest - 1):
         raise EventHistoryUnavailable
+
+
+def _conversation_payload(
+    *,
+    turn_id: UUID,
+    message: Message,
+    delta: str | None,
+    retry: bool,
+) -> dict[str, object]:
+    return {
+        "turn_id": str(turn_id),
+        "message": {
+            "id": str(message.id),
+            "conversation_id": str(message.conversation_id),
+            "sequence_number": message.sequence_number,
+            "role": message.role.value,
+            "content": message.content,
+            "status": message.status.value,
+            "citations": [
+                {
+                    "position": citation.position,
+                    "knowledge_base_id": citation.knowledge_base_id,
+                    "chunk_id": citation.chunk_id,
+                    "document_id": citation.document_id,
+                    "document_name": citation.document_name,
+                    "content": citation.content,
+                    "score": citation.score,
+                }
+                for citation in message.citations
+            ],
+            "error_code": message.error_code,
+            "created_at": message.created_at.isoformat(),
+            "updated_at": message.updated_at.isoformat(),
+        },
+        "delta": delta,
+        "retry": retry,
+    }
+
+
+def _durable_event_key(message_id: UUID, event_type: str, payload: dict[str, object]) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return f"{message_id}:{event_type}:{digest}"
+
+
+def _conversation_event(sequence: int, request: EventAppendRequest) -> ConversationEvent:
+    payload = request.payload
+    raw_message = cast(dict[str, object], payload["message"])
+    raw_citations = cast(list[dict[str, object]], raw_message["citations"])
+    message = Message(
+        id=UUID(str(raw_message["id"])),
+        conversation_id=UUID(str(raw_message["conversation_id"])),
+        sequence_number=int(str(raw_message["sequence_number"])),
+        role=MessageRole(str(raw_message["role"])),
+        content=str(raw_message["content"]),
+        status=MessageStatus(str(raw_message["status"])),
+        citations=tuple(
+            Citation(
+                position=int(str(item["position"])),
+                knowledge_base_id=str(item["knowledge_base_id"]),
+                chunk_id=str(item["chunk_id"]),
+                document_id=str(item["document_id"]),
+                document_name=str(item["document_name"]),
+                content=str(item["content"]),
+                score=float(str(item["score"])),
+            )
+            for item in raw_citations
+        ),
+        error_code=(None if raw_message["error_code"] is None else str(raw_message["error_code"])),
+        created_at=datetime.fromisoformat(str(raw_message["created_at"])),
+        updated_at=datetime.fromisoformat(str(raw_message["updated_at"])),
+    )
+    return ConversationEvent(
+        sequence=sequence,
+        turn_id=UUID(str(payload["turn_id"])),
+        message=message,
+        kind=ConversationEventKind(request.event_type),
+        delta=None if payload["delta"] is None else str(payload["delta"]),
+        retry=bool(payload["retry"]),
+        occurred_at=request.occurred_at,
+    )

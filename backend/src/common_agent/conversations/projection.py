@@ -76,6 +76,27 @@ class ConversationMessageProjector:
         )
         return updated if event.kind is not RuntimeEventKind.DELTA else None
 
+    async def restart_execution(self, message_id: UUID) -> Message:
+        async with self._unit_of_work_factory() as unit_of_work:
+            current = await unit_of_work.messages.get(message_id)
+            if current is None:
+                raise MessageNotFound
+            restarted = current.restart_execution()
+            if not await unit_of_work.messages.update(restarted):
+                raise MessageNotFound
+            await unit_of_work.commit()
+        return restarted
+
+    async def republish_terminal(self, turn_id: UUID, message: Message) -> None:
+        kind = {
+            "completed": ConversationEventKind.ASSISTANT_COMPLETED,
+            "failed": ConversationEventKind.ASSISTANT_FAILED,
+            "stopped": ConversationEventKind.ASSISTANT_STOPPED,
+        }.get(message.status.value)
+        if kind is None:
+            raise ValueError("only terminal messages can be republished")
+        await self._events.publish(turn_id=turn_id, message=message, kind=kind)
+
     async def persist_failure(
         self,
         turn_id: UUID,

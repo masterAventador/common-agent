@@ -30,5 +30,11 @@ grep -Fq 'e2e/audit.spec.ts' "${RUNNER}" || \
   fail "E2E 入口没有执行正式审计页面用例"
 grep -Fq 'tests.support.audit_e2e_cleanup' "${RUNNER}" || \
   fail "审计 E2E 没有登记精确业务数据清理器"
+grep -Fq 'WORKER_LOG="${ARTIFACT_ROOT}/worker.log"' "${RUNNER}" || \
+  fail "平台 E2E 没有保留独立 Worker 日志"
+grep -Fq 'python -m common_agent.worker_main' "${RUNNER}" || \
+  fail "平台 E2E 没有启动正式独立 Worker 入口"
+grep -Fq 'stop_process "${WORKER_PID}"' "${RUNNER}" || \
+  fail "平台 E2E 清理阶段没有停止独立 Worker"
 
 echo "平台 E2E 资源档位契约通过"

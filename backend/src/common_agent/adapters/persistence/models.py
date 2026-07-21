@@ -353,6 +353,153 @@ class AuditEventRow(PersistenceBase):
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
+class DurableTaskRow(PersistenceBase):
+    __tablename__ = "durable_tasks"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(task_id) = 36", name="ck_durable_tasks_task_id"),
+        CheckConstraint(
+            "kind IN ('conversation.reply', 'workflow.run')",
+            name="ck_durable_tasks_kind",
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'running', 'retry_wait', 'succeeded', 'failed', 'cancelled')",
+            name="ck_durable_tasks_state",
+        ),
+        CheckConstraint(
+            "attempts >= 0 AND max_attempts BETWEEN 1 AND 100 AND attempts <= max_attempts",
+            name="ck_durable_tasks_attempts",
+        ),
+        CheckConstraint(
+            "(state = 'running' AND lease_owner IS NOT NULL AND lease_token IS NOT NULL "
+            "AND lease_until IS NOT NULL) OR (state <> 'running' AND lease_owner IS NULL "
+            "AND lease_token IS NULL AND lease_until IS NULL)",
+            name="ck_durable_tasks_lease",
+        ),
+        CheckConstraint(
+            "(state IN ('failed', 'retry_wait') AND error_code IS NOT NULL) OR "
+            "(state NOT IN ('failed', 'retry_wait') AND error_code IS NULL)",
+            name="ck_durable_tasks_error",
+        ),
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_durable_tasks_tenant_key"),
+        Index(
+            "ix_durable_tasks_claim",
+            "state",
+            "available_at",
+            "lease_until",
+            "created_at",
+        ),
+        Index("ix_durable_tasks_tenant_aggregate", "tenant_id", "kind", "aggregate_id"),
+        Index("ix_durable_tasks_updated", "updated_at"),
+    )
+
+    task_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_durable_tasks_tenant_id"),
+        nullable=False,
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(191), nullable=False)
+    aggregate_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    available_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(mysql.DATETIME(fsp=6), nullable=True)
+    stop_requested: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class DurableEventStreamRow(PersistenceBase):
+    __tablename__ = "durable_event_streams"
+    __table_args__ = (
+        CheckConstraint(
+            "stream_kind IN ('conversation', 'workflow')",
+            name="ck_durable_event_streams_kind",
+        ),
+        CheckConstraint(
+            "next_sequence >= 1 AND event_count >= 0",
+            name="ck_durable_event_streams_counters",
+        ),
+        Index("ix_durable_event_streams_updated", "updated_at"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_durable_event_streams_tenant_id",
+        ),
+        primary_key=True,
+    )
+    stream_kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    stream_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    next_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class DurableEventRow(PersistenceBase):
+    __tablename__ = "durable_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_durable_events_sequence"),
+        CheckConstraint(
+            "stream_kind IN ('conversation', 'workflow')",
+            name="ck_durable_events_kind",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "stream_kind", "stream_id"],
+            [
+                "durable_event_streams.tenant_id",
+                "durable_event_streams.stream_kind",
+                "durable_event_streams.stream_id",
+            ],
+            name="fk_durable_events_stream",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "stream_kind",
+            "stream_id",
+            "sequence",
+            name="uq_durable_events_stream_sequence",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "stream_kind",
+            "stream_id",
+            "event_key",
+            name="uq_durable_events_stream_key",
+        ),
+        Index(
+            "ix_durable_events_stream_read",
+            "tenant_id",
+            "stream_kind",
+            "stream_id",
+            "sequence",
+        ),
+        Index("ix_durable_events_retention", "retention_until"),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    stream_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    stream_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_key: Mapped[str] = mapped_column(String(191), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    retention_until: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
 class DemoKnowledgeBaseRow(PersistenceBase):
     __tablename__ = "demo_knowledge_bases"
     __table_args__ = (

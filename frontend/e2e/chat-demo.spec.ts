@@ -12,7 +12,7 @@ const employeeName = requiredEnvironment("COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME");
 const knowledgeBaseName = requiredEnvironment("COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME");
 const fixtureDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 
-test("runs two cited turns and recovers an interrupted reply through the formal demo path", async ({
+test("runs two cited turns and automatically recovers an interrupted durable reply", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -88,13 +88,6 @@ test("runs two cited turns and recovers an interrupted reply through the formal 
   await input.fill("请演示一次断流后恢复");
   await page.getByRole("button", { name: "发送消息" }).click();
   await expect(assistantMessages.last()).toContainText("断流前保留的演示内容");
-  await expect(page.getByText("生成失败")).toBeVisible();
-  const retryResponse = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/retry") && response.request().method() === "POST",
-  );
-  await page.getByRole("button", { name: "重试回答" }).click();
-  expect((await retryResponse).status()).toBe(202);
   await expect(assistantMessages.last()).toContainText("第 3 轮");
   await expect(page.getByText("生成失败")).toHaveCount(0);
   await expect(page.getByText("demo-chat-knowledge.txt").last()).toBeVisible();

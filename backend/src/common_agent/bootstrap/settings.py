@@ -210,6 +210,82 @@ class AuditSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkerSettings:
+    poll_interval_seconds: float
+    lease_seconds: int
+    heartbeat_seconds: int
+    maximum_attempts: int
+    claim_batch_size: int
+    event_retention_days: int
+    maximum_events_per_stream: int
+
+    @classmethod
+    def from_env(cls) -> WorkerSettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> WorkerSettings:
+        lease_seconds = _bounded_auth_int(
+            values,
+            "COMMON_AGENT_WORKER_LEASE_SECONDS",
+            default=60,
+            minimum=3,
+            maximum=3600,
+        )
+        heartbeat_seconds = _bounded_auth_int(
+            values,
+            "COMMON_AGENT_WORKER_HEARTBEAT_SECONDS",
+            default=10,
+            minimum=1,
+            maximum=1200,
+        )
+        if heartbeat_seconds * 2 >= lease_seconds:
+            raise ConfigurationError(
+                "COMMON_AGENT_WORKER_HEARTBEAT_SECONDS must be less than half of "
+                "COMMON_AGENT_WORKER_LEASE_SECONDS"
+            )
+
+        return cls(
+            poll_interval_seconds=_bounded_float(
+                values,
+                "COMMON_AGENT_WORKER_POLL_INTERVAL_SECONDS",
+                default=0.25,
+                maximum=10.0,
+            ),
+            lease_seconds=lease_seconds,
+            heartbeat_seconds=heartbeat_seconds,
+            maximum_attempts=_bounded_auth_int(
+                values,
+                "COMMON_AGENT_WORKER_MAXIMUM_ATTEMPTS",
+                default=3,
+                minimum=1,
+                maximum=10,
+            ),
+            claim_batch_size=_bounded_auth_int(
+                values,
+                "COMMON_AGENT_WORKER_CLAIM_BATCH_SIZE",
+                default=8,
+                minimum=2,
+                maximum=100,
+            ),
+            event_retention_days=_bounded_auth_int(
+                values,
+                "COMMON_AGENT_EVENT_RETENTION_DAYS",
+                default=30,
+                minimum=1,
+                maximum=3650,
+            ),
+            maximum_events_per_stream=_bounded_auth_int(
+                values,
+                "COMMON_AGENT_EVENT_MAX_PER_STREAM",
+                default=100_000,
+                minimum=100,
+                maximum=1_000_000,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class IntegrationModeSettings:
     mode: Literal["real", "demo"]
 

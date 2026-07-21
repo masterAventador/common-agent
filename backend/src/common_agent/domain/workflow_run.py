@@ -245,6 +245,25 @@ class WorkflowRun:
             updated_at=changed_at,
         )
 
+    def restart_execution(self, *, now: datetime | None = None) -> WorkflowRun:
+        self._ensure_status(
+            {WorkflowRunStatus.PENDING, WorkflowRunStatus.RUNNING},
+            "重新执行",
+        )
+        changed_at = self._changed_at(now)
+        return replace(
+            self,
+            status=WorkflowRunStatus.RUNNING,
+            output="",
+            current_node_id=None,
+            completed_node_ids=(),
+            failed_node_id=None,
+            error_code=None,
+            started_at=changed_at,
+            finished_at=None,
+            updated_at=changed_at,
+        )
+
     def _changed_at(self, value: datetime | None) -> datetime:
         changed_at = value or datetime.now(UTC)
         _timestamp("updated_at", changed_at)

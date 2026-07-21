@@ -30,6 +30,7 @@ from common_agent.ports.conversations import (
     MessageAlreadyExists,
     MessageSequenceAlreadyExists,
 )
+from common_agent.tasks import TaskRequest
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +120,9 @@ class ConversationPersistence:
 
     async def delete(self, conversation_id: UUID) -> bool:
         async with self._unit_of_work_factory() as unit_of_work:
+            messages = await unit_of_work.messages.list_for_conversation(conversation_id)
+            if _has_active_assistant(messages):
+                raise ConversationBusy
             deleted = await unit_of_work.conversations.delete(conversation_id)
             if deleted:
                 await unit_of_work.commit()
@@ -144,7 +148,10 @@ class ConversationPersistence:
         conversation_id: UUID,
         *,
         user_message_id: UUID,
+        assistant_message_id: UUID | None = None,
         content: str,
+        task_request: TaskRequest | None = None,
+        task_max_attempts: int = 3,
     ) -> PreparedTurn:
         try:
             async with self._unit_of_work_factory() as unit_of_work:
@@ -164,10 +171,24 @@ class ConversationPersistence:
                 assistant_message = Message.create_assistant(
                     conversation_id=conversation_id,
                     sequence_number=next_sequence + 1,
+                    message_id=assistant_message_id,
                 )
+                if task_request is not None:
+                    payload = task_request.payload
+                    if (
+                        task_request.aggregate_id != conversation_id
+                        or getattr(payload, "user_message_id", None) != user_message.id
+                        or getattr(payload, "assistant_message_id", None) != assistant_message.id
+                    ):
+                        raise ValueError("conversation task does not match prepared turn")
                 await unit_of_work.messages.add(user_message)
                 await unit_of_work.messages.add(assistant_message)
                 await unit_of_work.conversations.update(conversation.touch())
+                if task_request is not None:
+                    await unit_of_work.tasks.enqueue(
+                        task_request,
+                        max_attempts=task_max_attempts,
+                    )
                 await unit_of_work.commit()
         except MessageAlreadyExists:
             raise MessageRequestConflict from None
@@ -208,7 +229,13 @@ class ConversationPersistence:
             assistant_message=retried,
         )
 
-    async def commit_retry(self, prepared: PreparedRetry) -> None:
+    async def commit_retry(
+        self,
+        prepared: PreparedRetry,
+        *,
+        task_request: TaskRequest | None = None,
+        task_max_attempts: int = 3,
+    ) -> None:
         try:
             async with self._unit_of_work_factory() as unit_of_work:
                 current = await unit_of_work.conversations.get(prepared.conversation.id)
@@ -222,6 +249,19 @@ class ConversationPersistence:
                 if not await unit_of_work.messages.update(prepared.assistant_message):
                     raise MessageNotFound
                 await unit_of_work.conversations.update(current.touch())
+                if task_request is not None:
+                    payload = task_request.payload
+                    if (
+                        task_request.aggregate_id != prepared.conversation.id
+                        or getattr(payload, "user_message_id", None) != prepared.user_message.id
+                        or getattr(payload, "assistant_message_id", None)
+                        != prepared.assistant_message.id
+                    ):
+                        raise ValueError("conversation task does not match prepared retry")
+                    await unit_of_work.tasks.enqueue(
+                        task_request,
+                        max_attempts=task_max_attempts,
+                    )
                 await unit_of_work.commit()
         except MessageSequenceAlreadyExists:
             raise ConversationRequestConflict from None

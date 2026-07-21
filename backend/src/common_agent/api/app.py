@@ -23,7 +23,9 @@ from common_agent.adapters.persistence import (
     Database,
     SqlAlchemyAuditStore,
     SqlAlchemyAuthStore,
+    SqlAlchemyEventJournal,
     SqlAlchemyKnowledgeOwnershipStore,
+    SqlAlchemyTaskQueue,
     SqlAlchemyTenancyStore,
 )
 from common_agent.adapters.persistence.conversations import (
@@ -66,6 +68,7 @@ from common_agent.bootstrap import (
     IntegrationModeSettings,
     ModelSettings,
     RagFlowSettings,
+    WorkerSettings,
 )
 from common_agent.conversations import ConversationEventBroker, ConversationService
 from common_agent.employees import EmployeeService
@@ -128,6 +131,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     workflow_events: WorkflowEventBroker | None = None
     try:
         integration_mode: IntegrationModeSettings = app.state.integration_mode
+        worker_settings: WorkerSettings = app.state.worker_settings
+        task_queue = SqlAlchemyTaskQueue(database)
         workflow_model: TextStreamingModel
         if integration_mode.mode == "demo":
             knowledge_adapter = DemoKnowledgeService(
@@ -170,7 +175,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             knowledge=knowledge_adapter,
         )
         workflow_events = WorkflowEventBroker(
-            key_namespace=lambda run_id: key_namespace(f"workflow-run:{run_id}")
+            key_namespace=lambda run_id: key_namespace(f"workflow-run:{run_id}"),
+            journal=SqlAlchemyEventJournal(database),
+            tenant_id_provider=tenant_id_provider,
+            persistent_poll_seconds=worker_settings.poll_interval_seconds,
+            retention_days=worker_settings.event_retention_days,
+            maximum_events_per_stream=worker_settings.maximum_events_per_stream,
         )
         workflows = WorkflowService(
             SqlAlchemyWorkflowUnitOfWorkFactory(database, tenant_id_provider),
@@ -180,6 +190,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ),
             events=workflow_events,
             guard=resource_guard,
+            tasks=task_queue,
+            tenant_id_provider=tenant_id_provider,
+            task_max_attempts=worker_settings.maximum_attempts,
         )
         app.state.workflow_events = workflow_events
         app.state.workflows = workflows
@@ -198,7 +211,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         with bind_tenant(_system_tenant_access(DEFAULT_TENANT_ID)):
             await seed_default_employee(employees)
         conversation_events = ConversationEventBroker(
-            key_namespace=lambda conversation_id: key_namespace(f"conversation:{conversation_id}")
+            key_namespace=lambda conversation_id: key_namespace(f"conversation:{conversation_id}"),
+            journal=SqlAlchemyEventJournal(database),
+            tenant_id_provider=tenant_id_provider,
+            persistent_poll_seconds=worker_settings.poll_interval_seconds,
+            retention_days=worker_settings.event_retention_days,
+            maximum_events_per_stream=worker_settings.maximum_events_per_stream,
         )
         if runtime is None:
             raise RuntimeError("数字员工运行时未完成装配")
@@ -209,13 +227,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             runtime=runtime,
             events=conversation_events,
             guard=resource_guard,
+            tasks=task_queue,
+            tenant_id_provider=tenant_id_provider,
+            task_max_attempts=worker_settings.maximum_attempts,
         )
         app.state.conversation_events = conversation_events
         app.state.conversations = conversations
-        for tenant_id in await tenancy_store.list_tenant_ids():
-            with bind_tenant(_system_tenant_access(tenant_id)):
-                await conversations.recover_interrupted()
-                await workflows.recover_interrupted()
         app.state.ready = True
         yield
     finally:
@@ -266,6 +283,7 @@ def create_app() -> FastAPI:
     app.state.integration_mode = integration_mode
     app.state.auth_settings = auth_settings
     app.state.audit_settings = audit_settings
+    app.state.worker_settings = WorkerSettings.from_env()
     app.state.audit = None
     app.state.cors_settings = cors
     app.state.authentication = None

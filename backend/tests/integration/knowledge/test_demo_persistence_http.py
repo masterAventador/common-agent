@@ -21,9 +21,10 @@ def test_demo_knowledge_employee_and_citations_survive_api_restart() -> None:
     conversation_id = uuid4()
     employee_id: UUID | None = None
     knowledge_base_id = ""
+    last_event_sequence = 0
     try:
         with running_api(TEST_DATABASE_URL, env_overrides=_DEMO_ENV) as first_api_url:
-            knowledge_base_id, employee_id = asyncio.run(
+            knowledge_base_id, employee_id, last_event_sequence = asyncio.run(
                 _create_demo_state_and_first_turn(
                     first_api_url,
                     suffix=suffix,
@@ -38,6 +39,7 @@ def test_demo_knowledge_employee_and_citations_survive_api_restart() -> None:
                     knowledge_base_id=knowledge_base_id,
                     employee_id=employee_id,
                     conversation_id=conversation_id,
+                    after_sequence=last_event_sequence,
                 )
             )
     finally:
@@ -49,7 +51,7 @@ async def _create_demo_state_and_first_turn(
     *,
     suffix: str,
     conversation_id: UUID,
-) -> tuple[str, UUID]:
+) -> tuple[str, UUID, int]:
     async with await authenticated_async_client(base_url=api_url, timeout=30) as client:
         created_knowledge = await client.post(
             "/api/v1/knowledge-bases",
@@ -100,7 +102,7 @@ async def _create_demo_state_and_first_turn(
         )
         assert first.message.citations[0].knowledge_base_id == knowledge_base_id
         assert first.message.citations[0].document_name == "d8-02-restart.txt"
-        return knowledge_base_id, employee_id
+        return knowledge_base_id, employee_id, first.sequence
 
 
 async def _assert_state_and_second_turn_after_restart(
@@ -109,6 +111,7 @@ async def _assert_state_and_second_turn_after_restart(
     knowledge_base_id: str,
     employee_id: UUID,
     conversation_id: UUID,
+    after_sequence: int,
 ) -> None:
     async with await authenticated_async_client(base_url=api_url, timeout=30) as client:
         knowledge_bases = await client.get("/api/v1/knowledge-bases")
@@ -132,6 +135,7 @@ async def _assert_state_and_second_turn_after_restart(
             client,
             conversation_id,
             content="第二轮: 重启后还能检索吗?",
+            after_sequence=after_sequence,
         )
         assert "第 2 轮" in second.message.content
         assert second.message.citations[0].knowledge_base_id == knowledge_base_id
@@ -143,6 +147,7 @@ async def _send_and_wait(
     conversation_id: UUID,
     *,
     content: str,
+    after_sequence: int = 0,
 ) -> ConversationEventResponse:
     sent = await client.post(
         f"/api/v1/conversations/{conversation_id}/messages",
@@ -153,6 +158,7 @@ async def _send_and_wait(
     async with client.stream(
         "GET",
         f"/api/v1/conversations/{conversation_id}/events",
+        params={"after_sequence": after_sequence},
     ) as response:
         assert response.status_code == 200
         async for line in response.aiter_lines():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from uuid import UUID
 
 from common_agent.application.resource_locks import (
@@ -29,6 +30,7 @@ from common_agent.domain.workflow_run import (
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.pagination import CursorPage, ListPageRequest
 from common_agent.ports.workflows import WorkflowUnitOfWorkFactory
+from common_agent.tasks import DurableTask, TaskExecutionContext, TaskQueue
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.execution import WorkflowCompiler
 from common_agent.workflows.validator import WorkflowValidationIssue
@@ -43,6 +45,9 @@ class WorkflowService:
         compiler: WorkflowCompiler | None = None,
         events: WorkflowEventBroker | None = None,
         guard: ResourceMutationGuard | None = None,
+        tasks: TaskQueue | None = None,
+        tenant_id_provider: Callable[[], UUID] | None = None,
+        task_max_attempts: int = 3,
     ) -> None:
         self._guard = guard or ResourceMutationGuard()
         self._catalog = WorkflowCatalog(
@@ -58,6 +63,9 @@ class WorkflowService:
             locks,
             compiler=compiler,
             events=events,
+            tasks=tasks,
+            tenant_id_provider=tenant_id_provider,
+            task_max_attempts=task_max_attempts,
         )
 
     async def list(self) -> tuple[WorkflowDefinition, ...]:
@@ -124,6 +132,13 @@ class WorkflowService:
 
     async def recover_interrupted(self) -> int:
         return await self._runs.recover_interrupted()
+
+    async def execute_workflow_task(
+        self,
+        task: DurableTask,
+        context: TaskExecutionContext,
+    ) -> None:
+        await self._runs.execute_task(task, context)
 
     async def aclose(self) -> None:
         await self._runs.aclose()

@@ -11,10 +11,13 @@ TOKEN_ROOT="${REPOSITORY_ROOT}/.local/dev/common-agent-dev/secrets"
 RAGFLOW_TOKEN_FILE="${TOKEN_ROOT}/ragflow-api-token"
 AUTH_BOOTSTRAP_TOKEN_FILE="${TOKEN_ROOT}/owner-bootstrap-token"
 BACKEND_LOG="${RUNTIME_ROOT}/backend.log"
+WORKER_LOG="${RUNTIME_ROOT}/worker.log"
 FRONTEND_LOG="${RUNTIME_ROOT}/frontend.log"
 BACKEND_LAUNCH_LABEL="com.masteraventador.common-agent.real.backend"
+WORKER_LAUNCH_LABEL="com.masteraventador.common-agent.real.worker"
 FRONTEND_LAUNCH_LABEL="com.masteraventador.common-agent.real.frontend"
 DEMO_BACKEND_LAUNCH_LABEL="com.masteraventador.common-agent.demo-light.backend"
+DEMO_WORKER_LAUNCH_LABEL="com.masteraventador.common-agent.demo-light.worker"
 DEMO_FRONTEND_LAUNCH_LABEL="com.masteraventador.common-agent.demo-light.frontend"
 PROFILE_NAME="common-agent-dev"
 DOCKER_CONTEXT_NAME="colima-common-agent-dev"
@@ -131,8 +134,10 @@ remove_launch_job() {
 
 stop_application_jobs() {
   remove_launch_job "${FRONTEND_LAUNCH_LABEL}"
+  remove_launch_job "${WORKER_LAUNCH_LABEL}"
   remove_launch_job "${BACKEND_LAUNCH_LABEL}"
   remove_launch_job "${DEMO_FRONTEND_LAUNCH_LABEL}"
+  remove_launch_job "${DEMO_WORKER_LAUNCH_LABEL}"
   remove_launch_job "${DEMO_BACKEND_LAUNCH_LABEL}"
 }
 
@@ -424,6 +429,24 @@ start_frontend() {
   fi
 }
 
+start_worker() {
+  if launch_job_running "${WORKER_LAUNCH_LABEL}"; then
+    return
+  fi
+  remove_launch_job "${WORKER_LAUNCH_LABEL}"
+  rm -f "${WORKER_LOG}"
+  launchctl submit \
+    -l "${WORKER_LAUNCH_LABEL}" \
+    -o "${WORKER_LOG}" \
+    -e "${WORKER_LOG}" \
+    -- /usr/bin/env "PATH=${PATH}" "${SCRIPT_DIR}/real.sh" _serve-worker
+  sleep 1
+  if ! launch_job_running "${WORKER_LAUNCH_LABEL}"; then
+    echo "持久 Worker real 启动失败，日志：${WORKER_LOG}" >&2
+    return 1
+  fi
+}
+
 serve_backend() {
   local auth_bootstrap_token ragflow_api_key
   auth_bootstrap_token="$(load_auth_bootstrap_token)"
@@ -451,6 +474,28 @@ serve_backend() {
     .venv/bin/python -m common_agent
 }
 
+serve_worker() {
+  local ragflow_api_key
+  if [[ ! -f "${RAGFLOW_TOKEN_FILE}" || -L "${RAGFLOW_TOKEN_FILE}" ]]; then
+    echo "RAGFlow Token 文件不存在或不安全" >&2
+    return 1
+  fi
+  IFS= read -r ragflow_api_key <"${RAGFLOW_TOKEN_FILE}"
+  if [[ "${ragflow_api_key}" != ragflow-* ]]; then
+    echo "RAGFlow Token 文件无效" >&2
+    return 1
+  fi
+  cd "${BACKEND_ROOT}"
+  exec env \
+    COMMON_AGENT_INTEGRATION_MODE=real \
+    COMMON_AGENT_DATABASE_URL="${DATABASE_URL}" \
+    RAGFLOW_BASE_URL="http://127.0.0.1:${RAGFLOW_API_PORT}" \
+    RAGFLOW_API_KEY="${ragflow_api_key}" \
+    RAGFLOW_EXPECTED_VERSION=v0.25.6 \
+    RAGFLOW_TIMEOUT_SECONDS=120 \
+    .venv/bin/python -m common_agent.worker_main
+}
+
 serve_frontend() {
   cd "${FRONTEND_ROOT}"
   exec ./node_modules/.bin/vite \
@@ -467,8 +512,14 @@ up() {
     remove_launch_job "${BACKEND_LAUNCH_LABEL}"
     return 1
   fi
+  if ! start_worker; then
+    remove_launch_job "${WORKER_LAUNCH_LABEL}"
+    remove_launch_job "${BACKEND_LAUNCH_LABEL}"
+    return 1
+  fi
   if ! start_frontend; then
     remove_launch_job "${FRONTEND_LAUNCH_LABEL}"
+    remove_launch_job "${WORKER_LAUNCH_LABEL}"
     remove_launch_job "${BACKEND_LAUNCH_LABEL}"
     return 1
   fi
@@ -539,6 +590,12 @@ status() {
     echo "FastAPI：stopped/unhealthy/not-real"
     failed=1
   fi
+  if launch_job_running "${WORKER_LAUNCH_LABEL}"; then
+    echo "持久 Worker：running/real"
+  else
+    echo "持久 Worker：stopped"
+    failed=1
+  fi
   if launch_job_running "${FRONTEND_LAUNCH_LABEL}" && \
     curl --fail --silent --show-error \
       "http://127.0.0.1:${FRONTEND_PORT}/" >/dev/null 2>&1; then
@@ -581,6 +638,7 @@ stop() {
 
 case "${1:-}" in
   _serve-backend) serve_backend ;;
+  _serve-worker) serve_worker ;;
   _serve-frontend) serve_frontend ;;
   doctor) doctor ;;
   setup) setup ;;

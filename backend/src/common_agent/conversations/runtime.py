@@ -24,10 +24,17 @@ from common_agent.runtimes.base import (
     EmployeeRuntimeRequest,
     RuntimeConversationMessage,
     RuntimeEventKind,
+    RuntimeStopSignal,
     RuntimeStopToken,
 )
 
 _LOGGER = logging.getLogger("common_agent.conversations")
+
+
+class ConversationExecutionFailed(RuntimeError):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
 
 
 @dataclass(slots=True)
@@ -90,20 +97,16 @@ class ConversationRuntimeCoordinator:
             stop=stop,
         )
         self._active[assistant_message.conversation_id] = active
-        await self._events.publish(
-            turn_id=turn_id,
-            message=assistant_message,
-            kind=ConversationEventKind.ASSISTANT_STARTED,
-            retry=retry,
-        )
         active.task = asyncio.create_task(
-            self._execute(
+            self.execute(
                 turn_id=turn_id,
                 employee=employee,
                 history=history,
                 user_message=user_message,
                 assistant_message=assistant_message,
                 stop=stop,
+                retry=retry,
+                persist_failures=True,
             ),
             name=f"conversation-{assistant_message.conversation_id}-turn-{turn_id}",
         )
@@ -124,7 +127,7 @@ class ConversationRuntimeCoordinator:
                 await asyncio.gather(*pending, return_exceptions=True)
         await self._runtime.aclose()
 
-    async def _execute(
+    async def execute(
         self,
         *,
         turn_id: UUID,
@@ -132,8 +135,16 @@ class ConversationRuntimeCoordinator:
         history: tuple[Message, ...],
         user_message: Message,
         assistant_message: Message,
-        stop: RuntimeStopToken,
+        stop: RuntimeStopSignal,
+        retry: bool,
+        persist_failures: bool,
     ) -> None:
+        await self._events.publish(
+            turn_id=turn_id,
+            message=assistant_message,
+            kind=ConversationEventKind.ASSISTANT_STARTED,
+            retry=retry,
+        )
         started_at = monotonic()
         outcome_status = "failed"
         outcome_error: str | None = "generation_failed"
@@ -169,12 +180,14 @@ class ConversationRuntimeCoordinator:
                         or event.sequence <= last_sequence
                     ):
                         outcome_error = "runtime_response_invalid"
-                        await self._projector.persist_failure(
-                            turn_id,
-                            assistant_message.id,
-                            outcome_error,
-                        )
-                        return
+                        if persist_failures:
+                            await self._projector.persist_failure(
+                                turn_id,
+                                assistant_message.id,
+                                outcome_error,
+                            )
+                            return
+                        raise ConversationExecutionFailed(outcome_error)
                     last_sequence = event.sequence
                     terminal_message = await self._projector.persist_runtime_event(
                         turn_id=turn_id,
@@ -191,15 +204,23 @@ class ConversationRuntimeCoordinator:
                     await self._projector.persist_stopped(turn_id, assistant_message.id)
                 else:
                     outcome_error = "runtime_stream_interrupted"
-                    await self._projector.persist_failure(
-                        turn_id,
-                        assistant_message.id,
-                        outcome_error,
-                    )
+                    if persist_failures:
+                        await self._projector.persist_failure(
+                            turn_id,
+                            assistant_message.id,
+                            outcome_error,
+                        )
+                    else:
+                        raise ConversationExecutionFailed(outcome_error)
             except asyncio.CancelledError:
-                outcome_status = "stopped"
-                outcome_error = None
-                await self._projector.persist_stopped(turn_id, assistant_message.id)
+                if stop.is_requested:
+                    outcome_status = "stopped"
+                    outcome_error = None
+                    await self._projector.persist_stopped(turn_id, assistant_message.id)
+                else:
+                    outcome_error = "task_execution_interrupted"
+                raise
+            except ConversationExecutionFailed:
                 raise
             except Exception as error:
                 if stop.is_requested:
@@ -208,11 +229,14 @@ class ConversationRuntimeCoordinator:
                     await self._projector.persist_stopped(turn_id, assistant_message.id)
                 else:
                     outcome_error = safe_error_code(error)
-                    await self._projector.persist_failure(
-                        turn_id,
-                        assistant_message.id,
-                        outcome_error,
-                    )
+                    if persist_failures:
+                        await self._projector.persist_failure(
+                            turn_id,
+                            assistant_message.id,
+                            outcome_error,
+                        )
+                    else:
+                        raise ConversationExecutionFailed(outcome_error) from error
             finally:
                 log_event(
                     _LOGGER,
@@ -261,4 +285,4 @@ def _runtime_history(
     return tuple(reversed(retained))
 
 
-__all__ = ["ConversationRuntimeCoordinator"]
+__all__ = ["ConversationExecutionFailed", "ConversationRuntimeCoordinator"]

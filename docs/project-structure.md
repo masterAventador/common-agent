@@ -1,6 +1,6 @@
 # 通用 Agent 中台工程结构
 
-> 状态：MVP 基线、租户隔离与审计结构已确认
+> 状态：MVP 基线、租户隔离、审计与持久 Worker 结构已确认
 > 确认日期：2026-07-21
 
 ## 1. 核心决策
@@ -66,6 +66,8 @@ backend/
 │       ├── audit/               # 固定审计模型、哈希链、策略、端口与服务
 │       ├── tenancy/             # 组织/租户访问模型、角色、端口与上下文
 │       ├── conversations/       # 会话门面、持久化、运行协调、消息投影与事件
+│       ├── events/              # 平台持久事件模型与 Journal 端口
+│       ├── tasks/               # 持久任务模型、队列端口、租约 Worker 与并发池
 │       ├── employees/           # 数字员工应用服务与启动 Seed
 │       ├── domain/              # 与第三方无关的会话和能力模型
 │       │   ├── conversation.py
@@ -89,13 +91,15 @@ backend/
 │       │   ├── service.py
 │       │   └── retrieval.py
 │       ├── ports/               # 仓储、资源删除、缓存、事件、对象存储与任务端口
+│       ├── worker_app.py        # 独立 Worker 组合根
+│       ├── worker_main.py       # Worker 信号与进程入口
 │       └── adapters/            # 数据库、模型及第三方外围适配
 │           ├── auth/            # Argon2id 密码适配器
 │           ├── agent/           # Deep Agents 正式适配器
 │           ├── knowledge/       # RAGFlow 正式适配器
 │           ├── model/           # 阿里百炼转换与仅适配层可见的 LangChain 桥
 │           ├── workflow/        # LangGraph 编译、状态与节点框架转换
-│           └── persistence/     # MySQL 持久化适配器，含认证、审计与资源事务
+│           └── persistence/     # MySQL 适配器，含业务事务、任务队列与事件日志
 ├── migrations/                  # 当前正式数据库迁移
 ├── tests/
 │   ├── unit/
@@ -128,6 +132,8 @@ api -> application -> domain
   事件与锁以租户命名空间运行，RAGFlow 外部 ID 归属保存在平台 MySQL，不触碰上游内部表；
 - `observability/` 只用标准库定义 JSON 日志、W3C trace context 与进程内有界指标；业务服务
   绑定平台会话/工作流 ID，外围 HTTP 适配器负责把 trace context 传给 RAGFlow 与百炼；
+- `tasks/` 与 `events/` 只定义平台模型、端口和执行协议；API 组合根只提交/读取，独立
+  `worker_app.py` 才装配会话回复与工作流执行处理器，二者共享 MySQL 适配器但不互相导入；
 - `application/` 分别负责“发送消息并生成回复”和“触发工作流”用例；
 - 会话和工作流公开 Service 只作稳定用例门面；事务持久化、运行协调和权威投影位于独立模块，
   实现模块不得反向导入门面或形成循环依赖；
@@ -145,7 +151,8 @@ api -> application -> domain
   `api/`，SQLAlchemy/Alembic/数据库驱动只在 `adapters/persistence/`，HTTP/模型/
   代理/图/供应商 SDK 只在 `adapters/`；
 - 员工、会话、消息、工作流和知识库绑定必须经过仓储端口；正式实现使用平台独立 MySQL、SQLAlchemy async 和 Alembic，不改变领域模型依赖方向；
-- 任何第三方技术依赖都通过与其职责相符的应用端口和外围适配器接入；Redis、消息队列、对象存储和 Worker 只是示例，不构成白名单；只实现当前用例实际调用的端口，不创建没有调用方的空实现；
+- 任何第三方技术依赖都通过与其职责相符的应用端口和外围适配器接入；当前任务/事件用平台
+  MySQL 适配器实现，不把 RAGFlow 内部 Valkey 冒充平台队列，也不引入没有调用方的 Redis/MQ；
 - RAGFlow 保存知识文档和索引，平台不直连其内部数据库、缓存、检索引擎或对象存储。
 
 ## 3. 前端结构

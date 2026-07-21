@@ -24,7 +24,7 @@ from common_agent.api.schemas.conversations import (
 )
 from common_agent.api.schemas.pagination import CursorPageResponse
 from common_agent.audit import AuditResourceType
-from common_agent.conversations.service import (
+from common_agent.conversations.contracts import (
     ConversationBusy,
     ConversationNotFound,
     ConversationRequestConflict,

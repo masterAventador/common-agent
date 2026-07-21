@@ -6,6 +6,7 @@ from uuid import UUID
 
 from common_agent.domain.conversation import Conversation, Message
 from common_agent.pagination import PageAnchor, PageSlice
+from common_agent.tasks.ports import TaskSubmission
 
 
 class ConversationAlreadyExists(Exception):
@@ -61,6 +62,9 @@ class ConversationUnitOfWork(Protocol):
 
     @property
     def messages(self) -> MessageRepository: ...
+
+    @property
+    def tasks(self) -> TaskSubmission: ...
 
     async def __aenter__(self) -> ConversationUnitOfWork: ...
 

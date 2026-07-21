@@ -4,9 +4,11 @@ import asyncio
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import delete, select
 
 from common_agent.adapters.persistence.conversations import (
     SqlAlchemyConversationRepository,
@@ -15,14 +17,18 @@ from common_agent.adapters.persistence.conversations import (
 )
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.employees import SqlAlchemyEmployeeRepository
-from common_agent.conversations.events import ConversationEvent, ConversationEventBroker
-from common_agent.conversations.service import (
-    ConversationBusy,
-    ConversationService,
-    MessageRequestConflict,
+from common_agent.adapters.persistence.models import DurableTaskRow
+from common_agent.adapters.persistence.tasks import SqlAlchemyTaskQueue
+from common_agent.conversations.contracts import ConversationBusy, MessageRequestConflict
+from common_agent.conversations.events import (
+    ConversationEvent,
+    ConversationEventBroker,
+    ConversationEventKind,
 )
+from common_agent.conversations.service import ConversationService
 from common_agent.domain.conversation import Conversation, Message, MessageStatus
 from common_agent.domain.employee import Employee
+from common_agent.employees.service import EmployeeNotFound
 from common_agent.knowledge.retrieval import ResolvedKnowledgeContext
 from common_agent.runtimes.base import (
     EmployeeRuntimeRequest,
@@ -30,6 +36,8 @@ from common_agent.runtimes.base import (
     RuntimeEventEmitter,
     RuntimeStopSignal,
 )
+from common_agent.tasks import TaskKind, TaskWorker
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from tests.support.conversations import delete_conversations
 from tests.support.employees import delete_employees
 from tests.support.settings import TEST_DATABASE_URL
@@ -56,6 +64,18 @@ class _Employees:
     async def get(self, employee_id: UUID) -> Employee:
         assert employee_id == self.employee.id
         return self.employee
+
+
+class _UnavailableAfterValidationEmployees(_Employees):
+    def __init__(self, employee: Employee) -> None:
+        super().__init__(employee)
+        self.calls = 0
+
+    async def get(self, employee_id: UUID) -> Employee:
+        self.calls += 1
+        if self.calls > 2:
+            raise EmployeeNotFound
+        return await super().get(employee_id)
 
 
 class _NoKnowledge:
@@ -106,6 +126,55 @@ class _InterruptedRuntime:
 
     async def aclose(self) -> None:
         return None
+
+
+class _RetryingRuntime:
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    async def stream(
+        self,
+        request: EmployeeRuntimeRequest,
+        *,
+        stop: RuntimeStopSignal,
+    ) -> AsyncIterator[RuntimeEvent]:
+        del stop
+        self.attempts += 1
+        emitter = RuntimeEventEmitter(request.assistant_message_id)
+        if self.attempts == 1:
+            yield emitter.delta("不应保留的半截内容")
+            raise RuntimeError("temporary disconnect")
+        yield emitter.delta("重试后的完整内容")
+        yield emitter.complete()
+
+    async def aclose(self) -> None:
+        return None
+
+
+class _FailTerminalEventOnce(ConversationEventBroker):
+    def __init__(self) -> None:
+        super().__init__()
+        self.failed = False
+
+    async def publish(
+        self,
+        *,
+        turn_id: UUID,
+        message: Message,
+        kind: ConversationEventKind,
+        delta: str | None = None,
+        retry: bool = False,
+    ) -> ConversationEvent:
+        if kind is ConversationEventKind.ASSISTANT_COMPLETED and not self.failed:
+            self.failed = True
+            raise RuntimeError("event journal temporarily unavailable")
+        return await super().publish(
+            turn_id=turn_id,
+            message=message,
+            kind=kind,
+            delta=delta,
+            retry=retry,
+        )
 
 
 class _InvalidSequenceRuntime:
@@ -176,6 +245,12 @@ class _CompletionAfterStopRuntime:
 
     async def aclose(self) -> None:
         return None
+
+
+async def _delete_durable_tasks(database: Database) -> None:
+    async with database.session() as session:
+        await session.execute(delete(DurableTaskRow))
+        await session.commit()
 
 
 async def _events_until_terminal(
@@ -257,6 +332,332 @@ def test_service_persists_each_state_before_publishing_monotonic_events() -> Non
                 await delete_employees(database, employee.id)
 
         assert runtime.closed is True
+
+    asyncio.run(exercise())
+
+
+def test_durable_service_commits_reply_task_and_only_worker_executes_runtime() -> None:
+    employee = Employee.create(name=f"durable-{uuid4().hex}", system_prompt="直接回答问题")
+    conversation_id = uuid4()
+
+    async def exercise() -> None:
+        async with _database() as database:
+            await _delete_durable_tasks(database)
+            runtime = _ScriptedRuntime()
+            events = ConversationEventBroker()
+            queue = SqlAlchemyTaskQueue(database)
+            service = ConversationService(
+                SqlAlchemyConversationUnitOfWorkFactory(database),
+                employees=_Employees(employee),
+                knowledge=_NoKnowledge(),
+                runtime=runtime,
+                events=events,
+                tasks=queue,
+                tenant_id_provider=lambda: DEFAULT_TENANT_ID,
+                task_max_attempts=3,
+            )
+            worker = TaskWorker(
+                queue,
+                handlers={TaskKind.CONVERSATION_REPLY: service.execute_reply_task},
+                worker_id="conversation-worker",
+            )
+            try:
+                async with database.session() as session:
+                    await SqlAlchemyEmployeeRepository(session).add(employee)
+                    await session.commit()
+                await service.create(
+                    employee_id=employee.id,
+                    title="持久任务会话",
+                    conversation_id=conversation_id,
+                )
+
+                accepted = await service.send(
+                    conversation_id,
+                    user_message_id=uuid4(),
+                    content="由独立 Worker 回答",
+                )
+
+                assert runtime.requests == []
+                assert accepted.assistant_message.status is MessageStatus.PENDING
+                with pytest.raises(ConversationBusy):
+                    await service.delete(conversation_id)
+                assert (await queue.backlog()).pending == 1
+                assert await worker.run_once() is True
+
+                delivered = await _events_until_terminal(events, conversation_id)
+                stored = await service.list_messages(conversation_id)
+                assert [event.kind.value for event in delivered] == [
+                    "assistant.started",
+                    "assistant.delta",
+                    "assistant.delta",
+                    "assistant.completed",
+                ]
+                assert stored[-1].status is MessageStatus.COMPLETED
+                assert stored[-1].content == "第一段第二段"
+                assert runtime.requests[0].conversation_id == conversation_id
+                assert (await queue.backlog()).pending == 0
+                assert (await queue.backlog()).running == 0
+            finally:
+                await service.aclose()
+                await delete_conversations(database, conversation_id)
+                await delete_employees(database, employee.id)
+                await _delete_durable_tasks(database)
+
+    asyncio.run(exercise())
+
+
+def test_durable_worker_persists_business_failure_when_setup_exhausts_attempts() -> None:
+    employee = Employee.create(name=f"setup-failure-{uuid4().hex}", system_prompt="直接回答问题")
+    conversation_id = uuid4()
+
+    async def exercise() -> None:
+        async with _database() as database:
+            await _delete_durable_tasks(database)
+            queue = SqlAlchemyTaskQueue(database)
+            service = ConversationService(
+                SqlAlchemyConversationUnitOfWorkFactory(database),
+                employees=_UnavailableAfterValidationEmployees(employee),
+                knowledge=_NoKnowledge(),
+                runtime=_ScriptedRuntime(),
+                events=ConversationEventBroker(),
+                tasks=queue,
+                tenant_id_provider=lambda: DEFAULT_TENANT_ID,
+                task_max_attempts=1,
+            )
+            worker = TaskWorker(
+                queue,
+                handlers={TaskKind.CONVERSATION_REPLY: service.execute_reply_task},
+                worker_id="setup-failure-worker",
+            )
+            try:
+                async with database.session() as session:
+                    await SqlAlchemyEmployeeRepository(session).add(employee)
+                    await session.commit()
+                await service.create(
+                    employee_id=employee.id,
+                    title="执行准备失败",
+                    conversation_id=conversation_id,
+                )
+                await service.send(
+                    conversation_id,
+                    user_message_id=uuid4(),
+                    content="员工读取失败也必须收敛业务终态",
+                )
+
+                assert await worker.run_once() is True
+
+                stored = await service.list_messages(conversation_id)
+                assert stored[-1].status is MessageStatus.FAILED
+                assert stored[-1].error_code == "employee_not_found"
+            finally:
+                await service.aclose()
+                await delete_conversations(database, conversation_id)
+                await delete_employees(database, employee.id)
+                await _delete_durable_tasks(database)
+
+    asyncio.run(exercise())
+
+
+def test_durable_worker_retries_interrupted_reply_without_duplicate_content() -> None:
+    employee = Employee.create(name=f"retry-{uuid4().hex}", system_prompt="直接回答问题")
+    conversation_id = uuid4()
+
+    async def exercise() -> None:
+        async with _database() as database:
+            await _delete_durable_tasks(database)
+            runtime = _RetryingRuntime()
+            events = ConversationEventBroker()
+            queue = SqlAlchemyTaskQueue(database)
+            service = ConversationService(
+                SqlAlchemyConversationUnitOfWorkFactory(database),
+                employees=_Employees(employee),
+                knowledge=_NoKnowledge(),
+                runtime=runtime,
+                events=events,
+                tasks=queue,
+                tenant_id_provider=lambda: DEFAULT_TENANT_ID,
+                task_max_attempts=3,
+            )
+            clock = [datetime.now(UTC)]
+            worker = TaskWorker(
+                queue,
+                handlers={TaskKind.CONVERSATION_REPLY: service.execute_reply_task},
+                worker_id="retry-worker",
+                base_retry_delay=timedelta(seconds=1),
+                clock=lambda: clock[0],
+            )
+            try:
+                async with database.session() as session:
+                    await SqlAlchemyEmployeeRepository(session).add(employee)
+                    await session.commit()
+                await service.create(
+                    employee_id=employee.id,
+                    title="自动重试",
+                    conversation_id=conversation_id,
+                )
+                await service.send(
+                    conversation_id,
+                    user_message_id=uuid4(),
+                    content="请自动重试",
+                )
+
+                clock[0] = datetime.now(UTC) + timedelta(seconds=1)
+                assert await worker.run_once() is True
+                clock[0] += timedelta(seconds=2)
+                assert await worker.run_once() is True
+
+                delivered = await _events_until_terminal(events, conversation_id)
+                stored = await service.list_messages(conversation_id)
+                async with database.session() as session:
+                    task_state = await session.scalar(
+                        select(DurableTaskRow.state).where(
+                            DurableTaskRow.aggregate_id == str(conversation_id)
+                        )
+                    )
+                assert runtime.attempts == 2
+                assert stored[-1].status is MessageStatus.COMPLETED
+                assert stored[-1].content == "重试后的完整内容"
+                assert "不应保留" not in stored[-1].content
+                assert delivered[-1].message == stored[-1]
+                assert task_state == "succeeded"
+            finally:
+                await service.aclose()
+                await delete_conversations(database, conversation_id)
+                await delete_employees(database, employee.id)
+                await _delete_durable_tasks(database)
+
+    asyncio.run(exercise())
+
+
+def test_durable_stop_crosses_api_and_worker_through_persisted_heartbeat() -> None:
+    employee = Employee.create(name=f"stop-{uuid4().hex}", system_prompt="直接回答问题")
+    conversation_id = uuid4()
+
+    async def exercise() -> None:
+        async with _database() as database:
+            await _delete_durable_tasks(database)
+            runtime = _ScriptedRuntime(block_first_until_stopped=True)
+            events = ConversationEventBroker()
+            queue = SqlAlchemyTaskQueue(database)
+            service = ConversationService(
+                SqlAlchemyConversationUnitOfWorkFactory(database),
+                employees=_Employees(employee),
+                knowledge=_NoKnowledge(),
+                runtime=runtime,
+                events=events,
+                tasks=queue,
+                tenant_id_provider=lambda: DEFAULT_TENANT_ID,
+                task_max_attempts=3,
+            )
+            worker = TaskWorker(
+                queue,
+                handlers={TaskKind.CONVERSATION_REPLY: service.execute_reply_task},
+                worker_id="stop-worker",
+                lease_for=timedelta(seconds=3),
+                heartbeat_interval=timedelta(seconds=1),
+            )
+            try:
+                async with database.session() as session:
+                    await SqlAlchemyEmployeeRepository(session).add(employee)
+                    await session.commit()
+                await service.create(
+                    employee_id=employee.id,
+                    title="跨进程停止",
+                    conversation_id=conversation_id,
+                )
+                accepted = await service.send(
+                    conversation_id,
+                    user_message_id=uuid4(),
+                    content="开始后停止",
+                )
+                execution = asyncio.create_task(worker.run_once())
+                while True:
+                    stored = await service.list_messages(conversation_id)
+                    if stored[-1].status is MessageStatus.STREAMING:
+                        break
+                    await asyncio.sleep(0.01)
+
+                stopped = await service.stop(conversation_id)
+                assert stopped.assistant_message_id == accepted.assistant_message.id
+                assert await asyncio.wait_for(execution, timeout=3) is True
+
+                delivered = await _events_until_terminal(events, conversation_id)
+                stored = await service.list_messages(conversation_id)
+                async with database.session() as session:
+                    task_state = await session.scalar(
+                        select(DurableTaskRow.state).where(
+                            DurableTaskRow.aggregate_id == str(conversation_id)
+                        )
+                    )
+                assert stored[-1].status is MessageStatus.STOPPED
+                assert delivered[-1].message == stored[-1]
+                assert task_state == "cancelled"
+            finally:
+                await service.aclose()
+                await delete_conversations(database, conversation_id)
+                await delete_employees(database, employee.id)
+                await _delete_durable_tasks(database)
+
+    asyncio.run(exercise())
+
+
+def test_durable_retry_repairs_terminal_event_after_state_commit_succeeds() -> None:
+    employee = Employee.create(name=f"event-{uuid4().hex}", system_prompt="直接回答问题")
+    conversation_id = uuid4()
+
+    async def exercise() -> None:
+        async with _database() as database:
+            await _delete_durable_tasks(database)
+            runtime = _ScriptedRuntime()
+            events = _FailTerminalEventOnce()
+            queue = SqlAlchemyTaskQueue(database)
+            service = ConversationService(
+                SqlAlchemyConversationUnitOfWorkFactory(database),
+                employees=_Employees(employee),
+                knowledge=_NoKnowledge(),
+                runtime=runtime,
+                events=events,
+                tasks=queue,
+                tenant_id_provider=lambda: DEFAULT_TENANT_ID,
+                task_max_attempts=3,
+            )
+            clock = [datetime.now(UTC) + timedelta(seconds=1)]
+            worker = TaskWorker(
+                queue,
+                handlers={TaskKind.CONVERSATION_REPLY: service.execute_reply_task},
+                worker_id="event-repair-worker",
+                base_retry_delay=timedelta(seconds=1),
+                clock=lambda: clock[0],
+            )
+            try:
+                async with database.session() as session:
+                    await SqlAlchemyEmployeeRepository(session).add(employee)
+                    await session.commit()
+                await service.create(
+                    employee_id=employee.id,
+                    title="终态事件修复",
+                    conversation_id=conversation_id,
+                )
+                await service.send(
+                    conversation_id,
+                    user_message_id=uuid4(),
+                    content="验证终态事件",
+                )
+
+                assert await worker.run_once() is True
+                clock[0] += timedelta(seconds=2)
+                assert await worker.run_once() is True
+
+                delivered = await _events_until_terminal(events, conversation_id)
+                stored = await service.list_messages(conversation_id)
+                assert stored[-1].status is MessageStatus.COMPLETED
+                assert delivered[-1].kind is ConversationEventKind.ASSISTANT_COMPLETED
+                assert delivered[-1].message == stored[-1]
+            finally:
+                await service.aclose()
+                await delete_conversations(database, conversation_id)
+                await delete_employees(database, employee.id)
+                await _delete_durable_tasks(database)
 
     asyncio.run(exercise())
 

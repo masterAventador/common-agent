@@ -18,6 +18,7 @@ from common_agent.adapters.persistence.models import (
     MessageCitationRow,
     MessageRow,
 )
+from common_agent.adapters.persistence.tasks import SqlAlchemyTaskSubmission
 from common_agent.adapters.persistence.timestamps import (
     from_database_datetime,
     to_database_datetime,
@@ -37,6 +38,7 @@ from common_agent.ports.conversations import (
     MessageRepository,
     MessageSequenceAlreadyExists,
 )
+from common_agent.tasks import TaskSubmission
 from common_agent.tenancy.context import current_tenant
 
 
@@ -288,6 +290,7 @@ class SqlAlchemyConversationUnitOfWork:
         self._session: AsyncSession | None = None
         self._conversations: ConversationRepository | None = None
         self._messages: MessageRepository | None = None
+        self._tasks: TaskSubmission | None = None
 
     @property
     def conversations(self) -> ConversationRepository:
@@ -301,6 +304,12 @@ class SqlAlchemyConversationUnitOfWork:
             raise RuntimeError("会话事务尚未开始")
         return self._messages
 
+    @property
+    def tasks(self) -> TaskSubmission:
+        if self._tasks is None:
+            raise RuntimeError("会话事务尚未开始")
+        return self._tasks
+
     async def __aenter__(self) -> SqlAlchemyConversationUnitOfWork:
         if self._context is not None:
             raise RuntimeError("会话事务不能重复进入")
@@ -310,6 +319,7 @@ class SqlAlchemyConversationUnitOfWork:
         self._session = session
         self._conversations = SqlAlchemyConversationRepository(session, self._tenant_id)
         self._messages = SqlAlchemyMessageRepository(session, self._tenant_id)
+        self._tasks = SqlAlchemyTaskSubmission(session)
         return self
 
     async def __aexit__(
@@ -323,6 +333,7 @@ class SqlAlchemyConversationUnitOfWork:
         self._session = None
         self._conversations = None
         self._messages = None
+        self._tasks = None
         if context is None:
             raise RuntimeError("会话事务尚未开始")
         await context.__aexit__(exc_type, exc_value, traceback)

@@ -320,6 +320,18 @@ class Message:
             updated_at=changed_at,
         )
 
+    def restart_execution(self, *, updated_at: datetime | None = None) -> Message:
+        self._ensure_active("重新执行")
+        changed_at = _transition_timestamp(updated_at, self.updated_at, self.status)
+        return replace(
+            self,
+            content="",
+            status=MessageStatus.PENDING,
+            citations=(),
+            error_code=None,
+            updated_at=changed_at,
+        )
+
     def _ensure_active(self, action: str) -> None:
         if self.role is not MessageRole.ASSISTANT or self.status not in {
             MessageStatus.PENDING,

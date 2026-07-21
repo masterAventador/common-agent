@@ -1,6 +1,6 @@
 # common-agent
 
-`common-agent` 是一个面向本机开发的通用 AI Agent 中台。MVP 已跑通连续 AI 会话、数字员工、RAGFlow 知识库和最小可视化工作流；当前生产化阶段已增加安全会话、组织下多工作区、成员账号、Owner/Editor/Viewer 最小 RBAC，以及不可篡改的审计与安全事件。Skill 市场、SSO、细粒度授权和远程部署仍不在当前完成范围。
+`common-agent` 是一个面向本机开发的通用 AI Agent 中台。MVP 已跑通连续 AI 会话、数字员工、RAGFlow 知识库和最小可视化工作流；当前生产化阶段已增加安全会话、组织下多工作区、成员账号、Owner/Editor/Viewer 最小 RBAC、不可篡改审计，以及由 MySQL 持久队列和独立 Worker 承载的可恢复会话/工作流执行。Skill 市场、SSO、细粒度授权和远程部署仍不在当前完成范围。
 
 ## MVP 能力
 
@@ -12,7 +12,7 @@
 ## 技术栈
 
 - 前端：React、TypeScript、Vite、Ant Design、React Flow；
-- 后端：Python、FastAPI、SQLAlchemy async、Alembic；平台正式持久化使用独立 MySQL 8.4 LTS，技术方案不设白名单，可按真实需要引入 Redis、消息队列、对象存储、Worker 等其他组件；
+- 后端：Python、FastAPI、独立 Worker、SQLAlchemy async、Alembic；平台正式 MySQL 8.4 LTS 同时承载业务数据、持久任务和 SSE 事件序列，不额外引入 Redis/MQ；
 - Agent：Deep Agents；
 - 工作流：LangGraph / LangChain；
 - 知识库：RAGFlow；
@@ -34,7 +34,7 @@ git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
 ## 日常轻量开发
 
 64 GiB 日常开发机默认使用项目专属的 `demo-light`：同一个 `common-agent-dev` Colima profile
-以 12 GiB 运行，只启动平台 MySQL、FastAPI 和 Vite，不启动 RAGFlow，也不会调用百炼
+以 12 GiB 运行，只启动平台 MySQL、FastAPI、独立 Worker 和 Vite，不启动 RAGFlow，也不会调用百炼
 embedding/rerank。真实知识库链路由 `real` 入口把同一 profile 重启到已验收的 32 GiB 后运行，
 两种模式不会同时运行。
 
@@ -49,7 +49,7 @@ scripts/dev.sh clean
 
 `up` 成功后访问前端 <http://127.0.0.1:18280>，后端 API 位于
 <http://127.0.0.1:18200/api/v1>。脚本使用 `packageManager` 锁定的 pnpm 11.9.0，不修改本机全局
-pnpm；macOS 前后端进程使用项目专属 launchd 标签托管，`stop/clean` 不按模糊进程名停止其他项目。
+pnpm；macOS API、Worker 和前端进程使用项目专属 launchd 标签托管，`stop/clean` 不按模糊进程名停止其他项目。
 `clean` 删除本入口的进程、容器、日志和已被 submodule 取代的旧 RAGFlow checkout，但保留
 MySQL/RAGFlow 数据、依赖和官方镜像。
 

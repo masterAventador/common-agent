@@ -92,7 +92,7 @@ def test_workflow_run_http_and_sse_persist_summary_across_restart() -> None:
                 json={"run_id": completed_run_id, "input": "HTTP 运行输入"},
             )
             assert accepted.status_code == 202
-            assert accepted.json()["status"] == "running"
+            assert accepted.json()["status"] == "pending"
             assert accepted.json()["origin"] is None
             completed = _terminal(client, completed_run_id)
             assert completed["status"] == "completed"
@@ -165,6 +165,16 @@ def test_workflow_run_http_and_sse_persist_summary_across_restart() -> None:
             assert restored.status_code == 200
             assert restored.json()["status"] == "completed"
             UUID(restored.json()["workflow_id"])
+            assert _event_types(restarted, completed_run_id, "workflow.run.completed") == [
+                "workflow.run.started",
+                "workflow.node.started",
+                "workflow.node.completed",
+                "workflow.node.started",
+                "workflow.node.completed",
+                "workflow.node.started",
+                "workflow.node.completed",
+                "workflow.run.completed",
+            ]
     finally:
         if workflow_id is not None:
             asyncio.run(delete_workflows_from_database_url(TEST_DATABASE_URL, workflow_id))

@@ -20,6 +20,7 @@ from common_agent.adapters.persistence.models import (
     WorkflowRow,
     WorkflowRunRow,
 )
+from common_agent.adapters.persistence.tasks import SqlAlchemyTaskSubmission
 from common_agent.adapters.persistence.timestamps import (
     from_database_datetime,
     to_database_datetime,
@@ -51,6 +52,7 @@ from common_agent.ports.workflows import (
     WorkflowRunAlreadyExists,
     WorkflowRunRepository,
 )
+from common_agent.tasks import TaskSubmission
 from common_agent.tenancy.context import current_tenant
 
 
@@ -330,6 +332,7 @@ class SqlAlchemyWorkflowUnitOfWork:
         self._session: AsyncSession | None = None
         self._workflows: WorkflowRepository | None = None
         self._workflow_runs: WorkflowRunRepository | None = None
+        self._tasks: TaskSubmission | None = None
 
     @property
     def workflows(self) -> WorkflowRepository:
@@ -343,6 +346,12 @@ class SqlAlchemyWorkflowUnitOfWork:
             raise RuntimeError("工作流事务尚未开始")
         return self._workflow_runs
 
+    @property
+    def tasks(self) -> TaskSubmission:
+        if self._tasks is None:
+            raise RuntimeError("工作流事务尚未开始")
+        return self._tasks
+
     async def __aenter__(self) -> SqlAlchemyWorkflowUnitOfWork:
         if self._context is not None:
             raise RuntimeError("工作流事务不能重复进入")
@@ -352,6 +361,7 @@ class SqlAlchemyWorkflowUnitOfWork:
         self._session = session
         self._workflows = SqlAlchemyWorkflowRepository(session, self._tenant_id)
         self._workflow_runs = SqlAlchemyWorkflowRunRepository(session, self._tenant_id)
+        self._tasks = SqlAlchemyTaskSubmission(session)
         return self
 
     async def __aexit__(
@@ -365,6 +375,7 @@ class SqlAlchemyWorkflowUnitOfWork:
         self._session = None
         self._workflows = None
         self._workflow_runs = None
+        self._tasks = None
         if context is None:
             raise RuntimeError("工作流事务尚未开始")
         await context.__aexit__(exc_type, exc_value, traceback)
