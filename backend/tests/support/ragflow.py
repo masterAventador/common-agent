@@ -85,6 +85,37 @@ async def delete_datasets_named(base_url: str, api_key: str, name: str) -> int:
     return len(dataset_ids)
 
 
+async def delete_datasets_prefixed(base_url: str, api_key: str, prefix: str) -> tuple[str, ...]:
+    dataset_ids: list[str] = []
+    page = 1
+    async with httpx.AsyncClient(base_url=base_url, timeout=60.0, trust_env=False) as client:
+        while True:
+            response = await client.get(
+                "/api/v1/datasets",
+                headers={"Authorization": f"Bearer {api_key}"},
+                params={
+                    "page": page,
+                    "page_size": 100,
+                    "orderby": "create_time",
+                    "desc": "true",
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            assert payload["code"] == 0
+            values = payload["data"]
+            dataset_ids.extend(
+                str(item["id"]) for item in values if str(item["name"]).startswith(prefix)
+            )
+            if len(values) < 100:
+                break
+            page += 1
+
+    for dataset_id in dataset_ids:
+        await delete_dataset(base_url, api_key, dataset_id)
+    return tuple(dataset_ids)
+
+
 async def cancel_document_parsing(
     base_url: str,
     api_key: str,

@@ -30,6 +30,7 @@ COMMON_AGENT_E2E_DELETE_KNOWLEDGE_NAME="common-agent-u9-02-knowledge-${RUN_ID}"
 COMMON_AGENT_E2E_DELETE_EMPLOYEE_NAME="common-agent-u9-02-employee-${RUN_ID}"
 COMMON_AGENT_E2E_DELETE_WORKFLOW_NAME="common-agent-u9-02-workflow-${RUN_ID}"
 COMMON_AGENT_E2E_LIST_PREFIX="common-agent-u9-03-${RUN_ID}"
+COMMON_AGENT_E2E_KNOWLEDGE_PAGE_PREFIX="common-agent-s10-07b-${RUN_ID}"
 COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="common-agent-a4-08-employee-${RUN_ID}"
 COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="common-agent-a4-08-knowledge-${RUN_ID}"
 COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN="e2e-bootstrap-token-at-least-32-characters"
@@ -54,7 +55,7 @@ FRONTEND_PID=""
 RAGFLOW_API_KEY=""
 COMMON_AGENT_DATABASE_URL="mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
 
-if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUITE}" != "audit" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" && "${E2E_SUITE}" != "resource-deletion" && "${E2E_SUITE}" != "list-pagination" ]]; then
+if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUITE}" != "audit" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" && "${E2E_SUITE}" != "resource-deletion" && "${E2E_SUITE}" != "list-pagination" && "${E2E_SUITE}" != "knowledge-pagination" ]]; then
   echo "不支持的 E2E suite：${E2E_SUITE}" >&2
   exit 2
 fi
@@ -253,6 +254,18 @@ cleanup() {
         "${UV_RUNNER}" run --frozen python -m tests.support.resource_deletion_e2e_cleanup
     ); then
       echo "资源删除 E2E 兜底清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
+      cleanup_status=1
+    fi
+  elif [[ "${E2E_SUITE}" == "knowledge-pagination" && -n "${RAGFLOW_API_KEY}" ]]; then
+    if ! (
+      cd "${BACKEND_ROOT}"
+      RAGFLOW_BASE_URL="${RAGFLOW_BASE_URL}" \
+      RAGFLOW_API_KEY="${RAGFLOW_API_KEY}" \
+      COMMON_AGENT_DATABASE_URL="${COMMON_AGENT_DATABASE_URL}" \
+      COMMON_AGENT_E2E_KNOWLEDGE_PAGE_PREFIX="${COMMON_AGENT_E2E_KNOWLEDGE_PAGE_PREFIX}" \
+        "${UV_RUNNER}" run --frozen python -m tests.support.knowledge_pagination_e2e_cleanup
+    ); then
+      echo "知识库大分页 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
       cleanup_status=1
     fi
   elif [[ -n "${RAGFLOW_API_KEY}" ]]; then
@@ -459,6 +472,12 @@ wait_for_url "http://127.0.0.1:${FRONTEND_PORT}/knowledge-bases"
     COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
     COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
       exec pnpm exec playwright test e2e/list-pagination.spec.ts --config playwright.config.ts
+  elif [[ "${E2E_SUITE}" == "knowledge-pagination" ]]; then
+    COMMON_AGENT_E2E_KNOWLEDGE_PAGE_PREFIX="${COMMON_AGENT_E2E_KNOWLEDGE_PAGE_PREFIX}" \
+    COMMON_AGENT_E2E_API_URL="http://127.0.0.1:${API_PORT}/api/v1" \
+    COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
+      exec pnpm exec playwright test e2e/knowledge-pagination.spec.ts --config playwright.config.ts
   else
     COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME="${COMMON_AGENT_DEMO_E2E_EMPLOYEE_NAME}" \
     COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME="${COMMON_AGENT_DEMO_E2E_KNOWLEDGE_NAME}" \
