@@ -3,12 +3,21 @@ from __future__ import annotations
 import asyncio
 from uuid import UUID, uuid4
 
+from common_agent.model_configurations.defaults import platform_default_model_configuration_id
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from tests.support.http import assert_error_response, authenticated_client, running_api
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows_from_database_url
 
+_DEFAULT_MODEL_CONFIGURATION_ID = str(platform_default_model_configuration_id(DEFAULT_TENANT_ID))
 
-def _body(*, include_end: bool = True, knowledge_base_id: str | None = None) -> dict[str, object]:
+
+def _body(
+    *,
+    include_end: bool = True,
+    knowledge_base_id: str | None = None,
+    target: dict[str, str] | None = None,
+) -> dict[str, object]:
     processing: dict[str, object] = (
         {
             "id": "retrieve",
@@ -21,7 +30,15 @@ def _body(*, include_end: bool = True, knowledge_base_id: str | None = None) -> 
             "id": "chat",
             "type": "ai_chat",
             "position": {"x": 240, "y": 40},
-            "config": {"prompt": "根据工作流输入回答"},
+            "config": {
+                "prompt": "根据工作流输入回答",
+                "target": {
+                    "type": "model",
+                    "model_configuration_id": _DEFAULT_MODEL_CONFIGURATION_ID,
+                }
+                if target is None
+                else target,
+            },
         }
     )
     nodes: list[dict[str, object]] = [
@@ -67,7 +84,13 @@ def test_workflow_crud_uses_formal_uvicorn_mysql_and_survives_restart() -> None:
             workflow_id = str(payload["id"])
             UUID(workflow_id)
             assert payload["nodes"][0]["position"] == {"x": 0.0, "y": 40.0}
-            assert payload["nodes"][1]["config"] == {"prompt": "根据工作流输入回答"}
+            assert payload["nodes"][1]["config"] == {
+                "prompt": "根据工作流输入回答",
+                "target": {
+                    "type": "model",
+                    "model_configuration_id": _DEFAULT_MODEL_CONFIGURATION_ID,
+                },
+            }
 
             listed = client.get("/api/v1/workflows")
             detailed = client.get(f"/api/v1/workflows/{workflow_id}")
@@ -162,3 +185,52 @@ def test_invalid_graph_and_missing_knowledge_configuration_fail_without_write() 
     assert {invalid_name, knowledge_name}.isdisjoint(
         {item["name"] for item in listed.json()["items"]}
     )
+
+
+def test_workflow_target_validation_uses_tenant_scoped_employee_and_enabled_model() -> None:
+    disabled_model_id: str | None = None
+    with (
+        running_api(TEST_DATABASE_URL) as api_url,
+        authenticated_client(base_url=api_url, timeout=5) as client,
+    ):
+        missing_employee = client.post(
+            "/api/v1/workflows/validate",
+            json=_body(
+                target={"type": "employee", "employee_id": str(uuid4())},
+            ),
+        )
+        missing_model = client.post(
+            "/api/v1/workflows/validate",
+            json=_body(
+                target={"type": "model", "model_configuration_id": str(uuid4())},
+            ),
+        )
+        created_model = client.post(
+            "/api/v1/model-configurations",
+            json={
+                "display_name": f"停用模型-{uuid4().hex}",
+                "model_identifier": f"disabled-{uuid4().hex}",
+                "enabled": False,
+            },
+        )
+        assert created_model.status_code == 201
+        disabled_model_id = str(created_model.json()["id"])
+        disabled_model = client.post(
+            "/api/v1/workflows/validate",
+            json=_body(
+                target={
+                    "type": "model",
+                    "model_configuration_id": disabled_model_id,
+                },
+            ),
+        )
+
+        assert missing_employee.status_code == 200
+        assert missing_employee.json()["issues"][0]["code"] == "employee_not_found"
+        assert missing_model.status_code == 200
+        assert missing_model.json()["issues"][0]["code"] == "model_configuration_not_found"
+        assert disabled_model.status_code == 200
+        assert disabled_model.json()["issues"][0]["code"] == "model_configuration_disabled"
+
+        deleted = client.delete(f"/api/v1/model-configurations/{disabled_model_id}")
+        assert deleted.status_code == 204

@@ -31,6 +31,10 @@ class WorkflowValidationCode(StrEnum):
     CANNOT_REACH_END = "cannot_reach_end"
     CYCLE_DETECTED = "cycle_detected"
     KNOWLEDGE_BASE_NOT_FOUND = "knowledge_base_not_found"
+    AI_TARGET_REQUIRED = "ai_target_required"
+    EMPLOYEE_NOT_FOUND = "employee_not_found"
+    MODEL_CONFIGURATION_NOT_FOUND = "model_configuration_not_found"
+    MODEL_CONFIGURATION_DISABLED = "model_configuration_disabled"
 
 
 @dataclass(frozen=True, slots=True)

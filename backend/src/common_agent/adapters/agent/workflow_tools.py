@@ -47,7 +47,7 @@ class WorkflowToolRegistry:
         self,
         workflow_ids: Sequence[UUID],
         *,
-        origin: WorkflowRunOrigin,
+        origin: WorkflowRunOrigin | None,
     ) -> tuple[BaseTool, ...]:
         definitions: list[WorkflowDefinition] = []
         try:
@@ -57,7 +57,11 @@ class WorkflowToolRegistry:
             raise RuntimeCapabilityUnavailable from None
         return tuple(self._tool(definition, origin) for definition in definitions)
 
-    def _tool(self, workflow: WorkflowDefinition, origin: WorkflowRunOrigin) -> BaseTool:
+    def _tool(
+        self,
+        workflow: WorkflowDefinition,
+        origin: WorkflowRunOrigin | None,
+    ) -> BaseTool:
         async def run_workflow(
             input: Annotated[str, "传给工作流开始节点的输入"],
         ) -> str:
@@ -67,7 +71,11 @@ class WorkflowToolRegistry:
                     workflow.id,
                     run_id=run_id,
                     input=input,
-                    trigger=WorkflowRunTrigger.EMPLOYEE,
+                    trigger=(
+                        WorkflowRunTrigger.EMPLOYEE
+                        if origin is not None
+                        else WorkflowRunTrigger.MANUAL
+                    ),
                     origin=origin,
                 )
                 await self._record_started(run_id)

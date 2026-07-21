@@ -17,6 +17,8 @@ const workflowApi = vi.hoisted(() => ({
 const knowledgeApi = vi.hoisted(() => ({
   fetchKnowledgeBases: vi.fn(),
 }));
+const employeeApi = vi.hoisted(() => ({ fetchEmployees: vi.fn() }));
+const modelApi = vi.hoisted(() => ({ fetchModelConfigurations: vi.fn() }));
 const workflowRunApi = vi.hoisted(() => ({
   fetchWorkflowRun: vi.fn(),
   startWorkflowRun: vi.fn(),
@@ -33,6 +35,8 @@ const workflowRunApi = vi.hoisted(() => ({
 
 vi.mock("../../api/workflows", () => workflowApi);
 vi.mock("../../api/knowledge", () => knowledgeApi);
+vi.mock("../../api/employees", () => employeeApi);
+vi.mock("../../api/modelConfigurations", () => modelApi);
 vi.mock("../../api/workflowRuns", () => workflowRunApi);
 
 const workflow = {
@@ -45,7 +49,13 @@ const workflow = {
       id: "chat",
       type: "ai_chat",
       position: { x: 240, y: 80 },
-      config: { prompt: "依据上下文回答" },
+      config: {
+        prompt: "依据上下文回答",
+        target: {
+          type: "model",
+          model_configuration_id: "67b23894-27bd-49dd-a023-d926905e7ea1",
+        },
+      },
     },
     { id: "end", type: "end", position: { x: 480, y: 80 }, config: {} },
   ],
@@ -68,6 +78,8 @@ const runningRun = {
   completed_node_ids: ["start"],
   failed_node_id: null,
   error_code: null,
+  origin: null,
+  ai_targets: [],
   created_at: "2026-07-20T06:00:00Z",
   started_at: "2026-07-20T06:00:00Z",
   finished_at: null,
@@ -121,6 +133,26 @@ describe("WorkflowsPage", () => {
       }],
       next_cursor: null,
     });
+    employeeApi.fetchEmployees.mockResolvedValue({
+      items: [
+        {
+          id: "7a743a57-00c9-44a1-8194-dc461f076f78",
+          name: "知识助手",
+          default_model_identifier: "qwen-plus",
+        },
+      ],
+      next_cursor: null,
+    });
+    modelApi.fetchModelConfigurations.mockResolvedValue({
+      items: [
+        {
+          id: "67b23894-27bd-49dd-a023-d926905e7ea1",
+          display_name: "通用模型",
+          model_identifier: "qwen-plus",
+        },
+      ],
+      next_cursor: null,
+    });
     workflowRunApi.fetchWorkflowRun.mockResolvedValue(completedRun);
     workflowRunApi.startWorkflowRun.mockResolvedValue(runningRun);
     workflowRunApi.stopWorkflowRun.mockResolvedValue({ run_id: runningRun.id });
@@ -137,7 +169,7 @@ describe("WorkflowsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "工作流" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "选择工作流 知识问答流程" })).toBeEnabled();
-    expect(screen.getByRole("region", { name: "工作流画布" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "工作流画布" })).toBeInTheDocument();
     expect(screen.getByText("开始", { selector: ".workflow-node-title" })).toBeInTheDocument();
     expect(screen.getByText("AI 对话", { selector: ".workflow-node-title" })).toBeInTheDocument();
     expect(screen.getByText("结束", { selector: ".workflow-node-title" })).toBeInTheDocument();
@@ -192,10 +224,36 @@ describe("WorkflowsPage", () => {
 
     await waitFor(() => expect(workflowApi.validateWorkflow).toHaveBeenCalledTimes(1));
     const configuration = workflowApi.validateWorkflow.mock.calls[0]?.[0];
-    expect(configuration.nodes[1].config).toEqual({ prompt: "根据可靠上下文简洁回答" });
+    expect(configuration.nodes[1].config).toEqual({
+      prompt: "根据可靠上下文简洁回答",
+      target: {
+        type: "model",
+        model_configuration_id: "67b23894-27bd-49dd-a023-d926905e7ea1",
+      },
+    });
     await waitFor(() =>
       expect(workflowApi.updateWorkflow).toHaveBeenCalledWith(workflow.id, configuration),
     );
+  });
+
+  it("switches an AI node between created model and employee targets", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "选择节点 AI 对话 chat" }));
+    await user.click(screen.getByRole("combobox", { name: "AI 对话执行目标" }));
+    await user.click(await screen.findByText("知识助手 · qwen-plus"));
+    await user.click(screen.getByRole("button", { name: "保存工作流" }));
+
+    await waitFor(() => expect(workflowApi.validateWorkflow).toHaveBeenCalledTimes(1));
+    const configuration = workflowApi.validateWorkflow.mock.calls[0]?.[0];
+    expect(configuration.nodes[1].config).toEqual({
+      prompt: "依据上下文回答",
+      target: {
+        type: "employee",
+        employee_id: "7a743a57-00c9-44a1-8194-dc461f076f78",
+      },
+    });
   });
 
   it("shows exact server validation issues and never saves an invalid graph", async () => {

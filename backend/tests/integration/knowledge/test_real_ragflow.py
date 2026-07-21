@@ -288,9 +288,6 @@ def test_real_employee_http_binding_lifecycle() -> None:
     dataset_id: str | None = None
     employee_id: str | None = None
     try:
-        dataset_id = asyncio.run(
-            _create_employee_binding_dataset(base_url, api_key, expected_version)
-        )
         environment = {
             "RAGFLOW_BASE_URL": base_url,
             "RAGFLOW_API_KEY": api_key,
@@ -301,6 +298,15 @@ def test_real_employee_http_binding_lifecycle() -> None:
             running_api(TEST_DATABASE_URL, env_overrides=environment) as api_url,
             authenticated_client(base_url=api_url, timeout=120) as client,
         ):
+            dataset = client.post(
+                "/api/v1/knowledge-bases",
+                json={
+                    "name": f"common-agent-e3-02-{uuid4().hex}",
+                    "description": "E3-02 数字员工绑定正式验收",
+                },
+            )
+            assert dataset.status_code == 201
+            dataset_id = str(dataset.json()["id"])
             name = f"common-agent-e3-02-{uuid4().hex}"
             created = client.post(
                 "/api/v1/employees",
@@ -376,20 +382,26 @@ def test_real_workflow_http_validates_and_persists_knowledge_reference() -> None
     dataset_id: str | None = None
     workflow_id: str | None = None
     try:
-        dataset_id = asyncio.run(
-            _create_workflow_knowledge_dataset(base_url, api_key, expected_version)
-        )
         environment = {
             "RAGFLOW_BASE_URL": base_url,
             "RAGFLOW_API_KEY": api_key,
             "RAGFLOW_EXPECTED_VERSION": expected_version,
             "RAGFLOW_TIMEOUT_SECONDS": "120",
         }
-        graph = _workflow_body(dataset_id)
         with (
             running_api(TEST_DATABASE_URL, env_overrides=environment) as api_url,
             authenticated_client(base_url=api_url, timeout=120) as client,
         ):
+            dataset = client.post(
+                "/api/v1/knowledge-bases",
+                json={
+                    "name": f"common-agent-w5-02-{uuid4().hex}",
+                    "description": "W5-02 工作流知识引用正式验收",
+                },
+            )
+            assert dataset.status_code == 201
+            dataset_id = str(dataset.json()["id"])
+            graph = _workflow_body(dataset_id)
             validated = client.post("/api/v1/workflows/validate", json=graph)
             assert validated.status_code == 200
             assert validated.json() == {"valid": True, "issues": []}
@@ -424,52 +436,6 @@ def test_real_workflow_http_validates_and_persists_knowledge_reference() -> None
             asyncio.run(delete_workflows_from_database_url(TEST_DATABASE_URL, workflow_id))
         if dataset_id is not None:
             asyncio.run(delete_dataset(base_url, api_key, dataset_id))
-
-
-async def _create_employee_binding_dataset(
-    base_url: str,
-    api_key: str,
-    expected_version: str,
-) -> str:
-    service = RagFlowKnowledgeService(
-        base_url=base_url,
-        api_key=api_key,
-        expected_version=expected_version,
-        timeout_seconds=120,
-    )
-    try:
-        created = await service.create_knowledge_base(
-            CreateKnowledgeBaseRequest(
-                name=f"common-agent-e3-02-{uuid4().hex}",
-                description="E3-02 数字员工绑定正式验收",
-            )
-        )
-        return created.id
-    finally:
-        await service.aclose()
-
-
-async def _create_workflow_knowledge_dataset(
-    base_url: str,
-    api_key: str,
-    expected_version: str,
-) -> str:
-    service = RagFlowKnowledgeService(
-        base_url=base_url,
-        api_key=api_key,
-        expected_version=expected_version,
-        timeout_seconds=120,
-    )
-    try:
-        created = await service.create_knowledge_base(
-            CreateKnowledgeBaseRequest(
-                name=f"common-agent-w5-02-{uuid4().hex}",
-                description="W5-02 工作流知识引用正式验收",
-            )
-        )
-        return created.id
-    finally:
-        await service.aclose()
 
 
 def _workflow_body(knowledge_base_id: str) -> dict[str, object]:

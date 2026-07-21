@@ -10,7 +10,7 @@ from common_agent.application.workflow_contracts import (
     WorkflowRunResultInvalid,
 )
 from common_agent.concurrency import KeyedLockPool
-from common_agent.domain.workflow_run import WorkflowRun
+from common_agent.domain.workflow_run import WorkflowAiTargetSummary, WorkflowRun
 from common_agent.pagination import (
     CursorPage,
     ListPageRequest,
@@ -167,6 +167,19 @@ class WorkflowRunProjection:
             kind=WorkflowEventKind.NODE_COMPLETED,
             node_id=node_id,
         )
+
+    async def ai_target_resolved(
+        self,
+        run_id: UUID,
+        summary: WorkflowAiTargetSummary,
+    ) -> None:
+        async with self._locks.hold(run_id):
+            current = await self.get(run_id)
+            if current.is_terminal:
+                raise WorkflowExecutionStopped
+            updated = current.record_ai_target(summary)
+            if not await self._update(updated):
+                raise WorkflowExecutionStopped
 
     async def complete(self, run_id: UUID, result: WorkflowExecutionResult) -> None:
         async with self._locks.hold(run_id):

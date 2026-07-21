@@ -31,6 +31,14 @@ const workflowRunOriginSchema = z.strictObject({
   conversation_id: z.uuid(),
   assistant_message_id: z.uuid(),
 });
+const workflowAiTargetSchema = z.strictObject({
+  node_id: nodeIdSchema,
+  target_type: z.enum(["employee", "model"]),
+  target_id: z.uuid(),
+  target_name: z.string().trim().min(1).max(128),
+  model_configuration_id: z.uuid(),
+  model_identifier: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
+});
 const workflowRunSchema = z
   .strictObject({
     id: runIdSchema,
@@ -44,6 +52,7 @@ const workflowRunSchema = z
     failed_node_id: nodeIdSchema.nullable(),
     error_code: z.string().trim().min(1).max(128).nullable(),
     origin: workflowRunOriginSchema.nullable(),
+    ai_targets: z.array(workflowAiTargetSchema).max(100),
     created_at: timestampSchema,
     started_at: timestampSchema.nullable(),
     finished_at: timestampSchema.nullable(),

@@ -38,6 +38,7 @@ from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOf
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.application.resource_locks import ResourceMutationGuard
 from common_agent.application.workflow_service import WorkflowService
+from common_agent.application.workflow_targets import WorkflowAiTargetDirectory
 from common_agent.audit import AuditPolicy, AuditService
 from common_agent.bootstrap import (
     AuditSettings,
@@ -60,6 +61,11 @@ from common_agent.models.base import TextStreamingModel
 from common_agent.observability import configure_json_logging
 from common_agent.tasks import TaskKind, TaskWorker, TaskWorkerPool
 from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant, current_tenant
+from common_agent.workflows.ai_targets import (
+    StaticWorkflowModelResolver,
+    WorkflowAiTargetExecutor,
+    WorkflowModelResolver,
+)
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
 
@@ -87,6 +93,7 @@ async def run_worker(stop: asyncio.Event) -> None:
     demo_workflow_model: DemoWorkflowModel | None = None
     real_model: BailianChatModelAdapter | None = None
     model_settings: ModelSettings | None = None
+    deep_agent_model_resolver: BailianChatModelResolver | None = None
     try:
         workflow_model: TextStreamingModel
         model_configuration_verifier: ModelConfigurationVerifier
@@ -139,6 +146,26 @@ async def run_worker(stop: asyncio.Event) -> None:
             verifier=model_configuration_verifier,
             guard=resource_guard,
         )
+        employee_units = SqlAlchemyEmployeeUnitOfWorkFactory(database, tenant_id_provider)
+        ai_target_directory = WorkflowAiTargetDirectory(employee_units, model_configurations)
+        if integration_mode.mode == "demo":
+            workflow_model_resolver: WorkflowModelResolver = StaticWorkflowModelResolver(
+                workflow_model
+            )
+        else:
+            if model_settings is None:
+                raise RuntimeError("百炼模型设置尚未完成装配")
+            deep_agent_model_resolver = BailianChatModelResolver(
+                model_settings,
+                initial_model=real_model,
+            )
+            workflow_model_resolver = deep_agent_model_resolver
+        workflow_ai_targets = WorkflowAiTargetExecutor(
+            ai_target_directory,
+            workflow_model_resolver,
+            knowledge_bases,
+            employee_runtime=runtime,
+        )
         workflow_events = WorkflowEventBroker(
             key_namespace=lambda run_id: key_namespace(f"workflow-run:{run_id}"),
             journal=SqlAlchemyEventJournal(database),
@@ -150,8 +177,9 @@ async def run_worker(stop: asyncio.Event) -> None:
         workflows = WorkflowService(
             SqlAlchemyWorkflowUnitOfWorkFactory(database, tenant_id_provider),
             knowledge_bases,
+            ai_targets=ai_target_directory,
             compiler=LangGraphWorkflowCompiler(
-                create_workflow_node_registry(workflow_model, knowledge_bases)
+                create_workflow_node_registry(workflow_ai_targets, knowledge_bases)
             ),
             events=workflow_events,
             guard=resource_guard,
@@ -160,7 +188,7 @@ async def run_worker(stop: asyncio.Event) -> None:
             task_max_attempts=worker_settings.maximum_attempts,
         )
         if integration_mode.mode != "demo":
-            if real_model is None or model_settings is None:
+            if real_model is None or model_settings is None or deep_agent_model_resolver is None:
                 raise RuntimeError("百炼模型尚未完成装配")
             audit = AuditService(
                 SqlAlchemyAuditStore(database),
@@ -170,14 +198,12 @@ async def run_worker(stop: asyncio.Event) -> None:
                 ),
             )
             runtime = DeepAgentsEmployeeRuntime(
-                BailianChatModelResolver(
-                    model_settings,
-                    initial_model=real_model,
-                ),
+                deep_agent_model_resolver,
                 tools=WorkflowToolRegistry(workflows, audit=audit),
             )
+            workflow_ai_targets.bind_employee_runtime(runtime)
         employees = EmployeeService(
-            SqlAlchemyEmployeeUnitOfWorkFactory(database, tenant_id_provider),
+            employee_units,
             knowledge_bases,
             workflows=workflows,
             model_configurations=model_configurations,

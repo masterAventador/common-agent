@@ -35,6 +35,10 @@ const aiChatNodeSchema = z.strictObject({
   position: positionSchema,
   config: z.strictObject({
     prompt: z.string().trim().min(1).max(12_000),
+    target: z.discriminatedUnion("type", [
+      z.strictObject({ type: z.literal("employee"), employee_id: z.uuid() }),
+      z.strictObject({ type: z.literal("model"), model_configuration_id: z.uuid() }),
+    ]),
   }),
 });
 const knowledgeRetrievalNodeSchema = z.strictObject({
@@ -92,6 +96,10 @@ const validationCodeSchema = z.enum([
   "cannot_reach_end",
   "cycle_detected",
   "knowledge_base_not_found",
+  "ai_target_required",
+  "employee_not_found",
+  "model_configuration_not_found",
+  "model_configuration_disabled",
 ]);
 const workflowValidationSchema = z.strictObject({
   valid: z.boolean(),

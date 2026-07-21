@@ -71,11 +71,31 @@ export function useWorkflowDesigner() {
     getNextPageParam: nextPageCursor,
     placeholderData: keepPreviousData,
   });
+  const employees = useInfiniteQuery({
+    queryKey: ["workflow-target-employees"],
+    queryFn: async ({ pageParam }) => {
+      const { fetchEmployees } = await import("../../api/employees");
+      return fetchEmployees({ limit: 50, cursor: pageParam });
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+  });
+  const models = useInfiniteQuery({
+    queryKey: ["workflow-target-models"],
+    queryFn: async ({ pageParam }) => {
+      const { fetchModelConfigurations } = await import("../../api/modelConfigurations");
+      return fetchModelConfigurations({ limit: 50, cursor: pageParam }, true);
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: nextPageCursor,
+  });
   const workflowItems = useMemo(() => flattenCursorPages(workflows.data), [workflows.data]);
   const knowledgeItems = useMemo(
     () => flattenCursorPages(knowledgeBases.data),
     [knowledgeBases.data],
   );
+  const employeeItems = useMemo(() => flattenCursorPages(employees.data), [employees.data]);
+  const modelItems = useMemo(() => flattenCursorPages(models.data), [models.data]);
 
   useEffect(() => {
     if (initialized.current || !workflows.data) return;
@@ -199,6 +219,14 @@ export function useWorkflowDesigner() {
     knowledgeBases,
     knowledgeItems,
     knowledgeSearch,
+    employeeItems,
+    employees,
+    modelItems,
+    models,
+    targetError:
+      employees.isError || models.isError
+        ? getErrorMessage(employees.error ?? models.error)
+        : undefined,
     knowledgeError: knowledgeBases.isError ? getErrorMessage(knowledgeBases.error) : undefined,
     localValidationMessage,
     runController,
@@ -220,6 +248,9 @@ function validateDraftLocally(state: WorkflowEditorState): string | undefined {
   for (const node of state.nodes) {
     if (node.data.nodeType === "ai_chat" && !node.data.config.prompt.trim()) {
       return `请填写 AI 对话节点 ${node.id} 的提示词`;
+    }
+    if (node.data.nodeType === "ai_chat" && node.data.config.target === null) {
+      return `请选择 AI 对话节点 ${node.id} 的数字员工或模型`;
     }
     if (
       node.data.nodeType === "knowledge_retrieval" &&

@@ -12,7 +12,9 @@ from time import monotonic
 from typing import cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from common_agent.domain.workflow import AiChatTargetType
 from common_agent.domain.workflow_run import (
+    WorkflowAiTargetSummary,
     WorkflowRun,
     WorkflowRunOrigin,
     WorkflowRunStatus,
@@ -559,6 +561,17 @@ def _workflow_payload(*, run: WorkflowRun, node_id: str | None) -> dict[str, obj
             "failed_node_id": run.failed_node_id,
             "error_code": run.error_code,
             "origin": origin,
+            "ai_targets": [
+                {
+                    "node_id": target.node_id,
+                    "target_type": target.target_type.value,
+                    "target_id": str(target.target_id),
+                    "target_name": target.target_name,
+                    "model_configuration_id": str(target.model_configuration_id),
+                    "model_identifier": target.model_identifier,
+                }
+                for target in run.ai_targets
+            ],
             "created_at": run.created_at.isoformat(),
             "started_at": run.started_at.isoformat() if run.started_at is not None else None,
             "finished_at": run.finished_at.isoformat() if run.finished_at is not None else None,
@@ -601,6 +614,17 @@ def _workflow_event(sequence: int, request: EventAppendRequest) -> WorkflowRunEv
         failed_node_id=None if raw["failed_node_id"] is None else str(raw["failed_node_id"]),
         error_code=None if raw["error_code"] is None else str(raw["error_code"]),
         origin=origin,
+        ai_targets=tuple(
+            WorkflowAiTargetSummary(
+                node_id=str(value["node_id"]),
+                target_type=AiChatTargetType(str(value["target_type"])),
+                target_id=UUID(str(value["target_id"])),
+                target_name=str(value["target_name"]),
+                model_configuration_id=UUID(str(value["model_configuration_id"])),
+                model_identifier=str(value["model_identifier"]),
+            )
+            for value in cast(list[dict[str, object]], raw.get("ai_targets", []))
+        ),
         created_at=datetime.fromisoformat(str(raw["created_at"])),
         started_at=(
             None if raw["started_at"] is None else datetime.fromisoformat(str(raw["started_at"]))

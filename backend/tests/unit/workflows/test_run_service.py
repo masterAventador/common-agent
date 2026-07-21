@@ -746,8 +746,9 @@ class _InvalidCompiledWorkflow:
         *,
         observer: WorkflowExecutionObserver | None = None,
         stop: WorkflowExecutionStopSignal | None = None,
+        run_id: UUID | None = None,
     ) -> WorkflowExecutionResult:
-        del user_input, observer, stop
+        del user_input, observer, stop, run_id
         return WorkflowExecutionResult(
             output="不可信结果",
             completed_node_ids=("not-persisted",),

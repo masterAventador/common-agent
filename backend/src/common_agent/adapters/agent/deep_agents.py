@@ -73,7 +73,7 @@ class DeepAgentToolResolver(Protocol):
         self,
         capability_ids: Sequence[UUID],
         *,
-        origin: WorkflowRunOrigin,
+        origin: WorkflowRunOrigin | None,
     ) -> tuple[BaseTool, ...]: ...
 
 
@@ -97,7 +97,7 @@ class DeepAgentToolRegistry:
         self,
         capability_ids: Sequence[UUID],
         *,
-        origin: WorkflowRunOrigin,
+        origin: WorkflowRunOrigin | None,
     ) -> tuple[BaseTool, ...]:
         del origin
         resolved: list[BaseTool] = []
@@ -182,10 +182,14 @@ class DeepAgentsEmployeeRuntime:
             model = await self._models.resolve(request.model_identifier)
             allowed_tools = await self._tools.resolve(
                 request.allowed_workflow_ids,
-                origin=WorkflowRunOrigin(
-                    employee_id=request.employee_id,
-                    conversation_id=request.conversation_id,
-                    assistant_message_id=request.assistant_message_id,
+                origin=(
+                    None
+                    if request.workflow_run_id is not None
+                    else WorkflowRunOrigin(
+                        employee_id=request.employee_id,
+                        conversation_id=request.conversation_id,
+                        assistant_message_id=request.assistant_message_id,
+                    )
                 ),
             )
             graph = cast(
@@ -217,10 +221,15 @@ class DeepAgentsEmployeeRuntime:
         upstream = graph.astream(
             {"messages": _history_messages(request)},
             {
-                "configurable": {"thread_id": str(request.conversation_id)},
+                "configurable": {
+                    "thread_id": str(request.workflow_run_id or request.conversation_id)
+                },
                 "metadata": {
                     "conversation_id": str(request.conversation_id),
                     "employee_id": str(request.employee_id),
+                    "workflow_run_id": (
+                        None if request.workflow_run_id is None else str(request.workflow_run_id)
+                    ),
                 },
             },
             stream_mode="messages",

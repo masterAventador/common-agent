@@ -38,6 +38,7 @@ from common_agent.models.base import (
 )
 from common_agent.models.prompts import KNOWLEDGE_SAFETY_INSTRUCTION
 from common_agent.runtimes.base import RuntimeKnowledgeChunk
+from common_agent.workflows.ai_targets import WorkflowAiTargetExecutor
 from common_agent.workflows.errors import WorkflowNodeConfigurationInvalid
 from common_agent.workflows.execution import (
     WorkflowNodeExecutionContext,
@@ -65,7 +66,7 @@ class WorkflowNodeRegistry:
 
 
 def create_workflow_node_registry(
-    model: TextStreamingModel,
+    model: TextStreamingModel | WorkflowAiTargetExecutor,
     knowledge_bases: KnowledgeBaseService,
 ) -> WorkflowNodeRegistry:
     return WorkflowNodeRegistry(
@@ -88,13 +89,17 @@ def _start_factory(node: WorkflowNode) -> WorkflowNodeRunner:
     return run
 
 
-def _ai_chat_factory(model: TextStreamingModel) -> WorkflowNodeFactory:
+def _ai_chat_factory(
+    model: TextStreamingModel | WorkflowAiTargetExecutor,
+) -> WorkflowNodeFactory:
     def create(node: WorkflowNode) -> WorkflowNodeRunner:
         config = node.config
         if not isinstance(config, AiChatNodeConfig):
             raise WorkflowNodeConfigurationInvalid()
 
         async def run(state: WorkflowNodeExecutionContext) -> WorkflowNodeExecutionResult:
+            if isinstance(model, WorkflowAiTargetExecutor):
+                return await model.execute(config, state)
             request = _model_request(config.prompt, state)
             chunks: list[str] = []
             completed = False

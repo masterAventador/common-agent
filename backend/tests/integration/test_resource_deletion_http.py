@@ -152,6 +152,40 @@ def test_all_resource_delete_apis_enforce_references_cascade_and_idempotency() -
         )
 
 
+def test_employee_delete_is_blocked_by_workflow_ai_target() -> None:
+    suffix = uuid4().hex
+    employee_id: UUID | None = None
+    workflow_id: UUID | None = None
+    try:
+        with (
+            running_api(TEST_DATABASE_URL, env_overrides=_DEMO_ENV) as api_url,
+            authenticated_client(base_url=api_url, timeout=15) as client,
+        ):
+            employee = client.post(
+                "/api/v1/employees",
+                json=_employee_body(suffix, knowledge_base_id=None, workflow_id=None),
+            )
+            assert employee.status_code == 201
+            employee_id = UUID(employee.json()["id"])
+            workflow = client.post(
+                "/api/v1/workflows",
+                json=_employee_target_workflow_body(suffix, employee_id),
+            )
+            assert workflow.status_code == 201
+            workflow_id = UUID(workflow.json()["id"])
+
+            assert_error_response(
+                client.delete(f"/api/v1/employees/{employee_id}"),
+                status=409,
+                code="employee_in_use_by_workflows",
+            )
+
+            _assert_idempotent_delete(client, f"/api/v1/workflows/{workflow_id}")
+            _assert_idempotent_delete(client, f"/api/v1/employees/{employee_id}")
+    finally:
+        asyncio.run(_cleanup(uuid4(), employee_id, workflow_id, ""))
+
+
 def _assert_idempotent_delete(client: httpx.Client, path: str) -> None:
     assert client.delete(path).status_code == 204
     assert client.delete(path).status_code == 204
@@ -231,7 +265,13 @@ def _slow_workflow_body(suffix: str) -> dict[str, object]:
                 "id": "chat",
                 "type": "ai_chat",
                 "position": {"x": 200, "y": 0},
-                "config": {"prompt": "缓慢输出删除验收结果"},
+                "config": {
+                    "prompt": "缓慢输出删除验收结果",
+                    "target": {
+                        "type": "model",
+                        "model_configuration_id": str(DEFAULT_TEST_MODEL_CONFIGURATION_ID),
+                    },
+                },
             },
             {"id": "end", "type": "end", "position": {"x": 400, "y": 0}, "config": {}},
         ],
@@ -240,6 +280,18 @@ def _slow_workflow_body(suffix: str) -> dict[str, object]:
             {"id": "edge-2", "source": "chat", "target": "end"},
         ],
     }
+
+
+def _employee_target_workflow_body(suffix: str, employee_id: UUID) -> dict[str, object]:
+    body = _slow_workflow_body(suffix)
+    nodes = body["nodes"]
+    assert isinstance(nodes, list)
+    chat = nodes[1]
+    assert isinstance(chat, dict)
+    config = chat["config"]
+    assert isinstance(config, dict)
+    config["target"] = {"type": "employee", "employee_id": str(employee_id)}
+    return body
 
 
 async def _cleanup(

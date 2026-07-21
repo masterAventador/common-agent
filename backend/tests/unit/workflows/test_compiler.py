@@ -25,6 +25,7 @@ from common_agent.domain.workflow import (
     WorkflowNodePosition,
     WorkflowNodeType,
 )
+from common_agent.domain.workflow_run import WorkflowAiTargetSummary
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.models.base import (
     ModelMessageRole,
@@ -85,6 +86,9 @@ class WorkflowObserverProbe:
 
     async def node_completed(self, node_id: str) -> None:
         self.events.append(("completed", node_id))
+
+    async def ai_target_resolved(self, summary: WorkflowAiTargetSummary) -> None:
+        del summary
 
 
 class BlockingWorkflowModelProbe(WorkflowModelProbe):

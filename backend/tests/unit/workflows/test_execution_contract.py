@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from typing import cast
+from uuid import UUID
 
 import pytest
 
 from common_agent.domain.workflow import WorkflowDefinition
+from common_agent.domain.workflow_run import WorkflowAiTargetSummary
 from common_agent.runtimes.base import RuntimeKnowledgeChunk
 from common_agent.workflows.execution import (
     CompiledWorkflow,
@@ -26,6 +28,9 @@ class _ObserverProbe:
     async def node_completed(self, node_id: str) -> None:
         del node_id
 
+    async def ai_target_resolved(self, summary: WorkflowAiTargetSummary) -> None:
+        del summary
+
 
 class _CompiledProbe:
     workflow_id = "workflow-probe"
@@ -36,8 +41,9 @@ class _CompiledProbe:
         *,
         observer: WorkflowExecutionObserver | None = None,
         stop: WorkflowExecutionStopSignal | None = None,
+        run_id: UUID | None = None,
     ) -> WorkflowExecutionResult:
-        del observer, stop
+        del observer, stop, run_id
         return WorkflowExecutionResult(
             output=user_input,
             completed_node_ids=("start", "end"),

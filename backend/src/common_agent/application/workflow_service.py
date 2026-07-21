@@ -7,7 +7,7 @@ from common_agent.application.resource_locks import (
     ResourceMutationGuard,
     workflow_resource,
 )
-from common_agent.application.workflow_catalog import WorkflowCatalog
+from common_agent.application.workflow_catalog import WorkflowAiTargetDirectory, WorkflowCatalog
 from common_agent.application.workflow_contracts import (
     WorkflowExecutionUnavailable,
     WorkflowNotFound,
@@ -42,6 +42,7 @@ class WorkflowService:
         unit_of_work_factory: WorkflowUnitOfWorkFactory,
         knowledge_bases: KnowledgeBaseService,
         *,
+        ai_targets: WorkflowAiTargetDirectory | None = None,
         compiler: WorkflowCompiler | None = None,
         events: WorkflowEventBroker | None = None,
         guard: ResourceMutationGuard | None = None,
@@ -53,6 +54,7 @@ class WorkflowService:
         self._catalog = WorkflowCatalog(
             unit_of_work_factory,
             knowledge_bases,
+            ai_targets=ai_targets,
             guard=self._guard,
         )
         locks: KeyedLockPool[UUID] = KeyedLockPool()

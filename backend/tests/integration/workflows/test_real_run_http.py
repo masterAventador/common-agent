@@ -10,6 +10,9 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from common_agent.model_configurations.defaults import platform_default_model_configuration_id
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
+from tests.support.employees import delete_employees_from_database_url
 from tests.support.http import authenticated_client, running_api
 from tests.support.ragflow import delete_dataset, provision_api_key
 from tests.support.settings import TEST_DATABASE_URL
@@ -36,6 +39,8 @@ def test_real_workflow_run_http_uses_ragflow_langgraph_and_bailian() -> None:
     }
     dataset_id: str | None = None
     workflow_id: str | None = None
+    employee_target_workflow_id: str | None = None
+    employee_id: str | None = None
     completed_run_id = str(uuid4())
     stopped_run_id = str(uuid4())
     failed_run_id = str(uuid4())
@@ -98,6 +103,47 @@ def test_real_workflow_run_http_uses_ragflow_langgraph_and_bailian() -> None:
                 "workflow.run.completed",
             ]
 
+            employee_marker = f"COMMON_AGENT_S10_07I_EMPLOYEE_{uuid4().hex}"
+            created_employee = client.post(
+                "/api/v1/employees",
+                json=_employee_body(),
+            )
+            assert created_employee.status_code == 201
+            employee_id = str(created_employee.json()["id"])
+            employee_workflow = client.post(
+                "/api/v1/workflows",
+                json=_employee_target_workflow_body(employee_id),
+            )
+            assert employee_workflow.status_code == 201
+            employee_target_workflow_id = str(employee_workflow.json()["id"])
+            employee_run_id = str(uuid4())
+            employee_accepted = client.post(
+                f"/api/v1/workflows/{employee_target_workflow_id}/runs",
+                json={
+                    "run_id": employee_run_id,
+                    "input": f"只输出唯一标记 {employee_marker}",
+                },
+            )
+            assert employee_accepted.status_code == 202
+            employee_completed = _terminal(client, employee_run_id)
+            assert employee_completed["status"] == "completed"
+            assert employee_marker in str(employee_completed["output"])
+            assert employee_completed["ai_targets"] == [
+                {
+                    "node_id": "chat",
+                    "target_type": "employee",
+                    "target_id": employee_id,
+                    "target_name": "S10-07I 真实节点员工",
+                    "model_configuration_id": str(
+                        platform_default_model_configuration_id(DEFAULT_TENANT_ID)
+                    ),
+                    "model_identifier": "qwen-plus",
+                }
+            ]
+            assert _events(client, employee_run_id, "workflow.run.completed")[-1] == (
+                "workflow.run.completed"
+            )
+
             stop_started = client.post(
                 f"/api/v1/workflows/{workflow_id}/runs",
                 json={"run_id": stopped_run_id, "input": f"再次检索 {marker}"},
@@ -134,13 +180,23 @@ def test_real_workflow_run_http_uses_ragflow_langgraph_and_bailian() -> None:
             assert restored.json()["status"] == "completed"
             assert marker in restored.json()["output"]
     finally:
+        if employee_target_workflow_id is not None:
+            asyncio.run(
+                delete_workflows_from_database_url(
+                    TEST_DATABASE_URL,
+                    employee_target_workflow_id,
+                )
+            )
         if workflow_id is not None:
             asyncio.run(delete_workflows_from_database_url(TEST_DATABASE_URL, workflow_id))
+        if employee_id is not None:
+            asyncio.run(delete_employees_from_database_url(TEST_DATABASE_URL, employee_id))
         if dataset_id is not None:
             asyncio.run(delete_dataset(base_url, api_key, dataset_id))
 
 
 def _workflow_body(knowledge_base_id: str) -> dict[str, object]:
+    model_configuration_id = str(platform_default_model_configuration_id(DEFAULT_TENANT_ID))
     return {
         "name": f"common-agent-w5-04-{uuid4().hex}",
         "description": "W5-04 正式 API、RAGFlow、LangGraph 与百炼验收",
@@ -161,7 +217,13 @@ def _workflow_body(knowledge_base_id: str) -> dict[str, object]:
                 "id": "chat",
                 "type": "ai_chat",
                 "position": {"x": 480, "y": 0},
-                "config": {"prompt": "根据检索内容回答,只输出唯一验收标记,不要添加其他文字。"},
+                "config": {
+                    "prompt": "根据检索内容回答,只输出唯一验收标记,不要添加其他文字。",
+                    "target": {
+                        "type": "model",
+                        "model_configuration_id": model_configuration_id,
+                    },
+                },
             },
             {
                 "id": "end",
@@ -174,6 +236,43 @@ def _workflow_body(knowledge_base_id: str) -> dict[str, object]:
             {"id": "edge-1", "source": "start", "target": "retrieve"},
             {"id": "edge-2", "source": "retrieve", "target": "chat"},
             {"id": "edge-3", "source": "chat", "target": "end"},
+        ],
+    }
+
+
+def _employee_body() -> dict[str, object]:
+    return {
+        "name": "S10-07I 真实节点员工",
+        "description": "验证工作流 AI 对话节点继承数字员工运行配置",
+        "system_prompt": "只输出用户要求的唯一验收标记,不添加解释。",
+        "default_model_configuration_id": str(
+            platform_default_model_configuration_id(DEFAULT_TENANT_ID)
+        ),
+        "knowledge_base_id": None,
+        "allowed_workflow_ids": [],
+    }
+
+
+def _employee_target_workflow_body(employee_id: str) -> dict[str, object]:
+    return {
+        "name": f"common-agent-s10-07i-employee-{uuid4().hex}",
+        "description": "S10-07I 正式 Deep Agents 节点验收",
+        "nodes": [
+            {"id": "start", "type": "start", "position": {"x": 0, "y": 0}, "config": {}},
+            {
+                "id": "chat",
+                "type": "ai_chat",
+                "position": {"x": 240, "y": 0},
+                "config": {
+                    "prompt": "遵守数字员工指令,只输出用户要求的唯一标记。",
+                    "target": {"type": "employee", "employee_id": employee_id},
+                },
+            },
+            {"id": "end", "type": "end", "position": {"x": 480, "y": 0}, "config": {}},
+        ],
+        "edges": [
+            {"id": "edge-start-chat", "source": "start", "target": "chat"},
+            {"id": "edge-chat-end", "source": "chat", "target": "end"},
         ],
     }
 

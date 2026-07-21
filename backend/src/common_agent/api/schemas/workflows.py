@@ -14,8 +14,10 @@ from common_agent.domain.workflow import (
     WORKFLOW_NAME_MAX_LENGTH,
     WORKFLOW_NODE_ID_MAX_LENGTH,
     AiChatNodeConfig,
+    EmployeeAiChatTarget,
     EndNodeConfig,
     KnowledgeRetrievalNodeConfig,
+    ModelAiChatTarget,
     StartNodeConfig,
     WorkflowConfiguration,
     WorkflowDefinition,
@@ -80,10 +82,31 @@ class StartNodeConfigBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class EmployeeAiChatTargetBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["employee"]
+    employee_id: UUID
+
+
+class ModelAiChatTargetBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["model"]
+    model_configuration_id: UUID
+
+
+type AiChatTargetBody = Annotated[
+    EmployeeAiChatTargetBody | ModelAiChatTargetBody,
+    Field(discriminator="type"),
+]
+
+
 class AiChatNodeConfigBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     prompt: AiChatPrompt
+    target: AiChatTargetBody
 
 
 class KnowledgeRetrievalNodeConfigBody(BaseModel):
@@ -236,7 +259,15 @@ def _node_to_domain(body: WorkflowNodeBody) -> WorkflowNode:
         config = StartNodeConfig()
         node_type = WorkflowNodeType.START
     elif isinstance(body, AiChatWorkflowNodeBody):
-        config = AiChatNodeConfig(prompt=body.config.prompt)
+        target = body.config.target
+        config = AiChatNodeConfig(
+            prompt=body.config.prompt,
+            target=(
+                EmployeeAiChatTarget(employee_id=target.employee_id)
+                if isinstance(target, EmployeeAiChatTargetBody)
+                else ModelAiChatTarget(model_configuration_id=target.model_configuration_id)
+            ),
+        )
         node_type = WorkflowNodeType.AI_CHAT
     elif isinstance(body, KnowledgeRetrievalWorkflowNodeBody):
         config = KnowledgeRetrievalNodeConfig(knowledge_base_id=body.config.knowledge_base_id)
@@ -258,11 +289,24 @@ def _node_response(node: WorkflowNode) -> WorkflowNodeBody:
             config=StartNodeConfigBody(),
         )
     if isinstance(config, AiChatNodeConfig):
+        if config.target is None:
+            raise ValueError("AI 对话节点缺少执行目标")
+        target: AiChatTargetBody
+        if isinstance(config.target, EmployeeAiChatTarget):
+            target = EmployeeAiChatTargetBody(
+                type="employee",
+                employee_id=config.target.employee_id,
+            )
+        else:
+            target = ModelAiChatTargetBody(
+                type="model",
+                model_configuration_id=config.target.model_configuration_id,
+            )
         return AiChatWorkflowNodeBody(
             id=node.id,
             type="ai_chat",
             position=position,
-            config=AiChatNodeConfigBody(prompt=config.prompt),
+            config=AiChatNodeConfigBody(prompt=config.prompt, target=target),
         )
     if isinstance(config, KnowledgeRetrievalNodeConfig):
         return KnowledgeRetrievalWorkflowNodeBody(

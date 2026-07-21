@@ -6,7 +6,11 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from common_agent.domain.workflow import WORKFLOW_NODE_ID_MAX_LENGTH
+from common_agent.domain.model_configuration import normalize_model_identifier
+from common_agent.domain.workflow import (
+    WORKFLOW_NODE_ID_MAX_LENGTH,
+    AiChatTargetType,
+)
 
 WORKFLOW_RUN_INPUT_MAX_LENGTH = 200_000
 WORKFLOW_RUN_OUTPUT_MAX_LENGTH = 200_000
@@ -62,6 +66,40 @@ class WorkflowRunOrigin:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowAiTargetSummary:
+    node_id: str
+    target_type: AiChatTargetType
+    target_id: UUID
+    target_name: str
+    model_configuration_id: UUID
+    model_identifier: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "node_id",
+            _required_text("ai_target.node_id", self.node_id, WORKFLOW_NODE_ID_MAX_LENGTH),
+        )
+        if not isinstance(self.target_type, AiChatTargetType):
+            raise WorkflowRunValidationError("ai_target.target_type", "不是支持的目标类型")
+        _uuid("ai_target.target_id", self.target_id)
+        object.__setattr__(
+            self,
+            "target_name",
+            _required_text("ai_target.target_name", self.target_name, 128),
+        )
+        _uuid("ai_target.model_configuration_id", self.model_configuration_id)
+        try:
+            identifier = normalize_model_identifier(self.model_identifier)
+        except ValueError as error:
+            raise WorkflowRunValidationError(
+                "ai_target.model_identifier",
+                "不是合法的模型标识",
+            ) from error
+        object.__setattr__(self, "model_identifier", identifier)
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowRun:
     id: UUID
     workflow_id: UUID
@@ -78,6 +116,7 @@ class WorkflowRun:
     started_at: datetime | None
     finished_at: datetime | None
     updated_at: datetime
+    ai_targets: tuple[WorkflowAiTargetSummary, ...] = ()
 
     def __post_init__(self) -> None:
         _uuid("id", self.id)
@@ -109,6 +148,11 @@ class WorkflowRun:
             raise WorkflowRunValidationError("origin", "员工触发必须包含会话来源")
         if self.trigger is WorkflowRunTrigger.MANUAL and self.origin is not None:
             raise WorkflowRunValidationError("origin", "手动触发不能包含员工会话来源")
+        ai_targets = tuple(self.ai_targets)
+        if any(not isinstance(value, WorkflowAiTargetSummary) for value in ai_targets):
+            raise WorkflowRunValidationError("ai_targets", "必须只包含执行目标摘要")
+        if len({value.node_id for value in ai_targets}) != len(ai_targets):
+            raise WorkflowRunValidationError("ai_targets", "不能包含重复节点")
         _timestamp("created_at", self.created_at)
         _timestamp("updated_at", self.updated_at)
         if self.updated_at < self.created_at:
@@ -135,6 +179,7 @@ class WorkflowRun:
         object.__setattr__(self, "completed_node_ids", completed_node_ids)
         object.__setattr__(self, "failed_node_id", failed_node_id)
         object.__setattr__(self, "error_code", error_code)
+        object.__setattr__(self, "ai_targets", ai_targets)
 
     @property
     def is_terminal(self) -> bool:
@@ -204,6 +249,25 @@ class WorkflowRun:
             updated_at=self._changed_at(now),
         )
 
+    def record_ai_target(
+        self,
+        summary: WorkflowAiTargetSummary,
+        *,
+        now: datetime | None = None,
+    ) -> WorkflowRun:
+        self._ensure_status({WorkflowRunStatus.RUNNING}, "记录 AI 执行目标")
+        if not isinstance(summary, WorkflowAiTargetSummary):
+            raise WorkflowRunValidationError("ai_targets", "必须是执行目标摘要")
+        if self.current_node_id != summary.node_id:
+            raise WorkflowRunTransitionError(self.status, "记录非当前节点的 AI 执行目标")
+        if any(value.node_id == summary.node_id for value in self.ai_targets):
+            raise WorkflowRunTransitionError(self.status, "重复记录 AI 执行目标")
+        return replace(
+            self,
+            ai_targets=(*self.ai_targets, summary),
+            updated_at=self._changed_at(now),
+        )
+
     def complete(self, output: str, *, now: datetime | None = None) -> WorkflowRun:
         self._ensure_status({WorkflowRunStatus.RUNNING}, "完成运行")
         changed_at = self._changed_at(now)
@@ -259,6 +323,7 @@ class WorkflowRun:
             completed_node_ids=(),
             failed_node_id=None,
             error_code=None,
+            ai_targets=(),
             started_at=changed_at,
             finished_at=None,
             updated_at=changed_at,

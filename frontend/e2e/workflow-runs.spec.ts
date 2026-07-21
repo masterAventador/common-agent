@@ -24,6 +24,16 @@ async function createAiWorkflow(
   name: string,
   prompt: string,
 ): Promise<string> {
+  const modelsResponse = await page.request.get(
+    `${apiUrl}/model-configurations?enabled_only=true&limit=1`,
+    { headers },
+  );
+  expect(modelsResponse.status()).toBe(200);
+  const modelConfigurations = (await modelsResponse.json()) as {
+    items: { id: string }[];
+  };
+  const modelConfigurationId = modelConfigurations.items[0]?.id;
+  expect(modelConfigurationId).toEqual(expect.any(String));
   const response = await page.request.post(`${apiUrl}/workflows`, {
     headers,
     data: {
@@ -35,7 +45,10 @@ async function createAiWorkflow(
           id: "chat",
           type: "ai_chat",
           position: { x: 300, y: 120 },
-          config: { prompt },
+          config: {
+            prompt,
+            target: { type: "model", model_configuration_id: modelConfigurationId },
+          },
         },
         { id: "end", type: "end", position: { x: 560, y: 120 }, config: {} },
       ],
@@ -142,18 +155,20 @@ test("runs, stops, fails, and restores workflow summaries through the real UI", 
   await expect(page).toHaveURL(new RegExp(`run_id=${completedRun.id}`));
   await expect(page.getByRole("button", { name: "停止工作流" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "工作流名称" })).toBeDisabled();
-  await expect(page.locator('.react-flow__node[data-id="chat"]')).toHaveClass(
-    /is-run-active/,
-    { timeout: 180_000 },
-  );
   await expect(page.getByText("运行完成")).toBeVisible({ timeout: 180_000 });
   await expect(page.getByText("COMMON_AGENT_WORKFLOW_UI_REAL_OK", { exact: false })).toBeVisible();
+  const actualTarget = page.locator(".workflow-run-targets");
+  await expect(actualTarget).toContainText("平台默认模型", { timeout: 10_000 });
+  await expect(actualTarget).toContainText("模型 · qwen-plus", { timeout: 10_000 });
   await expect(page.locator(".react-flow__node.is-run-completed")).toHaveCount(3);
 
   await page.reload();
   await expect(page).toHaveURL(new RegExp(`run_id=${completedRun.id}`));
   await expect(page.getByText("运行完成")).toBeVisible();
   await expect(page.getByText("COMMON_AGENT_WORKFLOW_UI_REAL_OK", { exact: false })).toBeVisible();
+  await expect(page.locator(".workflow-run-targets")).toContainText("模型 · qwen-plus", {
+    timeout: 10_000,
+  });
 
   await page.getByRole("button", { name: `选择工作流 ${stopWorkflowName}` }).click();
   const stoppedRun = await runFromPage(page, "生成足够长的内容以验收协作停止");

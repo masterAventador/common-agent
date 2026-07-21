@@ -1033,6 +1033,15 @@ select {
   background: #d4380d;
 }
 
+.workflow-run-targets {
+  display: grid;
+  padding: 10px;
+  gap: 8px;
+  border: 1px solid #dfe5f0;
+  border-radius: 9px;
+  background: #fafbfe;
+}
+
 .workflow-run-output {
   display: grid;
   gap: 7px;

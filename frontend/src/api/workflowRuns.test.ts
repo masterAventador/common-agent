@@ -32,6 +32,16 @@ const run = {
   failed_node_id: null,
   error_code: null,
   origin: null,
+  ai_targets: [
+    {
+      node_id: "chat",
+      target_type: "model" as const,
+      target_id: "67b23894-27bd-49dd-a023-d926905e7ea1",
+      target_name: "通用模型",
+      model_configuration_id: "67b23894-27bd-49dd-a023-d926905e7ea1",
+      model_identifier: "qwen-plus",
+    },
+  ],
   created_at: "2026-07-20T06:00:00Z",
   started_at: "2026-07-20T06:00:00Z",
   finished_at: null,

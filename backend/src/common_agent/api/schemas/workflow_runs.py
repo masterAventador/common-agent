@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
+from common_agent.domain.workflow import AiChatTargetType
 from common_agent.domain.workflow_run import (
     WORKFLOW_RUN_INPUT_MAX_LENGTH,
     WorkflowRun,
@@ -35,6 +36,17 @@ class WorkflowRunOriginResponse(BaseModel):
     assistant_message_id: UUID
 
 
+class WorkflowAiTargetSummaryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    node_id: str
+    target_type: AiChatTargetType
+    target_id: UUID
+    target_name: str
+    model_configuration_id: UUID
+    model_identifier: str
+
+
 class WorkflowRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
@@ -49,6 +61,7 @@ class WorkflowRunResponse(BaseModel):
     failed_node_id: str | None
     error_code: str | None
     origin: WorkflowRunOriginResponse | None
+    ai_targets: list[WorkflowAiTargetSummaryResponse]
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None

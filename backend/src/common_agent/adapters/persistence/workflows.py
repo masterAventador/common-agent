@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.models import (
+    ModelConfigurationReferenceRow,
+    WorkflowAiChatTargetRow,
     WorkflowEdgeRow,
     WorkflowNodeRow,
     WorkflowRow,
@@ -27,8 +29,11 @@ from common_agent.adapters.persistence.timestamps import (
 )
 from common_agent.domain.workflow import (
     AiChatNodeConfig,
+    AiChatTarget,
+    EmployeeAiChatTarget,
     EndNodeConfig,
     KnowledgeRetrievalNodeConfig,
+    ModelAiChatTarget,
     StartNodeConfig,
     WorkflowDefinition,
     WorkflowEdge,
@@ -39,6 +44,7 @@ from common_agent.domain.workflow import (
     WorkflowValidationError,
 )
 from common_agent.domain.workflow_run import (
+    WorkflowAiTargetSummary,
     WorkflowRun,
     WorkflowRunOrigin,
     WorkflowRunStatus,
@@ -141,6 +147,9 @@ class SqlAlchemyWorkflowRepository:
             raise
         self._session.add_all(_node_rows(workflow))
         await self._session.flush()
+        self._session.add_all(_target_rows(workflow, self._tenant_id))
+        self._session.add_all(_model_reference_rows(workflow, self._tenant_id))
+        await self._session.flush()
         self._session.add_all(_edge_rows(workflow))
         await self._session.flush()
 
@@ -170,7 +179,17 @@ class SqlAlchemyWorkflowRepository:
         await self._session.execute(
             delete(WorkflowNodeRow).where(WorkflowNodeRow.workflow_id == workflow_id)
         )
+        await self._session.execute(
+            delete(ModelConfigurationReferenceRow).where(
+                ModelConfigurationReferenceRow.tenant_id == self._tenant_id,
+                ModelConfigurationReferenceRow.resource_type == "workflow",
+                ModelConfigurationReferenceRow.resource_id == workflow_id,
+            )
+        )
         self._session.add_all(_node_rows(workflow))
+        await self._session.flush()
+        self._session.add_all(_target_rows(workflow, self._tenant_id))
+        self._session.add_all(_model_reference_rows(workflow, self._tenant_id))
         await self._session.flush()
         self._session.add_all(_edge_rows(workflow))
         await self._session.flush()
@@ -315,6 +334,7 @@ class SqlAlchemyWorkflowRunRepository:
                     output=run.output,
                     current_node_id=run.current_node_id,
                     completed_node_ids=list(run.completed_node_ids),
+                    ai_targets=[_ai_target_summary_values(value) for value in run.ai_targets],
                     failed_node_id=run.failed_node_id,
                     error_code=run.error_code,
                     started_at=(
@@ -431,6 +451,7 @@ def _run_values(run: WorkflowRun) -> dict[str, object]:
         "output": run.output,
         "current_node_id": run.current_node_id,
         "completed_node_ids": list(run.completed_node_ids),
+        "ai_targets": [_ai_target_summary_values(value) for value in run.ai_targets],
         "failed_node_id": run.failed_node_id,
         "error_code": run.error_code,
         "created_at": to_database_datetime(run.created_at),
@@ -456,6 +477,60 @@ def _node_rows(workflow: WorkflowDefinition) -> list[WorkflowNodeRow]:
     ]
 
 
+def _target_rows(
+    workflow: WorkflowDefinition,
+    tenant_id: str,
+) -> list[WorkflowAiChatTargetRow]:
+    rows: list[WorkflowAiChatTargetRow] = []
+    for node in workflow.nodes:
+        config = node.config
+        if not isinstance(config, AiChatNodeConfig) or config.target is None:
+            continue
+        employee_id = (
+            str(config.target.employee_id)
+            if isinstance(config.target, EmployeeAiChatTarget)
+            else None
+        )
+        model_configuration_id = (
+            str(config.target.model_configuration_id)
+            if isinstance(config.target, ModelAiChatTarget)
+            else None
+        )
+        rows.append(
+            WorkflowAiChatTargetRow(
+                tenant_id=tenant_id,
+                workflow_id=str(workflow.id),
+                node_id=node.id,
+                target_type=config.target.type.value,
+                employee_id=employee_id,
+                model_configuration_id=model_configuration_id,
+            )
+        )
+    return rows
+
+
+def _model_reference_rows(
+    workflow: WorkflowDefinition,
+    tenant_id: str,
+) -> list[ModelConfigurationReferenceRow]:
+    model_ids = {
+        node.config.target.model_configuration_id
+        for node in workflow.nodes
+        if isinstance(node.config, AiChatNodeConfig)
+        and isinstance(node.config.target, ModelAiChatTarget)
+    }
+    return [
+        ModelConfigurationReferenceRow(
+            tenant_id=tenant_id,
+            model_configuration_id=str(model_id),
+            resource_type="workflow",
+            resource_id=str(workflow.id),
+            created_at=to_database_datetime(workflow.updated_at),
+        )
+        for model_id in model_ids
+    ]
+
+
 def _edge_rows(workflow: WorkflowDefinition) -> list[WorkflowEdgeRow]:
     workflow_id = str(workflow.id)
     return [
@@ -472,7 +547,18 @@ def _edge_rows(workflow: WorkflowDefinition) -> list[WorkflowEdgeRow]:
 
 def _config_values(config: WorkflowNodeConfig) -> dict[str, object]:
     if isinstance(config, AiChatNodeConfig):
-        return {"prompt": config.prompt}
+        values: dict[str, object] = {"prompt": config.prompt}
+        if isinstance(config.target, EmployeeAiChatTarget):
+            values["target"] = {
+                "type": "employee",
+                "employee_id": str(config.target.employee_id),
+            }
+        elif isinstance(config.target, ModelAiChatTarget):
+            values["target"] = {
+                "type": "model",
+                "model_configuration_id": str(config.target.model_configuration_id),
+            }
+        return values
     if isinstance(config, KnowledgeRetrievalNodeConfig):
         return {"knowledge_base_id": config.knowledge_base_id}
     return {}
@@ -528,6 +614,7 @@ def _run_to_domain(row: WorkflowRunRow) -> WorkflowRun:
         started_at=(None if row.started_at is None else from_database_datetime(row.started_at)),
         finished_at=(None if row.finished_at is None else from_database_datetime(row.finished_at)),
         updated_at=from_database_datetime(row.updated_at),
+        ai_targets=tuple(_ai_target_summary_from_values(value) for value in row.ai_targets),
     )
 
 
@@ -544,6 +631,42 @@ def _node_to_domain(row: WorkflowNodeRow) -> WorkflowNode:
     )
 
 
+def _ai_target_summary_values(summary: WorkflowAiTargetSummary) -> dict[str, str]:
+    return {
+        "node_id": summary.node_id,
+        "target_type": summary.target_type.value,
+        "target_id": str(summary.target_id),
+        "target_name": summary.target_name,
+        "model_configuration_id": str(summary.model_configuration_id),
+        "model_identifier": summary.model_identifier,
+    }
+
+
+def _ai_target_summary_from_values(values: object) -> WorkflowAiTargetSummary:
+    if not isinstance(values, dict) or set(values) != {
+        "node_id",
+        "target_type",
+        "target_id",
+        "target_name",
+        "model_configuration_id",
+        "model_identifier",
+    }:
+        raise WorkflowRunValidationError("ai_targets", "持久化执行目标摘要不合法")
+    try:
+        from common_agent.domain.workflow import AiChatTargetType
+
+        return WorkflowAiTargetSummary(
+            node_id=str(values["node_id"]),
+            target_type=AiChatTargetType(str(values["target_type"])),
+            target_id=UUID(str(values["target_id"])),
+            target_name=str(values["target_name"]),
+            model_configuration_id=UUID(str(values["model_configuration_id"])),
+            model_identifier=str(values["model_identifier"]),
+        )
+    except (TypeError, ValueError):
+        raise WorkflowRunValidationError("ai_targets", "持久化执行目标摘要不合法") from None
+
+
 def _config_from_values(
     node_type: WorkflowNodeType,
     values: dict[str, object],
@@ -553,9 +676,33 @@ def _config_from_values(
             raise WorkflowValidationError("config", "开始或结束节点配置必须为空")
         return StartNodeConfig() if node_type is WorkflowNodeType.START else EndNodeConfig()
     if node_type is WorkflowNodeType.AI_CHAT:
-        if set(values) != {"prompt"}:
+        if set(values) == {"prompt"}:
+            return AiChatNodeConfig(prompt=values["prompt"])  # type: ignore[arg-type]
+        if set(values) != {"prompt", "target"}:
             raise WorkflowValidationError("config", "AI 对话节点配置字段不合法")
-        return AiChatNodeConfig(prompt=values["prompt"])  # type: ignore[arg-type]
+        target = values["target"]
+        if not isinstance(target, dict):
+            raise WorkflowValidationError("config", "AI 对话节点执行目标不合法")
+        if set(target) == {"type", "employee_id"} and target["type"] == "employee":
+            try:
+                resolved_target: AiChatTarget = EmployeeAiChatTarget(
+                    employee_id=UUID(str(target["employee_id"]))
+                )
+            except (ValueError, TypeError):
+                raise WorkflowValidationError("config", "AI 对话节点数字员工目标不合法") from None
+        elif set(target) == {"type", "model_configuration_id"} and target["type"] == "model":
+            try:
+                resolved_target = ModelAiChatTarget(
+                    model_configuration_id=UUID(str(target["model_configuration_id"]))
+                )
+            except (ValueError, TypeError):
+                raise WorkflowValidationError("config", "AI 对话节点模型目标不合法") from None
+        else:
+            raise WorkflowValidationError("config", "AI 对话节点执行目标不合法")
+        return AiChatNodeConfig(
+            prompt=values["prompt"],  # type: ignore[arg-type]
+            target=resolved_target,
+        )
     if set(values) != {"knowledge_base_id"}:
         raise WorkflowValidationError("config", "知识检索节点配置字段不合法")
     return KnowledgeRetrievalNodeConfig(

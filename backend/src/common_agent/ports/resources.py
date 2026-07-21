@@ -8,6 +8,7 @@ from uuid import UUID
 
 class LocalDeleteBlock(StrEnum):
     EMPLOYEE_CONVERSATIONS = "employee_conversations"
+    EMPLOYEE_WORKFLOW_TARGETS = "employee_workflow_targets"
     WORKFLOW_EMPLOYEES = "workflow_employees"
     WORKFLOW_ACTIVE_RUNS = "workflow_active_runs"
 

@@ -68,6 +68,7 @@ from common_agent.application.resource_deletion import ResourceDeletionService
 from common_agent.application.resource_locks import ResourceMutationGuard
 from common_agent.application.system_service import SystemService
 from common_agent.application.workflow_service import WorkflowService
+from common_agent.application.workflow_targets import WorkflowAiTargetDirectory
 from common_agent.audit import AuditPolicy, AuditService
 from common_agent.auth import AuthConfiguration, AuthenticationService
 from common_agent.bootstrap import (
@@ -102,6 +103,11 @@ from common_agent.tenancy import (
     current_tenant,
 )
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
+from common_agent.workflows.ai_targets import (
+    StaticWorkflowModelResolver,
+    WorkflowAiTargetExecutor,
+    WorkflowModelResolver,
+)
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
 
@@ -146,6 +152,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     demo_workflow_model: DemoWorkflowModel | None = None
     conversation_events: ConversationEventBroker | None = None
     workflow_events: WorkflowEventBroker | None = None
+    deep_agent_model_resolver: BailianChatModelResolver | None = None
     try:
         integration_mode: IntegrationModeSettings = app.state.integration_mode
         worker_settings: WorkerSettings = app.state.worker_settings
@@ -199,6 +206,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             guard=resource_guard,
         )
         app.state.model_configurations = model_configurations
+        employee_units = SqlAlchemyEmployeeUnitOfWorkFactory(database, tenant_id_provider)
+        ai_target_directory = WorkflowAiTargetDirectory(employee_units, model_configurations)
+        if integration_mode.mode == "demo":
+            workflow_model_resolver: WorkflowModelResolver = StaticWorkflowModelResolver(
+                workflow_model
+            )
+        else:
+            deep_agent_model_resolver = BailianChatModelResolver(
+                model_settings,
+                initial_model=model,
+            )
+            workflow_model_resolver = deep_agent_model_resolver
+        workflow_ai_targets = WorkflowAiTargetExecutor(
+            ai_target_directory,
+            workflow_model_resolver,
+            knowledge_bases,
+            employee_runtime=runtime,
+        )
         app.state.resource_deletions = ResourceDeletionService(
             SqlAlchemyResourceDeletionStore(database, tenant_id_provider),
             knowledge_bases,
@@ -220,8 +245,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         workflows = WorkflowService(
             SqlAlchemyWorkflowUnitOfWorkFactory(database, tenant_id_provider),
             knowledge_bases,
+            ai_targets=ai_target_directory,
             compiler=LangGraphWorkflowCompiler(
-                create_workflow_node_registry(workflow_model, knowledge_bases)
+                create_workflow_node_registry(workflow_ai_targets, knowledge_bases)
             ),
             events=workflow_events,
             guard=resource_guard,
@@ -232,12 +258,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.workflow_events = workflow_events
         app.state.workflows = workflows
         if integration_mode.mode != "demo":
+            if deep_agent_model_resolver is None:
+                raise RuntimeError("百炼模型解析器尚未完成装配")
             runtime = DeepAgentsEmployeeRuntime(
-                BailianChatModelResolver(model_settings, initial_model=model),
+                deep_agent_model_resolver,
                 tools=WorkflowToolRegistry(workflows, audit=app.state.audit),
             )
+            workflow_ai_targets.bind_employee_runtime(runtime)
         employees = EmployeeService(
-            SqlAlchemyEmployeeUnitOfWorkFactory(database, tenant_id_provider),
+            employee_units,
             knowledge_bases,
             workflows=workflows,
             model_configurations=model_configurations,

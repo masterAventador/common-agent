@@ -1,20 +1,29 @@
 from __future__ import annotations
 
+from typing import Protocol
 from uuid import UUID
 
 from common_agent.application.resource_locks import (
     ResourceMutationGuard,
+    employee_resource,
     knowledge_base_resource,
+    model_configuration_resource,
     workflow_resource,
 )
 from common_agent.application.workflow_contracts import WorkflowNotFound
+from common_agent.application.workflow_targets import WorkflowEmployeeTargetNotFound
+from common_agent.domain.employee import Employee
+from common_agent.domain.model_configuration import ModelConfiguration
 from common_agent.domain.workflow import (
+    AiChatNodeConfig,
+    EmployeeAiChatTarget,
     KnowledgeRetrievalNodeConfig,
     WorkflowConfiguration,
     WorkflowDefinition,
 )
 from common_agent.knowledge.base import KnowledgeBaseNotFound
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.model_configurations.service import ModelConfigurationNotFound
 from common_agent.pagination import (
     CursorPage,
     ListPageRequest,
@@ -37,10 +46,12 @@ class WorkflowCatalog:
         unit_of_work_factory: WorkflowUnitOfWorkFactory,
         knowledge_bases: KnowledgeBaseService,
         *,
+        ai_targets: WorkflowAiTargetDirectory | None = None,
         guard: ResourceMutationGuard | None = None,
     ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
         self._knowledge_bases = knowledge_bases
+        self._ai_targets = ai_targets
         self._guard = guard or ResourceMutationGuard()
 
     async def list(self) -> tuple[WorkflowDefinition, ...]:
@@ -110,10 +121,71 @@ class WorkflowCatalog:
                     )
                     for node_id in node_ids
                 )
+        issues.extend(await self._validate_ai_targets(configuration))
+        return tuple(issues)
+
+    async def _validate_ai_targets(
+        self,
+        configuration: WorkflowConfiguration,
+    ) -> tuple[WorkflowValidationIssue, ...]:
+        issues: list[WorkflowValidationIssue] = []
+        for node in configuration.nodes:
+            config = node.config
+            if not isinstance(config, AiChatNodeConfig):
+                continue
+            if config.target is None:
+                if self._ai_targets is None:
+                    continue
+                issues.append(
+                    WorkflowValidationIssue(
+                        code=WorkflowValidationCode.AI_TARGET_REQUIRED,
+                        message="AI 对话节点必须选择数字员工或模型",
+                        node_id=node.id,
+                    )
+                )
+                continue
+            if self._ai_targets is None:
+                continue
+            try:
+                if isinstance(config.target, EmployeeAiChatTarget):
+                    employee = await self._ai_targets.get_employee(config.target.employee_id)
+                    model = await self._ai_targets.get_model_configuration(
+                        employee.default_model_configuration_id
+                    )
+                else:
+                    model = await self._ai_targets.get_model_configuration(
+                        config.target.model_configuration_id
+                    )
+            except WorkflowEmployeeTargetNotFound:
+                issues.append(
+                    WorkflowValidationIssue(
+                        code=WorkflowValidationCode.EMPLOYEE_NOT_FOUND,
+                        message="AI 对话节点引用的数字员工不存在",
+                        node_id=node.id,
+                    )
+                )
+                continue
+            except ModelConfigurationNotFound:
+                issues.append(
+                    WorkflowValidationIssue(
+                        code=WorkflowValidationCode.MODEL_CONFIGURATION_NOT_FOUND,
+                        message="AI 对话节点引用的模型配置不存在",
+                        node_id=node.id,
+                    )
+                )
+                continue
+            if not model.enabled:
+                issues.append(
+                    WorkflowValidationIssue(
+                        code=WorkflowValidationCode.MODEL_CONFIGURATION_DISABLED,
+                        message="AI 对话节点引用的模型配置已停用",
+                        node_id=node.id,
+                    )
+                )
         return tuple(issues)
 
     async def create(self, configuration: WorkflowConfiguration) -> WorkflowDefinition:
-        async with self._guard.hold(*_knowledge_resources(configuration)):
+        async with self._guard.hold(*_configuration_resources(configuration)):
             await self._ensure_valid(configuration)
             workflow = WorkflowDefinition.create(
                 name=configuration.name,
@@ -133,7 +205,7 @@ class WorkflowCatalog:
     ) -> WorkflowDefinition:
         async with self._guard.hold(
             workflow_resource(workflow_id),
-            *_knowledge_resources(configuration),
+            *_configuration_resources(configuration),
         ):
             await self.get(workflow_id)
             await self._ensure_valid(configuration)
@@ -166,4 +238,26 @@ def _knowledge_resources(configuration: WorkflowConfiguration) -> tuple[str, ...
     )
 
 
-__all__ = ["WorkflowCatalog"]
+def _configuration_resources(configuration: WorkflowConfiguration) -> tuple[str, ...]:
+    resources = list(_knowledge_resources(configuration))
+    for node in configuration.nodes:
+        config = node.config
+        if not isinstance(config, AiChatNodeConfig) or config.target is None:
+            continue
+        if isinstance(config.target, EmployeeAiChatTarget):
+            resources.append(employee_resource(config.target.employee_id))
+        else:
+            resources.append(model_configuration_resource(config.target.model_configuration_id))
+    return tuple(resources)
+
+
+class WorkflowAiTargetDirectory(Protocol):
+    async def get_employee(self, employee_id: UUID) -> Employee: ...
+
+    async def get_model_configuration(
+        self,
+        model_configuration_id: UUID,
+    ) -> ModelConfiguration: ...
+
+
+__all__ = ["WorkflowAiTargetDirectory", "WorkflowCatalog"]

@@ -18,7 +18,13 @@ const workflow: Workflow = {
       id: "chat",
       type: "ai_chat",
       position: { x: 240, y: 80 },
-      config: { prompt: "原提示词" },
+      config: {
+        prompt: "原提示词",
+        target: {
+          type: "model",
+          model_configuration_id: "67b23894-27bd-49dd-a023-d926905e7ea1",
+        },
+      },
     },
     { id: "end", type: "end", position: { x: 480, y: 80 }, config: {} },
   ],
@@ -38,7 +44,17 @@ describe("workflow editor reducer", () => {
     expect(state.dirty).toBe(false);
     expect(state.nodes.map((node) => [node.id, node.position, node.data.config])).toEqual([
       ["start", { x: 0, y: 80 }, {}],
-      ["chat", { x: 240, y: 80 }, { prompt: "原提示词" }],
+      [
+        "chat",
+        { x: 240, y: 80 },
+        {
+          prompt: "原提示词",
+          target: {
+            type: "model",
+            model_configuration_id: "67b23894-27bd-49dd-a023-d926905e7ea1",
+          },
+        },
+      ],
       ["end", { x: 480, y: 80 }, {}],
     ]);
     expect(editorStateToConfiguration(state)).toEqual({
@@ -84,7 +100,13 @@ describe("workflow editor reducer", () => {
     state = workflowEditorReducer(state, {
       type: "node_config_changed",
       nodeId: "ai_chat-1",
-      config: { prompt: "根据输入直接回答" },
+      config: {
+        prompt: "根据输入直接回答",
+        target: {
+          type: "employee",
+          employee_id: "7a743a57-00c9-44a1-8194-dc461f076f78",
+        },
+      },
     });
 
     expect(state.selectedNodeId).toBe("ai_chat-1");
@@ -98,7 +120,13 @@ describe("workflow editor reducer", () => {
           id: "ai_chat-1",
           type: "ai_chat",
           position: { x: 210, y: 20 },
-          config: { prompt: "根据输入直接回答" },
+          config: {
+            prompt: "根据输入直接回答",
+            target: {
+              type: "employee",
+              employee_id: "7a743a57-00c9-44a1-8194-dc461f076f78",
+            },
+          },
         },
         { id: "end-1", type: "end", position: { x: 410, y: 20 }, config: {} },
       ],

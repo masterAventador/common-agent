@@ -104,6 +104,7 @@ class EmployeeRuntimeRequest:
     knowledge_base_id: str | None
     knowledge_context: tuple[RuntimeKnowledgeChunk, ...] = field(repr=False)
     allowed_workflow_ids: tuple[UUID, ...]
+    workflow_run_id: UUID | None = None
 
     def __post_init__(self) -> None:
         _uuid("conversation_id", self.conversation_id)
@@ -133,6 +134,8 @@ class EmployeeRuntimeRequest:
             knowledge_base_id=knowledge_base_id,
         )
         workflow_ids = _workflow_ids(self.allowed_workflow_ids)
+        if self.workflow_run_id is not None:
+            _uuid("workflow_run_id", self.workflow_run_id)
 
         object.__setattr__(self, "system_instruction", system_instruction)
         object.__setattr__(self, "model_identifier", model_identifier)

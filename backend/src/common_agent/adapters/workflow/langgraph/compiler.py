@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Protocol, cast
+from uuid import UUID
 
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
@@ -16,6 +17,7 @@ from common_agent.adapters.workflow.langgraph.state import (
     WorkflowGraphUpdate,
 )
 from common_agent.domain.workflow import WorkflowDefinition, WorkflowNodeType
+from common_agent.domain.workflow_run import WorkflowAiTargetSummary
 from common_agent.knowledge.base import KnowledgeServiceError
 from common_agent.models.base import ModelServiceError
 from common_agent.workflows.errors import (
@@ -57,6 +59,9 @@ class _NoopObserver:
     async def node_completed(self, node_id: str) -> None:
         del node_id
 
+    async def ai_target_resolved(self, summary: WorkflowAiTargetSummary) -> None:
+        del summary
+
 
 class _NeverStop:
     @property
@@ -87,7 +92,7 @@ class _ObservedNode:
             raise WorkflowExecutionStopped()
 
         runner_task: asyncio.Future[WorkflowNodeExecutionResult] = asyncio.ensure_future(
-            self.runner(_node_context(state))
+            self.runner(_node_context(state, self.node_id, runtime.context))
         )
         stop_task = asyncio.create_task(stop.wait())
         try:
@@ -123,6 +128,7 @@ class _LangGraphCompiledWorkflow:
         *,
         observer: WorkflowExecutionObserver | None = None,
         stop: WorkflowExecutionStopSignal | None = None,
+        run_id: UUID | None = None,
     ) -> WorkflowExecutionResult:
         if not isinstance(user_input, str) or not user_input.strip():
             raise WorkflowExecutionFailed()
@@ -140,6 +146,7 @@ class _LangGraphCompiledWorkflow:
                 context={
                     "observer": observer or _NoopObserver(),
                     "stop": stop or _NeverStop(),
+                    "run_id": run_id,
                 },
             )
         except GraphRecursionError:
@@ -214,12 +221,20 @@ async def _discard_task[Result](task: asyncio.Future[Result]) -> None:
         await task
 
 
-def _node_context(state: WorkflowGraphState) -> WorkflowNodeExecutionContext:
+def _node_context(
+    state: WorkflowGraphState,
+    node_id: str,
+    context: WorkflowGraphContext,
+) -> WorkflowNodeExecutionContext:
     try:
         return WorkflowNodeExecutionContext(
             user_input=state["input"],
             output=state.get("output", ""),
             knowledge=state.get("knowledge", ()),
+            node_id=node_id,
+            run_id=context["run_id"],
+            observer=context["observer"],
+            stop=context["stop"],
         )
     except (KeyError, TypeError, ValueError):
         raise WorkflowExecutionFailed() from None

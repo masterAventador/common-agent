@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
+from uuid import UUID
 
 from common_agent.domain.workflow import WorkflowDefinition
+from common_agent.domain.workflow_run import WorkflowAiTargetSummary
 from common_agent.runtimes.base import RuntimeKnowledgeChunk
 
 
@@ -13,6 +15,10 @@ class WorkflowNodeExecutionContext:
     user_input: str = field(repr=False)
     output: str = field(repr=False)
     knowledge: tuple[RuntimeKnowledgeChunk, ...] = field(repr=False)
+    node_id: str | None = None
+    run_id: UUID | None = None
+    observer: WorkflowExecutionObserver | None = field(default=None, repr=False)
+    stop: WorkflowExecutionStopSignal | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.user_input, str) or not self.user_input.strip():
@@ -23,6 +29,19 @@ class WorkflowNodeExecutionContext:
             not isinstance(chunk, RuntimeKnowledgeChunk) for chunk in self.knowledge
         ):
             raise ValueError("工作流节点知识上下文无效")
+        if self.node_id is not None and (
+            not isinstance(self.node_id, str) or not self.node_id.strip()
+        ):
+            raise ValueError("工作流节点 ID 无效")
+        if self.run_id is not None and not isinstance(self.run_id, UUID):
+            raise ValueError("工作流运行 ID 无效")
+
+    async def report_ai_target(self, summary: WorkflowAiTargetSummary) -> None:
+        if self.observer is None:
+            return
+        if self.node_id is None or summary.node_id != self.node_id:
+            raise ValueError("AI 执行目标摘要与当前节点不一致")
+        await self.observer.ai_target_resolved(summary)
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +68,8 @@ class WorkflowExecutionObserver(Protocol):
     async def node_started(self, node_id: str) -> None: ...
 
     async def node_completed(self, node_id: str) -> None: ...
+
+    async def ai_target_resolved(self, summary: WorkflowAiTargetSummary) -> None: ...
 
 
 @runtime_checkable
@@ -115,6 +136,7 @@ class CompiledWorkflow(Protocol):
         *,
         observer: WorkflowExecutionObserver | None = None,
         stop: WorkflowExecutionStopSignal | None = None,
+        run_id: UUID | None = None,
     ) -> WorkflowExecutionResult: ...
 
 

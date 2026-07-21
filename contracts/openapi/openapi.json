@@ -9,13 +9,42 @@
             "minLength": 1,
             "title": "Prompt",
             "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/AiChatTargetBody"
           }
         },
         "required": [
-          "prompt"
+          "prompt",
+          "target"
         ],
         "title": "AiChatNodeConfigBody",
         "type": "object"
+      },
+      "AiChatTargetBody": {
+        "discriminator": {
+          "mapping": {
+            "employee": "#/components/schemas/EmployeeAiChatTargetBody",
+            "model": "#/components/schemas/ModelAiChatTargetBody"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/EmployeeAiChatTargetBody"
+          },
+          {
+            "$ref": "#/components/schemas/ModelAiChatTargetBody"
+          }
+        ]
+      },
+      "AiChatTargetType": {
+        "enum": [
+          "employee",
+          "model"
+        ],
+        "title": "AiChatTargetType",
+        "type": "string"
       },
       "AiChatWorkflowNodeBody": {
         "additionalProperties": false,
@@ -1027,6 +1056,27 @@
         "title": "DocumentParsingStatus",
         "type": "string"
       },
+      "EmployeeAiChatTargetBody": {
+        "additionalProperties": false,
+        "properties": {
+          "employee_id": {
+            "format": "uuid",
+            "title": "Employee Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "employee",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "employee_id"
+        ],
+        "title": "EmployeeAiChatTargetBody",
+        "type": "object"
+      },
       "EmployeeConfigurationBody": {
         "additionalProperties": false,
         "properties": {
@@ -1655,6 +1705,27 @@
         "title": "MetricsResponse",
         "type": "object"
       },
+      "ModelAiChatTargetBody": {
+        "additionalProperties": false,
+        "properties": {
+          "model_configuration_id": {
+            "format": "uuid",
+            "title": "Model Configuration Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "model",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "model_configuration_id"
+        ],
+        "title": "ModelAiChatTargetBody",
+        "type": "object"
+      },
       "ModelConfigurationBody": {
         "additionalProperties": false,
         "properties": {
@@ -2196,6 +2267,46 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WorkflowAiTargetSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "model_configuration_id": {
+            "format": "uuid",
+            "title": "Model Configuration Id",
+            "type": "string"
+          },
+          "model_identifier": {
+            "title": "Model Identifier",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_name": {
+            "title": "Target Name",
+            "type": "string"
+          },
+          "target_type": {
+            "$ref": "#/components/schemas/AiChatTargetType"
+          }
+        },
+        "required": [
+          "node_id",
+          "target_type",
+          "target_id",
+          "target_name",
+          "model_configuration_id",
+          "model_identifier"
+        ],
+        "title": "WorkflowAiTargetSummaryResponse",
+        "type": "object"
+      },
       "WorkflowConfigurationBody": {
         "additionalProperties": false,
         "properties": {
@@ -2462,6 +2573,13 @@
       "WorkflowRunResponse": {
         "additionalProperties": false,
         "properties": {
+          "ai_targets": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowAiTargetSummaryResponse"
+            },
+            "title": "Ai Targets",
+            "type": "array"
+          },
           "completed_node_ids": {
             "items": {
               "type": "string"
@@ -2583,6 +2701,7 @@
           "failed_node_id",
           "error_code",
           "origin",
+          "ai_targets",
           "created_at",
           "started_at",
           "finished_at",
@@ -2645,7 +2764,11 @@
           "unreachable_from_start",
           "cannot_reach_end",
           "cycle_detected",
-          "knowledge_base_not_found"
+          "knowledge_base_not_found",
+          "ai_target_required",
+          "employee_not_found",
+          "model_configuration_not_found",
+          "model_configuration_disabled"
         ],
         "title": "WorkflowValidationCode",
         "type": "string"

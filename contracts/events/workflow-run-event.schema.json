@@ -1,5 +1,53 @@
 {
   "$defs": {
+    "AiChatTargetType": {
+      "enum": [
+        "employee",
+        "model"
+      ],
+      "title": "AiChatTargetType",
+      "type": "string"
+    },
+    "WorkflowAiTargetSummaryResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "model_configuration_id": {
+          "format": "uuid",
+          "title": "Model Configuration Id",
+          "type": "string"
+        },
+        "model_identifier": {
+          "title": "Model Identifier",
+          "type": "string"
+        },
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "target_id": {
+          "format": "uuid",
+          "title": "Target Id",
+          "type": "string"
+        },
+        "target_name": {
+          "title": "Target Name",
+          "type": "string"
+        },
+        "target_type": {
+          "$ref": "#/$defs/AiChatTargetType"
+        }
+      },
+      "required": [
+        "node_id",
+        "target_type",
+        "target_id",
+        "target_name",
+        "model_configuration_id",
+        "model_identifier"
+      ],
+      "title": "WorkflowAiTargetSummaryResponse",
+      "type": "object"
+    },
     "WorkflowEventKind": {
       "enum": [
         "workflow.run.started",
@@ -43,6 +91,13 @@
     "WorkflowRunResponse": {
       "additionalProperties": false,
       "properties": {
+        "ai_targets": {
+          "items": {
+            "$ref": "#/$defs/WorkflowAiTargetSummaryResponse"
+          },
+          "title": "Ai Targets",
+          "type": "array"
+        },
         "completed_node_ids": {
           "items": {
             "type": "string"
@@ -164,6 +219,7 @@
         "failed_node_id",
         "error_code",
         "origin",
+        "ai_targets",
         "created_at",
         "started_at",
         "finished_at",

@@ -135,6 +135,20 @@ export function WorkflowRunPanel({
               );
             })}
           </div>
+          {run.ai_targets.length > 0 && (
+            <div className="workflow-run-targets" role="region" aria-label="实际 AI 执行目标">
+              <Text strong>实际 AI 执行目标</Text>
+              {run.ai_targets.map((target) => (
+                <Flex key={target.node_id} justify="space-between" gap={8}>
+                  <Text>{target.target_name}</Text>
+                  <Tag>
+                    {target.target_type === "employee" ? "数字员工" : "模型"} ·{" "}
+                    {target.model_identifier}
+                  </Tag>
+                </Flex>
+              ))}
+            </div>
+          )}
           {run.status === "completed" && (
             <div className="workflow-run-output">
               <Text strong>最终结果</Text>

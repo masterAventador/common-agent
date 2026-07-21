@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/auth";
+import { selectWorkflowAiTarget } from "./fixtures/models";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -107,6 +108,7 @@ test("builds, validates, persists, and reloads a workflow through the real desig
   await page
     .getByRole("textbox", { name: "节点提示词" })
     .fill("仅依据工作流中检索到的可靠知识回答用户输入。");
+  await selectWorkflowAiTarget(page, "平台默认模型");
   await dragNodeTo(page, "添加结束节点", { x: 720, y: 180 });
   await expect(page.locator(".react-flow__node")).toHaveCount(4, { timeout: 5_000 });
   await connectNodes(page, "start-1", "knowledge_retrieval-1");

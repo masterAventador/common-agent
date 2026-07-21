@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TypedDict
+from uuid import UUID
 
 from common_agent.runtimes.base import RuntimeKnowledgeChunk
 from common_agent.workflows.execution import (
@@ -21,6 +22,7 @@ class WorkflowGraphState(TypedDict, total=False):
 class WorkflowGraphContext(TypedDict):
     observer: WorkflowExecutionObserver
     stop: WorkflowExecutionStopSignal
+    run_id: UUID | None
 
 
 type WorkflowGraphUpdate = WorkflowGraphState

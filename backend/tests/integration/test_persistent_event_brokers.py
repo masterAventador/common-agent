@@ -8,7 +8,12 @@ from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.events import SqlAlchemyEventJournal
 from common_agent.conversations.events import ConversationEventBroker, ConversationEventKind
 from common_agent.domain.conversation import Message
-from common_agent.domain.workflow_run import WorkflowRun, WorkflowRunTrigger
+from common_agent.domain.workflow import AiChatTargetType
+from common_agent.domain.workflow_run import (
+    WorkflowAiTargetSummary,
+    WorkflowRun,
+    WorkflowRunTrigger,
+)
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from common_agent.workflows.events import WorkflowEventBroker, WorkflowEventKind
 from tests.support.settings import TEST_DATABASE_URL
@@ -81,18 +86,37 @@ def test_workflow_sse_history_survives_broker_reconstruction() -> None:
     async def scenario() -> None:
         database = Database(TEST_DATABASE_URL)
         await database.start()
-        run = WorkflowRun.create(
-            workflow_id=uuid4(),
-            trigger=WorkflowRunTrigger.MANUAL,
-            input="持久工作流事件",
-        ).start()
+        run = (
+            WorkflowRun.create(
+                workflow_id=uuid4(),
+                trigger=WorkflowRunTrigger.MANUAL,
+                input="持久工作流事件",
+            )
+            .start()
+            .start_node("chat")
+        )
+        model_configuration_id = uuid4()
+        run = run.record_ai_target(
+            WorkflowAiTargetSummary(
+                node_id="chat",
+                target_type=AiChatTargetType.MODEL,
+                target_id=model_configuration_id,
+                target_name="持久模型",
+                model_configuration_id=model_configuration_id,
+                model_identifier="qwen-plus",
+            )
+        )
         producer = WorkflowEventBroker(
             journal=SqlAlchemyEventJournal(database),
             tenant_id_provider=lambda: DEFAULT_TENANT_ID,
             persistent_poll_seconds=0.01,
         )
         try:
-            started = await producer.publish(run=run, kind=WorkflowEventKind.RUN_STARTED)
+            started = await producer.publish(
+                run=run,
+                kind=WorkflowEventKind.NODE_STARTED,
+                node_id="chat",
+            )
             reconstructed = WorkflowEventBroker(
                 journal=SqlAlchemyEventJournal(database),
                 tenant_id_provider=lambda: DEFAULT_TENANT_ID,

@@ -1,18 +1,22 @@
-import { ReactFlowProvider } from "@xyflow/react";
 import { Alert, Button, Skeleton } from "antd";
 import { RefreshCw } from "lucide-react";
+import { lazy, Suspense } from "react";
 import { getErrorMessage } from "../../api/errors";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
-import { WorkflowCanvas } from "./WorkflowCanvas";
-import { WorkflowInspector } from "./WorkflowInspector";
 import { WorkflowPageHeader } from "./WorkflowPageHeader";
 import { WorkflowSidebar } from "./WorkflowSidebar";
 import { useWorkflowDesigner } from "./useWorkflowDesigner";
-
+const WorkflowCanvasSurface = lazy(async () => {
+  const module = await import("./WorkflowCanvasSurface");
+  return { default: module.WorkflowCanvasSurface };
+});
+const WorkflowInspector = lazy(async () => {
+  const module = await import("./WorkflowInspector");
+  return { default: module.WorkflowInspector };
+});
 export function WorkflowsPage({ readOnly = false }: { readOnly?: boolean }) {
   const controller = useWorkflowDesigner();
   const { workflows, state } = controller;
-
   if (workflows.isPending) {
     return (
       <section className="workflows-page" aria-label="工作流加载中">
@@ -41,7 +45,6 @@ export function WorkflowsPage({ readOnly = false }: { readOnly?: boolean }) {
       </section>
     );
   }
-
   return (
     <section className="workflows-page">
       <WorkflowPageHeader controller={controller} readOnly={readOnly} />
@@ -122,36 +125,55 @@ export function WorkflowsPage({ readOnly = false }: { readOnly?: boolean }) {
           onSelectWorkflow={controller.selectWorkflow}
           dispatch={controller.dispatch}
         />
-        <ReactFlowProvider>
-          <WorkflowCanvas
+        <Suspense fallback={<Skeleton.Node active />}>
+          <WorkflowCanvasSurface
             state={state}
             run={controller.visibleRun}
             editingLocked={controller.activeRun || readOnly}
             dispatch={controller.dispatch}
           />
-        </ReactFlowProvider>
-        <WorkflowInspector
-          state={state}
-          knowledgeBases={controller.knowledgeItems}
-          knowledgeLoading={controller.knowledgeBases.isPending}
-          knowledgeError={controller.knowledgeError}
-          knowledgeSearch={controller.knowledgeSearch}
-          onKnowledgeSearch={controller.setKnowledgeSearch}
-          onKnowledgePopupScroll={(event) => {
-            const target = event.currentTarget;
-            if (
-              controller.knowledgeBases.hasNextPage &&
-              !controller.knowledgeBases.isFetchingNextPage &&
-              target.scrollTop + target.clientHeight >= target.scrollHeight - 16
-            ) {
-              void controller.knowledgeBases.fetchNextPage();
-            }
-          }}
-          editingLocked={controller.activeRun || readOnly}
-          readOnly={readOnly}
-          runController={controller.runController}
-          dispatch={controller.dispatch}
-        />
+        </Suspense>
+        <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}>
+          <WorkflowInspector
+            state={state}
+            employees={controller.employeeItems}
+            models={controller.modelItems}
+            targetLoading={controller.employees.isPending || controller.models.isPending}
+            targetError={controller.targetError}
+            onTargetPopupScroll={(event) => {
+              const target = event.currentTarget;
+              if (target.scrollTop + target.clientHeight < target.scrollHeight - 16) return;
+              if (
+                controller.employees.hasNextPage &&
+                !controller.employees.isFetchingNextPage
+              ) {
+                void controller.employees.fetchNextPage();
+              }
+              if (controller.models.hasNextPage && !controller.models.isFetchingNextPage) {
+                void controller.models.fetchNextPage();
+              }
+            }}
+            knowledgeBases={controller.knowledgeItems}
+            knowledgeLoading={controller.knowledgeBases.isPending}
+            knowledgeError={controller.knowledgeError}
+            knowledgeSearch={controller.knowledgeSearch}
+            onKnowledgeSearch={controller.setKnowledgeSearch}
+            onKnowledgePopupScroll={(event) => {
+              const target = event.currentTarget;
+              if (
+                controller.knowledgeBases.hasNextPage &&
+                !controller.knowledgeBases.isFetchingNextPage &&
+                target.scrollTop + target.clientHeight >= target.scrollHeight - 16
+              ) {
+                void controller.knowledgeBases.fetchNextPage();
+              }
+            }}
+            editingLocked={controller.activeRun || readOnly}
+            readOnly={readOnly}
+            runController={controller.runController}
+            dispatch={controller.dispatch}
+          />
+        </Suspense>
       </div>
     </section>
   );

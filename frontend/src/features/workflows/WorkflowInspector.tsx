@@ -1,16 +1,24 @@
 import { Button, Card, Empty, Flex, Input, Select, Tag, Typography } from "antd";
 import { Trash2 } from "lucide-react";
-import type { Dispatch, UIEvent } from "react";
+import { lazy, Suspense, type Dispatch, type UIEvent } from "react";
 
-import { WorkflowRunPanel } from "./WorkflowRunPanel";
 import type { WorkflowEditorAction, WorkflowEditorState } from "./workflowEditor";
 import type { useWorkflowRun } from "./useWorkflowRun";
 
 const { Text } = Typography;
+const WorkflowRunPanel = lazy(async () => {
+  const module = await import("./WorkflowRunPanel");
+  return { default: module.WorkflowRunPanel };
+});
 
 export function WorkflowInspector({
   state,
   knowledgeBases,
+  employees,
+  models,
+  targetLoading,
+  targetError,
+  onTargetPopupScroll,
   knowledgeLoading,
   knowledgeError,
   knowledgeSearch,
@@ -23,6 +31,11 @@ export function WorkflowInspector({
 }: {
   state: WorkflowEditorState;
   knowledgeBases: Array<{ id: string; name: string }>;
+  employees: Array<{ id: string; name: string; default_model_identifier: string }>;
+  models: Array<{ id: string; display_name: string; model_identifier: string }>;
+  targetLoading: boolean;
+  targetError?: string;
+  onTargetPopupScroll: (event: UIEvent<HTMLDivElement>) => void;
   knowledgeLoading: boolean;
   knowledgeError?: string;
   knowledgeSearch: string;
@@ -34,6 +47,8 @@ export function WorkflowInspector({
   dispatch: Dispatch<WorkflowEditorAction>;
 }) {
   const selected = state.nodes.find((node) => node.id === state.selectedNodeId);
+  const selectedAiConfig =
+    selected?.data.nodeType === "ai_chat" ? selected.data.config : undefined;
 
   return (
     <aside className="workflow-inspector" aria-label="工作流配置面板">
@@ -108,24 +123,72 @@ export function WorkflowInspector({
             </Button>
           </Flex>
 
-          {selected.data.nodeType === "ai_chat" && (
-            <label className="workflow-field">
-              <Text>节点提示词</Text>
-              <Input.TextArea
-                aria-label="节点提示词"
-                value={selected.data.config.prompt}
-                maxLength={12_000}
-                rows={8}
-                disabled={editingLocked}
-                onChange={(event) =>
-                  dispatch({
-                    type: "node_config_changed",
-                    nodeId: selected.id,
-                    config: { prompt: event.target.value },
-                  })
-                }
-              />
-            </label>
+          {selectedAiConfig && (
+            <>
+              <label className="workflow-field">
+                <Text>执行目标</Text>
+                <Select
+                  aria-label="AI 对话执行目标"
+                  value={targetValue(selectedAiConfig.target)}
+                  loading={targetLoading}
+                  disabled={editingLocked || Boolean(targetError)}
+                  placeholder={targetError ? "执行目标暂时不可用" : "选择数字员工或模型"}
+                  showSearch
+                  optionFilterProp="label"
+                  options={[
+                    {
+                      label: "数字员工",
+                      options: employees.map((item) => ({
+                        value: `employee:${item.id}`,
+                        label: `${item.name} · ${item.default_model_identifier}`,
+                      })),
+                    },
+                    {
+                      label: "已启用模型",
+                      options: models.map((item) => ({
+                        value: `model:${item.id}`,
+                        label: `${item.display_name} · ${item.model_identifier}`,
+                      })),
+                    },
+                  ]}
+                  onPopupScroll={onTargetPopupScroll}
+                  onChange={(value: string) =>
+                    dispatch({
+                      type: "node_config_changed",
+                      nodeId: selected.id,
+                      config: {
+                        prompt: selectedAiConfig.prompt,
+                        target: workflowTarget(value),
+                      },
+                    })
+                  }
+                />
+                {targetError && <Text type="danger">{targetError}</Text>}
+                <Text type="secondary">
+                  数字员工会在运行时继承其当前提示词、知识库、授权工作流和默认模型。
+                </Text>
+              </label>
+              <label className="workflow-field">
+                <Text>节点提示词</Text>
+                <Input.TextArea
+                  aria-label="节点提示词"
+                  value={selectedAiConfig.prompt}
+                  maxLength={12_000}
+                  rows={8}
+                  disabled={editingLocked}
+                  onChange={(event) =>
+                    dispatch({
+                      type: "node_config_changed",
+                      nodeId: selected.id,
+                      config: {
+                        prompt: event.target.value,
+                        target: selectedAiConfig.target,
+                      },
+                    })
+                  }
+                />
+              </label>
+            </>
           )}
           {selected.data.nodeType === "knowledge_retrieval" && (
             <label className="workflow-field">
@@ -161,13 +224,32 @@ export function WorkflowInspector({
           )}
         </div>
       )}
-      <WorkflowRunPanel
-        workflowId={state.workflowId}
-        dirty={state.dirty}
-        nodes={state.nodes}
-        controller={runController}
-        readOnly={readOnly}
-      />
+      <Suspense fallback={<Text type="secondary">正在加载运行面板…</Text>}>
+        <WorkflowRunPanel
+          workflowId={state.workflowId}
+          dirty={state.dirty}
+          nodes={state.nodes}
+          controller={runController}
+          readOnly={readOnly}
+        />
+      </Suspense>
     </aside>
   );
+}
+
+function targetValue(
+  target: Extract<WorkflowEditorState["nodes"][number]["data"], { nodeType: "ai_chat" }>[
+    "config"
+  ]["target"],
+): string | undefined {
+  if (target === null) return undefined;
+  return target.type === "employee"
+    ? `employee:${target.employee_id}`
+    : `model:${target.model_configuration_id}`;
+}
+
+function workflowTarget(value: string) {
+  const [type, id] = value.split(":", 2);
+  if (type === "employee") return { type, employee_id: id } as const;
+  return { type: "model", model_configuration_id: id } as const;
 }

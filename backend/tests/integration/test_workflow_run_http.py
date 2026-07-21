@@ -8,9 +8,13 @@ from uuid import UUID, uuid4
 
 import httpx
 
+from common_agent.model_configurations.defaults import platform_default_model_configuration_id
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from tests.support.http import assert_error_response, authenticated_client, running_api
 from tests.support.settings import TEST_DATABASE_URL
 from tests.support.workflows import delete_workflows_from_database_url
+
+_MODEL_CONFIGURATION_ID = str(platform_default_model_configuration_id(DEFAULT_TENANT_ID))
 
 
 def _workflow_body() -> dict[str, object]:
@@ -28,7 +32,13 @@ def _workflow_body() -> dict[str, object]:
                 "id": "chat",
                 "type": "ai_chat",
                 "position": {"x": 240, "y": 0},
-                "config": {"prompt": "直接回答工作流输入"},
+                "config": {
+                    "prompt": "直接回答工作流输入",
+                    "target": {
+                        "type": "model",
+                        "model_configuration_id": _MODEL_CONFIGURATION_ID,
+                    },
+                },
             },
             {
                 "id": "end",
@@ -98,6 +108,16 @@ def test_workflow_run_http_and_sse_persist_summary_across_restart() -> None:
             assert completed["status"] == "completed"
             assert "HTTP 运行输入" in str(completed["output"])
             assert completed["completed_node_ids"] == ["start", "chat", "end"]
+            assert completed["ai_targets"] == [
+                {
+                    "node_id": "chat",
+                    "target_type": "model",
+                    "target_id": _MODEL_CONFIGURATION_ID,
+                    "target_name": "平台默认模型",
+                    "model_configuration_id": _MODEL_CONFIGURATION_ID,
+                    "model_identifier": "qwen-plus",
+                }
+            ]
             assert _event_types(client, completed_run_id, "workflow.run.completed") == [
                 "workflow.run.started",
                 "workflow.node.started",

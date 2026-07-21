@@ -14,6 +14,7 @@ from common_agent.adapters.persistence.models import (
     ConversationRow,
     EmployeeRow,
     ModelConfigurationReferenceRow,
+    WorkflowAiChatTargetRow,
     WorkflowNodeRow,
     WorkflowRow,
     WorkflowRunRow,
@@ -61,6 +62,19 @@ class SqlAlchemyResourceDeletionStore:
                     deleted=False,
                     blocked_by=LocalDeleteBlock.EMPLOYEE_CONVERSATIONS,
                 )
+            if await _exists(
+                session,
+                select(literal(1))
+                .select_from(WorkflowAiChatTargetRow)
+                .where(
+                    WorkflowAiChatTargetRow.employee_id == str(employee_id),
+                    WorkflowAiChatTargetRow.tenant_id == tenant_id,
+                ),
+            ):
+                return LocalDeleteResult(
+                    deleted=False,
+                    blocked_by=LocalDeleteBlock.EMPLOYEE_WORKFLOW_TARGETS,
+                )
             try:
                 await session.execute(
                     delete(ModelConfigurationReferenceRow).where(
@@ -75,7 +89,7 @@ class SqlAlchemyResourceDeletionStore:
                 await session.rollback()
                 return LocalDeleteResult(
                     deleted=False,
-                    blocked_by=LocalDeleteBlock.EMPLOYEE_CONVERSATIONS,
+                    blocked_by=LocalDeleteBlock.EMPLOYEE_WORKFLOW_TARGETS,
                 )
         return LocalDeleteResult(deleted=True)
 
@@ -138,6 +152,13 @@ class SqlAlchemyResourceDeletionStore:
                     deleted=False,
                     blocked_by=LocalDeleteBlock.WORKFLOW_ACTIVE_RUNS,
                 )
+            await session.execute(
+                delete(ModelConfigurationReferenceRow).where(
+                    ModelConfigurationReferenceRow.tenant_id == tenant_id,
+                    ModelConfigurationReferenceRow.resource_type == "workflow",
+                    ModelConfigurationReferenceRow.resource_id == str(workflow_id),
+                )
+            )
             result = cast(
                 CursorResult[Any],
                 await session.execute(

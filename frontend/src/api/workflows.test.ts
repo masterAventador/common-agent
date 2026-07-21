@@ -30,7 +30,13 @@ const configuration: WorkflowConfigurationInput = {
       id: "chat",
       type: "ai_chat",
       position: { x: 240, y: 80 },
-      config: { prompt: "依据上下文回答" },
+      config: {
+        prompt: "依据上下文回答",
+        target: {
+          type: "model",
+          model_configuration_id: "67b23894-27bd-49dd-a023-d926905e7ea1",
+        },
+      },
     },
     { id: "end", type: "end", position: { x: 480, y: 80 }, config: {} },
   ],

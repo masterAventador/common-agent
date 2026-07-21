@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from math import inf, nan
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -13,8 +13,10 @@ from common_agent.domain.workflow import (
     WORKFLOW_KNOWLEDGE_BASE_ID_MAX_LENGTH,
     WORKFLOW_NAME_MAX_LENGTH,
     AiChatNodeConfig,
+    EmployeeAiChatTarget,
     EndNodeConfig,
     KnowledgeRetrievalNodeConfig,
+    ModelAiChatTarget,
     StartNodeConfig,
     WorkflowDefinition,
     WorkflowEdge,
@@ -228,6 +230,40 @@ def test_business_node_configs_reject_invalid_values(factory: object, field: str
         factory()  # type: ignore[operator]
 
     assert captured.value.field == field
+
+
+def test_ai_chat_node_accepts_exactly_one_typed_execution_target() -> None:
+    employee_id = uuid4()
+    model_configuration_id = uuid4()
+
+    employee = AiChatNodeConfig(
+        prompt="使用数字员工回答",
+        target=EmployeeAiChatTarget(employee_id=employee_id),
+    )
+    model = AiChatNodeConfig(
+        prompt="使用通用模型回答",
+        target=ModelAiChatTarget(model_configuration_id=model_configuration_id),
+    )
+
+    assert isinstance(employee.target, EmployeeAiChatTarget)
+    assert employee.target.employee_id == employee_id
+    assert isinstance(model.target, ModelAiChatTarget)
+    assert model.target.model_configuration_id == model_configuration_id
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"type": "employee", "employee_id": "not-a-uuid"},
+        {"type": "model", "model_configuration_id": "not-a-uuid"},
+        object(),
+    ],
+)
+def test_ai_chat_node_rejects_untyped_or_invalid_execution_target(target: object) -> None:
+    with pytest.raises(WorkflowValidationError) as captured:
+        AiChatNodeConfig(prompt="回答", target=target)  # type: ignore[arg-type]
+
+    assert captured.value.field == "target"
 
 
 def test_node_and_edge_reject_blank_identifiers() -> None:

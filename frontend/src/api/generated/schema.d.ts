@@ -656,7 +656,14 @@ export interface components {
         AiChatNodeConfigBody: {
             /** Prompt */
             prompt: string;
+            target: components["schemas"]["AiChatTargetBody"];
         };
+        AiChatTargetBody: components["schemas"]["EmployeeAiChatTargetBody"] | components["schemas"]["ModelAiChatTargetBody"];
+        /**
+         * AiChatTargetType
+         * @enum {string}
+         */
+        AiChatTargetType: "employee" | "model";
         /** AiChatWorkflowNodeBody */
         AiChatWorkflowNodeBody: {
             config: components["schemas"]["AiChatNodeConfigBody"];
@@ -1029,6 +1036,19 @@ export interface components {
          * @enum {string}
          */
         DocumentParsingStatus: "uploaded" | "parsing" | "completed" | "failed";
+        /** EmployeeAiChatTargetBody */
+        EmployeeAiChatTargetBody: {
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "employee";
+        };
         /** EmployeeConfigurationBody */
         EmployeeConfigurationBody: {
             /** Allowed Workflow Ids */
@@ -1277,6 +1297,19 @@ export interface components {
             };
             /** Uptime Seconds */
             uptime_seconds: number;
+        };
+        /** ModelAiChatTargetBody */
+        ModelAiChatTargetBody: {
+            /**
+             * Model Configuration Id
+             * Format: uuid
+             */
+            model_configuration_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "model";
         };
         /** ModelConfigurationBody */
         ModelConfigurationBody: {
@@ -1528,6 +1561,26 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** WorkflowAiTargetSummaryResponse */
+        WorkflowAiTargetSummaryResponse: {
+            /**
+             * Model Configuration Id
+             * Format: uuid
+             */
+            model_configuration_id: string;
+            /** Model Identifier */
+            model_identifier: string;
+            /** Node Id */
+            node_id: string;
+            /**
+             * Target Id
+             * Format: uuid
+             */
+            target_id: string;
+            /** Target Name */
+            target_name: string;
+            target_type: components["schemas"]["AiChatTargetType"];
+        };
         /** WorkflowConfigurationBody */
         WorkflowConfigurationBody: {
             /**
@@ -1640,6 +1693,8 @@ export interface components {
         };
         /** WorkflowRunResponse */
         WorkflowRunResponse: {
+            /** Ai Targets */
+            ai_targets: components["schemas"]["WorkflowAiTargetSummaryResponse"][];
             /** Completed Node Ids */
             completed_node_ids: string[];
             /**
@@ -1702,7 +1757,7 @@ export interface components {
          * WorkflowValidationCode
          * @enum {string}
          */
-        WorkflowValidationCode: "node_limit_exceeded" | "edge_limit_exceeded" | "duplicate_node_id" | "duplicate_edge_id" | "missing_start" | "multiple_starts" | "missing_end" | "edge_source_missing" | "edge_target_missing" | "self_loop" | "duplicate_connection" | "start_has_incoming_edge" | "end_has_outgoing_edge" | "multiple_outgoing_edges" | "isolated_node" | "unreachable_from_start" | "cannot_reach_end" | "cycle_detected" | "knowledge_base_not_found";
+        WorkflowValidationCode: "node_limit_exceeded" | "edge_limit_exceeded" | "duplicate_node_id" | "duplicate_edge_id" | "missing_start" | "multiple_starts" | "missing_end" | "edge_source_missing" | "edge_target_missing" | "self_loop" | "duplicate_connection" | "start_has_incoming_edge" | "end_has_outgoing_edge" | "multiple_outgoing_edges" | "isolated_node" | "unreachable_from_start" | "cannot_reach_end" | "cycle_detected" | "knowledge_base_not_found" | "ai_target_required" | "employee_not_found" | "model_configuration_not_found" | "model_configuration_disabled";
         /** WorkflowValidationIssueResponse */
         WorkflowValidationIssueResponse: {
             code: components["schemas"]["WorkflowValidationCode"];

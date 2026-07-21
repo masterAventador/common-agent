@@ -24,9 +24,18 @@ export const WORKFLOW_NODE_LABELS: Record<WorkflowNodeType, string> = {
   end: "结束",
 };
 
+export type WorkflowAiTarget = Extract<
+  WorkflowNodeInput,
+  { type: "ai_chat" }
+>["config"]["target"];
+
 type WorkflowEditorNodeData =
   | { nodeType: "start"; label: string; config: Record<string, never> }
-  | { nodeType: "ai_chat"; label: string; config: { prompt: string } }
+  | {
+      nodeType: "ai_chat";
+      label: string;
+      config: { prompt: string; target: WorkflowAiTarget | null };
+    }
   | {
       nodeType: "knowledge_retrieval";
       label: string;
@@ -35,6 +44,7 @@ type WorkflowEditorNodeData =
   | { nodeType: "end"; label: string; config: Record<string, never> };
 
 export type WorkflowEditorNode = Node<WorkflowEditorNodeData, "workflowNode">;
+type WorkflowEditorNodeConfig = WorkflowEditorNodeData["config"];
 export type WorkflowEditorEdge = Edge;
 
 export interface WorkflowEditorState {
@@ -59,7 +69,7 @@ export type WorkflowEditorAction =
   | {
       type: "node_config_changed";
       nodeId: string;
-      config: WorkflowNodeInput["config"];
+      config: WorkflowEditorNodeConfig;
     }
   | { type: "nodes_connected"; source: string; target: string }
   | { type: "nodes_changed"; changes: NodeChange<WorkflowEditorNode>[] }
@@ -243,7 +253,11 @@ function createEditorNode(
         id,
         type: "workflowNode",
         position,
-        data: { nodeType, label, config: { prompt: "请根据工作流上下文回答用户输入。" } },
+        data: {
+          nodeType,
+          label,
+          config: { prompt: "请根据工作流上下文回答用户输入。", target: null },
+        },
       };
     case "knowledge_retrieval":
       return {
@@ -289,7 +303,14 @@ function editorNodeToNode(node: WorkflowEditorNode): WorkflowNodeInput {
     case "start":
       return { ...base, type: "start", config: {} };
     case "ai_chat":
-      return { ...base, type: "ai_chat", config: { ...node.data.config } };
+      if (node.data.config.target === null) {
+        throw new Error(`AI 对话节点 ${node.id} 尚未选择执行目标`);
+      }
+      return {
+        ...base,
+        type: "ai_chat",
+        config: { prompt: node.data.config.prompt, target: node.data.config.target },
+      };
     case "knowledge_retrieval":
       return { ...base, type: "knowledge_retrieval", config: { ...node.data.config } };
     case "end":

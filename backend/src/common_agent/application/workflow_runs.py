@@ -19,6 +19,7 @@ from common_agent.concurrency import KeyedLockPool
 from common_agent.domain.workflow import WorkflowDefinition
 from common_agent.domain.workflow_run import (
     WORKFLOW_RUN_ERROR_CODE_MAX_LENGTH,
+    WorkflowAiTargetSummary,
     WorkflowRun,
     WorkflowRunOrigin,
     WorkflowRunTrigger,
@@ -74,6 +75,9 @@ class _WorkflowRunObserver(WorkflowExecutionObserver):
 
     async def node_completed(self, node_id: str) -> None:
         await self.projection.node_completed(self.run_id, node_id)
+
+    async def ai_target_resolved(self, summary: WorkflowAiTargetSummary) -> None:
+        await self.projection.ai_target_resolved(self.run_id, summary)
 
 
 class WorkflowRunCoordinator:
@@ -292,6 +296,7 @@ class WorkflowRunCoordinator:
                     run.input,
                     observer=_WorkflowRunObserver(self._run_projection, run.id),
                     stop=stop,
+                    run_id=run.id,
                 )
                 await self._run_projection.complete(run.id, result)
                 outcome_status = "completed"

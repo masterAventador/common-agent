@@ -27,6 +27,11 @@ class EmployeeHasConversations(ResourceDeletionError):
     message = "数字员工仍被会话引用。请先删除相关会话"
 
 
+class EmployeeHasWorkflowTargets(ResourceDeletionError):
+    code = "employee_in_use_by_workflows"
+    message = "数字员工仍被工作流 AI 对话节点引用。请先修改相关工作流"
+
+
 class KnowledgeBaseHasEmployeeBindings(ResourceDeletionError):
     code = "knowledge_base_in_use_by_employees"
     message = "知识库仍被数字员工绑定。请先解除绑定"
@@ -65,6 +70,8 @@ class ResourceDeletionService:
             result = await self._store.delete_employee(employee_id)
         if result.blocked_by is LocalDeleteBlock.EMPLOYEE_CONVERSATIONS:
             raise EmployeeHasConversations
+        if result.blocked_by is LocalDeleteBlock.EMPLOYEE_WORKFLOW_TARGETS:
+            raise EmployeeHasWorkflowTargets
         return result.deleted
 
     async def delete_knowledge_base(self, knowledge_base_id: str) -> bool:
@@ -101,6 +108,7 @@ class ResourceDeletionService:
 
 __all__ = [
     "EmployeeHasConversations",
+    "EmployeeHasWorkflowTargets",
     "KnowledgeBaseHasEmployeeBindings",
     "KnowledgeBaseHasWorkflowReferences",
     "ResourceDeletionError",

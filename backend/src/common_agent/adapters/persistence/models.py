@@ -1124,6 +1124,64 @@ class WorkflowEdgeRow(PersistenceBase):
     target: Mapped[str] = mapped_column(String(WORKFLOW_NODE_ID_MAX_LENGTH), nullable=False)
 
 
+class WorkflowAiChatTargetRow(PersistenceBase):
+    __tablename__ = "workflow_ai_chat_targets"
+    __table_args__ = (
+        CheckConstraint(
+            "target_type IN ('employee', 'model')",
+            name="ck_workflow_ai_chat_targets_type",
+        ),
+        CheckConstraint(
+            "(target_type = 'employee' AND employee_id IS NOT NULL "
+            "AND model_configuration_id IS NULL) OR "
+            "(target_type = 'model' AND employee_id IS NULL "
+            "AND model_configuration_id IS NOT NULL)",
+            name="ck_workflow_ai_chat_targets_value",
+        ),
+        ForeignKeyConstraint(
+            ["workflow_id", "node_id"],
+            ["workflow_nodes.workflow_id", "workflow_nodes.id"],
+            name="fk_workflow_ai_chat_targets_node",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "workflow_id"],
+            ["workflows.tenant_id", "workflows.id"],
+            name="fk_workflow_ai_chat_targets_workflow",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "employee_id"],
+            ["employees.tenant_id", "employees.id"],
+            name="fk_workflow_ai_chat_targets_employee",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "model_configuration_id"],
+            ["model_configurations.tenant_id", "model_configurations.id"],
+            name="fk_workflow_ai_chat_targets_model",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "ix_workflow_ai_chat_targets_employee",
+            "tenant_id",
+            "employee_id",
+        ),
+        Index(
+            "ix_workflow_ai_chat_targets_model",
+            "tenant_id",
+            "model_configuration_id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    node_id: Mapped[str] = mapped_column(String(WORKFLOW_NODE_ID_MAX_LENGTH), primary_key=True)
+    target_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    employee_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    model_configuration_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
 class WorkflowRunRow(PersistenceBase):
     __tablename__ = "workflow_runs"
     __table_args__ = (
@@ -1150,6 +1208,7 @@ class WorkflowRunRow(PersistenceBase):
             name="ck_workflow_runs_current_node_id",
         ),
         CheckConstraint("JSON_TYPE(completed_node_ids) = 'ARRAY'", name="ck_workflow_runs_nodes"),
+        CheckConstraint("JSON_TYPE(ai_targets) = 'ARRAY'", name="ck_workflow_runs_ai_targets"),
         CheckConstraint(
             f"CHAR_LENGTH(TRIM(input)) BETWEEN 1 AND {WORKFLOW_RUN_INPUT_MAX_LENGTH}",
             name="ck_workflow_runs_input",
@@ -1269,6 +1328,7 @@ class WorkflowRunRow(PersistenceBase):
         String(WORKFLOW_NODE_ID_MAX_LENGTH), nullable=True
     )
     completed_node_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    ai_targets: Mapped[list[dict[str, object]]] = mapped_column(JSON, nullable=False)
     failed_node_id: Mapped[str | None] = mapped_column(
         String(WORKFLOW_NODE_ID_MAX_LENGTH), nullable=True
     )

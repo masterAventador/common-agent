@@ -4,6 +4,8 @@ const deletionErrorMessages: Readonly<Record<string, string>> = {
   conversation_busy: "当前会话仍在生成回复，请先停止生成并等待状态收敛后再删除。",
   employee_in_use_by_conversations:
     "该数字员工仍被会话引用，请先在 AI 会话页删除相关会话。",
+  employee_in_use_by_workflows:
+    "该数字员工仍被工作流 AI 对话节点引用，请先修改或删除相关工作流。",
   knowledge_base_in_use_by_employees:
     "该知识库仍被数字员工绑定，请先在数字员工页解除绑定。",
   knowledge_base_in_use_by_workflows:

@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/auth";
-import { selectEmployeeDefaultModel } from "./fixtures/models";
+import { selectEmployeeDefaultModel, selectWorkflowAiTarget } from "./fixtures/models";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -166,6 +166,7 @@ test("completes the whole MVP from empty business data through one real user jou
   await page
     .getByRole("textbox", { name: "节点提示词" })
     .fill("只依据工作流检索到的可靠知识，只输出用户要求的验收标记。");
+  await selectWorkflowAiTarget(page, "平台默认模型");
   await dragNodeTo(page, "添加结束节点", { x: 720, y: 180 });
   await expect(page.locator(".react-flow__node")).toHaveCount(4);
   await connectNodes(page, "start-1", "knowledge_retrieval-1");

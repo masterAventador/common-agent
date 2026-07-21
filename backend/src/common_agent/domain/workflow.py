@@ -29,6 +29,11 @@ class WorkflowNodeType(StrEnum):
     END = "end"
 
 
+class AiChatTargetType(StrEnum):
+    EMPLOYEE = "employee"
+    MODEL = "model"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowNodePosition:
     x: float
@@ -45,8 +50,38 @@ class StartNodeConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class EmployeeAiChatTarget:
+    employee_id: UUID
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.employee_id, UUID):
+            raise WorkflowValidationError("target", "数字员工 ID 必须是 UUID")
+
+    @property
+    def type(self) -> AiChatTargetType:
+        return AiChatTargetType.EMPLOYEE
+
+
+@dataclass(frozen=True, slots=True)
+class ModelAiChatTarget:
+    model_configuration_id: UUID
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.model_configuration_id, UUID):
+            raise WorkflowValidationError("target", "模型配置 ID 必须是 UUID")
+
+    @property
+    def type(self) -> AiChatTargetType:
+        return AiChatTargetType.MODEL
+
+
+type AiChatTarget = EmployeeAiChatTarget | ModelAiChatTarget
+
+
+@dataclass(frozen=True, slots=True)
 class AiChatNodeConfig:
     prompt: str
+    target: AiChatTarget | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -54,6 +89,11 @@ class AiChatNodeConfig:
             "prompt",
             _required_text("prompt", self.prompt, AI_CHAT_PROMPT_MAX_LENGTH),
         )
+        if self.target is not None and not isinstance(
+            self.target,
+            (EmployeeAiChatTarget, ModelAiChatTarget),
+        ):
+            raise WorkflowValidationError("target", "必须选择数字员工或模型")
 
 
 @dataclass(frozen=True, slots=True)
