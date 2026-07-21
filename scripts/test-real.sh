@@ -21,6 +21,10 @@ grep -Fq 'COMMON_AGENT_INTEGRATION_MODE=real' "${MANAGER}" || \
   fail "real 后端没有显式使用 real 适配器"
 grep -Fq 'REAL_MEMORY_GIB=32' "${MANAGER}" || \
   fail "real 入口没有固定暂定 32 GiB Colima 预算"
+grep -Fq 'COMMON_AGENT_REAL_DATABASE_NAME:-common_agent' "${MANAGER}" || \
+  fail "real 入口缺少资源验收使用隔离测试库的受控覆盖点"
+grep -Fq 'COMMON_AGENT_REAL_DATABASE_NAME=${DATABASE_NAME}' "${MANAGER}" || \
+  fail "real 子进程没有继承受控数据库名称"
 grep -Fq 'AUTH_BOOTSTRAP_TOKEN_FILE="${TOKEN_ROOT}/owner-bootstrap-token"' "${MANAGER}" || \
   fail "real 入口没有复用 Git 忽略的项目专属引导凭据文件"
 grep -Fq 'openssl rand -hex 32' "${MANAGER}" || \

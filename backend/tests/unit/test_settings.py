@@ -269,11 +269,13 @@ def test_ragflow_settings_use_fixed_loopback_defaults() -> None:
     settings = RagFlowSettings.from_mapping({})
 
     assert settings.base_url == "http://127.0.0.1:19380"
-    assert settings.expected_version == "v0.25.6"
+    assert settings.expected_version == "v0.26.4"
     assert settings.timeout_seconds == 60
     assert settings.api_key.get_secret_value() == ""
-    assert settings.embedding_model == "text-embedding-v4@Tongyi-Qianwen"
-    assert settings.rerank_model == "qwen3-rerank@Tongyi-Qianwen"
+    assert settings.embedding_model == (
+        "text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible"
+    )
+    assert settings.rerank_model == ("qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible")
 
 
 def test_ragflow_settings_accept_safe_override_without_leaking_key() -> None:
@@ -281,10 +283,12 @@ def test_ragflow_settings_accept_safe_override_without_leaking_key() -> None:
         {
             "RAGFLOW_BASE_URL": "http://localhost:29380/",
             "RAGFLOW_API_KEY": "do-not-leak",
-            "RAGFLOW_EXPECTED_VERSION": "v0.25.6",
+            "RAGFLOW_EXPECTED_VERSION": "v0.26.4",
             "RAGFLOW_TIMEOUT_SECONDS": "120",
-            "RAGFLOW_EMBEDDING_MODEL": "text-embedding-v4@Tongyi-Qianwen",
-            "RAGFLOW_RERANK_MODEL": "qwen3-rerank@Tongyi-Qianwen",
+            "RAGFLOW_EMBEDDING_MODEL": (
+                "text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible"
+            ),
+            "RAGFLOW_RERANK_MODEL": ("qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible"),
         }
     )
 

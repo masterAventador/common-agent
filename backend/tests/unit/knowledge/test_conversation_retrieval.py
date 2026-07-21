@@ -54,7 +54,7 @@ class _KnowledgeProbe:
         self.status_result = status or KnowledgeServiceStatus(
             provider=self.provider_name,
             availability=KnowledgeServiceAvailability.AVAILABLE,
-            version="v0.25.6",
+            version="v0.26.4",
         )
         self.status_calls = 0
 

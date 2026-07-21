@@ -42,6 +42,10 @@ for expected in \
   'test_real_ragflow_adapter_lifecycle' \
   'mvp-acceptance.spec.ts' \
   'COMMON_AGENT_RESOURCE_SOAK_SECONDS:-1800' \
+  'COMMON_AGENT_REAL_DATABASE_NAME=common_agent_test' \
+  'COMMON_AGENT_E2E_API_URL="http://127.0.0.1:18200/api/v1"' \
+  'COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN=' \
+  'tests.support.auth_e2e_state reset' \
   '"${REAL_MANAGER}" stop' \
   'mvp_acceptance_e2e_cleanup'; do
   grep -Fq "${expected}" "${RUNNER}" || fail "real soak 入口缺少链路：${expected}"

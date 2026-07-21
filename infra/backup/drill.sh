@@ -138,7 +138,7 @@ ragflow_compose() {
     export BACKUP_RECOVERY_ID="${instance_id}"
     export RAGFLOW_RECOVERY_DATA_ROOT="${data_root}"
     export RAGFLOW_DASHSCOPE_HTTP_BASE_URL="${RAGFLOW_NATIVE_BASE_URL}"
-    export RAGFLOW_IMAGE="infiniflow/ragflow:v0.25.6"
+    export RAGFLOW_IMAGE="infiniflow/ragflow:v0.26.4"
     export ES_PORT="127.0.0.1:${RAGFLOW_ES_PORT}"
     export REDIS_PORT="127.0.0.1:${RAGFLOW_REDIS_PORT}"
     export SVR_HTTP_PORT="127.0.0.1:${RAGFLOW_API_PORT}"
@@ -275,7 +275,7 @@ start_application() {
       COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN="${AUTH_BOOTSTRAP_TOKEN}" \
       RAGFLOW_BASE_URL="http://127.0.0.1:${RAGFLOW_API_PORT}" \
       RAGFLOW_API_KEY="${ragflow_token}" \
-      RAGFLOW_EXPECTED_VERSION=v0.25.6 \
+      RAGFLOW_EXPECTED_VERSION=v0.26.4 \
       RAGFLOW_TIMEOUT_SECONDS=120 \
       .venv/bin/python -m common_agent
   ) > "${ARTIFACT_ROOT}/${phase}/backend.log" 2>&1 &
@@ -288,7 +288,7 @@ start_application() {
       COMMON_AGENT_DATABASE_URL="${database_url}" \
       RAGFLOW_BASE_URL="http://127.0.0.1:${RAGFLOW_API_PORT}" \
       RAGFLOW_API_KEY="${ragflow_token}" \
-      RAGFLOW_EXPECTED_VERSION=v0.25.6 \
+      RAGFLOW_EXPECTED_VERSION=v0.26.4 \
       RAGFLOW_TIMEOUT_SECONDS=120 \
       .venv/bin/python -m common_agent.worker_main
   ) > "${ARTIFACT_ROOT}/${phase}/worker.log" 2>&1 &

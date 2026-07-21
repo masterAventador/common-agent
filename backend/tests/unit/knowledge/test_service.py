@@ -34,7 +34,7 @@ class _KnowledgeProbe:
         self.status_result = KnowledgeServiceStatus(
             provider=self.provider_name,
             availability=KnowledgeServiceAvailability.AVAILABLE,
-            version="v0.25.6",
+            version="v0.26.4",
         )
         self.uploads: list[DocumentUpload] = []
         self.retrieval_requests: list[KnowledgeRetrievalRequest] = []

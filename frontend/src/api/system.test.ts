@@ -41,7 +41,7 @@ describe("system API boundary", () => {
         knowledge: {
           provider: "ragflow",
           availability: "available",
-          version: "v0.25.6",
+          version: "v0.26.4",
           error_code: null,
         },
       }),
@@ -64,7 +64,7 @@ describe("system API boundary", () => {
         knowledge: {
           provider: "ragflow",
           availability: "perfect",
-          version: "v0.25.6",
+          version: "v0.26.4",
           error_code: null,
         },
       }),

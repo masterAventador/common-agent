@@ -411,21 +411,29 @@ class RagFlowSettings:
         if runtime.environment == "production" and ca_bundle_path is None:
             raise ConfigurationError("RAGFLOW_CA_BUNDLE is required in production")
 
-        expected_version = values.get("RAGFLOW_EXPECTED_VERSION", "v0.25.6").strip()
+        expected_version = values.get("RAGFLOW_EXPECTED_VERSION", "v0.26.4").strip()
         if not expected_version:
             raise ConfigurationError("RAGFLOW_EXPECTED_VERSION is required")
 
         embedding_model = values.get(
-            "RAGFLOW_EMBEDDING_MODEL", "text-embedding-v4@Tongyi-Qianwen"
+            "RAGFLOW_EMBEDDING_MODEL",
+            "text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible",
         ).strip()
-        if embedding_model != "text-embedding-v4@Tongyi-Qianwen":
+        if embedding_model != "text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible":
             raise ConfigurationError(
-                "RAGFLOW_EMBEDDING_MODEL must be text-embedding-v4@Tongyi-Qianwen"
+                "RAGFLOW_EMBEDDING_MODEL must be "
+                "text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible"
             )
 
-        rerank_model = values.get("RAGFLOW_RERANK_MODEL", "qwen3-rerank@Tongyi-Qianwen").strip()
-        if rerank_model != "qwen3-rerank@Tongyi-Qianwen":
-            raise ConfigurationError("RAGFLOW_RERANK_MODEL must be qwen3-rerank@Tongyi-Qianwen")
+        rerank_model = values.get(
+            "RAGFLOW_RERANK_MODEL",
+            "qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible",
+        ).strip()
+        if rerank_model != "qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible":
+            raise ConfigurationError(
+                "RAGFLOW_RERANK_MODEL must be "
+                "qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible"
+            )
 
         raw_timeout = values.get("RAGFLOW_TIMEOUT_SECONDS", "60")
         try:

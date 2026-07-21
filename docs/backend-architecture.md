@@ -567,7 +567,7 @@ GET    /api/v1/workflow-runs/{run_id}/events
 输入采用可命中 B-tree 组合索引的前缀搜索，完整 UUID 与状态走等值索引；不使用 `%关键词%`
 全表扫描，也不把全表拉入应用进程。会话员工筛选和运行会话筛选均保留在组合索引首列。
 
-RAGFlow v0.25.6 数据集列表只走官方 `page/page_size/orderby/desc` 与 `ext.keywords` 能力；其页码
+RAGFlow v0.26.4 数据集列表只走官方 `page/page_size/orderby/desc` 与 `ext.keywords` 能力；其页码
 和总数在 `RagflowKnowledgeService` 内转换为平台 opaque offset cursor，第三方分页类型不越过
 适配层。平台不修改 RAGFlow 源码，也不直连其 MySQL。创建或删除后客户端必须废弃旧页链；在同一
 页链内新增的更靠前记录不会插入后续 keyset 页，删除游标锚点也不会使读取失效。
@@ -688,16 +688,22 @@ completed/failed/stopped 都严格提交后发布。停止接口只接受活跃�
 互不冲突的项目专属 launchd 标签和日志。平台 MySQL 数据、上传临时文件、服务 Volume 映射和
 日志统一放在根目录 `.local/`；平台 MySQL 与 RAGFlow 使用不同的 Compose project、容器、网络和 Volume。
 
-RAGFlow 固定为官方 `v0.25.6` 及其 tag 提交
-`8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4`，以 `third_party/ragflow` 官方 Git submodule
+RAGFlow 固定为官方 `v0.26.4` 及其 tag 提交
+`cb93883f3f8c975eecb2fed81210effeb3bdb06f`，以 `third_party/ragflow` 官方 Git submodule
 保存确切源码引用，并通过 `infra/ragflow/manage.sh` 运行未修改的官方 Compose。知识库新建、既有索引
-重建和检索分别显式固定阿里百炼 `text-embedding-v4@Tongyi-Qianwen` 与
-`qwen3-rerank@Tongyi-Qianwen`，不启动或兜底到本地 embedding/rerank。稳定栈使用独立
+重建和检索分别显式固定阿里百炼
+`text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible` 与
+`qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible`，不启动或兜底到本地
+embedding/rerank。
+`OpenAI-API-Compatible` 在这里只是 RAGFlow v0.26.4 调用百炼官方 embedding/rerank 兼容端点的
+传输类型；聊天、向量和重排仍全部来自单一阿里百炼供应商，不构成多模型网关，也不允许平台
+业务层直接依赖 RAGFlow 的 Provider 类型。稳定栈使用独立
 `common-agent-dev` Colima profile（8 CPU、32GiB 内存、100GiB 容器磁盘）和
 `colima-common-agent-dev` Docker context。R8-04 已在完整冷启动、中文索引重建/检索、两轮会话、
 工作流和 30 分钟连续采样下确认 VM 峰值 6.91GiB、容器峰值 6.85GiB、Swap/重启/OOM 为 0，
-因此 32GiB 是长期 `real` 默认值；不得裁剪 RAGFlow 必需服务、降低中文质量或占用其他项目的默认
-context。
+S10-07A 升级 v0.26.4 后又以 180 个连续样本确认 VM/容器峰值 7.28/7.23GiB 且同样无 Swap、重启
+或 OOM，因此 32GiB 是长期 `real` 默认值；不得裁剪 RAGFlow 必需服务、降低中文质量或占用其他
+项目的默认 context。
 
 ## 11. 官方能力依据
 

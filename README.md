@@ -32,7 +32,7 @@ git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
 `backend/uv.lock` 和 `frontend/pnpm-lock.yaml` 冻结，不能用未参与实际安装的源码副本冒充版本锁定。
 
 当前主仓库 gitlink 固定 `third_party/ragflow` 到 commit
-`8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4`，该 commit 精确对应 tag `v0.25.6`。submodule 初始化后
+`cb93883f3f8c975eecb2fed81210effeb3bdb06f`，该 commit 精确对应 tag `v0.26.4`。submodule 初始化后
 通常显示 `HEAD (no branch)`，这是 Git 用 detached HEAD 精确复现主仓库 gitlink 的正常行为；
 不能用“当前没有分支名”判断版本未锁定。可用下面五条命令分别查看主仓库记录、工作区 commit、
 精确 tag 和 detached 状态：

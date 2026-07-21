@@ -145,4 +145,4 @@ URL 凭据、查询参数和非官方主机。
 
 `DeepAgentsEmployeeRuntime` 固定使用 `deepagents==0.6.12` 的公开 `create_deep_agent`。它通过异步工具解析器只装配员工本轮白名单中的平台工具，使用非 Sandbox 的 `StateBackend`，并通过公开 Harness Profile 和文件权限规则从模型工具面移除 Todo、本机文件、Shell、默认子代理和 `task`。生产 `WorkflowToolRegistry` 每轮从正式定义仓储解析 allowlist，为每个工作流生成绑定固定 ID 的独立工具；工具以 `employee` 触发来源调用同一个 `WorkflowService.start_run()`，通过 `wait_for_run()` 等待已持久化终态后才把安全结果交回模型，失败只返回平台错误码。调用被取消时会向同一运行服务发送停止意图，不复制或直接导入 LangGraph 图。知识片段被标记为不可信外部数据；Deep Agents 原始消息、工具和异常不会越过适配层。
 
-`ConversationKnowledgeResolver` 把员工绑定与当前已完成用户消息转换为本轮知识上下文。未绑定员工直接返回无知识库语义且不访问 RAGFlow；已绑定员工每次都先经 `KnowledgeBaseService` 检查真实服务可用性和 `v0.25.6` 版本，再按固定首版参数检索。零命中保留知识库 ID；命中片段按原顺序映射成同源的 `RuntimeKnowledgeChunk` 与连续 `Citation`。配置、版本、知识库不存在、服务失败、非法响应和调用方取消均保持明确语义，不静默跳过检索。
+`ConversationKnowledgeResolver` 把员工绑定与当前已完成用户消息转换为本轮知识上下文。未绑定员工直接返回无知识库语义且不访问 RAGFlow；已绑定员工每次都先经 `KnowledgeBaseService` 检查真实服务可用性和 `v0.26.4` 版本，再按固定首版参数检索。零命中保留知识库 ID；命中片段按原顺序映射成同源的 `RuntimeKnowledgeChunk` 与连续 `Citation`。配置、版本、知识库不存在、服务失败、非法响应和调用方取消均保持明确语义，不静默跳过检索。

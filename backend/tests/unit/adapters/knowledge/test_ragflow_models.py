@@ -10,7 +10,10 @@ import pytest
 import common_agent.adapters.knowledge.ragflow_models as ragflow_models
 from common_agent.adapters.knowledge.ragflow_models import (
     BAILIAN_EMBEDDING_ID,
+    BAILIAN_EMBEDDING_INSTANCE,
+    BAILIAN_FACTORY,
     BAILIAN_RERANK_ID,
+    BAILIAN_RERANK_INSTANCE,
     RagFlowBailianIndexMigrator,
     RagFlowModelConfigurationError,
     RagFlowModelConfigurator,
@@ -20,14 +23,9 @@ from common_agent.adapters.knowledge.ragflow_models import (
 
 def test_configurator_registers_bailian_models_and_sets_tenant_defaults() -> None:
     requests: list[httpx.Request] = []
-    tenant = {
-        "tenant_id": "tenant-1",
-        "llm_id": "",
-        "embd_id": "",
-        "asr_id": "",
-        "img2txt_id": "",
-        "rerank_id": "",
-    }
+    providers: list[dict[str, object]] = []
+    instances: list[dict[str, object]] = []
+    defaults: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -40,28 +38,49 @@ def test_configurator_registers_bailian_models_and_sets_tenant_defaults() -> Non
                 json={"code": 0, "data": True},
             )
         assert request.headers["Authorization"] == "ragflow-session"
-        if request.url.path == "/v1/llm/add_llm":
-            return httpx.Response(200, json={"code": 0, "data": True})
-        if request.url.path == "/api/v1/users/me/models" and request.method == "GET":
-            return httpx.Response(200, json={"code": 0, "data": dict(tenant)})
-        if request.url.path == "/api/v1/users/me/models" and request.method == "PATCH":
-            tenant.update(json.loads(request.content))
-            return httpx.Response(200, json={"code": 0, "data": True})
-        if request.url.path == "/v1/llm/my_llms":
+        if request.url.path == "/api/v1/providers" and request.method == "GET":
+            return httpx.Response(200, json={"code": 0, "data": list(providers)})
+        if request.url.path == "/api/v1/providers" and request.method == "PUT":
+            providers.append({"name": BAILIAN_FACTORY})
+            return httpx.Response(200, json={"code": 0, "message": "success"})
+        if (
+            request.url.path == f"/api/v1/providers/{BAILIAN_FACTORY}/instances"
+            and request.method == "GET"
+        ):
+            return httpx.Response(200, json={"code": 0, "data": list(instances)})
+        if (
+            request.url.path == f"/api/v1/providers/{BAILIAN_FACTORY}/instances"
+            and request.method == "POST"
+        ):
+            payload = json.loads(request.content)
+            instances.append({"instance_name": payload["instance_name"], "status": "active"})
+            return httpx.Response(200, json={"code": 0, "message": "success"})
+        if request.url.path == "/api/v1/models":
             return httpx.Response(
                 200,
                 json={
                     "code": 0,
-                    "data": {
-                        "Tongyi-Qianwen": {
-                            "llm": [
-                                {"name": "text-embedding-v4", "type": "embedding"},
-                                {"name": "qwen3-rerank", "type": "rerank"},
-                            ]
-                        }
-                    },
+                    "data": [
+                        {
+                            "name": "text-embedding-v4",
+                            "model_type": ["embedding"],
+                            "provider_name": BAILIAN_FACTORY,
+                            "instance_name": BAILIAN_EMBEDDING_INSTANCE,
+                        },
+                        {
+                            "name": "qwen3-rerank",
+                            "model_type": ["rerank"],
+                            "provider_name": BAILIAN_FACTORY,
+                            "instance_name": BAILIAN_RERANK_INSTANCE,
+                        },
+                    ],
                 },
             )
+        if request.url.path == "/api/v1/models/default" and request.method == "GET":
+            return httpx.Response(200, json={"code": 0, "data": {"models": list(defaults)}})
+        if request.url.path == "/api/v1/models/default" and request.method == "PATCH":
+            defaults.append(json.loads(request.content))
+            return httpx.Response(200, json={"code": 0, "message": "success"})
         raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
 
     with httpx.Client(
@@ -74,29 +93,66 @@ def test_configurator_registers_bailian_models_and_sets_tenant_defaults() -> Non
             ),
         )
 
-    model_payloads = [
-        json.loads(request.content) for request in requests if request.url.path == "/v1/llm/add_llm"
+    provider_payloads = [
+        json.loads(request.content)
+        for request in requests
+        if request.url.path == "/api/v1/providers" and request.method == "PUT"
     ]
-    assert model_payloads == [
+    assert provider_payloads == [{"provider_name": BAILIAN_FACTORY}]
+    instance_payloads = [
+        json.loads(request.content)
+        for request in requests
+        if request.url.path == f"/api/v1/providers/{BAILIAN_FACTORY}/instances"
+        and request.method == "POST"
+    ]
+    assert instance_payloads == [
         {
-            "llm_factory": "Tongyi-Qianwen",
-            "llm_name": "text-embedding-v4",
+            "instance_name": BAILIAN_EMBEDDING_INSTANCE,
+            "api_key": "fixture-bailian-secret",
+            "base_url": ("https://ws-fixture.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"),
+            "region": "",
+            "model_info": [
+                {
+                    "model_name": "text-embedding-v4",
+                    "model_type": ["embedding"],
+                    "max_tokens": 8192,
+                }
+            ],
+        },
+        {
+            "instance_name": BAILIAN_RERANK_INSTANCE,
+            "api_key": "fixture-bailian-secret",
+            "base_url": (
+                "https://ws-fixture.cn-beijing.maas.aliyuncs.com/compatible-api/v1/reranks"
+            ),
+            "region": "",
+            "model_info": [
+                {
+                    "model_name": "qwen3-rerank",
+                    "model_type": ["rerank"],
+                    "max_tokens": 4000,
+                }
+            ],
+        },
+    ]
+    assert defaults == [
+        {
+            "model_provider": BAILIAN_FACTORY,
+            "model_instance": BAILIAN_EMBEDDING_INSTANCE,
+            "model_name": "text-embedding-v4",
             "model_type": "embedding",
-            "api_base": "https://ws-fixture.cn-beijing.maas.aliyuncs.com/api/v1",
-            "api_key": "fixture-bailian-secret",
-            "max_tokens": 8192,
         },
         {
-            "llm_factory": "Tongyi-Qianwen",
-            "llm_name": "qwen3-rerank",
+            "model_provider": BAILIAN_FACTORY,
+            "model_instance": BAILIAN_RERANK_INSTANCE,
+            "model_name": "qwen3-rerank",
             "model_type": "rerank",
-            "api_base": "https://ws-fixture.cn-beijing.maas.aliyuncs.com/api/v1",
-            "api_key": "fixture-bailian-secret",
-            "max_tokens": 4000,
         },
     ]
-    assert tenant["embd_id"] == BAILIAN_EMBEDDING_ID
-    assert tenant["rerank_id"] == BAILIAN_RERANK_ID
+    assert BAILIAN_EMBEDDING_ID == (
+        "text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible"
+    )
+    assert BAILIAN_RERANK_ID == ("qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible")
     assert status.embedding_ready is True
     assert status.rerank_ready is True
     assert status.defaults_ready is True
@@ -116,16 +172,10 @@ def test_configurator_accepts_idempotent_existing_local_account() -> None:
                 headers={"Authorization": "ragflow-session"},
                 json={"code": 0, "data": True},
             )
-        if request.url.path == "/v1/llm/my_llms":
-            return httpx.Response(200, json={"code": 0, "data": {}})
-        if request.url.path == "/api/v1/users/me/models":
-            return httpx.Response(
-                200,
-                json={
-                    "code": 0,
-                    "data": {"embd_id": "", "rerank_id": ""},
-                },
-            )
+        if request.url.path == "/api/v1/models":
+            return httpx.Response(200, json={"code": 0, "data": []})
+        if request.url.path == "/api/v1/models/default":
+            return httpx.Response(200, json={"code": 0, "data": {"models": []}})
         raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
 
     with httpx.Client(
@@ -150,7 +200,19 @@ def test_configurator_sanitizes_upstream_model_errors() -> None:
                 headers={"Authorization": "ragflow-session"},
                 json={"code": 0, "data": True},
             )
-        if request.url.path == "/v1/llm/add_llm":
+        if request.url.path == "/api/v1/providers" and request.method == "GET":
+            return httpx.Response(200, json={"code": 0, "data": []})
+        if request.url.path == "/api/v1/providers" and request.method == "PUT":
+            return httpx.Response(200, json={"code": 0, "message": "success"})
+        if (
+            request.url.path == "/api/v1/providers/OpenAI-API-Compatible/instances"
+            and request.method == "GET"
+        ):
+            return httpx.Response(200, json={"code": 0, "data": []})
+        if (
+            request.url.path == "/api/v1/providers/OpenAI-API-Compatible/instances"
+            and request.method == "POST"
+        ):
             return httpx.Response(
                 200,
                 json={"code": 100, "message": f"provider rejected {secret}"},
@@ -169,7 +231,7 @@ def test_configurator_sanitizes_upstream_model_errors() -> None:
         )
 
     assert captured.value.code == "ragflow_model_configuration_failed"
-    assert captured.value.stage == "register_embedding"
+    assert captured.value.stage == "create_embedding_instance"
     assert secret not in str(captured.value)
     assert secret not in repr(captured.value)
 
@@ -419,8 +481,10 @@ def test_cli_diagnoses_bailian_scope_and_limits_without_credentials(
     assert "endpoint=business-space" in captured.out
     assert "region=cn-beijing" in captured.out
     assert "chat=qwen-plus" in captured.out
-    assert "embedding=text-embedding-v4@Tongyi-Qianwen" in captured.out
-    assert "rerank=qwen3-rerank@Tongyi-Qianwen" in captured.out
+    assert (
+        "embedding=text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible" in captured.out
+    )
+    assert "rerank=qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible" in captured.out
     assert "timeout=45s" in captured.out
     assert "stream_timeout=15s" in captured.out
     assert "retries=1" in captured.out
@@ -462,7 +526,7 @@ def test_status_cli_ignores_system_proxy_for_loopback_ragflow(
         lambda _self: ragflow_models.RagFlowModelStatus(True, True, True),
     )
     monkeypatch.setenv("RAGFLOW_BASE_URL", "http://127.0.0.1:19380")
-    monkeypatch.setenv("RAGFLOW_EXPECTED_VERSION", "v0.25.6")
+    monkeypatch.setenv("RAGFLOW_EXPECTED_VERSION", "v0.26.4")
 
     assert main(["status"]) == 0
     assert capsys.readouterr().err == ""

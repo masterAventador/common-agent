@@ -158,7 +158,7 @@ class KnowledgeProbe:
             provider=self.provider_name,
             availability=self.availability,
             version=(
-                "v0.25.6" if self.availability is KnowledgeServiceAvailability.AVAILABLE else None
+                "v0.26.4" if self.availability is KnowledgeServiceAvailability.AVAILABLE else None
             ),
         )
 

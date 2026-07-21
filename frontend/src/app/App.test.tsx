@@ -31,7 +31,7 @@ vi.mock("../api/system", () => ({
     knowledge: {
       provider: "ragflow",
       availability: "available",
-      version: "v0.25.6",
+      version: "v0.26.4",
       error_code: null,
     },
   }),

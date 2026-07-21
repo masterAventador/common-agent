@@ -23,9 +23,10 @@
 不承载业务核心或 RAGFlow，可保留作堡垒机、监控或其他轻量外围用途。若未来把平台 MySQL 拆为
 托管数据库，业务节点规格必须在 S10-08 重新实测，不能直接据此下调。
 
-本机 R8-04 的 30 分钟真实链路中，相关容器合计峰值约 6.85 GiB，RAGFlow API 单项峰值约
-4.16 GiB；这些数据证明 32G 有充足稳定余量，但不能把当前低数据量峰值误当成 8G 生产规格，
-因为远程环境仍需覆盖索引增长、解析峰值、宿主机和滚动发布余量。
+本机 S10-07A 升级 v0.26.4 后的 30 分钟真实链路共 180 个连续样本，相关容器合计峰值约
+7.23 GiB，RAGFlow API 单项峰值约 4.53 GiB，Swap/重启/OOM 为 0；这些数据证明 32G 有充足稳定
+余量，但不能把当前低数据量峰值误当成 8G 生产规格，因为远程环境仍需覆盖索引增长、解析峰值、
+宿主机和滚动发布余量。
 
 业务节点和 RAGFlow 节点不得共享服务端私钥。业务节点只保存自己的 Edge 私钥与用于验证 RAGFlow
 的 CA bundle；RAGFlow 私钥只保存在 RAGFlow 节点。MySQL 只加入 Docker internal 网络；API/Worker
@@ -47,7 +48,7 @@ infra/production/manage.sh drill
 
 ## RAGFlow 节点
 
-先按 [`infra/ragflow/README.md`](../ragflow/README.md) 启动固定 v0.25.6 栈。为 TLS Edge 准备
+先按 [`infra/ragflow/README.md`](../ragflow/README.md) 启动固定 v0.26.4 栈。为 TLS Edge 准备
 正式证书，证书 SAN 必须覆盖业务配置使用的私网 DNS 名；再将下列变量替换为目标机绝对路径和
 RAGFlow 所在 Docker network：
 

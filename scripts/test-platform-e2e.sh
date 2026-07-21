@@ -342,7 +342,7 @@ if [[ "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUIT
   RAGFLOW_API_KEY="$(provision_ragflow_api_key)"
   export RAGFLOW_API_KEY
   export RAGFLOW_BASE_URL
-  export RAGFLOW_EXPECTED_VERSION="v0.25.6"
+  export RAGFLOW_EXPECTED_VERSION="v0.26.4"
   export RAGFLOW_TIMEOUT_SECONDS="120"
   if [[ "${E2E_SUITE}" == "mvp-acceptance" ]]; then
     (

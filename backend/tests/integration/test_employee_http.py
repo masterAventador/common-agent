@@ -213,7 +213,7 @@ def test_binding_when_knowledge_service_is_unavailable_fails_closed_without_writ
             env_overrides={
                 "RAGFLOW_BASE_URL": "http://127.0.0.1:1",
                 "RAGFLOW_API_KEY": "safe-test-key",
-                "RAGFLOW_EXPECTED_VERSION": "v0.25.6",
+                "RAGFLOW_EXPECTED_VERSION": "v0.26.4",
                 "RAGFLOW_TIMEOUT_SECONDS": "0.2",
             },
         ) as api_url,

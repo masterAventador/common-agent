@@ -100,7 +100,7 @@ def test_status_document_and_retrieval_models_use_stable_platform_semantics() ->
     status = KnowledgeServiceStatus(
         provider="ragflow",
         availability=KnowledgeServiceAvailability.AVAILABLE,
-        version="v0.25.6",
+        version="v0.26.4",
     )
     document = KnowledgeDocument(
         id="doc-1",

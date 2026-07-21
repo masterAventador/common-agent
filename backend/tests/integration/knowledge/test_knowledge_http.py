@@ -27,7 +27,7 @@ _MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024
 
 @dataclass(slots=True)
 class _RagFlowProbe:
-    version: str = "v0.25.6"
+    version: str = "v0.26.4"
     create_payloads: list[dict[str, Any]] = field(default_factory=list)
     upload_bodies: list[bytes] = field(default_factory=list)
     parse_payloads: list[dict[str, Any]] = field(default_factory=list)
@@ -171,7 +171,7 @@ def _ragflow_env(base_url: str, *, api_key: str = "layered-test-key") -> dict[st
     return {
         "RAGFLOW_BASE_URL": base_url,
         "RAGFLOW_API_KEY": api_key,
-        "RAGFLOW_EXPECTED_VERSION": "v0.25.6",
+        "RAGFLOW_EXPECTED_VERSION": "v0.26.4",
         "RAGFLOW_TIMEOUT_SECONDS": "2",
     }
 
@@ -222,7 +222,7 @@ def test_knowledge_routes_use_formal_uvicorn_and_ragflow_adapter() -> None:
             "description": "人事制度",
             "permission": "me",
             "chunk_method": "naive",
-            "embedding_model": "text-embedding-v4@Tongyi-Qianwen",
+            "embedding_model": ("text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible"),
         }
     ]
     assert len(probe.upload_bodies) == 1

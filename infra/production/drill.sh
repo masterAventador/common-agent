@@ -70,9 +70,9 @@ write_runtime_configuration() {
     echo 'COMMON_AGENT_AUTH_SESSION_ABSOLUTE_SECONDS=43200'
     echo 'RAGFLOW_BASE_URL=https://common-agent-production-ragflow-edge:9443'
     echo 'RAGFLOW_CA_BUNDLE=/run/common-agent/tls/ca-bundle.crt'
-    echo 'RAGFLOW_EXPECTED_VERSION=v0.25.6'
-    echo 'RAGFLOW_EMBEDDING_MODEL=text-embedding-v4@Tongyi-Qianwen'
-    echo 'RAGFLOW_RERANK_MODEL=qwen3-rerank@Tongyi-Qianwen'
+    echo 'RAGFLOW_EXPECTED_VERSION=v0.26.4'
+    echo 'RAGFLOW_EMBEDDING_MODEL=text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible'
+    echo 'RAGFLOW_RERANK_MODEL=qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible'
     echo 'RAGFLOW_TIMEOUT_SECONDS=120'
     printf 'BAILIAN_BASE_URL=%s\n' "${bailian_base_url}"
     printf 'BAILIAN_MODEL=%s\n' "${bailian_model}"

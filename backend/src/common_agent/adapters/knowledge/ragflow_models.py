@@ -6,18 +6,22 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic, sleep
-from typing import Any, Final, Literal, cast
+from typing import Any, Final, cast
 from urllib.parse import urlparse
 
 import httpx
 
 from common_agent.bootstrap.settings import ConfigurationError, ModelSettings, RagFlowSettings
 
-BAILIAN_FACTORY: Final = "Tongyi-Qianwen"
+BAILIAN_FACTORY: Final = "OpenAI-API-Compatible"
+BAILIAN_EMBEDDING_INSTANCE: Final = "common-agent-embedding"
+BAILIAN_RERANK_INSTANCE: Final = "common-agent-rerank"
 BAILIAN_EMBEDDING_MODEL: Final = "text-embedding-v4"
 BAILIAN_RERANK_MODEL: Final = "qwen3-rerank"
-BAILIAN_EMBEDDING_ID: Final = f"{BAILIAN_EMBEDDING_MODEL}@{BAILIAN_FACTORY}"
-BAILIAN_RERANK_ID: Final = f"{BAILIAN_RERANK_MODEL}@{BAILIAN_FACTORY}"
+BAILIAN_EMBEDDING_ID: Final = (
+    f"{BAILIAN_EMBEDDING_MODEL}@{BAILIAN_EMBEDDING_INSTANCE}@{BAILIAN_FACTORY}"
+)
+BAILIAN_RERANK_ID: Final = f"{BAILIAN_RERANK_MODEL}@{BAILIAN_RERANK_INSTANCE}@{BAILIAN_FACTORY}"
 
 _LOCAL_EMAIL: Final = "common-agent@local.test"
 _LOCAL_ENCRYPTED_PASSWORD: Final = (
@@ -251,42 +255,85 @@ class RagFlowModelConfigurator:
 
     def apply(self, *, api_key: str, provider_base_url: str) -> RagFlowModelStatus:
         key = api_key.strip()
-        ragflow_provider_base_url = _ragflow_provider_base_url(provider_base_url)
-        if not key or ragflow_provider_base_url is None:
+        provider_base_urls = _ragflow_compatible_base_urls(provider_base_url)
+        if not key or provider_base_urls is None:
             raise RagFlowModelConfigurationError("input")
         self._authenticate()
-        self._add_model(
-            api_key=key,
-            provider_base_url=ragflow_provider_base_url,
-            model_name=BAILIAN_EMBEDDING_MODEL,
-            model_type="embedding",
-            max_tokens=8192,
-        )
-        self._add_model(
-            api_key=key,
-            provider_base_url=ragflow_provider_base_url,
-            model_name=BAILIAN_RERANK_MODEL,
-            model_type="rerank",
-            max_tokens=4000,
-        )
+        providers = self._request_data("GET", "/api/v1/providers", stage="list_providers")
+        if not isinstance(providers, list):
+            raise RagFlowModelConfigurationError("list_providers")
+        if not any(
+            isinstance(provider, dict) and provider.get("name") == BAILIAN_FACTORY
+            for provider in providers
+        ):
+            self._request_success(
+                "PUT",
+                "/api/v1/providers",
+                stage="add_provider",
+                json={"provider_name": BAILIAN_FACTORY},
+            )
 
-        tenant = self._tenant_models(stage="read_defaults")
-        tenant_id = tenant.get("tenant_id")
-        if not isinstance(tenant_id, str) or not tenant_id:
-            raise RagFlowModelConfigurationError("read_defaults")
-        self._request(
-            "PATCH",
-            "/api/v1/users/me/models",
-            stage="set_defaults",
-            json={
-                "tenant_id": tenant_id,
-                "asr_id": _string_value(tenant.get("asr_id")),
-                "embd_id": BAILIAN_EMBEDDING_ID,
-                "img2txt_id": _string_value(tenant.get("img2txt_id")),
-                "llm_id": _string_value(tenant.get("llm_id")),
-                "rerank_id": BAILIAN_RERANK_ID,
-            },
+        instances = self._request_data(
+            "GET",
+            f"/api/v1/providers/{BAILIAN_FACTORY}/instances",
+            stage="list_provider_instances",
         )
+        if not isinstance(instances, list):
+            raise RagFlowModelConfigurationError("list_provider_instances")
+        instance_specs = (
+            (
+                BAILIAN_EMBEDDING_INSTANCE,
+                BAILIAN_EMBEDDING_MODEL,
+                "embedding",
+                8192,
+                provider_base_urls[0],
+            ),
+            (
+                BAILIAN_RERANK_INSTANCE,
+                BAILIAN_RERANK_MODEL,
+                "rerank",
+                4000,
+                provider_base_urls[1],
+            ),
+        )
+        for instance_name, model_name, model_type, max_tokens, base_url in instance_specs:
+            if not any(
+                isinstance(instance, dict)
+                and instance.get("instance_name") == instance_name
+                and instance.get("status") != "inactive"
+                for instance in instances
+            ):
+                self._request_success(
+                    "POST",
+                    f"/api/v1/providers/{BAILIAN_FACTORY}/instances",
+                    stage=f"create_{model_type}_instance",
+                    json={
+                        "instance_name": instance_name,
+                        "api_key": key,
+                        "base_url": base_url,
+                        "region": "",
+                        "model_info": [
+                            {
+                                "model_name": model_name,
+                                "model_type": [model_type],
+                                "max_tokens": max_tokens,
+                            }
+                        ],
+                    },
+                )
+
+        for instance_name, model_name, model_type, _, _ in instance_specs:
+            self._request_success(
+                "PATCH",
+                "/api/v1/models/default",
+                stage=f"set_{model_type}_default",
+                json={
+                    "model_provider": BAILIAN_FACTORY,
+                    "model_instance": instance_name,
+                    "model_name": model_name,
+                    "model_type": model_type,
+                },
+            )
         status = self.status()
         if not (status.embedding_ready and status.rerank_ready and status.defaults_ready):
             raise RagFlowModelConfigurationError("verify")
@@ -294,21 +341,46 @@ class RagFlowModelConfigurator:
 
     def status(self) -> RagFlowModelStatus:
         self._authenticate()
-        tenant = self._tenant_models(stage="status_defaults")
-        llms = self._request("GET", "/v1/llm/my_llms", stage="status_models")
-        provider = llms.get(BAILIAN_FACTORY)
-        configured_models = provider.get("llm", []) if isinstance(provider, dict) else []
+        configured_models = self._request_data("GET", "/api/v1/models", stage="status_models")
+        defaults = self._request_data("GET", "/api/v1/models/default", stage="status_defaults")
+        if not isinstance(configured_models, list) or not isinstance(defaults, dict):
+            raise RagFlowModelConfigurationError("status_models")
         model_pairs = {
-            (item.get("name"), item.get("type"))
+            (item.get("name"), item.get("instance_name"), model_type)
             for item in configured_models
-            if isinstance(item, dict)
+            if isinstance(item, dict) and item.get("provider_name") == BAILIAN_FACTORY
+            for model_type in _model_types(item.get("model_type"))
         }
-        embedding_ready = (BAILIAN_EMBEDDING_MODEL, "embedding") in model_pairs
-        rerank_ready = (BAILIAN_RERANK_MODEL, "rerank") in model_pairs
-        defaults_ready = (
-            tenant.get("embd_id") == BAILIAN_EMBEDDING_ID
-            and tenant.get("rerank_id") == BAILIAN_RERANK_ID
-        )
+        default_models = defaults.get("models")
+        if not isinstance(default_models, list):
+            raise RagFlowModelConfigurationError("status_defaults")
+        default_pairs = {
+            (
+                item.get("model_name"),
+                item.get("model_instance"),
+                item.get("model_type"),
+            )
+            for item in default_models
+            if isinstance(item, dict) and item.get("model_provider") == BAILIAN_FACTORY
+        }
+        embedding_ready = (
+            BAILIAN_EMBEDDING_MODEL,
+            BAILIAN_EMBEDDING_INSTANCE,
+            "embedding",
+        ) in model_pairs
+        rerank_ready = (
+            BAILIAN_RERANK_MODEL,
+            BAILIAN_RERANK_INSTANCE,
+            "rerank",
+        ) in model_pairs
+        defaults_ready = {
+            (
+                BAILIAN_EMBEDDING_MODEL,
+                BAILIAN_EMBEDDING_INSTANCE,
+                "embedding",
+            ),
+            (BAILIAN_RERANK_MODEL, BAILIAN_RERANK_INSTANCE, "rerank"),
+        }.issubset(default_pairs)
         return RagFlowModelStatus(
             embedding_ready=embedding_ready,
             rerank_ready=rerank_ready,
@@ -440,33 +512,7 @@ class RagFlowModelConfigurator:
             raise RagFlowModelConfigurationError("login")
         self._authorization = authorization
 
-    def _add_model(
-        self,
-        *,
-        api_key: str,
-        provider_base_url: str,
-        model_name: str,
-        model_type: Literal["embedding", "rerank"],
-        max_tokens: int,
-    ) -> None:
-        self._request(
-            "POST",
-            "/v1/llm/add_llm",
-            stage=f"register_{model_type}",
-            json={
-                "llm_factory": BAILIAN_FACTORY,
-                "llm_name": model_name,
-                "model_type": model_type,
-                "api_base": provider_base_url,
-                "api_key": api_key,
-                "max_tokens": max_tokens,
-            },
-        )
-
-    def _tenant_models(self, *, stage: str) -> dict[str, Any]:
-        return self._request("GET", "/api/v1/users/me/models", stage=stage)
-
-    def _request(self, method: str, path: str, *, stage: str, **kwargs: Any) -> dict[str, Any]:
+    def _request_data(self, method: str, path: str, *, stage: str, **kwargs: Any) -> Any:
         self._authenticate()
         try:
             response = self._client.request(
@@ -481,12 +527,10 @@ class RagFlowModelConfigurator:
             raise RagFlowModelConfigurationError(stage) from None
         if payload.get("code") != 0:
             raise RagFlowModelConfigurationError(stage)
-        data = payload.get("data")
-        if isinstance(data, dict):
-            return data
-        if data is True:
-            return {}
-        raise RagFlowModelConfigurationError(stage)
+        return payload.get("data")
+
+    def _request_success(self, method: str, path: str, *, stage: str, **kwargs: Any) -> None:
+        self._request_data(method, path, stage=stage, **kwargs)
 
     def _request_anonymous(
         self,
@@ -583,6 +627,16 @@ def _ragflow_provider_base_url(value: str) -> str | None:
     return f"https://{host}/api/v1"
 
 
+def _ragflow_compatible_base_urls(value: str) -> tuple[str, str] | None:
+    if _ragflow_provider_base_url(value) is None:
+        return None
+    host = urlparse(value).hostname or ""
+    return (
+        value.rstrip("/"),
+        f"https://{host}/compatible-api/v1/reranks",
+    )
+
+
 def _bailian_endpoint_scope(value: str) -> tuple[str, str]:
     host = urlparse(value).hostname or ""
     if host.endswith(".cn-beijing.maas.aliyuncs.com"):
@@ -594,8 +648,12 @@ def _bailian_endpoint_scope(value: str) -> tuple[str, str]:
     return "public", "cn"
 
 
-def _string_value(value: Any) -> str:
-    return value if isinstance(value, str) else ""
+def _model_types(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, list):
+        return tuple(item for item in value if isinstance(item, str))
+    return ()
 
 
 def _is_busy(value: str) -> bool:

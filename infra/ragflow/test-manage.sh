@@ -15,10 +15,26 @@ fail() {
 }
 
 [[ -x "${MANAGER}" ]] || fail "缺少可执行的 RAGFlow 管理脚本"
-[[ "${VERSION}" == "v0.25.6" ]] || fail "RAGFlow 版本未固定为 v0.25.6"
-[[ "${EXPECTED_COMMIT}" == "8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4" ]] || fail "RAGFlow 上游提交未固定"
+[[ "${VERSION}" == "v0.26.4" ]] || fail "RAGFlow 版本未固定为 v0.26.4"
+[[ "${EXPECTED_COMMIT}" == "cb93883f3f8c975eecb2fed81210effeb3bdb06f" ]] || fail "RAGFlow 上游提交未固定"
 ENV_VERSION_LINE="$(rg --color=never --only-matching '^RAGFLOW_EXPECTED_VERSION=.*' "${REPOSITORY_ROOT}/.env.example" || true)"
 [[ "${ENV_VERSION_LINE#*=}" == "${VERSION}" ]] || fail "后端期望的 RAGFlow 版本与基础设施版本不一致"
+
+if rg --color=never --fixed-strings --quiet 'v0.25.6' \
+  "${REPOSITORY_ROOT}/.env.example" \
+  "${REPOSITORY_ROOT}/README.md" \
+  "${REPOSITORY_ROOT}/backend" \
+  "${REPOSITORY_ROOT}/frontend" \
+  "${REPOSITORY_ROOT}/infra/backup" \
+  "${REPOSITORY_ROOT}/infra/production" \
+  "${REPOSITORY_ROOT}/infra/ragflow/manage.sh" \
+  "${REPOSITORY_ROOT}/infra/ragflow/compose.override.yaml" \
+  "${REPOSITORY_ROOT}/scripts/real.sh" \
+  "${REPOSITORY_ROOT}/scripts/real-resource-soak.sh" \
+  "${REPOSITORY_ROOT}/scripts/test-platform-e2e.sh" \
+  "${REPOSITORY_ROOT}/docs/backend-architecture.md"; then
+  fail "活动配置、代码、测试或运维文档仍引用旧 RAGFlow v0.25.6"
+fi
 
 [[ -f "${REPOSITORY_ROOT}/.gitmodules" ]] || fail "缺少第三方源码 submodule 清单"
 [[ "$(git config -f "${REPOSITORY_ROOT}/.gitmodules" --get submodule.third_party/ragflow.path)" == "third_party/ragflow" ]] || \
@@ -96,7 +112,12 @@ service_block() {
 
 rg --color=never --quiet '^name: common-agent-dev$' <<< "${CONFIG}"
 rg --color=never --quiet 'container_name: common-agent-ragflow-api' <<< "${CONFIG}"
-rg --color=never --quiet 'image: infiniflow/ragflow:v0\.25\.6' <<< "${CONFIG}"
+rg --color=never --quiet 'image: infiniflow/ragflow:v0\.26\.4' <<< "${CONFIG}"
+rg --color=never --fixed-strings --quiet -- '--init-model-provider-tables' <<< "$(service_block ragflow-cpu)" || \
+  fail "RAGFlow v0.26.4 启动入口没有执行官方模型供应商表迁移"
+if rg --color=never --quiet '^  nats:' <<< "${CONFIG}"; then
+  fail "Python API profile 不得误启用可选 ragflow-go/NATS 服务"
+fi
 rg --color=never --quiet 'DASHSCOPE_HTTP_BASE_URL: https://dashscope\.aliyuncs\.com/api/v1' <<< "${CONFIG}" || \
   fail "RAGFlow 容器没有通过 DashScope 官方环境变量固定百炼原生 API 端点"
 rg --color=never --quiet 'platform: linux/amd64' <<< "$(service_block ragflow-cpu)" || \

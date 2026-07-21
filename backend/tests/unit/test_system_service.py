@@ -42,7 +42,7 @@ def test_system_status_preserves_real_dependency_truth() -> None:
                 KnowledgeServiceStatus(
                     provider="ragflow",
                     availability=KnowledgeServiceAvailability.AVAILABLE,
-                    version="v0.25.6",
+                    version="v0.26.4",
                 )
             ),
         ),
@@ -53,7 +53,7 @@ def test_system_status_preserves_real_dependency_truth() -> None:
     assert snapshot.model.provider == "bailian"
     assert snapshot.model.status is ModelConfigurationStatus.CONFIGURED
     assert snapshot.knowledge.availability is KnowledgeServiceAvailability.AVAILABLE
-    assert snapshot.knowledge.version == "v0.25.6"
+    assert snapshot.knowledge.version == "v0.26.4"
 
 
 def test_system_status_safely_marks_unknown_knowledge_failure_unavailable() -> None:

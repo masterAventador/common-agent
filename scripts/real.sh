@@ -31,7 +31,12 @@ API_PORT=18200
 FRONTEND_PORT=18280
 PLATFORM_MYSQL_PORT=19506
 RAGFLOW_API_PORT=19380
-DATABASE_URL="mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:${PLATFORM_MYSQL_PORT}/common_agent?charset=utf8mb4"
+DATABASE_NAME="${COMMON_AGENT_REAL_DATABASE_NAME:-common_agent}"
+if [[ "${DATABASE_NAME}" != "common_agent" && "${DATABASE_NAME}" != "common_agent_test" ]]; then
+  echo "COMMON_AGENT_REAL_DATABASE_NAME 只允许 common_agent 或 common_agent_test" >&2
+  exit 2
+fi
+DATABASE_URL="mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:${PLATFORM_MYSQL_PORT}/${DATABASE_NAME}?charset=utf8mb4"
 BACKEND_PYTHON="${BACKEND_ROOT}/.venv/bin/python"
 RAGFLOW_MANAGER="${REPOSITORY_ROOT}/infra/ragflow/manage.sh"
 PLATFORM_MANAGER="${REPOSITORY_ROOT}/infra/platform/manage.sh"
@@ -395,7 +400,9 @@ start_backend() {
     -l "${BACKEND_LAUNCH_LABEL}" \
     -o "${BACKEND_LOG}" \
     -e "${BACKEND_LOG}" \
-    -- /usr/bin/env "PATH=${PATH}" "${SCRIPT_DIR}/real.sh" _serve-backend
+    -- /usr/bin/env "PATH=${PATH}" \
+      "COMMON_AGENT_REAL_DATABASE_NAME=${DATABASE_NAME}" \
+      "${SCRIPT_DIR}/real.sh" _serve-backend
   if ! wait_for_url "http://127.0.0.1:${API_PORT}/api/v1/system/health"; then
     echo "FastAPI real 启动失败，日志：${BACKEND_LOG}" >&2
     remove_launch_job "${BACKEND_LAUNCH_LABEL}"
@@ -439,7 +446,9 @@ start_worker() {
     -l "${WORKER_LAUNCH_LABEL}" \
     -o "${WORKER_LOG}" \
     -e "${WORKER_LOG}" \
-    -- /usr/bin/env "PATH=${PATH}" "${SCRIPT_DIR}/real.sh" _serve-worker
+    -- /usr/bin/env "PATH=${PATH}" \
+      "COMMON_AGENT_REAL_DATABASE_NAME=${DATABASE_NAME}" \
+      "${SCRIPT_DIR}/real.sh" _serve-worker
   sleep 1
   if ! launch_job_running "${WORKER_LAUNCH_LABEL}"; then
     echo "持久 Worker real 启动失败，日志：${WORKER_LOG}" >&2
@@ -469,7 +478,7 @@ serve_backend() {
     COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN="${auth_bootstrap_token}" \
     RAGFLOW_BASE_URL="http://127.0.0.1:${RAGFLOW_API_PORT}" \
     RAGFLOW_API_KEY="${ragflow_api_key}" \
-    RAGFLOW_EXPECTED_VERSION=v0.25.6 \
+    RAGFLOW_EXPECTED_VERSION=v0.26.4 \
     RAGFLOW_TIMEOUT_SECONDS=120 \
     .venv/bin/python -m common_agent
 }
@@ -491,7 +500,7 @@ serve_worker() {
     COMMON_AGENT_DATABASE_URL="${DATABASE_URL}" \
     RAGFLOW_BASE_URL="http://127.0.0.1:${RAGFLOW_API_PORT}" \
     RAGFLOW_API_KEY="${ragflow_api_key}" \
-    RAGFLOW_EXPECTED_VERSION=v0.25.6 \
+    RAGFLOW_EXPECTED_VERSION=v0.26.4 \
     RAGFLOW_TIMEOUT_SECONDS=120 \
     .venv/bin/python -m common_agent.worker_main
 }

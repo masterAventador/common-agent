@@ -1,7 +1,7 @@
 # RAGFlow 独立开发栈
 
-本项目固定使用 RAGFlow 官方稳定版 `v0.25.6`，并同时固定官方 tag 对应提交
-`8f0632c8d9efacbcd11aaf6e0f4cb634169bfea4`，禁止使用 `latest` 或漂移分支。
+本项目固定使用 RAGFlow 官方稳定版 `v0.26.4`，并同时固定官方 tag 对应提交
+`cb93883f3f8c975eecb2fed81210effeb3bdb06f`，禁止使用 `latest` 或漂移分支。
 未修改的官方 checkout 以 `third_party/ragflow` Git submodule 纳入父仓库，`manage.sh` 只读取
 该目录；本项目只维护外围 Compose 覆盖层，不复制、Fork 或修改 RAGFlow 源码和官方 Compose。
 commit、tag、origin 或工作区任一不匹配时管理脚本都会关闭失败。
@@ -73,18 +73,30 @@ Colima profile，不会改变全局当前 context，也不会与其他项目共�
 
 官方最低要求是 4 核、16GB RAM 和 50GB 磁盘。本项目不再启动 `tei-cpu`，也不维护本地
 embedding/rerank 权重、端口、挂载或下载入口；知识库统一通过 RAGFlow 官方
-`Tongyi-Qianwen` 能力调用阿里百炼 `text-embedding-v4` 与 `qwen3-rerank`。管理脚本默认要求
+`OpenAI-API-Compatible` 能力的两个独立实例调用阿里百炼 `text-embedding-v4` 与
+`qwen3-rerank`。管理脚本默认要求
 Docker context 至少 24GiB，并建议项目独立 profile 使用 8 CPU、32GiB 内存和 100GiB 容器磁盘。
 
 非本地模型容器上限为：RAGFlow 5GiB、Elasticsearch 3GiB（JVM 1GiB）、MySQL 2GiB、MinIO
 1GiB、Valkey 256MiB。`configure-bailian` 从获准的后端 Demo 配置或同名环境变量读取百炼 Key，
 只通过 RAGFlow 官方 UI/API 注册两个模型并设置租户默认值，不打印凭据；`check-bailian` 只报告
 embedding、rerank 和默认绑定是否就绪。新知识库显式固定
-`text-embedding-v4@Tongyi-Qianwen`，平台检索显式固定 `qwen3-rerank@Tongyi-Qianwen`。
+`text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible`，平台检索显式固定
+`qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible`。
+
+这里的 `OpenAI-API-Compatible` 只是 RAGFlow 到同一个阿里百炼供应商的传输适配，不是模型
+网关，也没有引入第二家模型供应商。v0.26.4 的 Python Provider API 在新建
+`Tongyi-Qianwen` 实例时会遍历静态模型目录，并因其中尚不支持的 OCR 类型返回错误码 102；本项目
+不修改上游源码、镜像或数据库，而是只经 v0.26.4 公开 Provider/Model API 创建两个独立兼容实例：
+embedding 使用百炼官方 `compatible-mode/v1/embeddings`，rerank 使用百炼官方
+`compatible-api/v1/reranks`。实例、模型类型、默认绑定和真实请求均由关闭失败的配置与适配器
+测试核对。
 
 从其他 embedding 迁移已有知识库时，必须先更新知识库模型并通过 RAGFlow 官方重建入口重新
 向量化全部文档，再执行中文召回与重排基准；不得复用旧向量冒充迁移成功。32GiB 已通过路线图
-R8-04 的完整业务峰值与 30 分钟稳定性门禁并确认为长期 `real` 默认值；日常 Demo 仍不应启动本栈。
+R8-04 的完整业务峰值与 30 分钟稳定性门禁，并在 S10-07A 升级 v0.26.4 后以 180 个连续样本再次
+验证 VM/容器峰值 7.28/7.23GiB、Swap/重启/OOM 为 0，因此继续作为长期 `real` 默认值；日常 Demo
+仍不应启动本栈。
 
 迁移先执行只读预检，输出知识库、文档、待更新模型和正在解析的文档数量，不输出知识正文、名称
 或凭据：
@@ -102,7 +114,7 @@ RAGFLOW_CONFIRM_BAILIAN_REINDEX=yes \
   infra/ragflow/manage.sh migrate-bailian
 ```
 
-迁移在任何写操作前拒绝仍在解析的文档；更新模型后使用 RAGFlow v0.25.6 公开文档重建 API，
+迁移在任何写操作前拒绝仍在解析的文档；更新模型后使用 RAGFlow v0.26.4 公开文档重建 API，
 保留原始文件并等待所有文档进入完成态。中断、限流、超时或解析失败会返回脱敏阶段码，可在上游
 恢复后使用同一命令重新执行，不需要修改 RAGFlow 数据库或源码。等待上限默认 3600 秒，可通过
 `RAGFLOW_BAILIAN_MIGRATION_TIMEOUT_SECONDS` 在 1-86400 秒内调整。
@@ -111,9 +123,12 @@ Apple Silicon 使用官方 `linux/amd64` 镜像并由独立 Colima VZ/Rosetta �
 `pull-image` 直接复用；下载 Docker Hub 不稳定时，可通过官方 tag 对应镜像源覆盖：
 
 ```bash
-RAGFLOW_IMAGE_SOURCE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v0.25.6 \
+RAGFLOW_IMAGE_SOURCE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v0.26.4 \
   infra/ragflow/manage.sh pull-image
 ```
 
-升级必须作为独立路线图任务：同步修改 submodule 指针、`VERSION` 与 `UPSTREAM_COMMIT`，运行
-配置契约、正式适配器契约和完整纵向链路回归；禁止修改 submodule 或维护上游补丁。
+从 v0.25.6 升级到 v0.26.4 时保持四个原生数据卷不变，停止服务后先创建冷备份，且禁止执行
+`docker compose down -v`。v0.26.4 官方入口会在 API 启动前执行数据库 schema 同步和模型供应商表
+迁移；首次启动后必须检查迁移日志、版本端点、既有数据集/文档和真实检索，再清理临时回滚资源。
+后续升级仍必须作为独立路线图任务：同步修改 submodule 指针、`VERSION` 与 `UPSTREAM_COMMIT`，
+运行配置契约、正式适配器契约和完整纵向链路回归；禁止修改 submodule 或维护上游补丁。

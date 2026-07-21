@@ -23,7 +23,13 @@
   文件向 FastAPI 与独立 Worker 传递 RAGFlow Token，并对百炼区域、模型绑定、重试、费用和外发数据边界做脱敏
   诊断；与 demo-light 复用同一 Git 忽略的本地所有者引导令牌，不启动本地 embedding/rerank；
 - `test-real.sh`：检查 real 入口动作、32 GiB/context、官方 RAGFlow、原生数据卷、百炼绑定、
-  Token 文件、费用脱敏和本地模型退场契约；
+  Token 文件、费用脱敏、本地模型退场，以及仅允许 `common_agent`/`common_agent_test` 的数据库
+  选择与 API/Worker 子进程透传契约；
+- `real-resource-soak.sh`：在 `common_agent_test` 隔离业务库和受控测试认证状态中启动完整 real
+  链路，执行真实 RAGFlow 生命周期与浏览器 MVP 后持续采样 30 分钟 VM/容器资源、Swap、重启、
+  OOM 和健康状态；成功或失败均重置测试认证、停止本轮业务进程并保留脱敏报告用于核对；
+- `test-real-resource-soak.sh`：静态检查 soak 只能使用隔离测试库、显式 API/认证变量、受控状态
+  初始化与清理，并保持 32 GiB、峰值、Swap、重启/OOM 和完整业务链门禁；
 - `test-ci.sh`：检查本机权威命令在 PR/main GitHub CI 可选镜像中的冻结安装、固定 Action、
   后端/前端/契约/Demo/基础设施门禁、缓存锁文件边界，以及 real 外部付费依赖不进入公共
   Runner 的隔离契约；项目验收不依赖 Hosted Runner、付费额度或远端执行结果；

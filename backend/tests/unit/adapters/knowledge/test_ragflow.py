@@ -47,7 +47,7 @@ def test_owned_ragflow_client_ignores_system_proxy(monkeypatch: pytest.MonkeyPat
     RagFlowKnowledgeService(
         base_url="http://127.0.0.1:19380",
         api_key="test-key",
-        expected_version="v0.25.6",
+        expected_version="v0.26.4",
     )
 
     assert client_options["trust_env"] is False
@@ -67,7 +67,7 @@ def test_owned_ragflow_client_uses_explicit_private_ca_bundle(
     RagFlowKnowledgeService(
         base_url="https://ragflow.internal:9443",
         api_key="test-key",
-        expected_version="v0.25.6",
+        expected_version="v0.26.4",
         ca_bundle_path="/run/common-agent/tls/ca-bundle.crt",
     )
 
@@ -81,7 +81,7 @@ def test_ragflow_requests_forward_trace_context_without_exposing_credentials() -
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal captured
         captured = request
-        return httpx.Response(200, json={"code": 0, "data": "v0.25.6"})
+        return httpx.Response(200, json={"code": 0, "data": "v0.26.4"})
 
     async def scenario() -> None:
         transport = httpx.MockTransport(handler)
@@ -89,7 +89,7 @@ def test_ragflow_requests_forward_trace_context_without_exposing_credentials() -
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="private-ragflow-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             with bind_observation_context(
@@ -112,7 +112,7 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
         requests.append(request)
         path = request.url.path
         if path == "/api/v1/system/version":
-            return httpx.Response(200, json={"code": 0, "data": "v0.25.6"})
+            return httpx.Response(200, json={"code": 0, "data": "v0.26.4"})
         if path == "/api/v1/datasets" and request.method == "GET":
             return httpx.Response(
                 200,
@@ -147,7 +147,9 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
                 "description": "内部制度",
                 "permission": "me",
                 "chunk_method": "naive",
-                "embedding_model": "text-embedding-v4@Tongyi-Qianwen",
+                "embedding_model": (
+                    "text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible"
+                ),
             }
             return httpx.Response(
                 200,
@@ -213,7 +215,7 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
                 "top_k": 5,
                 "similarity_threshold": 0.2,
                 "vector_similarity_weight": 0.3,
-                "rerank_id": "qwen3-rerank@Tongyi-Qianwen",
+                "rerank_id": ("qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible"),
                 "include_metadata": True,
             }
             return httpx.Response(
@@ -242,7 +244,7 @@ def test_ragflow_adapter_uses_only_the_public_v0_25_6_api_surface() -> None:
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             contract: KnowledgeService = service
@@ -314,7 +316,7 @@ def test_ragflow_dataset_pagination_translates_opaque_cursor_and_server_search()
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             first = await service.page_knowledge_bases(ListPageRequest(limit=2, search="制度"))
@@ -350,7 +352,7 @@ def test_delete_result_unknown_never_invites_an_unsafe_automatic_retry(handler: 
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             with pytest.raises(KnowledgeBaseDeleteResultUnknown) as captured:
@@ -375,7 +377,7 @@ def test_status_is_not_configured_without_calling_ragflow_when_key_is_missing() 
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             status = await service.status()
@@ -398,7 +400,7 @@ def test_status_fails_closed_when_the_real_version_does_not_match() -> None:
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             status = await service.status()
@@ -457,7 +459,7 @@ def _document_status(run: str) -> DocumentParsingStatus:
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             documents = await service.list_documents("kb-1")
@@ -477,7 +479,7 @@ def test_auth_rejection_is_permanent_and_does_not_leak_provider_detail(status_co
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="invalid",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             with pytest.raises(KnowledgeRequestRejected) as captured:
@@ -503,7 +505,7 @@ def test_transport_and_server_failures_are_retryable_unavailable(handler: object
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             with pytest.raises(KnowledgeServiceUnavailable) as captured:
@@ -533,7 +535,7 @@ def test_missing_dataset_maps_to_stable_not_found(
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             with pytest.raises(KnowledgeBaseNotFound) as captured:
@@ -566,7 +568,7 @@ def test_known_or_duplicate_upload_rejection_is_not_reported_as_safe_to_retry(
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             with pytest.raises(KnowledgeDocumentUploadFailed) as captured:
@@ -609,7 +611,7 @@ def test_upload_transport_or_parse_failure_reports_unknown_result(fail_after_upl
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             with pytest.raises(KnowledgeDocumentUploadResultUnknown):
@@ -636,7 +638,7 @@ def test_malformed_provider_response_fails_closed(response: httpx.Response) -> N
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             with pytest.raises(KnowledgeProviderResponseInvalid):
@@ -660,7 +662,7 @@ def test_empty_retrieval_is_a_successful_empty_result() -> None:
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             result = await service.retrieve(
@@ -712,7 +714,7 @@ def test_retrieval_defensively_drops_low_relevance_chunks_and_caps_top_k() -> No
             service = RagFlowKnowledgeService(
                 base_url="http://ragflow",
                 api_key="test-key",
-                expected_version="v0.25.6",
+                expected_version="v0.26.4",
                 client=client,
             )
             result = await service.retrieve(
