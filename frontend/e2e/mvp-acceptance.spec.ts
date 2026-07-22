@@ -55,7 +55,7 @@ async function sendMessage(page: Page, content: string) {
   expect((await response).status()).toBe(202);
 }
 
-test("completes the whole MVP from empty business data through one real user journey", async ({
+test("completes the whole MVP through one isolated real user journey", async ({
   page,
 }) => {
   test.setTimeout(480_000);
@@ -73,7 +73,7 @@ test("completes the whole MVP from empty business data through one real user jou
   await expect(page.getByText("后端正常")).toBeVisible();
   await expect(page.getByText("百炼已配置")).toBeVisible();
   await expect(page.getByText("RAGFlow 正常")).toBeVisible();
-  await expect(page.getByText("还没有知识库")).toBeVisible();
+  await expect(page.getByRole("button", { name: "创建知识库" })).toBeVisible();
 
   await page.getByRole("button", { name: "创建知识库" }).click();
   const knowledgeDialog = page.getByRole("dialog", { name: "创建知识库" });
@@ -88,6 +88,12 @@ test("completes the whole MVP from empty business data through one real user jou
   );
   await knowledgeDialog.getByRole("button", { name: "确认创建" }).click();
   expect((await knowledgeResponse).status()).toBe(201);
+  const createdKnowledgeBase = page
+    .locator("button.knowledge-base-item")
+    .filter({ hasText: knowledgeBaseName });
+  await expect(createdKnowledgeBase).toBeVisible();
+  await createdKnowledgeBase.click();
+  await expect(createdKnowledgeBase).toHaveClass(/is-active/);
 
   await page
     .getByLabel("选择或拖拽文档")
