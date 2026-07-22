@@ -18,7 +18,9 @@ const trustedOrigin =
   process.env.COMMON_AGENT_E2E_TRUSTED_ORIGIN?.trim() || "http://127.0.0.1:18280";
 const apiHostHeader = process.env.COMMON_AGENT_E2E_API_HOST_HEADER?.trim();
 
-function apiHostHeaders(headers: Record<string, string> = {}): Record<string, string> {
+export function platformHostHeaders(
+  headers: Record<string, string> = {},
+): Record<string, string> {
   return apiHostHeader ? { Host: apiHostHeader, ...headers } : headers;
 }
 
@@ -45,17 +47,17 @@ async function synchronizeLoopbackAuthCookies(page: Page): Promise<void> {
 
 async function authenticate(page: Page): Promise<void> {
   const policyResponse = await page.request.get(`${apiUrl}/auth/policy`, {
-    headers: apiHostHeaders(),
+    headers: platformHostHeaders(),
   });
   expect(policyResponse.status()).toBe(200);
   const policy = (await policyResponse.json()) as { registration_available: boolean };
   const response = policy.registration_available
     ? await page.request.post(`${apiUrl}/auth/register`, {
-        headers: apiHostHeaders({ Origin: trustedOrigin }),
+        headers: platformHostHeaders({ Origin: trustedOrigin }),
         data: { email, password, bootstrap_token: bootstrapToken },
       })
     : await page.request.post(`${apiUrl}/auth/login`, {
-        headers: apiHostHeaders({ Origin: trustedOrigin }),
+        headers: platformHostHeaders({ Origin: trustedOrigin }),
         data: { email, password },
       });
   expect(response.status()).toBe(policy.registration_available ? 201 : 200);
@@ -64,11 +66,11 @@ async function authenticate(page: Page): Promise<void> {
 
 export async function platformWriteHeaders(page: Page): Promise<Record<string, string>> {
   const response = await page.request.get(`${apiUrl}/auth/session`, {
-    headers: apiHostHeaders(),
+    headers: platformHostHeaders(),
   });
   expect(response.status()).toBe(200);
   const session = (await response.json()) as { csrf_token: string };
-  return apiHostHeaders({
+  return platformHostHeaders({
     Origin: trustedOrigin,
     "X-CSRF-Token": session.csrf_token,
   });

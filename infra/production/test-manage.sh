@@ -111,6 +111,8 @@ grep -Fq 'production-request-limits.spec.ts' "${DRILL}" || \
   fail "生产演练没有从正式浏览器与 TLS Edge 验证请求体边界"
 grep -Fq 'production-security-headers.spec.ts' "${DRILL}" || \
   fail "生产演练没有从正式浏览器验证安全响应头与页面兼容性"
+grep -Fq 'production-security-attacks.spec.ts' "${DRILL}" || \
+  fail "生产演练没有从 TLS Edge 验证权限与输入攻击矩阵"
 grep -Fq 'verify_untrusted_host_is_rejected' "${DRILL}" || \
   fail "生产演练没有从 TLS Edge 验证伪造 Host 拒绝"
 grep -Fq 'verify_path_traversal_is_rejected' "${DRILL}" || \

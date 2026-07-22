@@ -102,19 +102,21 @@ run_formal_page_smoke() {
   [[ -n "${auth_token}" ]] || fail "浏览器验收缺少管理员引导 token"
   (
     cd "${REPOSITORY_ROOT}/frontend"
-    COMMON_AGENT_E2E_FRONTEND_URL='https://common-agent.test:18443' \
-    COMMON_AGENT_E2E_API_URL='https://127.0.0.1:18443/api/v1' \
-    COMMON_AGENT_E2E_API_HOST_HEADER='common-agent.test' \
-    COMMON_AGENT_E2E_TRUSTED_ORIGIN='https://common-agent.test:18443' \
-    COMMON_AGENT_E2E_HOST_RESOLVER_RULES='MAP common-agent.test 127.0.0.1' \
-    COMMON_AGENT_E2E_IGNORE_HTTPS_ERRORS=true \
-    COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN="${auth_token}" \
-    COMMON_AGENT_E2E_AUTH_EMAIL='production-drill@example.com' \
-    COMMON_AGENT_E2E_AUTH_PASSWORD='Production-Drill-2026!' \
-      pnpm exec playwright test \
-        entry-loading.spec.ts \
-        production-request-limits.spec.ts \
-        production-security-headers.spec.ts
+    export COMMON_AGENT_E2E_FRONTEND_URL='https://common-agent.test:18443'
+    export COMMON_AGENT_E2E_API_URL='https://127.0.0.1:18443/api/v1'
+    export COMMON_AGENT_E2E_API_HOST_HEADER='common-agent.test'
+    export COMMON_AGENT_E2E_TRUSTED_ORIGIN='https://common-agent.test:18443'
+    export COMMON_AGENT_E2E_HOST_RESOLVER_RULES='MAP common-agent.test 127.0.0.1'
+    export COMMON_AGENT_E2E_IGNORE_HTTPS_ERRORS=true
+    export COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN="${auth_token}"
+    export COMMON_AGENT_E2E_AUTH_EMAIL='production-drill@example.com'
+    export COMMON_AGENT_E2E_AUTH_PASSWORD='Production-Drill-2026!'
+    pnpm exec playwright test \
+      entry-loading.spec.ts \
+      production-request-limits.spec.ts \
+      production-security-headers.spec.ts
+    # 有状态攻击会创建额外租户，必须在基础页面套件之后独立执行。
+    pnpm exec playwright test production-security-attacks.spec.ts
   )
 }
 
