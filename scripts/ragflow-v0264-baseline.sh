@@ -4,10 +4,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_ROOT="${REPOSITORY_ROOT}/backend"
-RAGFLOW_SOURCE="${REPOSITORY_ROOT}/third_party/ragflow"
+RAGFLOW_SOURCE="${COMMON_AGENT_RAGFLOW_BENCHMARK_SOURCE:-${REPOSITORY_ROOT}/third_party/ragflow}"
 RAGFLOW_MANAGER="${REPOSITORY_ROOT}/infra/ragflow/manage.sh"
 UV_RUNNER="${SCRIPT_DIR}/uv.sh"
-EXPECTED_RAGFLOW_COMMIT="cb93883f3f8c975eecb2fed81210effeb3bdb06f"
+EXPECTED_RAGFLOW_COMMIT="${COMMON_AGENT_RAGFLOW_BENCHMARK_EXPECTED_COMMIT:-cb93883f3f8c975eecb2fed81210effeb3bdb06f}"
+SOURCE_MODE="${COMMON_AGENT_RAGFLOW_BENCHMARK_SOURCE_MODE:-official}"
+EXPECTED_IMAGE_REVISION="${COMMON_AGENT_RAGFLOW_BENCHMARK_IMAGE_REVISION:-}"
 TOKEN_FILE="${REPOSITORY_ROOT}/.local/dev/common-agent-dev/secrets/ragflow-api-token"
 RUN_ID="$(date -u +%Y%m%d%H%M%S)-$$"
 REPORT_ROOT="${REPOSITORY_ROOT}/.local/benchmarks/r2-01/${RUN_ID}"
@@ -59,9 +61,26 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-if [[ "$(git -C "${RAGFLOW_SOURCE}" rev-parse HEAD)" != "${EXPECTED_RAGFLOW_COMMIT}" ]]; then
-  echo "RAGFlow submodule 不是固定 v0.26.4 提交" >&2
+if [[ "${SOURCE_MODE}" != "official" && "${SOURCE_MODE}" != "patched" ]]; then
+  echo "RAGFlow 基准源码模式必须是 official 或 patched" >&2
   exit 1
+fi
+if [[ "${SOURCE_MODE}" == "patched" && -z "${EXPECTED_IMAGE_REVISION}" ]]; then
+  echo "patched 基准必须绑定 RAGFlow API 镜像 revision" >&2
+  exit 1
+fi
+if [[ "$(git -C "${RAGFLOW_SOURCE}" rev-parse HEAD)" != "${EXPECTED_RAGFLOW_COMMIT}" ]]; then
+  echo "RAGFlow 基准源码不是指定提交：${EXPECTED_RAGFLOW_COMMIT}" >&2
+  exit 1
+fi
+if [[ -n "${EXPECTED_IMAGE_REVISION}" ]]; then
+  ACTUAL_IMAGE_REVISION="$(docker --context colima-common-agent-dev inspect \
+    --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+    common-agent-ragflow-api 2>/dev/null || true)"
+  if [[ "${ACTUAL_IMAGE_REVISION}" != "${EXPECTED_IMAGE_REVISION}" ]]; then
+    echo "RAGFlow API 镜像 revision 与基准源码不一致" >&2
+    exit 1
+  fi
 fi
 if [[ -n "$(git -C "${RAGFLOW_SOURCE}" status --porcelain)" ]]; then
   echo "RAGFlow submodule 工作区不干净，拒绝采集不可复现基准" >&2
@@ -91,6 +110,8 @@ export RAGFLOW_BENCHMARK_MYSQL_PASSWORD="${RAGFLOW_BENCHMARK_MYSQL_PASSWORD:-inf
   "${UV_RUNNER}" run --frozen python -m tests.performance.ragflow_v0264_baseline \
     --api-key-file "${TOKEN_FILE}" \
     --source-root "${RAGFLOW_SOURCE}" \
+    --expected-source-commit "${EXPECTED_RAGFLOW_COMMIT}" \
+    --source-mode "${SOURCE_MODE}" \
     --output "${REPORT_PATH}" \
     --scale-levels "${SCALE_LEVELS}" \
     --live-document-count "${LIVE_DOCUMENT_COUNT}" \

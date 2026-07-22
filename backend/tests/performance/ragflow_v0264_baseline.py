@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import math
 import os
@@ -59,6 +60,8 @@ class DatabaseCursor(Protocol):
     def executemany(self, query: str, args: Sequence[Sequence[object]]) -> int: ...
 
     def fetchone(self) -> dict[str, object] | None: ...
+
+    def fetchall(self) -> Sequence[dict[str, object]]: ...
 
 
 class DatabaseConnection(Protocol):
@@ -135,12 +138,16 @@ def parse_explain_analyze(plan: str) -> ExplainAnalysis:
 def build_report_header(
     *,
     source_commit: str,
+    expected_source_commit: str = EXPECTED_RAGFLOW_COMMIT,
+    upstream_commit: str = EXPECTED_RAGFLOW_COMMIT,
     source_version: str,
     scale_levels: Sequence[int],
     live_document_count: int,
 ) -> dict[str, object]:
-    if source_commit != EXPECTED_RAGFLOW_COMMIT:
+    if source_commit != expected_source_commit:
         raise ValueError("RAGFlow source commit mismatch")
+    if upstream_commit != EXPECTED_RAGFLOW_COMMIT:
+        raise ValueError("RAGFlow upstream commit mismatch")
     if source_version != EXPECTED_RAGFLOW_VERSION:
         raise ValueError("RAGFlow source version mismatch")
     if parse_scale_levels(",".join(str(value) for value in scale_levels)) != tuple(
@@ -150,9 +157,10 @@ def build_report_header(
     if live_document_count < 2 or live_document_count > 32:
         raise ValueError("live document count must be within 2..32")
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "ragflow_version": source_version,
         "ragflow_commit": source_commit,
+        "ragflow_upstream_commit": upstream_commit,
         "scale_levels": list(scale_levels),
         "live_document_count": live_document_count,
     }
@@ -489,6 +497,22 @@ class ScaleDatabase:
             raise RuntimeError("benchmark delete victim is missing")
         return str(row["id"])
 
+    def page_document_ids(
+        self,
+        dataset_id: str,
+        *,
+        offset: int,
+        limit: int,
+    ) -> tuple[str, ...]:
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id FROM document WHERE kb_id = %s "
+                "ORDER BY create_time DESC LIMIT %s OFFSET %s",
+                (dataset_id, limit, offset),
+            )
+            rows = cursor.fetchall()
+        return tuple(str(row["id"]) for row in rows)
+
     def document_exists(self, document_id: str) -> bool:
         with self._connection.cursor() as cursor:
             cursor.execute("SELECT 1 AS found FROM document WHERE id = %s", (document_id,))
@@ -690,29 +714,106 @@ def _api_latency_samples(operation: Any, sample_count: int) -> tuple[float, ...]
     return tuple(values)
 
 
-def _source_audit(source_root: Path) -> dict[str, object]:
-    document_service = (
-        source_root / "api/db/services/document_service.py"
-    ).read_text(encoding="utf-8")
-    document_api = (
-        source_root / "api/apps/restful_apis/document_api.py"
-    ).read_text(encoding="utf-8")
-    checks: dict[str, object] = {
-        "list_count_uses_joined_query": (
-            ".join(File2Document" in document_service and "count = docs.count()" in document_service
+def _function_source(
+    source: str,
+    *,
+    function_name: str,
+    class_name: str | None = None,
+) -> str:
+    tree = ast.parse(source)
+    candidates: Sequence[ast.AST]
+    if class_name is None:
+        candidates = tree.body
+    else:
+        owner = next(
+            (
+                node
+                for node in tree.body
+                if isinstance(node, ast.ClassDef) and node.name == class_name
+            ),
+            None,
+        )
+        if owner is None:
+            raise RuntimeError(f"RAGFlow source is missing class {class_name}")
+        candidates = owner.body
+    function = next(
+        (
+            node
+            for node in candidates
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == function_name
         ),
-        "delete_materializes_dataset_documents": (
-            "dataset_doc_ids = {doc.id for doc in DocumentService.query(kb_id=dataset_id)}"
-            in document_api
-        ),
-        "delete_all_materializes_dataset_documents": (
-            "doc_ids = [doc.id for doc in DocumentService.query(kb_id=dataset_id)]"
-            in document_api
-        ),
-    }
+        None,
+    )
+    if function is None:
+        raise RuntimeError(f"RAGFlow source is missing function {function_name}")
+    return ast.unparse(function)
+
+
+def _source_audit(source_root: Path, source_mode: str) -> dict[str, object]:
+    document_service = (source_root / "api/db/services/document_service.py").read_text(
+        encoding="utf-8"
+    )
+    document_api = (source_root / "api/apps/restful_apis/document_api.py").read_text(
+        encoding="utf-8"
+    )
+    list_source = _function_source(
+        document_service,
+        class_name="DocumentService",
+        function_name="get_by_kb_id",
+    )
+    delete_source = _function_source(
+        document_api,
+        function_name="delete_documents",
+    )
+    if source_mode == "official":
+        checks: dict[str, object] = {
+            "list_count_uses_joined_query": (
+                "join(File2Document" in list_source and "count = docs.count()" in list_source
+            ),
+            "delete_materializes_dataset_documents": (
+                "dataset_doc_ids = {doc.id for doc in DocumentService.query(kb_id=dataset_id)}"
+                in delete_source
+            ),
+            "delete_all_materializes_dataset_documents": (
+                "doc_ids = [doc.id for doc in DocumentService.query(kb_id=dataset_id)]"
+                in delete_source
+            ),
+        }
+    elif source_mode == "patched":
+        ids_source = _function_source(
+            document_service,
+            class_name="DocumentService",
+            function_name="get_ids_by_kb_id",
+        )
+        checks = {
+            "targeted_delete_query": (
+                "DocumentService.get_ids_by_kb_id" in delete_source
+                and "id.in_(doc_ids)" in ids_source
+            ),
+            "runtime_compatible_targeted_iteration": (
+                "query.iterator()" in ids_source and ".scalars()" not in ids_source
+            ),
+            "legacy_delete_scan_absent": "DocumentService.query" not in delete_source,
+            "direct_document_count": (
+                "fn.COUNT" in list_source and "count_query.scalar()" in list_source
+            ),
+            "deferred_detail_join": (
+                "page_query" in list_source
+                and "paginate(page_number, items_per_page)" in list_source
+                and "id.in_(page_ids)" in list_source
+            ),
+            "unused_file_joins_removed": (
+                "join(File2Document" not in list_source and "join(File" not in list_source
+            ),
+        }
+    else:
+        raise RuntimeError(f"unsupported RAGFlow source mode: {source_mode}")
     if not all(checks.values()):
-        raise RuntimeError("RAGFlow v0.26.4 source shape no longer matches the baseline")
-    return checks
+        raise RuntimeError(
+            f"RAGFlow v0.26.4 {source_mode} source shape no longer matches the baseline"
+        )
+    return {"mode": source_mode, "checks": checks}
 
 
 def _read_api_key(path: Path) -> str:
@@ -845,6 +946,38 @@ _JOIN_FROM = (
 )
 
 
+def _scale_query_shapes(source_mode: str) -> dict[str, str]:
+    if source_mode == "official":
+        return {
+            "joined_count": "SELECT COUNT(1)" + _JOIN_FROM,
+            "deep_page": (
+                "SELECT d.id" + _JOIN_FROM + " ORDER BY d.create_time DESC LIMIT 30 OFFSET %s"
+            ),
+            "delete_ownership_materialization": (
+                "SELECT d.* FROM document AS d WHERE d.kb_id = %s"
+            ),
+        }
+    if source_mode == "patched":
+        return {
+            "direct_count": ("SELECT COUNT(d.id) FROM document AS d WHERE d.kb_id = %s"),
+            "page_ids": (
+                "SELECT d.id FROM document AS d WHERE d.kb_id = %s "
+                "ORDER BY d.create_time DESC LIMIT 30 OFFSET %s"
+            ),
+            "page_details": (
+                "SELECT d.id, c.title, u.nickname FROM document AS d "
+                "LEFT OUTER JOIN user_canvas AS c ON d.pipeline_id = c.id "
+                "LEFT OUTER JOIN user AS u ON d.created_by = u.id "
+                "WHERE d.kb_id = %s AND d.id IN ({page_ids}) "
+                "ORDER BY d.create_time DESC"
+            ),
+            "delete_ownership_lookup": (
+                "SELECT d.id FROM document AS d WHERE d.kb_id = %s AND d.id IN (%s)"
+            ),
+        }
+    raise RuntimeError(f"unsupported RAGFlow source mode: {source_mode}")
+
+
 def _scale_baseline(
     api: RagFlowApi,
     database: ScaleDatabase,
@@ -853,8 +986,10 @@ def _scale_baseline(
     prefixes: ScalePrefixes,
     levels: Sequence[int],
     sample_count: int,
+    source_mode: str,
 ) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
+    query_shapes = _scale_query_shapes(source_mode)
     for target in levels:
         insert_seconds = database.seed_to_count(
             dataset_id=dataset_id,
@@ -874,40 +1009,59 @@ def _scale_baseline(
             ),
             sample_count,
         )
-        count_plan, count_analysis = database.explain(
-            "SELECT COUNT(1)" + _JOIN_FROM,
-            (dataset_id,),
-        )
-        deep_plan, deep_analysis = database.explain(
-            "SELECT d.id" + _JOIN_FROM + " ORDER BY d.create_time DESC LIMIT 30 OFFSET %s",
-            (dataset_id, max(0, target - 30)),
-        )
-        ownership_plan, ownership_analysis = database.explain(
-            "SELECT d.* FROM document AS d WHERE d.kb_id = %s",
-            (dataset_id,),
-        )
+        deep_offset = (deep_page_number - 1) * 30
+        victim = database.victim_document_id(dataset_id, prefixes.document)
+        if source_mode == "official":
+            plan_inputs: dict[str, tuple[str, Sequence[object]]] = {
+                "joined_count": (query_shapes["joined_count"], (dataset_id,)),
+                "deep_page": (
+                    query_shapes["deep_page"],
+                    (dataset_id, deep_offset),
+                ),
+                "delete_ownership_materialization": (
+                    query_shapes["delete_ownership_materialization"],
+                    (dataset_id,),
+                ),
+            }
+        else:
+            page_ids = database.page_document_ids(
+                dataset_id,
+                offset=deep_offset,
+                limit=30,
+            )
+            if not page_ids:
+                raise RuntimeError("scale deep page contains no documents")
+            placeholders = ", ".join("%s" for _ in page_ids)
+            plan_inputs = {
+                "direct_count": (query_shapes["direct_count"], (dataset_id,)),
+                "page_ids": (
+                    query_shapes["page_ids"],
+                    (dataset_id, deep_offset),
+                ),
+                "page_details": (
+                    query_shapes["page_details"].format(page_ids=placeholders),
+                    (dataset_id, *page_ids),
+                ),
+                "delete_ownership_lookup": (
+                    query_shapes["delete_ownership_lookup"],
+                    (dataset_id, victim),
+                ),
+            }
+        sql_evidence: dict[str, object] = {}
+        for name, (sql, parameters) in plan_inputs.items():
+            plan, analysis = database.explain(sql, parameters)
+            sql_evidence[name] = {
+                "analysis": asdict(analysis),
+                "plan": plan,
+            }
         result: dict[str, object] = {
             "target_documents": target,
             "new_rows_insert_seconds": round(insert_seconds, 6),
             "first_page": summarize_latencies(first_page),
             "deep_page_number": deep_page_number,
             "deep_page": summarize_latencies(deep_page),
-            "sql": {
-                "joined_count": {
-                    "analysis": asdict(count_analysis),
-                    "plan": count_plan,
-                },
-                "deep_page": {
-                    "analysis": asdict(deep_analysis),
-                    "plan": deep_plan,
-                },
-                "delete_ownership_materialization": {
-                    "analysis": asdict(ownership_analysis),
-                    "plan": ownership_plan,
-                },
-            },
+            "sql": sql_evidence,
         }
-        victim = database.victim_document_id(dataset_id, prefixes.document)
         delete_started = time.monotonic()
         try:
             api.delete_document(dataset_id, victim)
@@ -995,12 +1149,13 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         source_version = api.version()
         report: dict[str, object] = build_report_header(
             source_commit=source_commit,
+            expected_source_commit=args.expected_source_commit,
             source_version=source_version,
             scale_levels=levels,
             live_document_count=args.live_document_count,
         )
         report["started_at"] = started_at.isoformat()
-        report["source_audit"] = _source_audit(source_root)
+        report["source_audit"] = _source_audit(source_root, args.source_mode)
         args.partial_report = report
         live_dataset_id = api.create_dataset(f"common-agent-r2-01-live-{run_id}")
         report["live_api_worker"] = _live_api_baseline(
@@ -1022,6 +1177,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             prefixes=prefixes,
             levels=levels,
             sample_count=args.samples,
+            source_mode=args.source_mode,
         )
         report["completed_at"] = datetime.now(UTC).isoformat()
         return report
@@ -1066,6 +1222,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", default="http://127.0.0.1:19380")
     parser.add_argument("--api-key-file", type=Path, required=True)
     parser.add_argument("--source-root", type=Path, required=True)
+    parser.add_argument(
+        "--expected-source-commit",
+        default=EXPECTED_RAGFLOW_COMMIT,
+    )
+    parser.add_argument(
+        "--source-mode",
+        choices=("official", "patched"),
+        default="official",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--mysql-host", default="127.0.0.1")
     parser.add_argument("--mysql-port", type=int, default=19432)

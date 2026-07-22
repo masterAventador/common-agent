@@ -30,6 +30,23 @@ bash infra/ragflow/test-fork.sh
 完成并推送，不直接修改 `third_party/ragflow`；common-agent submodule、镜像和 Compose 的正式切换
 统一留到 R2-07，避免尚未完成回归的源码进入稳定栈。
 
+性能补丁候选必须让基准源码、预期 Git commit 和临时镜像 OCI revision 三者一致，并显式使用
+`patched` 源码审计模式；正式栈仍由 `manage.sh up` 恢复为官方镜像。基准运行器沿用 R2-01 的规模
+档位和报告变量，以保证补丁前后可以直接比较：
+
+```bash
+COMMON_AGENT_RAGFLOW_BENCHMARK_SOURCE="$PWD/.local/ragflow-fork" \
+COMMON_AGENT_RAGFLOW_BENCHMARK_EXPECTED_COMMIT="$(git -C .local/ragflow-fork rev-parse HEAD)" \
+COMMON_AGENT_RAGFLOW_BENCHMARK_SOURCE_MODE=patched \
+COMMON_AGENT_RAGFLOW_BENCHMARK_IMAGE_REVISION="$(git -C .local/ragflow-fork rev-parse HEAD)" \
+COMMON_AGENT_R2_01_REPORT_PATH="$PWD/.local/benchmarks/candidate/baseline.json" \
+  scripts/ragflow-v0264-baseline.sh
+```
+
+运行器会按源码模式分别记录官方 JOIN 查询或补丁后的独立计数、分页 ID、页内详情和定向删除
+`EXPLAIN ANALYZE`，并校验写入、检索、删除后不可见、资源采样和隔离数据清理。候选镜像如何构建与
+正式接入由对应补丁任务和 R2-07 统一固化，不允许仅靠环境变量把未提交源码变成项目依赖。
+
 ## 使用
 
 ```bash
