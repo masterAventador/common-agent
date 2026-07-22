@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
+from urllib.parse import urlsplit
 
 KIB = 1024
 MIB = 1024 * KIB
@@ -34,6 +34,12 @@ CONTAINERS = (
 DEFAULT_HEALTH_URL = "http://127.0.0.1:18200/api/v1/system/status"
 
 
+class HealthEndpoint(NamedTuple):
+    host: str
+    port: int
+    path: str
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="common-agent 32 GiB real 资源监视器")
     parser.add_argument("mode", nargs="?", choices=("cold-start", "soak"))
@@ -50,6 +56,10 @@ def main() -> int:
         return 0
     if args.mode is None or args.output is None:
         parser.error("mode 与 --output 必填")
+    try:
+        health_endpoint = _health_endpoint(args.health_url)
+    except ValueError as error:
+        parser.error(str(error))
 
     duration = args.duration_seconds
     if duration is None:
@@ -68,7 +78,7 @@ def main() -> int:
         mode=args.mode,
         duration_seconds=duration,
         interval_seconds=interval,
-        health_url=args.health_url,
+        health_endpoint=health_endpoint,
         output=args.output,
     )
     _print_summary(report)
@@ -80,7 +90,7 @@ def _monitor(
     mode: str,
     duration_seconds: int,
     interval_seconds: float,
-    health_url: str,
+    health_endpoint: HealthEndpoint,
     output: Path,
 ) -> dict[str, Any]:
     started = time.monotonic()
@@ -95,7 +105,7 @@ def _monitor(
         if elapsed > duration_seconds:
             break
         try:
-            sample = _sample(health_url)
+            sample = _sample(health_endpoint)
             sample["elapsed_seconds"] = round(elapsed, 3)
             samples.append(sample)
             ready_samples = ready_samples + 1 if sample["system_ready"] else 0
@@ -131,7 +141,7 @@ def _monitor(
     return report
 
 
-def _sample(health_url: str) -> dict[str, Any]:
+def _sample(health_endpoint: HealthEndpoint) -> dict[str, Any]:
     memory = _read_vm_memory()
     containers = _read_containers()
     return {
@@ -139,7 +149,7 @@ def _sample(health_url: str) -> dict[str, Any]:
         **memory,
         "container_used_bytes": sum(item["memory_bytes"] for item in containers.values()),
         "containers": containers,
-        "system_ready": _system_ready(health_url),
+        "system_ready": _system_ready(health_endpoint),
     }
 
 
@@ -225,11 +235,34 @@ def _read_containers() -> dict[str, dict[str, Any]]:
     return containers
 
 
-def _system_ready(url: str) -> bool:
+def _health_endpoint(url: str) -> HealthEndpoint:
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path != "/api/v1/system/status"
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("健康检查地址必须是本机 HTTP /api/v1/system/status")
     try:
-        with urllib.request.urlopen(url, timeout=5) as response:
+        port = parsed.port or 80
+    except ValueError as error:
+        raise ValueError("健康检查端口不合法") from error
+    return HealthEndpoint(host=parsed.hostname, port=port, path=parsed.path)
+
+
+def _system_ready(endpoint: HealthEndpoint) -> bool:
+    try:
+        with http.client.HTTPConnection(endpoint.host, endpoint.port, timeout=5) as connection:
+            connection.request("GET", endpoint.path)
+            response = connection.getresponse()
+            if response.status != 200:
+                return False
             payload = json.load(response)
-    except (OSError, urllib.error.URLError, json.JSONDecodeError):
+    except (OSError, http.client.HTTPException, json.JSONDecodeError):
         return False
     return bool(
         payload.get("integration_mode") == "real"
@@ -362,6 +395,21 @@ def _self_test() -> None:
     assert _parse_size("70.5MB") == 70_500_000
     meminfo = "MemTotal: 33554432 kB\nMemAvailable: 25165824 kB\n"
     assert "MemTotal" in meminfo and int(meminfo.split()[1]) * KIB == 32 * GIB
+    assert _health_endpoint(DEFAULT_HEALTH_URL) == HealthEndpoint(
+        host="127.0.0.1",
+        port=18200,
+        path="/api/v1/system/status",
+    )
+    for unsafe in (
+        "file:///etc/passwd",
+        "http://example.com/api/v1/system/status",
+        "http://127.0.0.1:18200/other",
+    ):
+        try:
+            _health_endpoint(unsafe)
+        except ValueError:
+            continue
+        raise AssertionError(f"未拒绝非本机健康检查地址: {unsafe}")
 
 
 if __name__ == "__main__":
