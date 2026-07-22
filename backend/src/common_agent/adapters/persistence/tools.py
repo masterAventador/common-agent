@@ -27,7 +27,11 @@ from common_agent.adapters.persistence.timestamps import (
     from_database_datetime,
     to_database_datetime,
 )
-from common_agent.ports.tools import ToolGrantResolution, ToolRepository
+from common_agent.ports.tools import (
+    ToolGrantResolution,
+    ToolRepository,
+    ToolRuntimeResolution,
+)
 from common_agent.tenancy.context import current_tenant
 from common_agent.tools.models import (
     McpSource,
@@ -39,7 +43,9 @@ from common_agent.tools.models import (
     ToolCollection,
     ToolGrantSelection,
     ToolGrantSnapshot,
+    ToolGrantTarget,
     ToolGrantTargetType,
+    ToolRuntimeCapability,
 )
 
 
@@ -293,6 +299,57 @@ class SqlAlchemyToolRepository:
                 for capability_id in snapshot.capability_ids
             )
         await self._session.flush()
+
+    async def runtime_capabilities(
+        self,
+        target: ToolGrantTarget,
+        capability_ids: tuple[UUID, ...],
+    ) -> ToolRuntimeResolution:
+        if not capability_ids:
+            return ToolRuntimeResolution(capabilities=())
+        requested = tuple(str(value) for value in capability_ids)
+        query = select(ToolCapabilityRow, McpSourceRow).join(
+            McpSourceRow,
+            (McpSourceRow.tenant_id == ToolCapabilityRow.tenant_id)
+            & (McpSourceRow.id == ToolCapabilityRow.source_id),
+        )
+        if target.target_type is ToolGrantTargetType.EMPLOYEE:
+            query = query.join(
+                EmployeeToolGrantRow,
+                (EmployeeToolGrantRow.tenant_id == ToolCapabilityRow.tenant_id)
+                & (EmployeeToolGrantRow.capability_id == ToolCapabilityRow.id),
+            ).where(EmployeeToolGrantRow.employee_id == str(target.target_id))
+        else:
+            query = query.join(
+                ConversationToolGrantRow,
+                (ConversationToolGrantRow.tenant_id == ToolCapabilityRow.tenant_id)
+                & (ConversationToolGrantRow.capability_id == ToolCapabilityRow.id),
+            ).where(ConversationToolGrantRow.conversation_id == str(target.target_id))
+        rows = (
+            await self._session.execute(
+                query.where(
+                    ToolCapabilityRow.tenant_id == self._tenant_id,
+                    ToolCapabilityRow.id.in_(requested),
+                    ToolCapabilityRow.status == ToolCapabilityStatus.ACTIVE.value,
+                    McpSourceRow.status == McpSourceStatus.READY.value,
+                )
+            )
+        ).all()
+        by_id = {
+            capability_row.id: ToolRuntimeCapability(
+                source=_source_to_domain(source_row),
+                capability=_capability_to_domain(capability_row),
+            )
+            for capability_row, source_row in rows
+        }
+        return ToolRuntimeResolution(
+            capabilities=tuple(by_id[value] for value in requested if value in by_id),
+            missing_capability_ids=tuple(
+                capability_id
+                for capability_id in capability_ids
+                if str(capability_id) not in by_id
+            ),
+        )
 
 
 class SqlAlchemyToolUnitOfWork:

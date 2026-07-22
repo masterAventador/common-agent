@@ -3,7 +3,11 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 from common_agent.conversations.contracts import MessageNotFound
-from common_agent.conversations.events import ConversationEventBroker, ConversationEventKind
+from common_agent.conversations.events import (
+    ConversationEventBroker,
+    ConversationEventKind,
+    ToolCallEvent,
+)
 from common_agent.domain.conversation import MESSAGE_ERROR_CODE_MAX_LENGTH, Citation, Message
 from common_agent.ports.conversations import ConversationUnitOfWorkFactory
 from common_agent.runtimes.base import RuntimeEvent, RuntimeEventKind
@@ -50,6 +54,40 @@ class ConversationMessageProjector:
                 raise MessageNotFound
             if current.is_terminal:
                 return current
+
+            if event.kind in {
+                RuntimeEventKind.TOOL_STARTED,
+                RuntimeEventKind.TOOL_COMPLETED,
+                RuntimeEventKind.TOOL_FAILED,
+            }:
+                if (
+                    event.tool_call_id is None
+                    or event.capability_id is None
+                    or event.capability_name is None
+                ):
+                    raise ValueError("runtime tool event is missing safe metadata")
+                kind = {
+                    RuntimeEventKind.TOOL_STARTED: ConversationEventKind.ASSISTANT_TOOL_STARTED,
+                    RuntimeEventKind.TOOL_COMPLETED: (
+                        ConversationEventKind.ASSISTANT_TOOL_COMPLETED
+                    ),
+                    RuntimeEventKind.TOOL_FAILED: ConversationEventKind.ASSISTANT_TOOL_FAILED,
+                }[event.kind]
+                tool_call = ToolCallEvent(
+                    tool_call_id=event.tool_call_id,
+                    capability_id=event.capability_id,
+                    capability_name=event.capability_name,
+                    error_code=(
+                        event.error_code if event.kind is RuntimeEventKind.TOOL_FAILED else None
+                    ),
+                )
+                await self._events.publish(
+                    turn_id=turn_id,
+                    message=current,
+                    kind=kind,
+                    tool_call=tool_call,
+                )
+                return None
 
             if event.kind is RuntimeEventKind.DELTA:
                 updated = current.append_delta(event.delta or "")

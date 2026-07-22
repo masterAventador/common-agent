@@ -45,7 +45,16 @@ _BOUNDARIES = (
     ),
     _Boundary(
         frozenset({"pydantic"}),
-        (("adapters", "knowledge"), ("api",), ("bootstrap",)),
+        (
+            ("adapters", "agent"),
+            ("adapters", "knowledge"),
+            ("api",),
+            ("bootstrap",),
+        ),
+    ),
+    _Boundary(
+        frozenset({"mcp"}),
+        (("adapters", "mcp"),),
     ),
     _Boundary(
         frozenset({"dotenv"}),

@@ -8,6 +8,7 @@ from common_agent.domain.conversation import Conversation, Message
 from common_agent.domain.employee import Employee
 from common_agent.domain.model_configuration import ModelConfiguration
 from common_agent.knowledge.retrieval import KnowledgeBoundSubject, ResolvedKnowledgeContext
+from common_agent.tools.models import ToolGrantSnapshot, ToolGrantTarget
 
 GENERIC_SYSTEM_INSTRUCTION = "你是通用 AI 助手,请准确、清晰地回答用户问题。"
 
@@ -91,6 +92,8 @@ class ConversationExecutionTarget:
     system_instruction: str
     knowledge_base_id: str | None
     allowed_workflow_ids: tuple[UUID, ...]
+    allowed_tool_capability_ids: tuple[UUID, ...]
+    tool_grant_target: ToolGrantTarget
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +108,12 @@ class EmployeeDirectory(Protocol):
 
 class ModelConfigurationDirectory(Protocol):
     async def get(self, model_configuration_id: UUID) -> ModelConfiguration: ...
+
+
+class ToolGrantDirectory(Protocol):
+    async def employee_grants(self, employee_id: UUID) -> ToolGrantSnapshot: ...
+
+    async def conversation_grants(self, conversation_id: UUID) -> ToolGrantSnapshot: ...
 
 
 class KnowledgeResolver(Protocol):
@@ -133,5 +142,6 @@ __all__ = [
     "MessageRetryNotAllowed",
     "ModelConfigurationDirectory",
     "StopAccepted",
+    "ToolGrantDirectory",
     "TurnAccepted",
 ]

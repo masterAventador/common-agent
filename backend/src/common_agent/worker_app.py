@@ -7,9 +7,12 @@ from datetime import timedelta
 from uuid import UUID
 
 from common_agent.adapters.agent.deep_agents import DeepAgentsEmployeeRuntime
+from common_agent.adapters.agent.platform_tools import PlatformMcpToolRegistry
+from common_agent.adapters.agent.tool_resolver import CompositeDeepAgentToolResolver
 from common_agent.adapters.agent.workflow_tools import WorkflowToolRegistry
 from common_agent.adapters.demo import DemoEmployeeRuntime, DemoKnowledgeService, DemoWorkflowModel
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
+from common_agent.adapters.mcp import PlatformMcpRuntime
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.adapters.model.resolver import BailianChatModelResolver
 from common_agent.adapters.model.verification import (
@@ -22,7 +25,10 @@ from common_agent.adapters.persistence import (
     SqlAlchemyAuditStore,
     SqlAlchemyEventJournal,
     SqlAlchemyKnowledgeOwnershipStore,
+    SqlAlchemyPlatformToolSeeder,
     SqlAlchemyTaskQueue,
+    SqlAlchemyTenancyStore,
+    SqlAlchemyToolUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.conversations import (
     SqlAlchemyConversationUnitOfWorkFactory,
@@ -62,6 +68,7 @@ from common_agent.models.base import TextStreamingModel
 from common_agent.observability import configure_json_logging
 from common_agent.tasks import TaskKind, TaskWorker, TaskWorkerPool
 from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant, current_tenant
+from common_agent.tools import ToolService
 from common_agent.workflows.ai_targets import (
     StaticWorkflowModelResolver,
     WorkflowAiTargetExecutor,
@@ -97,6 +104,11 @@ async def run_worker(stop: asyncio.Event) -> None:
 
         def key_namespace(key: str) -> str:
             return f"tenant:{current_tenant().tenant_id}:{key}"
+
+        tenancy_store = SqlAlchemyTenancyStore(database)
+        await SqlAlchemyPlatformToolSeeder(database).seed_all(await tenancy_store.list_tenant_ids())
+        tools = ToolService(SqlAlchemyToolUnitOfWorkFactory(database, tenant_id_provider))
+        platform_mcp = PlatformMcpRuntime()
 
         workflow_model: TextStreamingModel
         model_configuration_verifier: ModelConfigurationVerifier
@@ -168,6 +180,7 @@ async def run_worker(stop: asyncio.Event) -> None:
             workflow_model_resolver,
             knowledge_bases,
             employee_runtime=runtime,
+            tools=tools,
         )
         workflow_events = WorkflowEventBroker(
             key_namespace=lambda run_id: key_namespace(f"workflow-run:{run_id}"),
@@ -202,7 +215,10 @@ async def run_worker(stop: asyncio.Event) -> None:
             )
             runtime = DeepAgentsEmployeeRuntime(
                 deep_agent_model_resolver,
-                tools=WorkflowToolRegistry(workflows, audit=audit),
+                tools=CompositeDeepAgentToolResolver(
+                    WorkflowToolRegistry(workflows, audit=audit),
+                    PlatformMcpToolRegistry(tools, platform_mcp, audit=audit),
+                ),
             )
             workflow_ai_targets.bind_employee_runtime(runtime)
         employees = EmployeeService(
@@ -229,6 +245,7 @@ async def run_worker(stop: asyncio.Event) -> None:
             runtime=runtime,
             events=conversation_events,
             model_configurations=model_configurations,
+            tools=tools,
             guard=resource_guard,
             tasks=task_queue,
             tenant_id_provider=tenant_id_provider,

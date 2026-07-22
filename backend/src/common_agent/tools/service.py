@@ -7,7 +7,9 @@ from common_agent.tools.models import (
     ToolCatalog,
     ToolGrantSelection,
     ToolGrantSnapshot,
+    ToolGrantTarget,
     ToolGrantTargetType,
+    ToolRuntimeCapability,
 )
 
 
@@ -70,6 +72,17 @@ class ToolService:
             conversation_id,
             selection,
         )
+
+    async def authorized_runtime_capabilities(
+        self,
+        target: ToolGrantTarget,
+        capability_ids: tuple[UUID, ...],
+    ) -> tuple[ToolRuntimeCapability, ...]:
+        async with self._unit_of_work_factory() as unit_of_work:
+            resolution = await unit_of_work.tools.runtime_capabilities(target, capability_ids)
+        if resolution.missing_capability_ids:
+            raise ToolCapabilityUnavailable
+        return resolution.capabilities
 
     async def _grants(
         self,

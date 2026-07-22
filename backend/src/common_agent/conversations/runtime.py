@@ -168,10 +168,15 @@ class ConversationRuntimeCoordinator:
                     knowledge_base_id=resolved.knowledge_base_id,
                     knowledge_context=resolved.runtime_chunks,
                     allowed_workflow_ids=target.allowed_workflow_ids,
+                    allowed_tool_capability_ids=target.allowed_tool_capability_ids,
+                    tool_grant_target=target.tool_grant_target,
                 )
                 last_sequence = 0
                 async for event in self._runtime.stream(request, stop=stop):
-                    if stop.is_requested and event.kind is not RuntimeEventKind.STOPPED:
+                    if stop.is_requested and event.kind not in {
+                        RuntimeEventKind.STOPPED,
+                        RuntimeEventKind.TOOL_FAILED,
+                    }:
                         outcome_status = "stopped"
                         outcome_error = None
                         await self._projector.persist_stopped(turn_id, assistant_message.id)

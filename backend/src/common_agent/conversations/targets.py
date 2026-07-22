@@ -12,9 +12,11 @@ from common_agent.conversations.contracts import (
     ConversationModelDisabled,
     EmployeeDirectory,
     ModelConfigurationDirectory,
+    ToolGrantDirectory,
 )
 from common_agent.domain.conversation import Conversation, ConversationSource, Message
 from common_agent.domain.employee import Employee
+from common_agent.tools.models import ToolGrantTarget, ToolGrantTargetType
 
 
 class ConversationExecutionTargetResolver:
@@ -23,15 +25,18 @@ class ConversationExecutionTargetResolver:
         *,
         employees: EmployeeDirectory,
         model_configurations: ModelConfigurationDirectory | None,
+        tools: ToolGrantDirectory | None = None,
     ) -> None:
         self._employees = employees
         self._model_configurations = model_configurations
+        self._tools = tools
 
     async def for_selection(
         self,
         conversation: Conversation,
         *,
         model_configuration_id: UUID | None,
+        new_conversation: bool = False,
     ) -> ConversationExecutionTarget:
         employee = await self._employee(conversation)
         selected_id = _selected_model_id(
@@ -43,11 +48,18 @@ class ConversationExecutionTargetResolver:
             selected_id,
             employee=employee,
         )
+        grant_target, capability_ids = await self._tool_grants(
+            conversation,
+            employee=employee,
+            new_conversation=new_conversation,
+        )
         return _target(
             conversation,
             employee=employee,
             model_configuration_id=selected_id,
             model_identifier=model_identifier,
+            tool_grant_target=grant_target,
+            allowed_tool_capability_ids=capability_ids,
         )
 
     async def for_message(
@@ -58,11 +70,18 @@ class ConversationExecutionTargetResolver:
         if message.model_configuration_id is None or message.model_identifier is None:
             return await self.for_selection(conversation, model_configuration_id=None)
         employee = await self._employee(conversation)
+        grant_target, capability_ids = await self._tool_grants(
+            conversation,
+            employee=employee,
+            new_conversation=False,
+        )
         return _target(
             conversation,
             employee=employee,
             model_configuration_id=message.model_configuration_id,
             model_identifier=message.model_identifier,
+            tool_grant_target=grant_target,
+            allowed_tool_capability_ids=capability_ids,
         )
 
     @staticmethod
@@ -104,6 +123,25 @@ class ConversationExecutionTargetResolver:
             raise ConversationModelDisabled
         return configuration.model_identifier
 
+    async def _tool_grants(
+        self,
+        conversation: Conversation,
+        *,
+        employee: Employee | None,
+        new_conversation: bool,
+    ) -> tuple[ToolGrantTarget, tuple[UUID, ...]]:
+        if employee is not None:
+            target = ToolGrantTarget(ToolGrantTargetType.EMPLOYEE, employee.id)
+            if self._tools is None:
+                return target, ()
+            snapshot = await self._tools.employee_grants(employee.id)
+            return target, snapshot.capability_ids
+        target = ToolGrantTarget(ToolGrantTargetType.CONVERSATION, conversation.id)
+        if self._tools is None or new_conversation:
+            return target, ()
+        snapshot = await self._tools.conversation_grants(conversation.id)
+        return target, snapshot.capability_ids
+
 
 def _selected_model_id(
     conversation: Conversation,
@@ -126,6 +164,8 @@ def _target(
     employee: Employee | None,
     model_configuration_id: UUID,
     model_identifier: str,
+    tool_grant_target: ToolGrantTarget,
+    allowed_tool_capability_ids: tuple[UUID, ...],
 ) -> ConversationExecutionTarget:
     if employee is None:
         return ConversationExecutionTarget(
@@ -135,6 +175,8 @@ def _target(
             system_instruction=GENERIC_SYSTEM_INSTRUCTION,
             knowledge_base_id=None,
             allowed_workflow_ids=(),
+            allowed_tool_capability_ids=allowed_tool_capability_ids,
+            tool_grant_target=tool_grant_target,
         )
     return ConversationExecutionTarget(
         subject_id=employee.id,
@@ -143,6 +185,8 @@ def _target(
         system_instruction=employee.system_prompt,
         knowledge_base_id=employee.knowledge_base_id,
         allowed_workflow_ids=employee.allowed_workflow_ids,
+        allowed_tool_capability_ids=allowed_tool_capability_ids,
+        tool_grant_target=tool_grant_target,
     )
 
 

@@ -18,8 +18,16 @@ from common_agent.tools.models import (
     ToolCollection,
     ToolGrantSelection,
     ToolGrantSnapshot,
+    ToolGrantTarget,
     ToolGrantTargetType,
+    ToolRuntimeCapability,
     ToolValidationError,
+)
+from common_agent.tools.platform import (
+    CURRENT_TIME_TOOL_NAME,
+    current_time_capability_id,
+    platform_mcp_source_id,
+    platform_tool_catalog_seed,
 )
 from common_agent.tools.service import (
     ToolCapabilityUnavailable,
@@ -30,6 +38,7 @@ from common_agent.tools.service import (
 )
 
 __all__ = [
+    "CURRENT_TIME_TOOL_NAME",
     "McpCredentialSourceNotFound",
     "McpSource",
     "McpSourceStatus",
@@ -49,9 +58,14 @@ __all__ = [
     "ToolCredentialServiceError",
     "ToolGrantSelection",
     "ToolGrantSnapshot",
+    "ToolGrantTarget",
     "ToolGrantTargetNotFound",
     "ToolGrantTargetType",
+    "ToolRuntimeCapability",
     "ToolService",
     "ToolServiceError",
     "ToolValidationError",
+    "current_time_capability_id",
+    "platform_mcp_source_id",
+    "platform_tool_catalog_seed",
 ]

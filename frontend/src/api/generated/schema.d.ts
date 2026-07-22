@@ -768,7 +768,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "tool.grants.updated" | "tool.credentials.updated" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
+        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "tool.grants.updated" | "tool.credentials.updated" | "tool.called" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
         /** AuditEventResponse */
         AuditEventResponse: {
             action: components["schemas"]["AuditAction"];
@@ -851,7 +851,7 @@ export interface components {
          * AuditResourceType
          * @enum {string}
          */
-        AuditResourceType: "user" | "session" | "tenant" | "employee" | "model_configuration" | "knowledge_base" | "knowledge_document" | "conversation" | "workflow" | "workflow_run" | "mcp_source";
+        AuditResourceType: "user" | "session" | "tenant" | "employee" | "model_configuration" | "knowledge_base" | "knowledge_document" | "conversation" | "workflow" | "workflow_run" | "mcp_source" | "tool_capability";
         /** AuthPolicyResponse */
         AuthPolicyResponse: {
             /** Registration Available */

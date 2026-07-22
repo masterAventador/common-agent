@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -20,9 +20,11 @@ class TenancyService:
         store: TenancyStore,
         *,
         clock: Callable[[], datetime] | None = None,
+        tenant_initializer: Callable[[UUID], Awaitable[None]] | None = None,
     ) -> None:
         self._store = store
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._tenant_initializer = tenant_initializer
 
     async def list_access(self, user_id: UUID) -> tuple[TenantAccess, ...]:
         return await self._store.list_access(user_id)
@@ -62,12 +64,15 @@ class TenancyService:
         name: str,
     ) -> TenantAccess:
         try:
-            return await self._store.create_tenant(
+            created = await self._store.create_tenant(
                 owner_user_id=owner_user_id,
                 organization_id=organization_id,
                 name=name,
                 now=self._clock(),
             )
+            if self._tenant_initializer is not None:
+                await self._tenant_initializer(created.tenant_id)
+            return created
         except PermissionError:
             raise TenancyError("tenant_admin_forbidden") from None
         except TenantAlreadyExists:

@@ -9,7 +9,9 @@ from common_agent.tools.models import (
     ToolCatalog,
     ToolGrantSelection,
     ToolGrantSnapshot,
+    ToolGrantTarget,
     ToolGrantTargetType,
+    ToolRuntimeCapability,
 )
 
 
@@ -18,6 +20,12 @@ class ToolGrantResolution:
     capability_ids: tuple[UUID, ...]
     missing_collection_ids: tuple[UUID, ...] = ()
     unavailable_capability_ids: tuple[UUID, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ToolRuntimeResolution:
+    capabilities: tuple[ToolRuntimeCapability, ...]
+    missing_capability_ids: tuple[UUID, ...] = ()
 
 
 class ToolRepository(Protocol):
@@ -34,6 +42,12 @@ class ToolRepository(Protocol):
     async def resolve(self, selection: ToolGrantSelection) -> ToolGrantResolution: ...
 
     async def replace_grants(self, snapshot: ToolGrantSnapshot) -> None: ...
+
+    async def runtime_capabilities(
+        self,
+        target: ToolGrantTarget,
+        capability_ids: tuple[UUID, ...],
+    ) -> ToolRuntimeResolution: ...
 
 
 class ToolUnitOfWork(Protocol):
@@ -59,6 +73,7 @@ class ToolUnitOfWorkFactory(Protocol):
 __all__ = [
     "ToolGrantResolution",
     "ToolRepository",
+    "ToolRuntimeResolution",
     "ToolUnitOfWork",
     "ToolUnitOfWorkFactory",
 ]

@@ -29,6 +29,8 @@ _EMPLOYEE_ID = UUID("57f047c7-6422-4fe8-a77d-bc277c9b6e97")
 _USER_MESSAGE_ID = UUID("53e3a7db-c964-4380-b6a4-53e62e290126")
 _ASSISTANT_MESSAGE_ID = UUID("30c4824a-869f-4488-a546-e979e99f8f65")
 _WORKFLOW_ID = UUID("6c6d0acc-0e34-4c3c-844a-c25381fdb1cf")
+_CAPABILITY_ID = UUID("f9bf82c8-fbe1-4ed3-a5c3-f5c74fb35c89")
+_TOOL_CALL_ID = UUID("ba307689-eb5d-4ea3-a967-636461af1f2c")
 
 
 def _history_message(
@@ -252,6 +254,41 @@ def test_event_emitter_produces_monotonic_stream_with_exactly_one_terminal_event
         emitter.delta("晚到内容")
     with pytest.raises(RuntimeEventTransitionError):
         emitter.stop()
+
+
+def test_event_emitter_keeps_tool_lifecycle_metadata_only_and_non_terminal() -> None:
+    emitter = RuntimeEventEmitter(_ASSISTANT_MESSAGE_ID)
+
+    started = emitter.tool_started(
+        tool_call_id=_TOOL_CALL_ID,
+        capability_id=_CAPABILITY_ID,
+        capability_name="当前时间",
+    )
+    completed = emitter.tool_completed(
+        tool_call_id=_TOOL_CALL_ID,
+        capability_id=_CAPABILITY_ID,
+        capability_name="当前时间",
+    )
+    failed = emitter.tool_failed(
+        tool_call_id=UUID(int=99),
+        capability_id=_CAPABILITY_ID,
+        capability_name="当前时间",
+        error_code="tool_execution_failed",
+    )
+    terminal = emitter.complete()
+
+    assert [event.sequence for event in (started, completed, failed, terminal)] == [1, 2, 3, 4]
+    assert [event.kind for event in (started, completed, failed)] == [
+        RuntimeEventKind.TOOL_STARTED,
+        RuntimeEventKind.TOOL_COMPLETED,
+        RuntimeEventKind.TOOL_FAILED,
+    ]
+    assert started.capability_id == _CAPABILITY_ID
+    assert started.capability_name == "当前时间"
+    assert started.tool_call_id == _TOOL_CALL_ID
+    assert failed.error_code == "tool_execution_failed"
+    assert not hasattr(started, "arguments")
+    assert not hasattr(completed, "output")
 
 
 def test_event_emitter_failed_and_stopped_are_distinct_terminal_states() -> None:

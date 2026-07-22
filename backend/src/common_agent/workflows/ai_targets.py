@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from common_agent.conversations.contracts import ToolGrantDirectory
 from common_agent.domain.conversation import MessageRole
 from common_agent.domain.employee import Employee
 from common_agent.domain.knowledge import (
@@ -40,6 +41,7 @@ from common_agent.runtimes.base import (
     RuntimeEventKind,
     RuntimeKnowledgeChunk,
 )
+from common_agent.tools.models import ToolGrantTarget, ToolGrantTargetType
 from common_agent.workflows.errors import (
     WorkflowExecutionError,
     WorkflowExecutionStopped,
@@ -89,11 +91,13 @@ class WorkflowAiTargetExecutor:
         knowledge_bases: KnowledgeBaseService,
         *,
         employee_runtime: EmployeeRuntime | None = None,
+        tools: ToolGrantDirectory | None = None,
     ) -> None:
         self._directory = directory
         self._models = models
         self._knowledge_bases = knowledge_bases
         self._employee_runtime = employee_runtime
+        self._tools = tools
 
     def bind_employee_runtime(self, runtime: EmployeeRuntime) -> None:
         if self._employee_runtime is not None and self._employee_runtime is not runtime:
@@ -187,6 +191,10 @@ class WorkflowAiTargetExecutor:
             NAMESPACE_URL,
             f"common-agent:workflow:{run_id}:{node_id}:assistant",
         )
+        allowed_tool_capability_ids: tuple[UUID, ...] = ()
+        if self._tools is not None:
+            grants = await self._tools.employee_grants(employee.id)
+            allowed_tool_capability_ids = grants.capability_ids
         request = EmployeeRuntimeRequest(
             conversation_id=run_id,
             employee_id=employee.id,
@@ -207,6 +215,8 @@ class WorkflowAiTargetExecutor:
             knowledge_base_id=employee.knowledge_base_id,
             knowledge_context=knowledge,
             allowed_workflow_ids=employee.allowed_workflow_ids,
+            allowed_tool_capability_ids=allowed_tool_capability_ids,
+            tool_grant_target=ToolGrantTarget(ToolGrantTargetType.EMPLOYEE, employee.id),
             workflow_run_id=run_id,
         )
         fragments: list[str] = []
@@ -223,6 +233,12 @@ class WorkflowAiTargetExecutor:
                 if event.delta is None:
                     raise WorkflowAiTargetExecutionFailed("runtime_response_invalid")
                 fragments.append(event.delta)
+            elif event.kind in {
+                RuntimeEventKind.TOOL_STARTED,
+                RuntimeEventKind.TOOL_COMPLETED,
+                RuntimeEventKind.TOOL_FAILED,
+            }:
+                continue
             elif event.kind is RuntimeEventKind.COMPLETED:
                 output = "".join(fragments)
                 if not output.strip():

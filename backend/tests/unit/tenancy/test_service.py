@@ -94,3 +94,38 @@ def test_viewer_cannot_write_and_editor_cannot_administer() -> None:
             await service.resolve(USER_ID, TENANT_B, administer=True)
 
     asyncio.run(exercise())
+
+
+def test_new_tenant_runs_platform_catalog_initializer_before_returning() -> None:
+    initialized: list[UUID] = []
+    expected = TenantAccess(TENANT_B, USER_ID, TenantRole.OWNER)
+
+    class CreatingStore(FakeTenancyStore):
+        async def create_tenant(
+            self,
+            *,
+            owner_user_id: UUID,
+            organization_id: UUID,
+            name: str,
+            now: datetime,
+        ) -> TenantAccess:
+            del organization_id, name, now
+            assert owner_user_id == USER_ID
+            return expected
+
+    async def initialize(tenant_id: UUID) -> None:
+        initialized.append(tenant_id)
+
+    async def exercise() -> None:
+        created = await TenancyService(
+            CreatingStore(()),
+            tenant_initializer=initialize,
+        ).create_tenant(
+            owner_user_id=USER_ID,
+            organization_id=UUID(int=3),
+            name="新租户",
+        )
+        assert created == expected
+
+    asyncio.run(exercise())
+    assert initialized == [TENANT_B]

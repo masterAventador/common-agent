@@ -181,8 +181,9 @@ React
 ### 2.10 工具与 MCP
 
 平台自有 `tools/` 模块定义 MCP 来源、能力、工具集、来源关联、精确授权、调用请求/结果和稳定错误，
-不导入 MCP、LangChain、HTTP 客户端或供应商 SDK。`adapters/mcp/` 独占 MCP SDK、HTTP 转换、连接、
-工具 Schema 映射和最后一跳 `BaseTool` 包装。
+不导入 MCP、LangChain、HTTP 客户端或供应商 SDK。`adapters/mcp/` 独占 MCP SDK、HTTP 转换、连接和
+工具 Schema 映射；`adapters/agent/` 只在 Deep Agents 边界把平台 MCP 描述符包装成最后一跳
+`BaseTool`，MCP 适配器本身不反向依赖 LangChain。
 
 ```text
 Employee/Conversation exact grants
@@ -206,6 +207,9 @@ Employee/Conversation exact grants
   当前可用叶子 UUID，任何发现、同步或新增能力都不得写授权表；
 - 平台原生、托管和外部能力统一通过 MCP `tools/list` / `tools/call` 语义执行，再转换成平台自有结果
   与持久事件；Deep Agents 看不到来源类型，业务系统也不需要实现平台私有工具协议；
+- 首批平台原生运行时使用官方 MCP 1.x 稳定协议和进程内双端传输，不建立匿名 HTTP MCP 入口；
+  “当前时间”只接受受限 UTC offset。既有工作流能力也先经过动态 MCP `tools/list/tools/call`，取消
+  MCP 调用时按该次平台调用令牌停止对应工作流，不能绕过 MCP 直接从 LangChain Tool 调服务；
 - V2 托管 HTTP 鉴权只允许 none、Bearer 和自定义 Header。可逆凭据使用独立多版本主密钥环认证
   加密，只有活动密钥写新密文、旧密钥只用于解密；API 只返回固定长度掩码，更新显式区分
   `keep/replace/clear`，不会把掩码当作数据回传或猜测用户意图。用户名/密码代登录、OAuth 与 stdio

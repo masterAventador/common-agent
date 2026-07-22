@@ -22,6 +22,7 @@ from common_agent.domain.model_configuration import (
     ModelConfigurationValidationError,
     normalize_model_identifier,
 )
+from common_agent.tools.models import ToolGrantTarget
 
 RUNTIME_HISTORY_MAX_MESSAGES = 100
 RUNTIME_HISTORY_MAX_CHARACTERS = 400_000
@@ -104,6 +105,8 @@ class EmployeeRuntimeRequest:
     knowledge_base_id: str | None
     knowledge_context: tuple[RuntimeKnowledgeChunk, ...] = field(repr=False)
     allowed_workflow_ids: tuple[UUID, ...]
+    allowed_tool_capability_ids: tuple[UUID, ...] = ()
+    tool_grant_target: ToolGrantTarget | None = None
     workflow_run_id: UUID | None = None
 
     def __post_init__(self) -> None:
@@ -134,6 +137,16 @@ class EmployeeRuntimeRequest:
             knowledge_base_id=knowledge_base_id,
         )
         workflow_ids = _workflow_ids(self.allowed_workflow_ids)
+        capability_ids = _capability_ids(self.allowed_tool_capability_ids)
+        if capability_ids and self.tool_grant_target is None:
+            raise RuntimeValidationError(
+                "tool_grant_target",
+                "存在工具能力时不能为空",
+            )
+        if self.tool_grant_target is not None and not isinstance(
+            self.tool_grant_target, ToolGrantTarget
+        ):
+            raise RuntimeValidationError("tool_grant_target", "不是支持的工具授权目标")
         if self.workflow_run_id is not None:
             _uuid("workflow_run_id", self.workflow_run_id)
 
@@ -143,10 +156,14 @@ class EmployeeRuntimeRequest:
         object.__setattr__(self, "knowledge_base_id", knowledge_base_id)
         object.__setattr__(self, "knowledge_context", knowledge_context)
         object.__setattr__(self, "allowed_workflow_ids", workflow_ids)
+        object.__setattr__(self, "allowed_tool_capability_ids", capability_ids)
 
 
 class RuntimeEventKind(StrEnum):
     DELTA = "delta"
+    TOOL_STARTED = "tool_started"
+    TOOL_COMPLETED = "tool_completed"
+    TOOL_FAILED = "tool_failed"
     COMPLETED = "completed"
     FAILED = "failed"
     STOPPED = "stopped"
@@ -164,6 +181,9 @@ class RuntimeEvent:
     kind: RuntimeEventKind
     delta: str | None = field(default=None, repr=False)
     error_code: str | None = None
+    tool_call_id: UUID | None = None
+    capability_id: UUID | None = None
+    capability_name: str | None = None
 
     def __post_init__(self) -> None:
         _uuid("assistant_message_id", self.assistant_message_id)
@@ -177,14 +197,39 @@ class RuntimeEvent:
             _content("delta", self.delta, MESSAGE_CONTENT_MAX_LENGTH)
             if self.error_code is not None:
                 raise RuntimeValidationError("error_code", "增量事件不能包含错误码")
+            self._reject_tool_metadata()
+            return
+
+        if self.kind in {
+            RuntimeEventKind.TOOL_STARTED,
+            RuntimeEventKind.TOOL_COMPLETED,
+            RuntimeEventKind.TOOL_FAILED,
+        }:
+            if self.delta is not None:
+                raise RuntimeValidationError("delta", "工具事件不能包含文本增量")
+            _uuid("tool_call_id", self.tool_call_id)
+            _uuid("capability_id", self.capability_id)
+            _required_text("capability_name", self.capability_name, 128)
+            if self.kind is RuntimeEventKind.TOOL_FAILED:
+                _required_text("error_code", self.error_code, MESSAGE_ERROR_CODE_MAX_LENGTH)
+            elif self.error_code is not None:
+                raise RuntimeValidationError("error_code", "只有失败工具事件可以包含错误码")
             return
 
         if self.delta is not None:
             raise RuntimeValidationError("delta", "终态事件不能包含文本增量")
+        self._reject_tool_metadata()
         if self.kind is RuntimeEventKind.FAILED:
             _required_text("error_code", self.error_code, MESSAGE_ERROR_CODE_MAX_LENGTH)
         elif self.error_code is not None:
             raise RuntimeValidationError("error_code", "只有失败事件可以包含错误码")
+
+    def _reject_tool_metadata(self) -> None:
+        if any(
+            value is not None
+            for value in (self.tool_call_id, self.capability_id, self.capability_name)
+        ):
+            raise RuntimeValidationError("tool_call_id", "只有工具事件可以包含工具元数据")
 
 
 class RuntimeEventEmitter:
@@ -199,6 +244,50 @@ class RuntimeEventEmitter:
 
     def delta(self, content: str) -> RuntimeEvent:
         return self._emit(RuntimeEventKind.DELTA, delta=content)
+
+    def tool_started(
+        self,
+        *,
+        tool_call_id: UUID,
+        capability_id: UUID,
+        capability_name: str,
+    ) -> RuntimeEvent:
+        return self._emit(
+            RuntimeEventKind.TOOL_STARTED,
+            tool_call_id=tool_call_id,
+            capability_id=capability_id,
+            capability_name=capability_name,
+        )
+
+    def tool_completed(
+        self,
+        *,
+        tool_call_id: UUID,
+        capability_id: UUID,
+        capability_name: str,
+    ) -> RuntimeEvent:
+        return self._emit(
+            RuntimeEventKind.TOOL_COMPLETED,
+            tool_call_id=tool_call_id,
+            capability_id=capability_id,
+            capability_name=capability_name,
+        )
+
+    def tool_failed(
+        self,
+        *,
+        tool_call_id: UUID,
+        capability_id: UUID,
+        capability_name: str,
+        error_code: str,
+    ) -> RuntimeEvent:
+        return self._emit(
+            RuntimeEventKind.TOOL_FAILED,
+            error_code=error_code,
+            tool_call_id=tool_call_id,
+            capability_id=capability_id,
+            capability_name=capability_name,
+        )
 
     def complete(self) -> RuntimeEvent:
         return self._emit(RuntimeEventKind.COMPLETED)
@@ -215,6 +304,9 @@ class RuntimeEventEmitter:
         *,
         delta: str | None = None,
         error_code: str | None = None,
+        tool_call_id: UUID | None = None,
+        capability_id: UUID | None = None,
+        capability_name: str | None = None,
     ) -> RuntimeEvent:
         if self._terminal_kind is not None:
             raise RuntimeEventTransitionError(self._terminal_kind)
@@ -224,6 +316,9 @@ class RuntimeEventEmitter:
             kind=kind,
             delta=delta,
             error_code=error_code,
+            tool_call_id=tool_call_id,
+            capability_id=capability_id,
+            capability_name=capability_name,
         )
         self._next_sequence += 1
         if kind in TERMINAL_RUNTIME_EVENT_KINDS:
@@ -330,6 +425,17 @@ def _workflow_ids(values: Sequence[UUID]) -> tuple[UUID, ...]:
         raise RuntimeValidationError("allowed_workflow_ids", "必须只包含 UUID")
     if len(set(result)) != len(result):
         raise RuntimeValidationError("allowed_workflow_ids", "不能包含重复项")
+    return result
+
+
+def _capability_ids(values: Sequence[UUID]) -> tuple[UUID, ...]:
+    result = tuple(values)
+    if len(result) > 500:
+        raise RuntimeValidationError("allowed_tool_capability_ids", "不能超过 500 项")
+    if any(not isinstance(value, UUID) for value in result):
+        raise RuntimeValidationError("allowed_tool_capability_ids", "必须只包含 UUID")
+    if len(set(result)) != len(result):
+        raise RuntimeValidationError("allowed_tool_capability_ids", "不能包含重复项")
     return result
 
 

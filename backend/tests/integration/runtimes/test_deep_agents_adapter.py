@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 import pytest
 from deepagents.backends import StateBackend
 from deepagents.backends.protocol import SandboxBackendProtocol
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.language_models.fake_chat_models import (
+    FakeMessagesListChatModel,
+    GenericFakeChatModel,
+)
+from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool, tool
 
@@ -18,6 +23,9 @@ from common_agent.adapters.agent.deep_agents import (
     DeepAgentsEmployeeRuntime,
     DeepAgentToolRegistry,
 )
+from common_agent.adapters.agent.platform_tools import PlatformMcpToolRegistry
+from common_agent.adapters.agent.tool_resolver import CompositeDeepAgentToolResolver
+from common_agent.adapters.mcp.platform import PlatformMcpRuntime
 from common_agent.adapters.model.langchain import LangChainChatModelProvider
 from common_agent.models.base import (
     ModelConfigurationInvalid,
@@ -27,7 +35,15 @@ from common_agent.models.base import (
     ModelStreamEvent,
 )
 from common_agent.runtimes.base import RuntimeEvent, RuntimeEventKind, RuntimeStopToken
+from common_agent.tools.models import (
+    ToolGrantTarget,
+    ToolGrantTargetType,
+    ToolRuntimeCapability,
+)
+from common_agent.tools.platform import platform_tool_catalog_seed
 from tests.support.runtime import ASSISTANT_MESSAGE_ID, WORKFLOW_ID, runtime_request
+
+_CAPABILITY_ID = UUID("25c29cb4-48ca-4990-b84e-31d5c989c032")
 
 
 class _Gateway:
@@ -36,6 +52,7 @@ class _Gateway:
     def __init__(self, model: BaseChatModel) -> None:
         self._model = model
         self.closed = False
+        self.translated_errors: list[Exception] = []
 
     @property
     def langchain_chat_model(self) -> BaseChatModel:
@@ -53,13 +70,14 @@ class _Gateway:
     async def aclose(self) -> None:
         self.closed = True
 
-    @staticmethod
     def translate_error(
+        self,
         error: Exception,
         *,
         stream_started: bool,
     ) -> ModelServiceError | None:
         del stream_started
+        self.translated_errors.append(error)
         return error if isinstance(error, ModelServiceError) else None
 
 
@@ -78,6 +96,23 @@ class _ModelResolver:
 
 
 class _ToolBindingFakeChatModel(GenericFakeChatModel):
+    bound_tool_names: tuple[str, ...] = ()
+
+    def bind_tools(
+        self,
+        tools: Sequence[dict[str, Any] | type | Callable[..., Any] | BaseTool],
+        *,
+        tool_choice: str | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        del tool_choice, kwargs
+        self.bound_tool_names = tuple(
+            tool.name if isinstance(tool, BaseTool) else str(tool) for tool in tools
+        )
+        return self
+
+
+class _ToolCallingFakeChatModel(FakeMessagesListChatModel):
     bound_tool_names: tuple[str, ...] = ()
 
     def bind_tools(
@@ -255,6 +290,179 @@ def test_official_create_deep_agent_streams_without_shell_or_local_filesystem() 
     }.intersection(model.bound_tool_names)
     assert model.bound_tool_names == ("allowed_workflow",)
     assert gateway.closed is True
+
+
+def test_runtime_projects_tool_messages_to_safe_platform_lifecycle_events() -> None:
+    @tool
+    def current_time(utc_offset: str = "+08:00") -> str:
+        """获取当前时间。"""
+
+        return utc_offset
+
+    current_time.metadata = {
+        "common_agent_capability_id": str(_CAPABILITY_ID),
+        "common_agent_capability_name": "当前时间",
+    }
+
+    class _ToolGraph:
+        async def astream(
+            self,
+            input_data: Mapping[str, object],
+            config: Mapping[str, object],
+            *,
+            stream_mode: str,
+        ) -> AsyncIterator[tuple[object, dict[str, object]]]:
+            del input_data, config, stream_mode
+            yield AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": "current_time",
+                        "args": '{"utc_offset":"+08:00"}',
+                        "id": "provider-call-1",
+                        "index": 0,
+                        "type": "tool_call_chunk",
+                    }
+                ],
+            ), {"langgraph_node": "model"}
+            yield ToolMessage(
+                content='{"iso8601":"2026-07-22T16:09:10+08:00"}',
+                tool_call_id="provider-call-1",
+                name="current_time",
+                status="success",
+            ), {"langgraph_node": "tools"}
+            yield AIMessageChunk(content="现在是 16:09。"), {"langgraph_node": "model"}
+
+    runtime = DeepAgentsEmployeeRuntime(
+        _Gateway(_ToolBindingFakeChatModel(messages=iter(["unused"]))),
+        tools=DeepAgentToolRegistry({_CAPABILITY_ID: current_time}),
+        agent_builder=lambda **kwargs: _ToolGraph(),
+    )
+    request = runtime_request(
+        allowed_tool_capability_ids=(_CAPABILITY_ID,),
+        tool_grant_target=ToolGrantTarget(ToolGrantTargetType.EMPLOYEE, UUID(int=12)),
+    )
+
+    events = asyncio.run(_collect(runtime.stream(request, stop=RuntimeStopToken())))
+
+    assert [event.kind for event in events] == [
+        RuntimeEventKind.TOOL_STARTED,
+        RuntimeEventKind.TOOL_COMPLETED,
+        RuntimeEventKind.DELTA,
+        RuntimeEventKind.COMPLETED,
+    ]
+    assert events[0].tool_call_id == events[1].tool_call_id
+    assert events[0].capability_id == _CAPABILITY_ID
+    assert events[0].capability_name == "当前时间"
+    assert events[1].delta is None
+
+
+@pytest.mark.parametrize(
+    "target_type",
+    [ToolGrantTargetType.EMPLOYEE, ToolGrantTargetType.CONVERSATION],
+)
+def test_official_deep_agent_calls_current_time_through_real_mcp(
+    target_type: ToolGrantTargetType,
+) -> None:
+    target = ToolGrantTarget(target_type, UUID(int=40 + len(target_type.value)))
+    tenant_id = UUID("10000000-0000-4000-8000-000000000001")
+    seed = platform_tool_catalog_seed(tenant_id)
+    runtime_capability = ToolRuntimeCapability(seed.source, seed.current_time)
+
+    class _Directory:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def authorized_runtime_capabilities(
+            self,
+            actual_target: ToolGrantTarget,
+            capability_ids: tuple[UUID, ...],
+        ) -> tuple[ToolRuntimeCapability, ...]:
+            assert actual_target == target
+            assert capability_ids == (seed.current_time.id,)
+            self.calls += 1
+            return (runtime_capability,)
+
+    class _NoWorkflowTools:
+        async def resolve(
+            self,
+            workflow_ids: Sequence[UUID],
+            *,
+            origin: object,
+        ) -> tuple[BaseTool, ...]:
+            del origin
+            assert workflow_ids == ()
+            return ()
+
+    class _McpProbe:
+        def __init__(self) -> None:
+            self.runtime = PlatformMcpRuntime(
+                clock=lambda: datetime(2026, 7, 22, 8, 9, 10, tzinfo=UTC)
+            )
+            self.calls: list[tuple[str, Mapping[str, object]]] = []
+
+        async def list_tools(self) -> Sequence[object]:
+            return await self.runtime.list_tools()
+
+        async def call_tool(self, name: str, arguments: Mapping[str, object]) -> object:
+            self.calls.append((name, arguments))
+            return await self.runtime.call_tool(name, arguments)
+
+    directory = _Directory()
+    mcp = _McpProbe()
+    model = _ToolCallingFakeChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "current_time",
+                        "args": {"utc_offset": "+08:00"},
+                        "id": "current-time-call",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="当前时间是 2026-07-22 16:09:10。"),
+        ]
+    )
+    tool_resolver = CompositeDeepAgentToolResolver(
+        _NoWorkflowTools(),
+        PlatformMcpToolRegistry(directory, mcp),
+    )
+    gateway = _Gateway(model)
+    runtime = DeepAgentsEmployeeRuntime(
+        gateway,
+        tools=tool_resolver,
+        harness_profile_key="_toolcallingfakechatmodel",
+    )
+
+    events = asyncio.run(
+        _collect(
+            runtime.stream(
+                runtime_request(
+                    allowed_tool_capability_ids=(seed.current_time.id,),
+                    tool_grant_target=target,
+                ),
+                stop=RuntimeStopToken(),
+            )
+        )
+    )
+
+    assert not gateway.translated_errors, repr(gateway.translated_errors)
+    assert [event.kind for event in events] == [
+        RuntimeEventKind.TOOL_STARTED,
+        RuntimeEventKind.TOOL_COMPLETED,
+        RuntimeEventKind.DELTA,
+        RuntimeEventKind.COMPLETED,
+    ]
+    assert events[0].tool_call_id == events[1].tool_call_id
+    assert events[0].capability_id == seed.current_time.id
+    assert events[0].capability_name == "当前时间"
+    assert events[2].delta == "当前时间是 2026-07-22 16:09:10。"
+    assert directory.calls == 2
+    assert mcp.calls == [("current_time", {"utc_offset": "+08:00"})]
+    assert model.bound_tool_names == ("current_time",)
 
 
 class _BlockingGraph:

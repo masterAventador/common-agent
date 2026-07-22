@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any, Protocol, cast
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from deepagents import (
     GeneralPurposeSubagentProfile,
@@ -14,9 +15,13 @@ from deepagents import (
 )
 from deepagents.backends import StateBackend
 from deepagents.middleware.filesystem import FilesystemPermission
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
 
+from common_agent.adapters.agent.tool_metadata import (
+    TOOL_METADATA_CAPABILITY_ID,
+    TOOL_METADATA_CAPABILITY_NAME,
+)
 from common_agent.adapters.model.langchain import (
     LangChainChatModelProvider,
     LangChainChatModelResolver,
@@ -35,6 +40,7 @@ from common_agent.runtimes.base import (
     RuntimeEventEmitter,
     RuntimeStopSignal,
 )
+from common_agent.tools.models import ToolCallErrorCode, ToolGrantTarget
 
 DEEP_AGENT_BUILTIN_TOOL_NAMES = frozenset(
     {
@@ -71,8 +77,10 @@ class RuntimeCapabilityUnavailable(Exception):
 class DeepAgentToolResolver(Protocol):
     async def resolve(
         self,
-        capability_ids: Sequence[UUID],
+        workflow_ids: Sequence[UUID],
         *,
+        tool_capability_ids: Sequence[UUID] = (),
+        tool_grant_target: ToolGrantTarget | None = None,
         origin: WorkflowRunOrigin | None,
     ) -> tuple[BaseTool, ...]: ...
 
@@ -95,13 +103,15 @@ class DeepAgentToolRegistry:
 
     async def resolve(
         self,
-        capability_ids: Sequence[UUID],
+        workflow_ids: Sequence[UUID],
         *,
+        tool_capability_ids: Sequence[UUID] = (),
+        tool_grant_target: ToolGrantTarget | None = None,
         origin: WorkflowRunOrigin | None,
     ) -> tuple[BaseTool, ...]:
-        del origin
+        del origin, tool_grant_target
         resolved: list[BaseTool] = []
-        for capability_id in capability_ids:
+        for capability_id in (*workflow_ids, *tool_capability_ids):
             registered_tool = self._tools.get(capability_id)
             if registered_tool is None:
                 raise RuntimeCapabilityUnavailable()
@@ -120,6 +130,20 @@ class _AgentGraph(Protocol):
 
 
 AgentBuilder = Callable[..., object]
+
+
+@dataclass(frozen=True, slots=True)
+class _ToolMetadata:
+    capability_id: UUID
+    capability_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ToolLifecycle:
+    kind: str
+    tool_call_id: UUID
+    metadata: _ToolMetadata
+    error_code: str | None = None
 
 
 class _StaticModelResolver:
@@ -178,10 +202,15 @@ class DeepAgentsEmployeeRuntime:
             return
 
         model: LangChainChatModelProvider | None = None
+        active_tool_calls: dict[str, _ToolMetadata] = {}
+        finished_tool_calls: set[str] = set()
+        tool_metadata: dict[str, _ToolMetadata] = {}
         try:
             model = await self._models.resolve(request.model_identifier)
             allowed_tools = await self._tools.resolve(
                 request.allowed_workflow_ids,
+                tool_capability_ids=request.allowed_tool_capability_ids,
+                tool_grant_target=request.tool_grant_target,
                 origin=(
                     None
                     if request.workflow_run_id is not None
@@ -192,6 +221,7 @@ class DeepAgentsEmployeeRuntime:
                     )
                 ),
             )
+            tool_metadata = _resolved_tool_metadata(allowed_tools)
             graph = cast(
                 "_AgentGraph",
                 self._agent_builder(
@@ -255,6 +285,19 @@ class DeepAgentsEmployeeRuntime:
                     stop_task = None
                     upstream_closed = True
                     await _close_iterator(upstream)
+                    for lifecycle in _unfinished_tool_calls(
+                        active_tool_calls,
+                        assistant_message_id=request.assistant_message_id,
+                        error_code=ToolCallErrorCode.RESULT_UNKNOWN.value,
+                    ):
+                        yield emitter.tool_failed(
+                            tool_call_id=lifecycle.tool_call_id,
+                            capability_id=lifecycle.metadata.capability_id,
+                            capability_name=lifecycle.metadata.capability_name,
+                            error_code=(
+                                lifecycle.error_code or ToolCallErrorCode.RESULT_UNKNOWN.value
+                            ),
+                        )
                     yield emitter.stop()
                     return
 
@@ -265,12 +308,57 @@ class DeepAgentsEmployeeRuntime:
                 try:
                     item = active_task.result()
                 except StopAsyncIteration:
+                    if active_tool_calls:
+                        for lifecycle in _unfinished_tool_calls(
+                            active_tool_calls,
+                            assistant_message_id=request.assistant_message_id,
+                            error_code=ToolCallErrorCode.PROTOCOL_ERROR.value,
+                        ):
+                            yield emitter.tool_failed(
+                                tool_call_id=lifecycle.tool_call_id,
+                                capability_id=lifecycle.metadata.capability_id,
+                                capability_name=lifecycle.metadata.capability_name,
+                                error_code=(
+                                    lifecycle.error_code
+                                    or ToolCallErrorCode.PROTOCOL_ERROR.value
+                                ),
+                            )
+                        yield emitter.fail(ModelProviderResponseInvalid.code)
+                        return
                     if emitted_delta:
                         yield emitter.complete()
                     else:
                         yield emitter.fail(ModelProviderResponseInvalid.code)
                     return
 
+                for lifecycle in _tool_lifecycle(
+                    item,
+                    tool_metadata=tool_metadata,
+                    active=active_tool_calls,
+                    finished=finished_tool_calls,
+                    assistant_message_id=request.assistant_message_id,
+                ):
+                    if lifecycle.kind == "started":
+                        yield emitter.tool_started(
+                            tool_call_id=lifecycle.tool_call_id,
+                            capability_id=lifecycle.metadata.capability_id,
+                            capability_name=lifecycle.metadata.capability_name,
+                        )
+                    elif lifecycle.kind == "completed":
+                        yield emitter.tool_completed(
+                            tool_call_id=lifecycle.tool_call_id,
+                            capability_id=lifecycle.metadata.capability_id,
+                            capability_name=lifecycle.metadata.capability_name,
+                        )
+                    else:
+                        yield emitter.tool_failed(
+                            tool_call_id=lifecycle.tool_call_id,
+                            capability_id=lifecycle.metadata.capability_id,
+                            capability_name=lifecycle.metadata.capability_name,
+                            error_code=(
+                                lifecycle.error_code or ToolCallErrorCode.EXECUTION_FAILED.value
+                            ),
+                        )
                 pending_text += _agent_text(item)
                 if pending_text.strip():
                     emitted_delta = True
@@ -279,6 +367,17 @@ class DeepAgentsEmployeeRuntime:
         except asyncio.CancelledError:
             raise
         except Exception as error:
+            for lifecycle in _unfinished_tool_calls(
+                active_tool_calls,
+                assistant_message_id=request.assistant_message_id,
+                error_code=ToolCallErrorCode.RESULT_UNKNOWN.value,
+            ):
+                yield emitter.tool_failed(
+                    tool_call_id=lifecycle.tool_call_id,
+                    capability_id=lifecycle.metadata.capability_id,
+                    capability_name=lifecycle.metadata.capability_name,
+                    error_code=lifecycle.error_code or ToolCallErrorCode.RESULT_UNKNOWN.value,
+                )
             if model is None:
                 yield emitter.fail(_DEEP_AGENT_EXECUTION_FAILED)
             else:
@@ -339,6 +438,129 @@ def _agent_text(item: object) -> str:
     if not isinstance(message, (AIMessage, AIMessageChunk)):
         return ""
     return message.text
+
+
+def _resolved_tool_metadata(tools: Sequence[BaseTool]) -> dict[str, _ToolMetadata]:
+    resolved: dict[str, _ToolMetadata] = {}
+    for tool in tools:
+        metadata = tool.metadata or {}
+        raw_capability_id = metadata.get(TOOL_METADATA_CAPABILITY_ID)
+        raw_capability_name = metadata.get(TOOL_METADATA_CAPABILITY_NAME)
+        if raw_capability_id is None and raw_capability_name is None:
+            continue
+        try:
+            capability_id = UUID(str(raw_capability_id))
+        except (TypeError, ValueError):
+            raise DeepAgentToolRegistryValidationError("工具能力元数据 ID 不合法") from None
+        if (
+            not isinstance(raw_capability_name, str)
+            or not raw_capability_name.strip()
+            or raw_capability_name != raw_capability_name.strip()
+        ):
+            raise DeepAgentToolRegistryValidationError("工具能力元数据名称不合法")
+        resolved[tool.name] = _ToolMetadata(capability_id, raw_capability_name)
+    return resolved
+
+
+def _tool_lifecycle(
+    item: object,
+    *,
+    tool_metadata: Mapping[str, _ToolMetadata],
+    active: dict[str, _ToolMetadata],
+    finished: set[str],
+    assistant_message_id: UUID,
+) -> tuple[_ToolLifecycle, ...]:
+    if not isinstance(item, tuple) or len(item) != 2:
+        return ()
+    message, _metadata = item
+    lifecycle: list[_ToolLifecycle] = []
+    if isinstance(message, (AIMessage, AIMessageChunk)):
+        raw_calls = cast(Sequence[Mapping[str, object]], message.tool_calls)
+        if isinstance(message, AIMessageChunk):
+            raw_calls = (
+                *raw_calls,
+                *cast(Sequence[Mapping[str, object]], message.tool_call_chunks),
+            )
+        for raw_call in raw_calls:
+            raw_name = raw_call.get("name")
+            raw_id = raw_call.get("id")
+            if not isinstance(raw_name, str) or not isinstance(raw_id, str) or not raw_id:
+                continue
+            metadata = tool_metadata.get(raw_name)
+            if metadata is None or raw_id in active or raw_id in finished:
+                continue
+            active[raw_id] = metadata
+            lifecycle.append(
+                _ToolLifecycle(
+                    kind="started",
+                    tool_call_id=_tool_call_id(assistant_message_id, raw_id),
+                    metadata=metadata,
+                )
+            )
+        return tuple(lifecycle)
+    if not isinstance(message, ToolMessage):
+        return ()
+    raw_id = message.tool_call_id
+    if not raw_id or raw_id in finished:
+        return ()
+    metadata = active.pop(raw_id, None)
+    if metadata is None and isinstance(message.name, str):
+        metadata = tool_metadata.get(message.name)
+        if metadata is not None:
+            lifecycle.append(
+                _ToolLifecycle(
+                    kind="started",
+                    tool_call_id=_tool_call_id(assistant_message_id, raw_id),
+                    metadata=metadata,
+                )
+            )
+    if metadata is None:
+        return ()
+    finished.add(raw_id)
+    status = getattr(message, "status", "success")
+    lifecycle.append(
+        _ToolLifecycle(
+            kind="failed" if status == "error" else "completed",
+            tool_call_id=_tool_call_id(assistant_message_id, raw_id),
+            metadata=metadata,
+            error_code=(_tool_error_code(message.content) if status == "error" else None),
+        )
+    )
+    return tuple(lifecycle)
+
+
+def _tool_error_code(content: object) -> str:
+    rendered = content if isinstance(content, str) else ""
+    for code in ToolCallErrorCode:
+        if f"错误码:{code.value}" in rendered:
+            return code.value
+    return ToolCallErrorCode.EXECUTION_FAILED.value
+
+
+def _unfinished_tool_calls(
+    active: dict[str, _ToolMetadata],
+    *,
+    assistant_message_id: UUID,
+    error_code: str,
+) -> tuple[_ToolLifecycle, ...]:
+    pending = tuple(
+        _ToolLifecycle(
+            kind="failed",
+            tool_call_id=_tool_call_id(assistant_message_id, raw_id),
+            metadata=metadata,
+            error_code=error_code,
+        )
+        for raw_id, metadata in active.items()
+    )
+    active.clear()
+    return pending
+
+
+def _tool_call_id(assistant_message_id: UUID, provider_call_id: str) -> UUID:
+    return uuid5(
+        NAMESPACE_URL,
+        f"common-agent:{assistant_message_id}:tool-call:{provider_call_id}",
+    )
 
 
 def _safe_error_code(

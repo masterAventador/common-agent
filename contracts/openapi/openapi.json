@@ -88,6 +88,7 @@
           "employee.configuration_and_bindings.updated",
           "tool.grants.updated",
           "tool.credentials.updated",
+          "tool.called",
           "model.configuration.created",
           "model.configuration.updated",
           "model.configuration.verified",
@@ -362,7 +363,8 @@
           "conversation",
           "workflow",
           "workflow_run",
-          "mcp_source"
+          "mcp_source",
+          "tool_capability"
         ],
         "title": "AuditResourceType",
         "type": "string"

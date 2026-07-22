@@ -96,6 +96,7 @@ class ConversationTurnCoordinator:
                 target = await self._targets.for_selection(
                     conversation,
                     model_configuration_id=model_configuration_id,
+                    new_conversation=True,
                 )
                 turn_id, prepared = await self._create(
                     conversation,

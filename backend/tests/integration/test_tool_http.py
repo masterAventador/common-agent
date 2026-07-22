@@ -6,6 +6,8 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import text
 
+from common_agent.adapters.agent.platform_tools import PlatformMcpToolRegistry
+from common_agent.adapters.mcp.platform import PlatformMcpRuntime
 from common_agent.adapters.persistence.conversations import SqlAlchemyConversationRepository
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.models import (
@@ -14,14 +16,22 @@ from common_agent.adapters.persistence.models import (
     ToolCollectionRow,
     ToolCollectionSourceRow,
 )
-from common_agent.adapters.persistence.tools import SqlAlchemyToolRepository
+from common_agent.adapters.persistence.tools import (
+    SqlAlchemyToolRepository,
+    SqlAlchemyToolUnitOfWorkFactory,
+)
 from common_agent.domain.conversation import Conversation
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from common_agent.tools import (
     McpSource,
     McpSourceStatus,
     McpSourceType,
     ToolCapability,
     ToolGrantSelection,
+    ToolGrantTarget,
+    ToolGrantTargetType,
+    ToolService,
+    current_time_capability_id,
 )
 from tests.support.conversations import delete_conversations
 from tests.support.employees import (
@@ -213,6 +223,36 @@ async def _cleanup_catalog(source_id: UUID, collection_id: UUID) -> None:
         await database.stop()
 
 
+async def _invoke_current_time_for_both_grant_targets(
+    employee_id: UUID,
+    conversation_id: UUID,
+) -> None:
+    database = Database(TEST_DATABASE_URL)
+    await database.start()
+    try:
+        service = ToolService(
+            SqlAlchemyToolUnitOfWorkFactory(database, lambda: DEFAULT_TENANT_ID)
+        )
+        registry = PlatformMcpToolRegistry(
+            service,
+            PlatformMcpRuntime(
+                clock=lambda: datetime(2026, 7, 22, 8, 9, 10, tzinfo=UTC)
+            ),
+        )
+        capability_id = current_time_capability_id(DEFAULT_TENANT_ID)
+        for target in (
+            ToolGrantTarget(ToolGrantTargetType.EMPLOYEE, employee_id),
+            ToolGrantTarget(ToolGrantTargetType.CONVERSATION, conversation_id),
+        ):
+            tools = await registry.resolve((capability_id,), target=target)
+            assert await tools[0].ainvoke({"utc_offset": "+08:00"}) == (
+                '{"iso8601":"2026-07-22T16:09:10+08:00",'
+                '"unix_timestamp":1784707750,"utc_offset":"+08:00"}'
+            )
+    finally:
+        await database.stop()
+
+
 def test_tool_catalog_and_employee_exact_grants_use_formal_http_and_mysql() -> None:
     employee_id: str | None = None
     source: McpSource | None = None
@@ -239,7 +279,33 @@ def test_tool_catalog_and_employee_exact_grants_use_formal_http_and_mysql() -> N
 
             catalog = client.get("/api/v1/tool-catalog")
             assert catalog.status_code == 200
-            assert str(first.id) in {item["id"] for item in catalog.json()["capabilities"]}
+            capability_ids = {item["id"] for item in catalog.json()["capabilities"]}
+            current_time_id = str(current_time_capability_id(DEFAULT_TENANT_ID))
+            assert str(first.id) in capability_ids
+            assert current_time_id in capability_ids
+
+            initial_employee_grants = client.get(
+                f"/api/v1/employees/{employee_id}/tool-grants"
+            )
+            assert initial_employee_grants.status_code == 200
+            assert initial_employee_grants.json()["capability_ids"] == []
+
+            explicit_employee_time = client.put(
+                f"/api/v1/employees/{employee_id}/tool-grants",
+                json={"collection_ids": [], "capability_ids": [current_time_id]},
+            )
+            explicit_conversation_time = client.put(
+                f"/api/v1/conversations/{conversation_id}/tool-grants",
+                json={"collection_ids": [], "capability_ids": [current_time_id]},
+            )
+            assert explicit_employee_time.status_code == 200
+            assert explicit_conversation_time.status_code == 200
+            asyncio.run(
+                _invoke_current_time_for_both_grant_targets(
+                    UUID(employee_id),
+                    conversation_id,
+                )
+            )
 
             saved = client.put(
                 f"/api/v1/employees/{employee_id}/tool-grants",

@@ -8,6 +8,7 @@ from common_agent.runtimes.base import (
     RuntimeConversationMessage,
     RuntimeKnowledgeChunk,
 )
+from common_agent.tools.models import ToolGrantTarget
 
 CONVERSATION_ID = UUID("67c58e55-85fd-4f01-b692-297720626ef5")
 EMPLOYEE_ID = UUID("660f0dc2-a0c5-4e6b-86e7-a42dc151e24d")
@@ -23,6 +24,8 @@ def runtime_request(
     knowledge_context: tuple[RuntimeKnowledgeChunk, ...] | None = None,
     system_instruction: str = "直接回答问题,不使用工具。",
     model_identifier: str = "qwen-plus",
+    allowed_tool_capability_ids: tuple[UUID, ...] = (),
+    tool_grant_target: ToolGrantTarget | None = None,
 ) -> EmployeeRuntimeRequest:
     history = (
         RuntimeConversationMessage(
@@ -65,4 +68,6 @@ def runtime_request(
         knowledge_base_id=knowledge_base_id,
         knowledge_context=context if knowledge_context is None else knowledge_context,
         allowed_workflow_ids=allowed_workflow_ids,
+        allowed_tool_capability_ids=allowed_tool_capability_ids,
+        tool_grant_target=tool_grant_target,
     )

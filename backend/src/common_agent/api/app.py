@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from common_agent import __version__
 from common_agent.adapters.agent.deep_agents import DeepAgentsEmployeeRuntime
+from common_agent.adapters.agent.platform_tools import PlatformMcpToolRegistry
+from common_agent.adapters.agent.tool_resolver import CompositeDeepAgentToolResolver
 from common_agent.adapters.agent.workflow_tools import WorkflowToolRegistry
 from common_agent.adapters.auth import Argon2PasswordHasher
 from common_agent.adapters.demo import (
@@ -18,6 +20,7 @@ from common_agent.adapters.demo import (
     DemoWorkflowModel,
 )
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
+from common_agent.adapters.mcp import PlatformMcpRuntime
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.adapters.model.resolver import BailianChatModelResolver
 from common_agent.adapters.model.verification import (
@@ -31,6 +34,7 @@ from common_agent.adapters.persistence import (
     SqlAlchemyAuthStore,
     SqlAlchemyEventJournal,
     SqlAlchemyKnowledgeOwnershipStore,
+    SqlAlchemyPlatformToolSeeder,
     SqlAlchemyTaskQueue,
     SqlAlchemyTenancyStore,
     SqlAlchemyToolCredentialUnitOfWorkFactory,
@@ -157,7 +161,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ),
         )
         tenancy_store = SqlAlchemyTenancyStore(database)
-        app.state.tenancy = TenancyService(tenancy_store)
+        platform_tool_seeder = SqlAlchemyPlatformToolSeeder(database)
+        await platform_tool_seeder.seed_all(await tenancy_store.list_tenant_ids())
+        app.state.tenancy = TenancyService(
+            tenancy_store,
+            tenant_initializer=platform_tool_seeder.seed,
+        )
 
         def tenant_id_provider() -> UUID:
             return current_tenant().tenant_id
@@ -166,6 +175,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return f"tenant:{current_tenant().tenant_id}:{key}"
 
         app.state.tools = ToolService(SqlAlchemyToolUnitOfWorkFactory(database, tenant_id_provider))
+        platform_mcp = PlatformMcpRuntime()
         credential_settings: ToolCredentialSettings = app.state.tool_credential_settings
         app.state.tool_credentials = ToolCredentialService(
             SqlAlchemyToolCredentialUnitOfWorkFactory(database, tenant_id_provider),
@@ -245,6 +255,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             workflow_model_resolver,
             knowledge_bases,
             employee_runtime=runtime,
+            tools=app.state.tools,
         )
         app.state.resource_deletions = ResourceDeletionService(
             SqlAlchemyResourceDeletionStore(database, tenant_id_provider),
@@ -284,7 +295,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 raise RuntimeError("百炼模型解析器尚未完成装配")
             runtime = DeepAgentsEmployeeRuntime(
                 deep_agent_model_resolver,
-                tools=WorkflowToolRegistry(workflows, audit=app.state.audit),
+                tools=CompositeDeepAgentToolResolver(
+                    WorkflowToolRegistry(workflows, audit=app.state.audit),
+                    PlatformMcpToolRegistry(
+                        app.state.tools,
+                        platform_mcp,
+                        audit=app.state.audit,
+                    ),
+                ),
             )
             workflow_ai_targets.bind_employee_runtime(runtime)
         employees = EmployeeService(
@@ -320,6 +338,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             runtime=runtime,
             events=conversation_events,
             model_configurations=model_configurations,
+            tools=app.state.tools,
             guard=resource_guard,
             tasks=task_queue,
             tenant_id_provider=tenant_id_provider,

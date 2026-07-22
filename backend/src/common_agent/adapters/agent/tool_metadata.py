@@ -1,0 +1,4 @@
+TOOL_METADATA_CAPABILITY_ID = "common_agent_capability_id"
+TOOL_METADATA_CAPABILITY_NAME = "common_agent_capability_name"
+
+__all__ = ["TOOL_METADATA_CAPABILITY_ID", "TOOL_METADATA_CAPABILITY_NAME"]

@@ -41,6 +41,28 @@ class _ClosableProbe:
         self.closed = True
 
 
+class _TenancyStoreProbe:
+    async def list_tenant_ids(self) -> tuple[object, ...]:
+        return ()
+
+
+class _PlatformToolSeederProbe:
+    async def seed_all(self, tenant_ids: object) -> None:
+        del tenant_ids
+
+    async def seed(self, tenant_id: object) -> None:
+        del tenant_id
+
+
+def _stub_platform_tool_bootstrap(monkeypatch: pytest.MonkeyPatch, module: object) -> None:
+    monkeypatch.setattr(module, "SqlAlchemyTenancyStore", lambda _: _TenancyStoreProbe())
+    monkeypatch.setattr(
+        module,
+        "SqlAlchemyPlatformToolSeeder",
+        lambda _: _PlatformToolSeederProbe(),
+    )
+
+
 def _raise_bootstrap_failure() -> None:
     raise RuntimeError("bootstrap failed")
 
@@ -103,6 +125,7 @@ def test_api_closes_real_model_when_later_component_bootstrap_fails(
     app.state.tool_credential_settings = ToolCredentialSettings.from_mapping({})
     app.state.ragflow_settings = _ragflow_settings()
     monkeypatch.setattr(api_app, "RagFlowKnowledgeService", lambda **_: knowledge)
+    _stub_platform_tool_bootstrap(monkeypatch, api_app)
     monkeypatch.setattr(ModelSettings, "from_env", lambda: object())
     monkeypatch.setattr(api_app, "BailianChatModelAdapter", lambda _: model)
     monkeypatch.setattr(api_app, "KnowledgeBaseService", _raise_component_bootstrap_failure)
@@ -158,6 +181,7 @@ def test_worker_closes_real_model_when_later_component_bootstrap_fails(
     monkeypatch.setattr(AuditSettings, "from_env", lambda: object())
     monkeypatch.setattr(RagFlowSettings, "from_env", _ragflow_settings)
     monkeypatch.setattr(worker_app, "RagFlowKnowledgeService", lambda **_: knowledge)
+    _stub_platform_tool_bootstrap(monkeypatch, worker_app)
     monkeypatch.setattr(ModelSettings, "from_env", lambda: object())
     monkeypatch.setattr(worker_app, "BailianChatModelAdapter", lambda _: model)
     monkeypatch.setattr(worker_app, "KnowledgeBaseService", _raise_component_bootstrap_failure)

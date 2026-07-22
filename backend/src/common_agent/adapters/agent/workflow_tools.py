@@ -1,43 +1,23 @@
 from __future__ import annotations
 
-import asyncio
 import json
-import secrets
 from collections.abc import Sequence
-from contextlib import suppress
-from datetime import UTC, datetime
 from typing import Annotated
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from langchain_core.tools import BaseTool, StructuredTool, ToolException
 
 from common_agent.adapters.agent.deep_agents import RuntimeCapabilityUnavailable
-from common_agent.application.workflow_service import (
-    WorkflowNotFound,
-    WorkflowRunNotActive,
-    WorkflowService,
-    WorkflowServiceError,
-)
-from common_agent.audit import (
-    AuditAction,
-    AuditEntry,
-    AuditOutcome,
-    AuditResourceType,
-    AuditService,
-)
+from common_agent.adapters.mcp.workflows import WorkflowMcpRuntime
+from common_agent.application.workflow_service import WorkflowNotFound, WorkflowService
+from common_agent.audit import AuditService
 from common_agent.domain.workflow import WorkflowDefinition
-from common_agent.domain.workflow_run import (
-    WorkflowRun,
-    WorkflowRunOrigin,
-    WorkflowRunStatus,
-    WorkflowRunTrigger,
-)
-from common_agent.observability import current_observation_context
-from common_agent.tenancy import current_tenant
+from common_agent.domain.workflow_run import WorkflowRunOrigin
+from common_agent.ports.mcp import McpToolCallError, McpToolClient, McpToolDescriptor
 
 
 class WorkflowToolRegistry:
-    """Resolve an employee allowlist into immutable, workflow-specific tools."""
+    """Resolve an employee allowlist into MCP-backed workflow tools."""
 
     def __init__(self, workflows: WorkflowService, *, audit: AuditService | None = None) -> None:
         self._workflows = workflows
@@ -53,95 +33,76 @@ class WorkflowToolRegistry:
             definitions = await self._workflows.get_many(tuple(workflow_ids))
         except WorkflowNotFound:
             raise RuntimeCapabilityUnavailable from None
-        return tuple(self._tool(definition, origin) for definition in definitions)
+        runtime = WorkflowMcpRuntime(
+            self._workflows,
+            definitions,
+            origin=origin,
+            audit=self._audit,
+        )
+        descriptors = {descriptor.name: descriptor for descriptor in await runtime.list_tools()}
+        try:
+            return tuple(
+                self._tool(
+                    definition,
+                    descriptors[f"run_workflow_{definition.id.hex}"],
+                    runtime,
+                )
+                for definition in definitions
+            )
+        except KeyError:
+            raise RuntimeCapabilityUnavailable from None
 
+    @staticmethod
     def _tool(
-        self,
         workflow: WorkflowDefinition,
-        origin: WorkflowRunOrigin | None,
+        descriptor: McpToolDescriptor,
+        runtime: McpToolClient,
     ) -> BaseTool:
         async def run_workflow(
             input: Annotated[str, "传给工作流开始节点的输入"],
         ) -> str:
-            run_id = uuid4()
             try:
-                await self._workflows.start_run(
-                    workflow.id,
-                    run_id=run_id,
-                    input=input,
-                    trigger=(
-                        WorkflowRunTrigger.EMPLOYEE
-                        if origin is not None
-                        else WorkflowRunTrigger.MANUAL
-                    ),
-                    origin=origin,
-                )
-                await self._record_started(run_id)
-                run = await self._workflows.wait_for_run(run_id)
-            except asyncio.CancelledError:
-                with suppress(WorkflowRunNotActive, WorkflowServiceError):
-                    await self._workflows.stop_run(run_id)
-                with suppress(WorkflowServiceError):
-                    await self._workflows.wait_for_run(run_id)
-                raise
-            except WorkflowServiceError as error:
+                response = await runtime.call_tool(descriptor.name, {"input": input})
+                return _tool_result(workflow, response.output)
+            except McpToolCallError as error:
                 raise ToolException(f"工作流调用失败,错误码:{error.code}") from None
-            return _tool_result(workflow, run)
 
         return StructuredTool.from_function(
             coroutine=run_workflow,
-            name=f"run_workflow_{workflow.id.hex}",
-            description=(
-                f"运行已授权的工作流「{workflow.name}」。"
-                "需要执行该工作流时调用,并把用户要求作为 input;等待平台返回真实终态后再回答。"
-            ),
+            name=descriptor.name,
+            description=descriptor.description,
             handle_tool_error=True,
         )
 
-    async def _record_started(self, run_id: UUID) -> None:
-        if self._audit is None:
-            return
-        access = current_tenant()
-        context = current_observation_context()
-        await self._audit.record(
-            AuditEntry(
-                tenant_id=access.tenant_id,
-                actor_user_id=access.user_id,
-                action=AuditAction.WORKFLOW_RUN_STARTED,
-                outcome=AuditOutcome.SUCCEEDED,
-                request_id=_request_id(context.request_id if context is not None else None),
-                trace_id=context.trace_id if context is not None else secrets.token_hex(16),
-                resource_type=AuditResourceType.WORKFLOW_RUN,
-                resource_id=str(run_id),
-                error_code=None,
-                occurred_at=datetime.now(UTC),
-            )
-        )
 
-
-def _request_id(value: str | None) -> UUID:
-    try:
-        return UUID(value) if value is not None else uuid4()
-    except ValueError:
-        return uuid4()
-
-
-def _tool_result(workflow: WorkflowDefinition, run: WorkflowRun) -> str:
-    if run.status is WorkflowRunStatus.COMPLETED:
-        return json.dumps(
-            {
-                "run_id": str(run.id),
-                "workflow_id": str(run.workflow_id),
-                "workflow_name": workflow.name,
-                "status": run.status.value,
-                "output": run.output,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
-    if run.status is WorkflowRunStatus.FAILED:
-        error_code = run.error_code or "workflow_execution_failed"
+def _tool_result(workflow: WorkflowDefinition, output: dict[str, object]) -> str:
+    status = output.get("status")
+    if status == "failed":
+        error_code = output.get("error_code")
+        if not isinstance(error_code, str) or not error_code:
+            error_code = "workflow_execution_failed"
         raise ToolException(f"工作流运行失败,错误码:{error_code}")
-    if run.status is WorkflowRunStatus.STOPPED:
+    if status == "stopped":
         raise ToolException("工作流运行已停止")
-    raise ToolException("工作流运行未返回终态")
+    if status != "completed":
+        raise ToolException("工作流运行未返回终态")
+    expected_workflow_id = str(workflow.id)
+    if output.get("workflow_id") != expected_workflow_id:
+        raise ToolException("工作流调用失败,错误码:tool_protocol_error")
+    run_id = output.get("run_id")
+    if not isinstance(run_id, str):
+        raise ToolException("工作流调用失败,错误码:tool_protocol_error")
+    return json.dumps(
+        {
+            "run_id": run_id,
+            "workflow_id": expected_workflow_id,
+            "workflow_name": workflow.name,
+            "status": status,
+            "output": output.get("output"),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+__all__ = ["WorkflowToolRegistry"]

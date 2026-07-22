@@ -57,6 +57,17 @@ class ToolGrantTargetType(StrEnum):
     CONVERSATION = "conversation"
 
 
+@dataclass(frozen=True, slots=True)
+class ToolGrantTarget:
+    target_type: ToolGrantTargetType
+    target_id: UUID
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.target_type, ToolGrantTargetType):
+            raise ToolValidationError("target_type", "不是支持的授权目标")
+        _uuid("target_id", self.target_id)
+
+
 class ToolCallStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
@@ -279,6 +290,16 @@ class ToolCatalog:
     sources: tuple[McpSource, ...] = ()
     capabilities: tuple[ToolCapability, ...] = ()
     collections: tuple[ToolCollection, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ToolRuntimeCapability:
+    source: McpSource
+    capability: ToolCapability
+
+    def __post_init__(self) -> None:
+        if self.capability.source_id != self.source.id:
+            raise ToolValidationError("source_id", "运行时能力与 MCP 来源不匹配")
 
 
 @dataclass(frozen=True, slots=True)
@@ -527,7 +548,9 @@ __all__ = [
     "ToolCollection",
     "ToolGrantSelection",
     "ToolGrantSnapshot",
+    "ToolGrantTarget",
     "ToolGrantTargetType",
+    "ToolRuntimeCapability",
     "ToolValidationError",
     "normalize_input_schema",
 ]

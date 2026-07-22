@@ -13,6 +13,7 @@ from common_agent.conversations.contracts import (
     KnowledgeResolver,
     ModelConfigurationDirectory,
     StopAccepted,
+    ToolGrantDirectory,
     TurnAccepted,
 )
 from common_agent.conversations.durable import ConversationTaskCoordinator
@@ -39,6 +40,7 @@ class ConversationService:
         runtime: EmployeeRuntime,
         events: ConversationEventBroker,
         model_configurations: ModelConfigurationDirectory | None = None,
+        tools: ToolGrantDirectory | None = None,
         guard: ResourceMutationGuard | None = None,
         tasks: TaskQueue | None = None,
         tenant_id_provider: Callable[[], UUID] | None = None,
@@ -59,6 +61,7 @@ class ConversationService:
         targets = ConversationExecutionTargetResolver(
             employees=employees,
             model_configurations=model_configurations,
+            tools=tools,
         )
         self._durable = ConversationTaskCoordinator(
             tasks=tasks,
