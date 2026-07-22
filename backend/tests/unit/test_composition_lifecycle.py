@@ -8,7 +8,7 @@ from fastapi import FastAPI
 
 import common_agent.api.app as api_app
 import common_agent.worker_app as worker_app
-from common_agent.bootstrap import AuditSettings
+from common_agent.bootstrap import AuditSettings, AuthSettings
 
 
 class _DatabaseProbe:
@@ -22,8 +22,35 @@ class _DatabaseProbe:
         self.calls.append("stop")
 
 
+class _ClosableProbe:
+    provider_name = "probe"
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
 def _raise_bootstrap_failure() -> None:
     raise RuntimeError("bootstrap failed")
+
+
+def _raise_component_bootstrap_failure(*args: object, **kwargs: object) -> None:
+    del args, kwargs
+    raise RuntimeError("component bootstrap failed")
+
+
+def _ragflow_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        base_url="http://127.0.0.1:19380",
+        api_key=SimpleNamespace(get_secret_value=lambda: "test-key"),
+        expected_version="v0.26.4",
+        embedding_model="embedding",
+        rerank_model="rerank",
+        timeout_seconds=1.0,
+        ca_bundle_path=None,
+    )
 
 
 def test_api_stops_started_database_when_component_bootstrap_fails(
@@ -49,6 +76,39 @@ def test_api_stops_started_database_when_component_bootstrap_fails(
     assert database.calls == ["start", "stop"]
 
 
+def test_api_closes_real_model_when_later_component_bootstrap_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = _DatabaseProbe()
+    knowledge = _ClosableProbe()
+    model = _ClosableProbe()
+    app = FastAPI()
+    app.state.database = database
+    app.state.audit_settings = AuditSettings(
+        retention_days=365,
+        maximum_events_per_scope=1_000_000,
+    )
+    app.state.auth_settings = AuthSettings.from_mapping({})
+    app.state.integration_mode = SimpleNamespace(mode="real")
+    app.state.worker_settings = object()
+    app.state.ragflow_settings = _ragflow_settings()
+    monkeypatch.setattr(api_app, "RagFlowKnowledgeService", lambda **_: knowledge)
+    monkeypatch.setattr(api_app.ModelSettings, "from_env", lambda: object())
+    monkeypatch.setattr(api_app, "BailianChatModelAdapter", lambda _: model)
+    monkeypatch.setattr(api_app, "KnowledgeBaseService", _raise_component_bootstrap_failure)
+
+    async def run() -> None:
+        async with api_app.lifespan(app):
+            pytest.fail("应用装配失败后不应进入 serving 阶段")
+
+    with pytest.raises(RuntimeError, match="component bootstrap failed"):
+        asyncio.run(run())
+
+    assert knowledge.closed is True
+    assert model.closed is True
+    assert database.calls == ["start", "stop"]
+
+
 def test_worker_stops_started_database_when_settings_bootstrap_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -64,4 +124,37 @@ def test_worker_stops_started_database_when_settings_bootstrap_fails(
     with pytest.raises(RuntimeError, match="bootstrap failed"):
         asyncio.run(worker_app.run_worker(asyncio.Event()))
 
+    assert database.calls == ["start", "stop"]
+
+
+def test_worker_closes_real_model_when_later_component_bootstrap_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = _DatabaseProbe()
+    knowledge = _ClosableProbe()
+    model = _ClosableProbe()
+    monkeypatch.setattr(worker_app, "Database", lambda _: database)
+    monkeypatch.setattr(
+        worker_app.DatabaseSettings,
+        "from_env",
+        lambda: SimpleNamespace(url="mysql+aiomysql://unused"),
+    )
+    monkeypatch.setattr(worker_app.WorkerSettings, "from_env", lambda: object())
+    monkeypatch.setattr(
+        worker_app.IntegrationModeSettings,
+        "from_env",
+        lambda: SimpleNamespace(mode="real"),
+    )
+    monkeypatch.setattr(worker_app.AuditSettings, "from_env", lambda: object())
+    monkeypatch.setattr(worker_app.RagFlowSettings, "from_env", _ragflow_settings)
+    monkeypatch.setattr(worker_app, "RagFlowKnowledgeService", lambda **_: knowledge)
+    monkeypatch.setattr(worker_app.ModelSettings, "from_env", lambda: object())
+    monkeypatch.setattr(worker_app, "BailianChatModelAdapter", lambda _: model)
+    monkeypatch.setattr(worker_app, "KnowledgeBaseService", _raise_component_bootstrap_failure)
+
+    with pytest.raises(RuntimeError, match="component bootstrap failed"):
+        asyncio.run(worker_app.run_worker(asyncio.Event()))
+
+    assert knowledge.closed is True
+    assert model.closed is True
     assert database.calls == ["start", "stop"]

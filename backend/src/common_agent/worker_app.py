@@ -288,6 +288,10 @@ async def run_worker(stop: asyncio.Event) -> None:
             cleanups.append(conversations.aclose)
         elif runtime is not None:
             cleanups.append(runtime.aclose)
+        elif deep_agent_model_resolver is not None:
+            cleanups.append(deep_agent_model_resolver.aclose)
+        elif real_model is not None:
+            cleanups.append(real_model.aclose)
         if conversation_events is not None:
             cleanups.append(conversation_events.aclose)
         if workflow_events is not None:

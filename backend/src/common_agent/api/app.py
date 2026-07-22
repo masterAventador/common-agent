@@ -124,6 +124,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     demo_workflow_model: DemoWorkflowModel | None = None
     conversation_events: ConversationEventBroker | None = None
     workflow_events: WorkflowEventBroker | None = None
+    real_model: BailianChatModelAdapter | None = None
     deep_agent_model_resolver: BailianChatModelResolver | None = None
     try:
         await database.start()
@@ -186,8 +187,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ),
             )
             model_settings = ModelSettings.from_env()
-            model = BailianChatModelAdapter(model_settings)
-            workflow_model = model
+            real_model = BailianChatModelAdapter(model_settings)
+            workflow_model = real_model
             model_configuration_verifier = BailianModelConfigurationVerifier(model_settings)
         knowledge_bases = KnowledgeBaseService(
             knowledge_adapter,
@@ -218,7 +219,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         else:
             deep_agent_model_resolver = BailianChatModelResolver(
                 model_settings,
-                initial_model=model,
+                initial_model=real_model,
             )
             workflow_model_resolver = deep_agent_model_resolver
         workflow_ai_targets = WorkflowAiTargetExecutor(
@@ -331,6 +332,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             cleanups.append(conversations.aclose)
         elif runtime is not None:
             cleanups.append(runtime.aclose)
+        elif deep_agent_model_resolver is not None:
+            cleanups.append(deep_agent_model_resolver.aclose)
+        elif real_model is not None:
+            cleanups.append(real_model.aclose)
         if conversation_events is not None:
             cleanups.append(conversation_events.aclose)
         if workflow_events is not None:
