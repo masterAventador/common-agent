@@ -8,7 +8,9 @@ import {
   discoverManagedMcpSource,
   fetchManagedMcpSources,
   fetchMcpCredential,
+  importManagedMcpOpenApi,
   parseManagedMcpSource,
+  previewManagedMcpOpenApi,
   testManagedMcpCapability,
   updateManagedMcpCapability,
   updateMcpCredential,
@@ -154,6 +156,65 @@ describe("managed MCP API boundary", () => {
       3,
       `/managed-mcp-sources/${source.id}/capabilities/${capability.id}/test-call`,
       { arguments: { order_id: "A-100" } },
+    );
+  });
+
+  it("uploads OpenAPI as multipart and strictly parses preview and batch import results", async () => {
+    const draft = {
+      operation_key: "GET /orders/{order_id}",
+      remote_name: capability.remote_name,
+      display_name: capability.display_name,
+      description: capability.description,
+      input_schema: capability.input_schema,
+      method: capability.method,
+      path_template: capability.path_template,
+      parameter_bindings: capability.parameter_bindings,
+      timeout_seconds: capability.timeout_seconds,
+      response_json_pointer: capability.response_json_pointer,
+      enabled: true,
+      issues: [],
+    };
+    const preview = {
+      title: "订单业务",
+      version: "1.0.0",
+      drafts: [draft],
+      existing_remote_names: [],
+    };
+    vi.mocked(apiClient.post)
+      .mockResolvedValueOnce({ data: preview })
+      .mockResolvedValueOnce({ data: { items: [capability] } });
+    const file = new File(["{}"], "orders.openapi.json", { type: "application/json" });
+
+    await expect(previewManagedMcpOpenApi(source.id, file)).resolves.toEqual(preview);
+    await expect(
+      importManagedMcpOpenApi(source.id, [
+        {
+          remote_name: draft.remote_name,
+          display_name: draft.display_name,
+          description: draft.description,
+          input_schema: draft.input_schema,
+          method: draft.method,
+          path_template: draft.path_template,
+          parameter_bindings: draft.parameter_bindings,
+          timeout_seconds: draft.timeout_seconds,
+          response_json_pointer: draft.response_json_pointer,
+          enabled: draft.enabled,
+        },
+      ]),
+    ).resolves.toEqual([capability]);
+
+    expect(apiClient.post).toHaveBeenNthCalledWith(
+      1,
+      `/managed-mcp-sources/${source.id}/openapi/preview`,
+      expect.any(FormData),
+    );
+    const form = vi.mocked(apiClient.post).mock.calls[0][1];
+    expect(form).toBeInstanceOf(FormData);
+    expect((form as FormData).get("file")).toBe(file);
+    expect(apiClient.post).toHaveBeenNthCalledWith(
+      2,
+      `/managed-mcp-sources/${source.id}/openapi/import`,
+      { capabilities: [expect.objectContaining({ remote_name: capability.remote_name })] },
     );
   });
 });

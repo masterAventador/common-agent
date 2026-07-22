@@ -14,6 +14,9 @@ const toolsApi = vi.hoisted(() => ({
   updateManagedMcpCapability: vi.fn(),
   deleteManagedMcpCapability: vi.fn(),
   discoverManagedMcpSource: vi.fn(),
+  previewManagedMcpOpenApi: vi.fn(),
+  importManagedMcpOpenApi: vi.fn(),
+  parseManagedMcpCapabilityInput: vi.fn(),
   testManagedMcpCapability: vi.fn(),
   fetchMcpCredential: vi.fn(),
   updateMcpCredential: vi.fn(),
@@ -71,6 +74,7 @@ function renderPage(readOnly = false) {
 describe("ToolsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    toolsApi.parseManagedMcpCapabilityInput.mockImplementation((value) => value);
     toolsApi.fetchManagedMcpSources.mockResolvedValue([source]);
     toolsApi.createManagedMcpSource.mockResolvedValue(source);
     toolsApi.discoverManagedMcpSource.mockResolvedValue({
@@ -100,6 +104,49 @@ describe("ToolsPage", () => {
       capability_id: source.capabilities[0].id,
       output: { id: "A-100" },
     });
+    toolsApi.previewManagedMcpOpenApi.mockResolvedValue({
+      title: "订单业务",
+      version: "1.0.0",
+      existing_remote_names: ["orders.get"],
+      drafts: [
+        {
+          operation_key: "GET /orders/{order_id}",
+          remote_name: "orders.get",
+          display_name: "查询订单",
+          description: "按编号查询订单。",
+          input_schema: source.capabilities[0].input_schema,
+          method: "GET",
+          path_template: "/orders/{order_id}",
+          parameter_bindings: source.capabilities[0].parameter_bindings,
+          timeout_seconds: 30,
+          response_json_pointer: null,
+          enabled: true,
+          issues: [],
+        },
+        {
+          operation_key: "POST /orders",
+          remote_name: "orders.create",
+          display_name: "创建订单",
+          description: "创建新订单。",
+          input_schema: {
+            type: "object",
+            properties: { customer_id: { type: "string", description: "" } },
+            required: ["customer_id"],
+            additionalProperties: false,
+          },
+          method: "POST",
+          path_template: "/orders",
+          parameter_bindings: [
+            { argument_name: "customer_id", location: "body", target_name: "customer_id" },
+          ],
+          timeout_seconds: 30,
+          response_json_pointer: null,
+          enabled: true,
+          issues: ["参数 customer_id 缺少含义"],
+        },
+      ],
+    });
+    toolsApi.importManagedMcpOpenApi.mockResolvedValue([]);
   });
 
   it("shows managed sources, mappings and explicit discovery without credential values", async () => {
@@ -168,12 +215,58 @@ describe("ToolsPage", () => {
     );
   });
 
+  it("previews, selects, edits and atomically imports an OpenAPI file", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "导入 OpenAPI 订单系统" }));
+    const file = new File(["{}"], "orders.openapi.json", { type: "application/json" });
+    await user.upload(screen.getByLabelText("选择 OpenAPI 文件"), file);
+    await user.click(screen.getByRole("button", { name: "解析文件" }));
+
+    await waitFor(() =>
+      expect(toolsApi.previewManagedMcpOpenApi).toHaveBeenCalledWith(source.id, file),
+    );
+    expect(await screen.findByText("已解析 2 项接口")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "选择 查询订单" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "选择 创建订单" })).toBeChecked();
+    const schemaEditor = screen.getByLabelText("输入 Schema POST /orders");
+    fireEvent.change(schemaEditor, {
+      target: {
+        value: JSON.stringify({
+          type: "object",
+          properties: {
+            customer_id: { type: "string", description: "客户编号" },
+          },
+          required: ["customer_id"],
+          additionalProperties: false,
+        }),
+      },
+    });
+    const importButton = screen.getByRole("button", { name: "导入选中能力" });
+    await waitFor(() => expect(importButton).toBeEnabled());
+    await user.click(importButton);
+
+    await waitFor(() => expect(toolsApi.importManagedMcpOpenApi).toHaveBeenCalledTimes(1));
+    expect(toolsApi.importManagedMcpOpenApi).toHaveBeenCalledWith(source.id, [
+      expect.objectContaining({
+        remote_name: "orders.create",
+        input_schema: expect.objectContaining({
+          properties: {
+            customer_id: { type: "string", description: "客户编号" },
+          },
+        }),
+      }),
+    ]);
+  });
+
   it("keeps every mutation disabled for viewers", async () => {
     renderPage(true);
 
     expect(await screen.findByRole("button", { name: "新建托管 MCP" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "发现能力 订单系统" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "新增能力 订单系统" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "导入 OpenAPI 订单系统" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "配置鉴权 订单系统" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "测试调用 查询订单" })).toBeDisabled();
   });

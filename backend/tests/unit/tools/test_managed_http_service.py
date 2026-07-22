@@ -18,6 +18,7 @@ from common_agent.tools.managed_http import (
     ManagedHttpParameterLocation,
     ManagedHttpRuntimeSnapshot,
     ManagedHttpSourceCommand,
+    ManagedHttpValidationError,
 )
 from common_agent.tools.managed_http_service import (
     ManagedHttpCapabilityNotFound,
@@ -127,6 +128,16 @@ class _Repository:
         if self.write_conflict:
             raise ManagedHttpRepositoryConflict
         self.capabilities[capability.capability.id] = capability
+
+    async def add_capabilities(
+        self,
+        capabilities: tuple[ManagedHttpCapability, ...],
+    ) -> None:
+        if self.write_conflict:
+            raise ManagedHttpRepositoryConflict
+        self.capabilities.update(
+            {capability.capability.id: capability for capability in capabilities}
+        )
 
     async def update_capability(self, capability: ManagedHttpCapability) -> None:
         if self.write_conflict:
@@ -255,6 +266,150 @@ def test_service_rejects_missing_conflicting_and_referenced_resources() -> None:
             await service.snapshot(uuid4())
         with pytest.raises(ManagedHttpCapabilityNotFound):
             await service.update_capability(source.source.id, uuid4(), _capability_command())
+
+    asyncio.run(exercise())
+
+
+def test_service_atomically_imports_a_validated_capability_batch_in_one_commit() -> None:
+    repository = _Repository()
+    units: list[_UnitOfWork] = []
+
+    def factory() -> _UnitOfWork:
+        unit = _UnitOfWork(repository)
+        units.append(unit)
+        return unit
+
+    service = ManagedHttpService(factory)
+
+    async def exercise() -> None:
+        source = await service.create_source(
+            ManagedHttpSourceCommand(
+                name="订单系统",
+                description="",
+                base_url="https://business.example/api",
+                enabled=True,
+            )
+        )
+        units.clear()
+        imported = await service.import_capabilities(
+            source.source.id,
+            (_capability_command("orders.get"), _capability_command("orders.list")),
+        )
+
+        assert [item.capability.remote_name for item in imported] == [
+            "orders.get",
+            "orders.list",
+        ]
+        assert len(repository.capabilities) == 2
+        assert len(units) == 1
+        assert units[0].commits == 1
+
+    asyncio.run(exercise())
+
+
+def test_service_validates_the_whole_import_before_writing_any_capability() -> None:
+    repository = _Repository()
+    service = ManagedHttpService(lambda: _UnitOfWork(repository))
+    invalid = ManagedHttpCapabilityCommand(
+        remote_name="orders.invalid",
+        display_name="非法能力",
+        description="描述",
+        input_schema={
+            "type": "object",
+            "properties": {"order_id": {"type": "string"}},
+            "required": ["order_id"],
+        },
+        method="GET",
+        path_template="/orders/{order_id}",
+        parameter_bindings=(
+            ManagedHttpParameterBinding(
+                argument_name="order_id",
+                location=ManagedHttpParameterLocation.PATH,
+                target_name="order_id",
+            ),
+        ),
+        timeout_seconds=10,
+        response_json_pointer=None,
+        enabled=True,
+    )
+
+    async def exercise() -> None:
+        source = await service.create_source(
+            ManagedHttpSourceCommand(
+                name="订单系统",
+                description="",
+                base_url="https://business.example/api",
+                enabled=True,
+            )
+        )
+        with pytest.raises(ManagedHttpValidationError):
+            await service.import_capabilities(
+                source.source.id,
+                (_capability_command("orders.get"), invalid),
+            )
+        assert repository.capabilities == {}
+
+        with pytest.raises(ManagedHttpConflict):
+            await service.import_capabilities(
+                source.source.id,
+                (_capability_command("orders.get"), _capability_command("orders.get")),
+            )
+        assert repository.capabilities == {}
+
+        await service.add_capability(source.source.id, _capability_command("orders.get"))
+        with pytest.raises(ManagedHttpConflict):
+            await service.import_capabilities(
+                source.source.id,
+                (_capability_command("orders.list"), _capability_command("orders.get")),
+            )
+        assert len(repository.capabilities) == 1
+
+    asyncio.run(exercise())
+
+
+def test_service_rejects_selected_openapi_capabilities_with_nested_missing_descriptions() -> None:
+    repository = _Repository()
+    service = ManagedHttpService(lambda: _UnitOfWork(repository))
+    nested_missing = ManagedHttpCapabilityCommand(
+        remote_name="orders.create",
+        display_name="创建订单",
+        description="创建订单。",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "object",
+                    "description": "订单明细",
+                    "properties": {"sku": {"type": "string"}},
+                }
+            },
+        },
+        method="POST",
+        path_template="/orders",
+        parameter_bindings=(
+            ManagedHttpParameterBinding(
+                argument_name="detail",
+                location=ManagedHttpParameterLocation.BODY,
+                target_name="detail",
+            ),
+        ),
+        timeout_seconds=10,
+        response_json_pointer=None,
+        enabled=True,
+    )
+
+    async def exercise() -> None:
+        source = await service.create_source(
+            ManagedHttpSourceCommand(
+                name="订单系统",
+                description="",
+                base_url="https://business.example/api",
+                enabled=True,
+            )
+        )
+        with pytest.raises(ManagedHttpValidationError, match="sku"):
+            await service.import_capabilities(source.source.id, (nested_missing,))
+        assert repository.capabilities == {}
 
     asyncio.run(exercise())
 

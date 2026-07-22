@@ -83,6 +83,64 @@ def _capability_body(*, enabled: bool = True) -> dict[str, object]:
     }
 
 
+def _openapi_document() -> dict[str, object]:
+    return {
+        "openapi": "3.0.3",
+        "info": {"title": "订单业务", "version": "1.0.0"},
+        "paths": {
+            "/orders/{order_id}": {
+                "get": {
+                    "operationId": "ordersGet",
+                    "summary": "查询订单",
+                    "description": "按编号查询订单。",
+                    "parameters": [
+                        {
+                            "name": "order_id",
+                            "in": "path",
+                            "required": True,
+                            "description": "订单编号",
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "成功"}},
+                }
+            },
+            "/orders": {
+                "post": {
+                    "operationId": "ordersCreate",
+                    "summary": "创建订单",
+                    "description": "创建新订单。",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["customer_id"],
+                                    "properties": {
+                                        "customer_id": {
+                                            "type": "string",
+                                            "description": "",
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"201": {"description": "已创建"}},
+                }
+            },
+        },
+    }
+
+
+def _import_body(draft: dict[str, object]) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in draft.items()
+        if key not in {"operation_key", "issues"}
+    }
+
+
 async def _cleanup(source_id: UUID | None) -> None:
     if source_id is None:
         return
@@ -239,4 +297,106 @@ def test_managed_http_mcp_crud_discovery_and_real_call_use_formal_api_mysql_and_
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+        asyncio.run(_cleanup(source_id))
+
+
+def test_openapi_preview_selection_and_atomic_import_use_formal_api_and_mysql() -> None:
+    source_id: UUID | None = None
+    try:
+        with (
+            running_api(TEST_DATABASE_URL) as api_url,
+            authenticated_client(base_url=api_url, timeout=10) as client,
+        ):
+            created = client.post(
+                "/api/v1/managed-mcp-sources",
+                json={
+                    "name": f"OpenAPI 订单系统-{uuid4().hex}",
+                    "description": "OpenAPI 正式验收",
+                    "base_url": "https://business.example/api",
+                    "enabled": True,
+                },
+            )
+            assert created.status_code == 201
+            source_id = UUID(created.json()["id"])
+
+            preview = client.post(
+                f"/api/v1/managed-mcp-sources/{source_id}/openapi/preview",
+                files={
+                    "file": (
+                        "orders.openapi.json",
+                        json.dumps(_openapi_document(), ensure_ascii=False).encode(),
+                        "application/json",
+                    )
+                },
+            )
+            assert preview.status_code == 200
+            payload = preview.json()
+            assert payload["title"] == "订单业务"
+            assert payload["version"] == "1.0.0"
+            assert payload["existing_remote_names"] == []
+            assert [item["remote_name"] for item in payload["drafts"]] == [
+                "orders_get",
+                "orders_create",
+            ]
+            assert payload["drafts"][0]["issues"] == []
+            assert payload["drafts"][1]["issues"] == ["参数 customer_id 缺少含义"]
+            assert client.get(
+                f"/api/v1/managed-mcp-sources/{source_id}"
+            ).json()["capabilities"] == []
+
+            rejected = client.post(
+                f"/api/v1/managed-mcp-sources/{source_id}/openapi/import",
+                json={
+                    "capabilities": [
+                        _import_body(payload["drafts"][0]),
+                        _import_body(payload["drafts"][1]),
+                    ]
+                },
+            )
+            assert_error_response(rejected, status=422, code="validation_error")
+            assert client.get(
+                f"/api/v1/managed-mcp-sources/{source_id}"
+            ).json()["capabilities"] == []
+
+            selected = client.post(
+                f"/api/v1/managed-mcp-sources/{source_id}/openapi/import",
+                json={"capabilities": [_import_body(payload["drafts"][0])]},
+            )
+            assert selected.status_code == 201
+            assert [item["remote_name"] for item in selected.json()["items"]] == [
+                "orders_get"
+            ]
+
+            create_body = _import_body(payload["drafts"][1])
+            create_schema = create_body["input_schema"]
+            assert isinstance(create_schema, dict)
+            properties = create_schema["properties"]
+            assert isinstance(properties, dict)
+            customer = properties["customer_id"]
+            assert isinstance(customer, dict)
+            customer["description"] = "客户编号"
+            conflict = client.post(
+                f"/api/v1/managed-mcp-sources/{source_id}/openapi/import",
+                json={
+                    "capabilities": [
+                        create_body,
+                        _import_body(payload["drafts"][0]),
+                    ]
+                },
+            )
+            assert_error_response(conflict, status=409, code="managed_mcp_conflict")
+            detail = client.get(f"/api/v1/managed-mcp-sources/{source_id}").json()
+            assert [item["remote_name"] for item in detail["capabilities"]] == [
+                "orders_get"
+            ]
+
+            imported = client.post(
+                f"/api/v1/managed-mcp-sources/{source_id}/openapi/import",
+                json={"capabilities": [create_body]},
+            )
+            assert imported.status_code == 201
+            assert [item["remote_name"] for item in imported.json()["items"]] == [
+                "orders_create"
+            ]
+    finally:
         asyncio.run(_cleanup(source_id))

@@ -35,6 +35,11 @@ from common_agent.tools.models import (
     ToolGrantSnapshot,
     ToolGrantTargetType,
 )
+from common_agent.tools.openapi_import import (
+    OPENAPI_MAX_OPERATIONS,
+    ManagedHttpOpenApiDraft,
+    ManagedHttpOpenApiPreview,
+)
 
 
 class McpSourceResponse(BaseModel):
@@ -249,6 +254,36 @@ class ManagedHttpTestCallResponse(BaseModel):
     output: dict[str, object]
 
 
+class ManagedHttpOpenApiDraftResponse(ManagedHttpCapabilityBody):
+    description: str = Field(default="", max_length=1_000)
+    operation_key: str
+    issues: list[str]
+
+
+class ManagedHttpOpenApiPreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    version: str
+    drafts: list[ManagedHttpOpenApiDraftResponse]
+    existing_remote_names: list[str]
+
+
+class ManagedHttpOpenApiImportBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capabilities: list[ManagedHttpCapabilityBody] = Field(
+        min_length=1,
+        max_length=OPENAPI_MAX_OPERATIONS,
+    )
+
+
+class ManagedHttpOpenApiImportResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ManagedHttpCapabilityResponse]
+
+
 def tool_catalog_response(catalog: ToolCatalog) -> ToolCatalogResponse:
     return ToolCatalogResponse(
         sources=[McpSourceResponse.model_validate(value) for value in catalog.sources],
@@ -400,11 +435,53 @@ def managed_http_source_response(
     )
 
 
+def managed_http_openapi_preview_response(
+    preview: ManagedHttpOpenApiPreview,
+    existing_remote_names: list[str],
+) -> ManagedHttpOpenApiPreviewResponse:
+    return ManagedHttpOpenApiPreviewResponse(
+        title=preview.title,
+        version=preview.version,
+        drafts=[managed_http_openapi_draft_response(draft) for draft in preview.drafts],
+        existing_remote_names=existing_remote_names,
+    )
+
+
+def managed_http_openapi_draft_response(
+    draft: ManagedHttpOpenApiDraft,
+) -> ManagedHttpOpenApiDraftResponse:
+    return ManagedHttpOpenApiDraftResponse(
+        operation_key=draft.operation_key,
+        remote_name=draft.remote_name,
+        display_name=draft.display_name,
+        description=draft.description,
+        input_schema=draft.input_schema,
+        method=draft.method,
+        path_template=draft.path_template,
+        parameter_bindings=[
+            ManagedHttpParameterBindingBody(
+                argument_name=binding.argument_name,
+                location=binding.location,
+                target_name=binding.target_name,
+            )
+            for binding in draft.parameter_bindings
+        ],
+        timeout_seconds=draft.timeout_seconds,
+        response_json_pointer=draft.response_json_pointer,
+        enabled=draft.enabled,
+        issues=list(draft.issues),
+    )
+
+
 __all__ = [
     "ManagedHttpCapabilityBody",
     "ManagedHttpCapabilityResponse",
     "ManagedHttpDiscoveredToolResponse",
     "ManagedHttpDiscoveryResponse",
+    "ManagedHttpOpenApiDraftResponse",
+    "ManagedHttpOpenApiImportBody",
+    "ManagedHttpOpenApiImportResponse",
+    "ManagedHttpOpenApiPreviewResponse",
     "ManagedHttpParameterBindingBody",
     "ManagedHttpSourceBody",
     "ManagedHttpSourceListResponse",
@@ -422,6 +499,7 @@ __all__ = [
     "ToolGrantSelectionBody",
     "managed_http_capability_command",
     "managed_http_capability_response",
+    "managed_http_openapi_preview_response",
     "managed_http_source_command",
     "managed_http_source_response",
     "mcp_credential_command",

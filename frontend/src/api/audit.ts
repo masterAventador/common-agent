@@ -20,6 +20,7 @@ export const auditActionSchema = z.enum([
   "mcp.source.discovered",
   "tool.capability.created",
   "tool.capability.updated",
+  "tool.capabilities.imported",
   "tool.called",
   "model.configuration.created",
   "model.configuration.updated",

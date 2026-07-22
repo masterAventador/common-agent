@@ -61,6 +61,10 @@ _BOUNDARIES = (
         (("tools",), ("adapters", "mcp")),
     ),
     _Boundary(
+        frozenset({"yaml"}),
+        (("adapters", "openapi"),),
+    ),
+    _Boundary(
         frozenset({"dotenv"}),
         (("bootstrap",),),
     ),

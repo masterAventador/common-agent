@@ -86,30 +86,65 @@ test("manages a business HTTP capability through the formal MCP page", async ({ 
   await credentialDialog.getByRole("button", { name: "保存鉴权" }).click();
   expect((await credentialResponse).status()).toBe(200);
 
-  await page.getByRole("button", { name: `新增能力 ${sourceName}` }).click();
-  const capabilityDialog = page.getByRole("dialog", { name: "新增 HTTP 能力" });
-  await capabilityDialog.getByRole("textbox", { name: "MCP 工具名称" }).fill("orders.get");
-  await capabilityDialog.getByRole("textbox", { name: "显示名称" }).fill("查询订单");
-  await capabilityDialog
-    .getByRole("textbox", { name: "能力说明" })
-    .fill("按编号查询订单。");
-  await capabilityDialog
-    .getByRole("textbox", { name: "接口 Path" })
-    .fill("/orders/{order_id}");
-  await capabilityDialog.getByRole("textbox", { name: "响应 JSON Pointer" }).fill("/data/order");
-  await capabilityDialog.getByRole("button", { name: "添加参数" }).click();
-  await capabilityDialog.getByRole("textbox", { name: "参数名" }).fill("order_id");
-  await capabilityDialog.getByRole("textbox", { name: "参数含义" }).fill("订单编号");
-  await capabilityDialog.getByRole("combobox", { name: "位置" }).click();
-  await page.getByText("path", { exact: true }).last().click();
-  await capabilityDialog.getByRole("textbox", { name: "目标名称" }).fill("order_id");
-  await capabilityDialog.getByRole("switch", { name: "必填" }).click();
-  const capabilityResponse = page.waitForResponse(
+  await page.getByRole("button", { name: `导入 OpenAPI ${sourceName}` }).click();
+  const importDialog = page.getByRole("dialog", {
+    name: `导入 OpenAPI · ${sourceName}`,
+  });
+  const openApiDocument = {
+    openapi: "3.1.0",
+    info: { title: "订单业务", version: "1.0.0" },
+    paths: {
+      "/orders/{order_id}": {
+        get: {
+          operationId: "orders.get",
+          summary: "查询订单",
+          description: "按编号查询订单。",
+          parameters: [
+            {
+              name: "order_id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: { "200": { description: "查询成功" } },
+        },
+      },
+    },
+  };
+  await importDialog.getByLabel("选择 OpenAPI 文件").setInputFiles({
+    name: "orders.openapi.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(openApiDocument)),
+  });
+  const previewResponse = page.waitForResponse(
     (response) =>
-      response.url().includes("/capabilities") && response.request().method() === "POST",
+      response.url().endsWith("/openapi/preview") && response.request().method() === "POST",
   );
-  await capabilityDialog.getByRole("button", { name: "确认创建" }).click();
-  expect((await capabilityResponse).status()).toBe(201);
+  await importDialog.getByRole("button", { name: "解析文件" }).click();
+  expect((await previewResponse).status()).toBe(200);
+  await expect(importDialog.getByText("已解析 1 项接口")).toBeVisible();
+  await expect(importDialog.getByText(/参数 order_id 缺少含义/)).toBeVisible();
+  await importDialog
+    .getByLabel("输入 Schema GET /orders/{order_id}")
+    .fill(
+      JSON.stringify({
+        type: "object",
+        properties: { order_id: { type: "string", description: "订单编号" } },
+        required: ["order_id"],
+        additionalProperties: false,
+      }),
+    );
+  await importDialog
+    .getByLabel("响应 JSON Pointer GET /orders/{order_id}")
+    .fill("/data/order");
+  const importResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/openapi/import") && response.request().method() === "POST",
+  );
+  await importDialog.getByRole("button", { name: "导入选中能力" }).click();
+  expect((await importResponse).status()).toBe(201);
+  await expect(importDialog).toBeHidden();
 
   const discoveryResponse = page.waitForResponse(
     (response) => response.url().endsWith("/discover") && response.request().method() === "POST",

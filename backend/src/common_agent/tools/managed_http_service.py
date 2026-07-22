@@ -11,7 +11,9 @@ from common_agent.tools.managed_http import (
     ManagedHttpCapabilityCommand,
     ManagedHttpRuntimeSnapshot,
     ManagedHttpSourceCommand,
+    ManagedHttpValidationError,
 )
+from common_agent.tools.openapi_import import OPENAPI_MAX_OPERATIONS, openapi_draft_issues
 
 
 class ManagedHttpServiceError(Exception):
@@ -118,6 +120,49 @@ class ManagedHttpService:
         except ManagedHttpRepositoryConflict:
             raise ManagedHttpConflict from None
         return capability
+
+    async def import_capabilities(
+        self,
+        source_id: UUID,
+        commands: tuple[ManagedHttpCapabilityCommand, ...],
+    ) -> tuple[ManagedHttpCapability, ...]:
+        if not commands or len(commands) > OPENAPI_MAX_OPERATIONS:
+            raise ManagedHttpValidationError(
+                "capabilities",
+                f"必须包含 1 到 {OPENAPI_MAX_OPERATIONS} 项能力",
+            )
+        try:
+            async with self._unit_of_work_factory() as unit_of_work:
+                snapshot = await unit_of_work.managed_http.snapshot(source_id)
+                if snapshot is None:
+                    raise ManagedHttpSourceNotFound
+                issues = tuple(
+                    issue
+                    for command in commands
+                    for issue in openapi_draft_issues(
+                        command.description,
+                        command.input_schema,
+                    )
+                )
+                if issues:
+                    raise ManagedHttpValidationError(
+                        "capabilities",
+                        f"包含未补全的 OpenAPI 草稿: {issues[0]}",
+                    )
+                capabilities = tuple(command.create(source_id) for command in commands)
+                names = [item.capability.remote_name for item in capabilities]
+                if len(names) != len(set(names)):
+                    raise ManagedHttpConflict
+                existing_names = {
+                    item.capability.remote_name for item in snapshot.capabilities
+                }
+                if existing_names.intersection(names):
+                    raise ManagedHttpConflict
+                await unit_of_work.managed_http.add_capabilities(capabilities)
+                await unit_of_work.commit()
+        except ManagedHttpRepositoryConflict:
+            raise ManagedHttpConflict from None
+        return capabilities
 
     async def update_capability(
         self,

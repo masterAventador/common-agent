@@ -16,6 +16,10 @@ export type ManagedMcpDiscovery =
   components["schemas"]["ManagedHttpDiscoveryResponse"];
 export type ManagedMcpTestCall =
   components["schemas"]["ManagedHttpTestCallResponse"];
+export type ManagedMcpOpenApiDraft =
+  components["schemas"]["ManagedHttpOpenApiDraftResponse"];
+export type ManagedMcpOpenApiPreview =
+  components["schemas"]["ManagedHttpOpenApiPreviewResponse"];
 export type McpCredentialSummary =
   components["schemas"]["McpCredentialSummaryResponse"];
 export type McpCredentialUpdate = components["schemas"]["McpCredentialUpdateBody"];
@@ -43,6 +47,18 @@ const capabilitySchema = z.strictObject({
   enabled: z.boolean(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
+});
+const capabilityInputSchema = z.strictObject({
+  remote_name: z.string().min(1).max(128),
+  display_name: z.string().min(1).max(128),
+  description: z.string().min(1).max(1_000),
+  input_schema: jsonObjectSchema,
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+  path_template: z.string().startsWith("/").max(2_048),
+  parameter_bindings: z.array(bindingSchema).max(256),
+  timeout_seconds: z.number().int().min(1).max(300),
+  response_json_pointer: z.string().startsWith("/").max(1_024).nullable(),
+  enabled: z.boolean(),
 });
 const sourceSchema = z.strictObject({
   id: z.uuid(),
@@ -83,9 +99,26 @@ const credentialSchema = z.strictObject({
     .nullable(),
   updated_at: z.iso.datetime({ offset: true }).nullable(),
 });
+const openApiDraftSchema = capabilityInputSchema.extend({
+  operation_key: z.string().min(1).max(2_064),
+  issues: z.array(z.string().min(1).max(1_000)),
+});
+const openApiPreviewSchema = z.strictObject({
+  title: z.string().min(1).max(256),
+  version: z.string().max(128),
+  drafts: z.array(openApiDraftSchema).min(1).max(200),
+  existing_remote_names: z.array(z.string().min(1).max(128)),
+});
+const openApiImportSchema = z.strictObject({ items: z.array(capabilitySchema).min(1).max(200) });
 
 export function parseManagedMcpSource(data: unknown): ManagedMcpSource {
   return sourceSchema.parse(data);
+}
+
+export function parseManagedMcpCapabilityInput(
+  data: unknown,
+): ManagedMcpCapabilityInput {
+  return capabilityInputSchema.parse(data);
 }
 
 export async function fetchManagedMcpSources(): Promise<ManagedMcpSource[]> {
@@ -202,6 +235,38 @@ export async function testManagedMcpCapability(
       { arguments: argumentsValue },
     );
     return testCallSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function previewManagedMcpOpenApi(
+  sourceId: string,
+  file: File,
+): Promise<ManagedMcpOpenApiPreview> {
+  const body = new FormData();
+  body.append("file", file);
+  try {
+    const response = await apiClient.post<unknown>(
+      `/managed-mcp-sources/${encodeURIComponent(sourceId)}/openapi/preview`,
+      body,
+    );
+    return openApiPreviewSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function importManagedMcpOpenApi(
+  sourceId: string,
+  capabilities: ManagedMcpCapabilityInput[],
+): Promise<ManagedMcpCapability[]> {
+  try {
+    const response = await apiClient.post<unknown>(
+      `/managed-mcp-sources/${encodeURIComponent(sourceId)}/openapi/import`,
+      { capabilities },
+    );
+    return openApiImportSchema.parse(response.data).items;
   } catch (error) {
     throw toApiClientError(error);
   }

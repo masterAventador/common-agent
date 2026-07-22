@@ -45,6 +45,7 @@ const actionLabels: Record<AuditAction, string> = {
   "mcp.source.discovered": "MCP 能力发现",
   "tool.capability.created": "工具能力创建",
   "tool.capability.updated": "工具能力更新",
+  "tool.capabilities.imported": "OpenAPI 工具能力批量导入",
   "tool.called": "工具调用",
   "model.configuration.created": "模型配置创建",
   "model.configuration.updated": "模型配置更新",

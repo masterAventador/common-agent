@@ -103,6 +103,7 @@ backend/
 │           ├── knowledge/       # RAGFlow 正式适配器
 │           ├── model/           # 阿里百炼转换与仅适配层可见的 LangChain 桥
 │           ├── mcp/             # MCP SDK、托管 HTTP 转换、外部连接与工具包装
+│           ├── openapi/         # 受限 OpenAPI 3 JSON/YAML 解码与托管能力草稿转换
 │           ├── workflow/        # LangGraph 编译、状态与节点框架转换
 │           └── persistence/     # MySQL 适配器，含业务事务、任务队列与事件日志
 ├── migrations/                  # 当前正式数据库迁移

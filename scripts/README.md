@@ -67,8 +67,8 @@
   生产 preview、正式 API/MySQL 和真实百炼验收模型创建、验证、刷新、停用与引用安全删除；设置
   `COMMON_AGENT_E2E_SUITE=generic-chat-models` 时从模型管理页创建配置，再从空白通用会话首次
   发送原子建会话、逐轮切换真实百炼模型并验证刷新恢复；`managed-tools` 使用生产 preview、正式
-  API/MySQL、官方 MCP SDK 和本机真实业务 HTTP 服务，验证托管来源、Bearer、手工能力、发现、
-  测试调用和删除闭环。各套件
+  API/MySQL、官方 MCP SDK 和本机真实业务 HTTP 服务，验证托管来源、Bearer、OpenAPI 文件预览、
+  编辑与原子导入、发现、测试调用和删除闭环。各套件
   都负责唯一测试数据、预置测试 Seed、本轮
   Playwright/前后端进程和成功产物清理；`COMMON_AGENT_E2E_DOCKER_CONTEXT` 可让同一脚本在
   GitHub Runner 的 `default` Docker context 下运行 Demo 门禁。

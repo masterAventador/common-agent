@@ -29,6 +29,7 @@ class AuditAction(StrEnum):
     MCP_SOURCE_DISCOVERED = "mcp.source.discovered"
     TOOL_CAPABILITY_CREATED = "tool.capability.created"
     TOOL_CAPABILITY_UPDATED = "tool.capability.updated"
+    TOOL_CAPABILITIES_IMPORTED = "tool.capabilities.imported"
     TOOL_CALLED = "tool.called"
     MODEL_CONFIGURATION_CREATED = "model.configuration.created"
     MODEL_CONFIGURATION_UPDATED = "model.configuration.updated"

@@ -93,6 +93,7 @@
           "mcp.source.discovered",
           "tool.capability.created",
           "tool.capability.updated",
+          "tool.capabilities.imported",
           "tool.called",
           "model.configuration.created",
           "model.configuration.updated",
@@ -423,6 +424,21 @@
           "absolute_expires_at"
         ],
         "title": "AuthSessionResponse",
+        "type": "object"
+      },
+      "Body_preview_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_preview_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "OpenAPI 3.0/3.1 JSON 或 YAML, 最大 5 MiB",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_preview_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_preview_post",
         "type": "object"
       },
       "Body_upload_document_api_v1_knowledge_bases__knowledge_base_id__documents_post": {
@@ -1815,6 +1831,172 @@
           "tools"
         ],
         "title": "ManagedHttpDiscoveryResponse",
+        "type": "object"
+      },
+      "ManagedHttpOpenApiDraftResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "method": {
+            "maxLength": 6,
+            "minLength": 3,
+            "title": "Method",
+            "type": "string"
+          },
+          "operation_key": {
+            "title": "Operation Key",
+            "type": "string"
+          },
+          "parameter_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/ManagedHttpParameterBindingBody"
+            },
+            "maxItems": 256,
+            "title": "Parameter Bindings",
+            "type": "array"
+          },
+          "path_template": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path Template",
+            "type": "string"
+          },
+          "remote_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Remote Name",
+            "type": "string"
+          },
+          "response_json_pointer": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Json Pointer"
+          },
+          "timeout_seconds": {
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "remote_name",
+          "display_name",
+          "input_schema",
+          "method",
+          "path_template",
+          "parameter_bindings",
+          "timeout_seconds",
+          "operation_key",
+          "issues"
+        ],
+        "title": "ManagedHttpOpenApiDraftResponse",
+        "type": "object"
+      },
+      "ManagedHttpOpenApiImportBody": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/ManagedHttpCapabilityBody"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Capabilities",
+            "type": "array"
+          }
+        },
+        "required": [
+          "capabilities"
+        ],
+        "title": "ManagedHttpOpenApiImportBody",
+        "type": "object"
+      },
+      "ManagedHttpOpenApiImportResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ManagedHttpCapabilityResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ManagedHttpOpenApiImportResponse",
+        "type": "object"
+      },
+      "ManagedHttpOpenApiPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/ManagedHttpOpenApiDraftResponse"
+            },
+            "title": "Drafts",
+            "type": "array"
+          },
+          "existing_remote_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Existing Remote Names",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "version",
+          "drafts",
+          "existing_remote_names"
+        ],
+        "title": "ManagedHttpOpenApiPreviewResponse",
         "type": "object"
       },
       "ManagedHttpParameterBindingBody": {
@@ -8776,6 +8958,280 @@
           }
         },
         "summary": "Discover Managed Mcp Source",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/managed-mcp-sources/{source_id}/openapi/import": {
+      "post": {
+        "operationId": "import_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedHttpOpenApiImportBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedHttpOpenApiImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Import Managed Mcp Openapi",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/managed-mcp-sources/{source_id}/openapi/preview": {
+      "post": {
+        "operationId": "preview_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_preview_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_preview_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedHttpOpenApiPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Preview Managed Mcp Openapi",
         "tags": [
           "tools"
         ]

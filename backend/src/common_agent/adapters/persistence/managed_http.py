@@ -212,10 +212,23 @@ class SqlAlchemyManagedHttpRepository:
         return True
 
     async def add_capability(self, capability: ManagedHttpCapability) -> None:
-        self._session.add(_tool_row(self._tenant_id, capability.capability))
+        await self.add_capabilities((capability,))
+
+    async def add_capabilities(
+        self,
+        capabilities: tuple[ManagedHttpCapability, ...],
+    ) -> None:
+        self._session.add_all(
+            [_tool_row(self._tenant_id, capability.capability) for capability in capabilities]
+        )
         try:
             await self._session.flush()
-            self._session.add(_configuration_row(self._tenant_id, capability))
+            self._session.add_all(
+                [
+                    _configuration_row(self._tenant_id, capability)
+                    for capability in capabilities
+                ]
+            )
             await self._session.flush()
         except IntegrityError:
             raise ManagedHttpRepositoryConflict from None

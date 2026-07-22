@@ -46,6 +46,7 @@ import {
   type ManagedMcpSourceInput,
 } from "../../api/tools";
 import { ResourceDeleteButton } from "../../components/ResourceDeleteButton";
+import { OpenApiImportModal } from "./OpenApiImportModal";
 
 const { Paragraph, Text, Title } = Typography;
 const queryKey = ["managed-mcp-sources"] as const;
@@ -176,6 +177,7 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
   const [sourceEditor, setSourceEditor] = useState<SourceEditor>();
   const [capabilityEditor, setCapabilityEditor] = useState<CapabilityEditor>();
   const [credentialSource, setCredentialSource] = useState<ManagedMcpSource>();
+  const [openApiSource, setOpenApiSource] = useState<ManagedMcpSource>();
   const [testEditor, setTestEditor] = useState<TestCallEditor>();
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string }>();
   const [testResult, setTestResult] = useState<Record<string, unknown>>();
@@ -340,6 +342,7 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
             onDiscover={() => discovery.mutate(source.id)}
             onEdit={() => setSourceEditor({ mode: "edit", source })}
             onCredential={() => setCredentialSource(source)}
+            onOpenApi={() => setOpenApiSource(source)}
             onAddCapability={() => setCapabilityEditor({ source })}
             onEditCapability={(capability) => setCapabilityEditor({ source, capability })}
             onTestCapability={(capability) => openTestEditor({ source, capability })}
@@ -449,6 +452,18 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
         onSubmit={(values) => saveCapability.mutate(values)}
       />
 
+      {openApiSource ? (
+        <OpenApiImportModal
+          source={openApiSource}
+          open
+          onClose={() => setOpenApiSource(undefined)}
+          onImported={async (count) => {
+            setNotice({ type: "success", text: `已原子导入 ${count} 项 OpenAPI 能力` });
+            await resetSources();
+          }}
+        />
+      ) : null}
+
       <Modal
         open={Boolean(credentialSource)}
         title="配置 MCP 鉴权"
@@ -547,6 +562,7 @@ function SourcePanel({
   onDiscover,
   onEdit,
   onCredential,
+  onOpenApi,
   onAddCapability,
   onEditCapability,
   onTestCapability,
@@ -559,6 +575,7 @@ function SourcePanel({
   onDiscover: () => void;
   onEdit: () => void;
   onCredential: () => void;
+  onOpenApi: () => void;
   onAddCapability: () => void;
   onEditCapability: (capability: ManagedMcpCapability) => void;
   onTestCapability: (capability: ManagedMcpCapability) => void;
@@ -576,6 +593,7 @@ function SourcePanel({
           <Button aria-label={`发现能力 ${source.name}`} icon={<RefreshCw size={15} />} loading={discoveryBusy} disabled={readOnly} onClick={onDiscover}>发现能力</Button>
           <Button aria-label={`配置鉴权 ${source.name}`} icon={<Pencil size={15} />} disabled={readOnly} onClick={onCredential}>配置鉴权</Button>
           <Button aria-label={`编辑来源 ${source.name}`} icon={<Pencil size={15} />} disabled={readOnly} onClick={onEdit}>编辑</Button>
+          <Button aria-label={`导入 OpenAPI ${source.name}`} icon={<Plus size={15} />} disabled={readOnly} onClick={onOpenApi}>导入 OpenAPI</Button>
           <Button type="primary" aria-label={`新增能力 ${source.name}`} icon={<Plus size={15} />} disabled={readOnly} onClick={onAddCapability}>新增能力</Button>
           <ResourceDeleteButton resourceKind="托管 MCP" resourceName={source.name} impact="来源和未被授权引用的全部能力会被永久删除。" disabled={readOnly} onConfirm={onDeleteSource} />
         </Space>

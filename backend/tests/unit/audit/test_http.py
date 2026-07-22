@@ -149,6 +149,34 @@ def test_mcp_credential_writes_use_metadata_only_audit_actions() -> None:
     ]
 
 
+def test_openapi_batch_import_uses_one_source_scoped_audit_action() -> None:
+    async def scenario() -> _AuditStoreProbe:
+        store = _AuditStoreProbe(fail_on=99)
+
+        async def handler(request: Request) -> Response:
+            del request
+            return Response(status_code=201)
+
+        response = await audit_http_request(
+            _request(
+                AuditService(store),
+                path=(
+                    "/api/v1/managed-mcp-sources/"
+                    "00000000-0000-4000-8000-000000000104/openapi/import"
+                ),
+            ),
+            handler,
+        )
+        assert response.status_code == 201
+        return store
+
+    store = asyncio.run(scenario())
+    assert [entry.action for entry in store.entries] == [
+        AuditAction.TOOL_CAPABILITIES_IMPORTED,
+        AuditAction.TOOL_CAPABILITIES_IMPORTED,
+    ]
+
+
 def test_observability_wraps_the_fail_closed_audit_middleware() -> None:
     app = create_app()
 

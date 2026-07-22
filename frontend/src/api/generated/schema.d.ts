@@ -511,6 +511,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/managed-mcp-sources/{source_id}/openapi/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Managed Mcp Openapi */
+        post: operations["import_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/managed-mcp-sources/{source_id}/openapi/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Managed Mcp Openapi */
+        post: operations["preview_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mcp-sources/{source_id}/credentials": {
         parameters: {
             query?: never;
@@ -874,7 +908,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "tool.grants.updated" | "tool.credentials.updated" | "mcp.source.created" | "mcp.source.updated" | "mcp.source.discovered" | "tool.capability.created" | "tool.capability.updated" | "tool.called" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
+        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "tool.grants.updated" | "tool.credentials.updated" | "mcp.source.created" | "mcp.source.updated" | "mcp.source.discovered" | "tool.capability.created" | "tool.capability.updated" | "tool.capabilities.imported" | "tool.called" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
         /** AuditEventResponse */
         AuditEventResponse: {
             action: components["schemas"]["AuditAction"];
@@ -984,6 +1018,14 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+        };
+        /** Body_preview_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_preview_post */
+        Body_preview_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_preview_post: {
+            /**
+             * File
+             * @description OpenAPI 3.0/3.1 JSON 或 YAML, 最大 5 MiB
+             */
+            file: string;
         };
         /** Body_upload_document_api_v1_knowledge_bases__knowledge_base_id__documents_post */
         Body_upload_document_api_v1_knowledge_bases__knowledge_base_id__documents_post: {
@@ -1532,6 +1574,62 @@ export interface components {
             source_id: string;
             /** Tools */
             tools: components["schemas"]["ManagedHttpDiscoveredToolResponse"][];
+        };
+        /** ManagedHttpOpenApiDraftResponse */
+        ManagedHttpOpenApiDraftResponse: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Input Schema */
+            input_schema: {
+                [key: string]: unknown;
+            };
+            /** Issues */
+            issues: string[];
+            /** Method */
+            method: string;
+            /** Operation Key */
+            operation_key: string;
+            /** Parameter Bindings */
+            parameter_bindings: components["schemas"]["ManagedHttpParameterBindingBody"][];
+            /** Path Template */
+            path_template: string;
+            /** Remote Name */
+            remote_name: string;
+            /** Response Json Pointer */
+            response_json_pointer?: string | null;
+            /** Timeout Seconds */
+            timeout_seconds: number;
+        };
+        /** ManagedHttpOpenApiImportBody */
+        ManagedHttpOpenApiImportBody: {
+            /** Capabilities */
+            capabilities: components["schemas"]["ManagedHttpCapabilityBody"][];
+        };
+        /** ManagedHttpOpenApiImportResponse */
+        ManagedHttpOpenApiImportResponse: {
+            /** Items */
+            items: components["schemas"]["ManagedHttpCapabilityResponse"][];
+        };
+        /** ManagedHttpOpenApiPreviewResponse */
+        ManagedHttpOpenApiPreviewResponse: {
+            /** Drafts */
+            drafts: components["schemas"]["ManagedHttpOpenApiDraftResponse"][];
+            /** Existing Remote Names */
+            existing_remote_names: string[];
+            /** Title */
+            title: string;
+            /** Version */
+            version: string;
         };
         /** ManagedHttpParameterBindingBody */
         ManagedHttpParameterBindingBody: {
@@ -5333,6 +5431,174 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_import_post: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedHttpOpenApiImportBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedHttpOpenApiImportResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    preview_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_preview_post: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_preview_managed_mcp_openapi_api_v1_managed_mcp_sources__source_id__openapi_preview_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedHttpOpenApiPreviewResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

@@ -1390,6 +1390,16 @@ a,
   word-break: break-word;
 }
 
+.tools-openapi-hint {
+  margin-block: 0 !important;
+}
+
+.tools-openapi-drafts {
+  max-height: min(58vh, 720px);
+  overflow: auto;
+  padding-inline-end: 4px;
+}
+
 .employee-card-grid {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;

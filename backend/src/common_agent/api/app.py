@@ -31,6 +31,7 @@ from common_agent.adapters.model.verification import (
     BailianModelConfigurationVerifier,
     DemoModelConfigurationVerifier,
 )
+from common_agent.adapters.openapi import ManagedHttpOpenApiParser
 from common_agent.adapters.persistence import (
     Database,
     MySqlNamedLockProvider,
@@ -436,6 +437,7 @@ def create_app() -> FastAPI:
     app.state.tool_credentials = None
     app.state.managed_http = None
     app.state.managed_mcp = None
+    app.state.managed_openapi_parser = ManagedHttpOpenApiParser()
     app.state.ragflow_settings = (
         RagFlowSettings.from_env() if integration_mode.mode == "real" else None
     )

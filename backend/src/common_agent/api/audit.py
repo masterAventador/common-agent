@@ -242,6 +242,13 @@ def _classify(
         ),
         (
             "POST",
+            r"/api/v1/managed-mcp-sources/[^/]+/openapi/import",
+            AuditAction.TOOL_CAPABILITIES_IMPORTED,
+            AuditResourceType.MCP_SOURCE,
+            "source_id",
+        ),
+        (
+            "POST",
             r"/api/v1/managed-mcp-sources/[^/]+/discover",
             AuditAction.MCP_SOURCE_DISCOVERED,
             AuditResourceType.MCP_SOURCE,

@@ -15,13 +15,6 @@ from common_agent.tools.managed_http import (
     ManagedHttpValidationError,
     build_managed_http_request,
 )
-from common_agent.tools.managed_http_service import (
-    ManagedHttpCapabilityNotFound,
-    ManagedHttpConflict,
-    ManagedHttpService,
-    ManagedHttpServiceError,
-    ManagedHttpSourceNotFound,
-)
 from common_agent.tools.models import (
     McpSource,
     McpSourceStatus,
@@ -59,16 +52,11 @@ __all__ = [
     "CURRENT_TIME_TOOL_NAME",
     "ManagedHttpCapability",
     "ManagedHttpCapabilityCommand",
-    "ManagedHttpCapabilityNotFound",
-    "ManagedHttpConflict",
     "ManagedHttpParameterBinding",
     "ManagedHttpParameterLocation",
     "ManagedHttpRequest",
     "ManagedHttpRuntimeSnapshot",
-    "ManagedHttpService",
-    "ManagedHttpServiceError",
     "ManagedHttpSourceCommand",
-    "ManagedHttpSourceNotFound",
     "ManagedHttpValidationError",
     "McpCredentialSourceNotFound",
     "McpSource",

@@ -211,7 +211,12 @@ Employee/Conversation exact grants
   与持久事件；Deep Agents 看不到来源类型，业务系统也不需要实现平台私有工具协议；
 - T2-04 已落地托管 HTTP 的手工配置纵向切片：租户内 Base URL 与能力配置规范化入库，官方 MCP SDK
   负责进程内 `tools/list` / `tools/call`，调用前重新读取来源、能力、精确授权和服务端凭据，再经固定
-  origin 的安全 HTTP 客户端执行；OpenAPI 导入、外部 MCP 与业务工具集仍分别由后续任务补充；
+  origin 的安全 HTTP 客户端执行；
+- T2-05 的 `adapters/openapi/` 只接受 OpenAPI 3.0/3.1 JSON、YAML 和本地 JSON Pointer 引用，拒绝
+  YAML 别名、重复键、外部/循环引用、受保护 Header 参数和不受支持的请求体，并对文件字节、结构
+  深度/节点、引用深度和操作数设硬上限。预览只返回可编辑草稿与缺失说明，不写数据库；导入再次
+  递归校验说明、名称冲突和整批内容，再以单个数据库事务写入能力及 HTTP 配置，任一项失败整批回滚。
+  外部 MCP 与业务工具集仍分别由后续任务补充；
 - 首批平台原生运行时使用官方 MCP 1.x 稳定协议和进程内双端传输，不建立匿名 HTTP MCP 入口；
   “当前时间”只接受受限 UTC offset。既有工作流能力也先经过动态 MCP `tools/list/tools/call`，取消
   MCP 调用时按该次平台调用令牌停止对应工作流，不能绕过 MCP 直接从 LangChain Tool 调服务；

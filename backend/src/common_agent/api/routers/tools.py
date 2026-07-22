@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, File, Request, Response, UploadFile, status
 
 from common_agent.api.audit import mark_audit_resource
 from common_agent.api.errors import AppError, ErrorEnvelope
@@ -11,6 +12,9 @@ from common_agent.api.schemas.tools import (
     ManagedHttpCapabilityResponse,
     ManagedHttpDiscoveredToolResponse,
     ManagedHttpDiscoveryResponse,
+    ManagedHttpOpenApiImportBody,
+    ManagedHttpOpenApiImportResponse,
+    ManagedHttpOpenApiPreviewResponse,
     ManagedHttpSourceBody,
     ManagedHttpSourceListResponse,
     ManagedHttpSourceResponse,
@@ -23,6 +27,7 @@ from common_agent.api.schemas.tools import (
     ToolGrantSelectionBody,
     managed_http_capability_command,
     managed_http_capability_response,
+    managed_http_openapi_preview_response,
     managed_http_source_command,
     managed_http_source_response,
     mcp_credential_command,
@@ -33,6 +38,7 @@ from common_agent.api.schemas.tools import (
 )
 from common_agent.audit import AuditResourceType
 from common_agent.ports.mcp import ManagedMcpToolClient, McpToolCallError
+from common_agent.ports.openapi import ManagedHttpOpenApiParserPort
 from common_agent.tools import (
     McpCredentialSourceNotFound,
     PlatformCredentialNotAllowed,
@@ -55,6 +61,10 @@ from common_agent.tools.managed_http_service import (
     ManagedHttpSourceNotFound,
 )
 from common_agent.tools.models import normalize_input_schema
+from common_agent.tools.openapi_import import (
+    OPENAPI_MAX_FILE_BYTES,
+    OpenApiDocumentError,
+)
 
 router = APIRouter(tags=["tools"])
 
@@ -87,7 +97,20 @@ def _managed_runtime(request: Request) -> ManagedMcpToolClient:
     return runtime
 
 
+def _managed_openapi_parser(request: Request) -> ManagedHttpOpenApiParserPort:
+    parser = getattr(request.app.state, "managed_openapi_parser", None)
+    if not isinstance(parser, ManagedHttpOpenApiParserPort):
+        raise AppError("openapi_parser_unavailable", "OpenAPI 解析服务暂时不可用", 503, True)
+    return parser
+
+
 def _error(error: Exception) -> AppError:
+    if isinstance(error, OpenApiDocumentError):
+        status_code = {
+            "openapi_file_too_large": 413,
+            "openapi_media_type_unsupported": 415,
+        }.get(error.code, 422)
+        return AppError(error.code, error.message, status_code, False)
     if isinstance(error, (ManagedHttpSourceNotFound, ManagedHttpCapabilityNotFound)):
         return AppError(error.code, error.message, 404, error.retryable)
     if isinstance(error, ManagedHttpConflict):
@@ -113,6 +136,26 @@ def _error(error: Exception) -> AppError:
     if isinstance(error, ToolServiceError):
         return AppError(error.code, error.message, 409, error.retryable)
     raise TypeError("unsupported tool application error")
+
+
+async def _read_openapi_upload(file: UploadFile) -> bytes:
+    content = bytearray()
+    try:
+        while len(content) <= OPENAPI_MAX_FILE_BYTES:
+            chunk = await file.read(
+                min(1024 * 1024, OPENAPI_MAX_FILE_BYTES + 1 - len(content))
+            )
+            if not chunk:
+                break
+            content.extend(chunk)
+    finally:
+        await file.close()
+    if len(content) > OPENAPI_MAX_FILE_BYTES:
+        raise OpenApiDocumentError(
+            "openapi_file_too_large",
+            f"OpenAPI 文件不能超过 {OPENAPI_MAX_FILE_BYTES} 字节",
+        )
+    return bytes(content)
 
 
 def _mcp_error(error: McpToolCallError) -> AppError:
@@ -285,6 +328,67 @@ async def delete_managed_mcp_capability(
         raise _error(error) from error
     mark_audit_resource(request, AuditResourceType.TOOL_CAPABILITY, capability_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/api/v1/managed-mcp-sources/{source_id}/openapi/preview",
+    response_model=ManagedHttpOpenApiPreviewResponse,
+    responses={
+        404: {"model": ErrorEnvelope},
+        413: {"model": ErrorEnvelope},
+        415: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def preview_managed_mcp_openapi(
+    request: Request,
+    source_id: UUID,
+    file: Annotated[
+        UploadFile,
+        File(description="OpenAPI 3.0/3.1 JSON 或 YAML, 最大 5 MiB"),
+    ],
+) -> ManagedHttpOpenApiPreviewResponse:
+    try:
+        snapshot = await _managed_service(request).snapshot(source_id)
+        preview = _managed_openapi_parser(request).parse(
+            await _read_openapi_upload(file),
+            file.filename or "",
+        )
+    except (ManagedHttpServiceError, OpenApiDocumentError) as error:
+        raise _error(error) from error
+    return managed_http_openapi_preview_response(
+        preview,
+        sorted(item.capability.remote_name for item in snapshot.capabilities),
+    )
+
+
+@router.post(
+    "/api/v1/managed-mcp-sources/{source_id}/openapi/import",
+    response_model=ManagedHttpOpenApiImportResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+    },
+)
+async def import_managed_mcp_openapi(
+    request: Request,
+    source_id: UUID,
+    body: ManagedHttpOpenApiImportBody,
+) -> ManagedHttpOpenApiImportResponse:
+    try:
+        imported = await _managed_service(request).import_capabilities(
+            source_id,
+            tuple(managed_http_capability_command(item) for item in body.capabilities),
+        )
+    except (ManagedHttpServiceError, ManagedHttpValidationError, ToolValidationError) as error:
+        raise _error(error) from error
+    mark_audit_resource(request, AuditResourceType.MCP_SOURCE, source_id)
+    return ManagedHttpOpenApiImportResponse(
+        items=[managed_http_capability_response(item) for item in imported]
+    )
 
 
 @router.post(
