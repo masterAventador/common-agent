@@ -2269,5 +2269,12 @@ S10-07I 已完成可选员工或模型的工作流 AI 对话节点；下一步�
   降级或漏洞库漂移都会阻断并要求重新审阅。已知 Critical 均位于未运行的 LiteLLM Proxy/npm、
   不接受上传文档包的 NLTK 下载器、未启用 attachment pipeline 的 Tika 或启动后不驻留的 gosu；
   生产仍只经私网 TLS Edge 使用 RAGFlow，MySQL/Elasticsearch/MinIO/Valkey 不向公网开放
+- 请求体边界整改：攻击前置检查发现生产 Nginx 沿用默认约 1 MiB 上限，会在 FastAPI 之前误拒
+  产品声明支持的 20 MiB 文档；Edge 现固定 24 MiB 总请求上限，为 multipart 边界保留空间且继续
+  在应用前拒绝异常大请求。隔离生产蓝绿栈经真实 TLS Edge、正式 FastAPI/MySQL/RAGFlow 和无头
+  Chromium 验证：2 MiB 文档请求穿过 Edge 并由租户归属返回结构化 404，20 MiB+1 由正式应用返回
+  `document_too_large`，24 MiB 文件连同 multipart 超过网关上限后由 Edge 返回 413；三条页面/API
+  用例 `3 passed (5.6s)`，随后故障注入、蓝绿切换与代码回滚也通过。演练容器、网络、MySQL Volume、
+  TLS/认证状态、浏览器进程和四个临时 release 镜像均已精确清理，稳定 RAGFlow 与正式候选保留复用
 - 当前下一步：补齐权限与输入攻击矩阵，再执行并发、容量、SSE 长连接、故障恢复、SLO/告警及新
   租户正式浏览器全链、审计、备份和回滚终验；S10-08 尚未完成，不以本阶段扫描结果冒充最终交付
