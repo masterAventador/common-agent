@@ -94,6 +94,15 @@ class WorkflowCatalog:
             raise WorkflowNotFound
         return workflow
 
+    async def get_many(self, workflow_ids: tuple[UUID, ...]) -> tuple[WorkflowDefinition, ...]:
+        if not workflow_ids:
+            return ()
+        async with self._unit_of_work_factory() as unit_of_work:
+            workflows = await unit_of_work.workflows.get_many(workflow_ids)
+        if len(workflows) != len(workflow_ids):
+            raise WorkflowNotFound
+        return workflows
+
     async def ensure_exist(self, workflow_ids: tuple[UUID, ...]) -> None:
         if not workflow_ids:
             return

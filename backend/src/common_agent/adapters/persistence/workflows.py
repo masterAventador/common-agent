@@ -137,6 +137,30 @@ class SqlAlchemyWorkflowRepository:
         node_rows, edge_rows = await self._load_graph_rows((row.id,))
         return _to_domain(row, node_rows[row.id], edge_rows[row.id])
 
+    async def get_many(
+        self,
+        workflow_ids: tuple[UUID, ...],
+    ) -> tuple[WorkflowDefinition, ...]:
+        if not workflow_ids:
+            return ()
+        rows = tuple(
+            await self._session.scalars(
+                select(WorkflowRow).where(
+                    WorkflowRow.id.in_(tuple(str(workflow_id) for workflow_id in workflow_ids)),
+                    WorkflowRow.tenant_id == self._tenant_id,
+                )
+            )
+        )
+        if not rows:
+            return ()
+        rows_by_id = {row.id: row for row in rows}
+        node_rows, edge_rows = await self._load_graph_rows(tuple(rows_by_id))
+        return tuple(
+            _to_domain(row, node_rows[row.id], edge_rows[row.id])
+            for workflow_id in workflow_ids
+            if (row := rows_by_id.get(str(workflow_id))) is not None
+        )
+
     async def existing_ids(self, workflow_ids: tuple[UUID, ...]) -> frozenset[UUID]:
         if not workflow_ids:
             return frozenset()

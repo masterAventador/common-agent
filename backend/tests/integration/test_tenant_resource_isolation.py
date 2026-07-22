@@ -49,6 +49,13 @@ class _TenantScopedWorkflowLookup:
             raise WorkflowNotFound
         return workflow
 
+    async def get_many(self, workflow_ids: tuple[UUID, ...]) -> tuple[WorkflowDefinition, ...]:
+        async with self._database.session() as session:
+            workflows = await SqlAlchemyWorkflowRepository(session).get_many(workflow_ids)
+        if len(workflows) != len(workflow_ids):
+            raise WorkflowNotFound
+        return workflows
+
 
 def _database_url() -> str:
     return os.environ.get("TEST_PLATFORM_DATABASE_URL", TEST_DATABASE_URL)

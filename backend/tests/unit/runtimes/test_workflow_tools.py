@@ -157,6 +157,32 @@ def test_registry_exposes_exact_allowlist_and_fails_closed_for_missing_workflow(
     asyncio.run(exercise())
 
 
+def test_registry_resolves_the_allowlist_with_one_batch_lookup() -> None:
+    async def exercise() -> None:
+        units = WorkflowUnitOfWorkFactoryProbe()
+        knowledge = KnowledgeBaseService(KnowledgeProbe())
+        service = WorkflowService(units, knowledge)
+        first = await service.create(replace(workflow_configuration(), name="第一个工作流"))
+        second = await service.create(replace(workflow_configuration(), name="第二个工作流"))
+        units.repository.get_calls = 0
+        units.repository.get_many_calls = 0
+
+        tools = await WorkflowToolRegistry(service).resolve(
+            (second.id, first.id),
+            origin=ORIGIN,
+        )
+        await service.aclose()
+
+        assert [tool.name for tool in tools] == [
+            f"run_workflow_{second.id.hex}",
+            f"run_workflow_{first.id.hex}",
+        ]
+        assert units.repository.get_many_calls == 1
+        assert units.repository.get_calls == 0
+
+    asyncio.run(exercise())
+
+
 def test_failed_workflow_returns_only_stable_tool_error() -> None:
     async def exercise() -> None:
         service = _service(model=RunModelProbe(fail=True))

@@ -49,10 +49,8 @@ class WorkflowToolRegistry:
         *,
         origin: WorkflowRunOrigin | None,
     ) -> tuple[BaseTool, ...]:
-        definitions: list[WorkflowDefinition] = []
         try:
-            for workflow_id in workflow_ids:
-                definitions.append(await self._workflows.get(workflow_id))
+            definitions = await self._workflows.get_many(tuple(workflow_ids))
         except WorkflowNotFound:
             raise RuntimeCapabilityUnavailable from None
         return tuple(self._tool(definition, origin) for definition in definitions)

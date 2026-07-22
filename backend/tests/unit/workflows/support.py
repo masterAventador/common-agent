@@ -27,6 +27,8 @@ from tests.support.knowledge import KnowledgeProbe
 class WorkflowRepositoryProbe:
     def __init__(self) -> None:
         self.values: dict[UUID, WorkflowDefinition] = {}
+        self.get_calls = 0
+        self.get_many_calls = 0
 
     async def list(self) -> tuple[WorkflowDefinition, ...]:
         return tuple(self.values.values())
@@ -59,7 +61,16 @@ class WorkflowRepositoryProbe:
         return PageSlice(items=tuple(values[:limit]), has_more=len(values) > limit)
 
     async def get(self, workflow_id: UUID) -> WorkflowDefinition | None:
+        self.get_calls += 1
         return self.values.get(workflow_id)
+
+    async def get_many(self, workflow_ids: tuple[UUID, ...]) -> tuple[WorkflowDefinition, ...]:
+        self.get_many_calls += 1
+        return tuple(
+            workflow
+            for workflow_id in workflow_ids
+            if (workflow := self.values.get(workflow_id)) is not None
+        )
 
     async def existing_ids(self, workflow_ids: tuple[UUID, ...]) -> frozenset[UUID]:
         return frozenset(workflow_id for workflow_id in workflow_ids if workflow_id in self.values)

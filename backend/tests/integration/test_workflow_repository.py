@@ -181,6 +181,49 @@ def test_workflow_page_batches_graph_loading_without_n_plus_one_queries() -> Non
     assert has_more is True
 
 
+def test_workflow_batch_lookup_preserves_allowlist_order_with_three_queries() -> None:
+    workflows = tuple(_workflow(f"tool-batch-{index}-{uuid4().hex}") for index in range(12))
+    requested_ids = tuple(workflow.id for workflow in reversed(workflows))
+
+    async def exercise() -> tuple[tuple[WorkflowDefinition, ...], int]:
+        async with _database() as database:
+            try:
+                async with database.session() as session:
+                    repository = SqlAlchemyWorkflowRepository(session)
+                    for workflow in workflows:
+                        await repository.add(workflow)
+                    await session.commit()
+
+                async with database.session() as session:
+                    statements: list[str] = []
+
+                    def record_statement(
+                        _connection: object,
+                        _cursor: object,
+                        statement: str,
+                        _parameters: object,
+                        _context: object,
+                        _executemany: object,
+                    ) -> None:
+                        statements.append(statement)
+
+                    bind = session.get_bind()
+                    event.listen(bind, "before_cursor_execute", record_statement)
+                    try:
+                        resolved = await SqlAlchemyWorkflowRepository(session).get_many(
+                            requested_ids
+                        )
+                    finally:
+                        event.remove(bind, "before_cursor_execute", record_statement)
+                    return resolved, len(statements)
+            finally:
+                await delete_workflows(database, *requested_ids)
+
+    resolved, statement_count = asyncio.run(exercise())
+    assert tuple(workflow.id for workflow in resolved) == requested_ids
+    assert statement_count == 3
+
+
 def test_workflow_existence_check_uses_one_tenant_scoped_statement() -> None:
     workflows = tuple(_workflow(f"existence-batch-{index}-{uuid4().hex}") for index in range(25))
     missing_id = uuid4()
