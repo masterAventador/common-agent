@@ -38,6 +38,7 @@ test("reuses loaded route and vendor modules on repeated navigation", async ({ p
     await page.getByRole("link", { name: route.link }).click();
     await expect(page.getByRole("heading", { name: route.heading })).toBeVisible();
   }
+  await expect(page.getByRole("region", { name: "手动运行面板" })).toBeVisible();
 
   expect(requestedScripts.some((url) => url.includes("react-core"))).toBe(true);
   expect(requestedScripts.some((url) => url.includes("antd"))).toBe(true);
