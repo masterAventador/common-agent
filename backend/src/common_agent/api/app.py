@@ -116,36 +116,7 @@ from common_agent.workflows.nodes.registry import create_workflow_node_registry
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     database: Database = app.state.database
-    await database.start()
-    audit_settings: AuditSettings = app.state.audit_settings
-    app.state.audit = AuditService(
-        SqlAlchemyAuditStore(database),
-        AuditPolicy(
-            retention_days=audit_settings.retention_days,
-            max_events_per_scope=audit_settings.maximum_events_per_scope,
-        ),
-    )
-    auth_settings: AuthSettings = app.state.auth_settings
-    app.state.authentication = AuthenticationService(
-        SqlAlchemyAuthStore(database),
-        Argon2PasswordHasher(),
-        AuthConfiguration(
-            bootstrap_token=auth_settings.bootstrap_token.get_secret_value(),
-            session_idle_seconds=auth_settings.session_idle_seconds,
-            session_absolute_seconds=auth_settings.session_absolute_seconds,
-            login_window_seconds=auth_settings.login_window_seconds,
-            login_max_attempts=auth_settings.login_max_attempts,
-        ),
-    )
-    tenancy_store = SqlAlchemyTenancyStore(database)
-    app.state.tenancy = TenancyService(tenancy_store)
-
-    def tenant_id_provider() -> UUID:
-        return current_tenant().tenant_id
-
-    def key_namespace(key: str) -> str:
-        return f"tenant:{current_tenant().tenant_id}:{key}"
-
+    database_started = False
     knowledge_adapter: RagFlowKnowledgeService | DemoKnowledgeService | None = None
     runtime: DeepAgentsEmployeeRuntime | DemoEmployeeRuntime | None = None
     conversations: ConversationService | None = None
@@ -155,6 +126,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     workflow_events: WorkflowEventBroker | None = None
     deep_agent_model_resolver: BailianChatModelResolver | None = None
     try:
+        await database.start()
+        database_started = True
+        audit_settings: AuditSettings = app.state.audit_settings
+        app.state.audit = AuditService(
+            SqlAlchemyAuditStore(database),
+            AuditPolicy(
+                retention_days=audit_settings.retention_days,
+                max_events_per_scope=audit_settings.maximum_events_per_scope,
+            ),
+        )
+        auth_settings: AuthSettings = app.state.auth_settings
+        app.state.authentication = AuthenticationService(
+            SqlAlchemyAuthStore(database),
+            Argon2PasswordHasher(),
+            AuthConfiguration(
+                bootstrap_token=auth_settings.bootstrap_token.get_secret_value(),
+                session_idle_seconds=auth_settings.session_idle_seconds,
+                session_absolute_seconds=auth_settings.session_absolute_seconds,
+                login_window_seconds=auth_settings.login_window_seconds,
+                login_max_attempts=auth_settings.login_max_attempts,
+            ),
+        )
+        tenancy_store = SqlAlchemyTenancyStore(database)
+        app.state.tenancy = TenancyService(tenancy_store)
+
+        def tenant_id_provider() -> UUID:
+            return current_tenant().tenant_id
+
+        def key_namespace(key: str) -> str:
+            return f"tenant:{current_tenant().tenant_id}:{key}"
+
         integration_mode: IntegrationModeSettings = app.state.integration_mode
         worker_settings: WorkerSettings = app.state.worker_settings
         task_queue = SqlAlchemyTaskQueue(database)
@@ -337,7 +339,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             cleanups.append(knowledge_adapter.aclose)
         if demo_workflow_model is not None:
             cleanups.append(demo_workflow_model.aclose)
-        cleanups.append(database.stop)
+        if database_started:
+            cleanups.append(database.stop)
         await run_cleanups(*cleanups)
 
 

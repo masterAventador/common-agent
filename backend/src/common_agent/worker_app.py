@@ -74,17 +74,7 @@ from common_agent.workflows.nodes.registry import create_workflow_node_registry
 async def run_worker(stop: asyncio.Event) -> None:
     configure_json_logging()
     database = Database(DatabaseSettings.from_env().url)
-    await database.start()
-    worker_settings = WorkerSettings.from_env()
-    integration_mode = IntegrationModeSettings.from_env()
-    audit_settings = AuditSettings.from_env()
-
-    def tenant_id_provider() -> UUID:
-        return current_tenant().tenant_id
-
-    def key_namespace(key: str) -> str:
-        return f"tenant:{current_tenant().tenant_id}:{key}"
-
+    database_started = False
     knowledge_adapter: RagFlowKnowledgeService | DemoKnowledgeService | None = None
     runtime: DeepAgentsEmployeeRuntime | DemoEmployeeRuntime | None = None
     conversations: ConversationService | None = None
@@ -96,6 +86,18 @@ async def run_worker(stop: asyncio.Event) -> None:
     model_settings: ModelSettings | None = None
     deep_agent_model_resolver: BailianChatModelResolver | None = None
     try:
+        await database.start()
+        database_started = True
+        worker_settings = WorkerSettings.from_env()
+        integration_mode = IntegrationModeSettings.from_env()
+        audit_settings = AuditSettings.from_env()
+
+        def tenant_id_provider() -> UUID:
+            return current_tenant().tenant_id
+
+        def key_namespace(key: str) -> str:
+            return f"tenant:{current_tenant().tenant_id}:{key}"
+
         workflow_model: TextStreamingModel
         model_configuration_verifier: ModelConfigurationVerifier
         if integration_mode.mode == "demo":
@@ -294,7 +296,8 @@ async def run_worker(stop: asyncio.Event) -> None:
             cleanups.append(knowledge_adapter.aclose)
         if demo_workflow_model is not None:
             cleanups.append(demo_workflow_model.aclose)
-        cleanups.append(database.stop)
+        if database_started:
+            cleanups.append(database.stop)
         await run_cleanups(*cleanups)
 
 
