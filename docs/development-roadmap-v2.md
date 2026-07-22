@@ -2,8 +2,8 @@
 
 > 文档性质：V2 当前任务与执行结果的唯一台账
 > 建立日期：2026-07-22
-> 当前阶段：R2-04 重做批量写入、独立 embedding 并发、Tika 启动与必要目录缓存
-> 当前下一步：逐项复核旧写入补丁在 `v0.26.4` 的真实调用路径，先建立批量写、并发隔离和 Tika 冷启动 RED/基准
+> 当前阶段：R2-05 评估语义检索、文档/切片读取和大结果边界
+> 当前下一步：审计 `v0.26.4` 真实检索与文档/切片读取调用路径，先建立结果规模和响应退化基准
 
 任务状态、执行顺序、TDD、生产同路径、失败矩阵、完成定义、安全、资源清理和提交规则统一见
 根目录 `CLAUDE.md`，本文件不复制长期规则。
@@ -97,7 +97,7 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
 | R2-01 | 建立 `v0.26.4` 写入、删除、列表和检索可复现性能基线 | V2-00 | ✅ 已完成 |
 | R2-02 | 创建私有 RAGFlow 镜像仓库、上游 remote 和版本化补丁分支 | R2-01 | ✅ 已完成 |
 | R2-03 | 移植删除定向校验、独立计数和延迟 JOIN 分页 | R2-02 | ✅ 已完成 |
-| R2-04 | 重做批量写入、独立 embedding 并发、Tika 启动与必要目录缓存 | R2-03 | ⬜ 未开始 |
+| R2-04 | 重做批量写入、独立 embedding 并发、Tika 启动与必要目录缓存 | R2-03 | ✅ 已完成 |
 | R2-05 | 评估并优化语义检索、文档/切片读取和大结果边界 | R2-04 | ⬜ 未开始 |
 | R2-06 | 私有补丁集的正确性、性能、升级冲突和安全回归 | R2-05 | ⬜ 未开始 |
 | R2-07 | 推送私有仓库并把 common-agent submodule/镜像/脚本切到 fork 提交 | R2-06 | ⬜ 未开始 |
@@ -675,3 +675,53 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
   `infiniflow/ragflow:v0.26.4`，版本端点与百炼 embedding/rerank/defaults 均 ready，项目 Volume
   保留。下一任务为 R2-04。
 - 提交：RAGFlow fork 提交 `89be2313a`、`b29cf25ce`；common-agent 本任务提交见 Git 历史。
+
+### R2-04 重做批量写入、独立 embedding 并发、Tika 启动与必要目录缓存
+
+- 状态：✅ 已完成
+- 日期：2026-07-23
+- RED 与参考取舍：逐项审计旧提交 `9ada40a90`（embedding 解耦）、`c2c8ac450`（Tika 锁）、
+  `bc3e8f387/f95006ebd`（画像批量写与全局 refresh）和 `bd1ad1a47`（目录 TTL 缓存）。先证明官方
+  limiter 仍把 embedding 绑定到 chunk builder、六条生产 parser 路径仍直连 python-tika、根目录查询
+  仍使用 `parent_id = id` 列比较；对应行为/源码测试分别先失败。common-agent 写入基准模块和正式运行
+  脚本也先以缺失模块/文件失败，Docker 默认参数契约先以 `4/缺少独立值` 失败。没有复制 HugAI 专用
+  画像路由，也没有关闭全局 ES refresh；写入继续使用上游 `wait_for` 可见性语义。没有采用可能陈旧的
+  进程内 TTL 缓存，改为可走索引且无需失效协议的根目录常量查询。
+- fork 实现：`MAX_CONCURRENT_EMBEDDINGS` 与 chunk 构建限流独立，通用 Python 缺省仍保守为 `1`；
+  新增统一 Tika 包装器，只串行化首次成功冷启动，失败可重试、热路径保持并发，并把
+  `parser/laws/naive/presentation/book/one` 六个实际调用方全部接入；根目录先按
+  `tenant_id + name=/ + type=folder` 索引条件查询，再在 Python 验证 `parent_id == id`，能跳过同名嵌套
+  目录且不引入缓存一致性问题。基于正式 5 GiB API 容器的参数对照后，Docker profile 固定有界默认
+  `DOC_BULK_SIZE=32`、task/chunk/embedding 并发 `5/1/8`，并记录小容器与供应商限流时必须下调。
+- 参数基准：相同 4 文档、每文档 32 段 × 600 词、128 chunks 的试验中，`bulk=32/embed=4` 为
+  `22.685s/5.642 chunks/s`；`32/8` 为 `19.493s/6.567 chunks/s`；保持 embed=8 把 bulk 降回 4 后为
+  `27.414s/4.669 chunks/s`，证明独立并发和有界 bulk 均有收益，而不是照抄旧默认。所有配置均由
+  容器实际环境和 OCI revision 双重校验，未只改报告参数。
+- 正式性能：官方 `cb93883f3`、`bulk=4/embed=1` 解析 `37.033s`、吞吐
+  `3.456 chunks/s`；最终 fork `e81ce4fdf`、`32/8` 解析 `22.152s`、吞吐
+  `5.778 chunks/s`，吞吐约提升 67%，唯一标记经真实 `qwen3-rerank` 检索命中。25 万规模下旧根目录
+  列比较累计读取 `250,013` 行，新常量索引查询只读取 3 行；两份报告均完成隔离数据精确清理，API
+  无重启、无 OOM、Swap 为 0，最终候选 API 峰值内存 `4,479,650,890` bytes。
+- Tika 与提交：最终候选镜像一次性容器执行 8 路真实文本冷启动，python-tika/Java 服务只完成一次受
+  保护启动，8 次解析均返回正文。补丁按职责提交并推送私有分支：`32aa5fa7c`（独立 limiter）、
+  `9c88b3073`（全路径 Tika guard）、`8b02c52ec`（索引化根目录查询）、`e81ce4fdf`（基准选定的有界
+  Docker 参数）；本地/远端完整提交均为 `e81ce4fdfc6edcd388709a1094e39d1ddbf51a7f`，私有 main/tag 与
+  官方 upstream 基线未漂移。
+- 门禁：fork 数据库服务全目录、limiter 和 Tika 共 `80 passed`，改动文件 Ruff、编译与 diff 通过；
+  common-agent 后端全量 `928 passed, 15 skipped`，Ruff 与 Mypy（383 个源文件）通过；前端 30 个文件
+  `163 passed`，ESLint、TypeScript、生产构建与七路由包体预算通过。OpenAPI/事件/生成 DTO 漂移、
+  RAGFlow fork/官方栈、platform/backup/production、CI/覆盖率/Bundle、安全入口、实际 Semgrep/Trivy、
+  Secret、全仓 ShellCheck、V1 冻结哈希和 `git diff --check` 均通过。
+- 失败矩阵与边界：覆盖无效/越界规模与并发参数、源码/commit/镜像 revision/运行参数不一致、Tika
+  冷启动失败重试与热并发、遗漏生产调用方、嵌套同名目录、写入解析失败/超时、分块不足、标记检索
+  不可见、资源采样/清理/OOM；运行器在既有栈异常时重启并复核 API/模型，由它临时启动整栈时负责
+  停止，最小真实写入 smoke 已执行成功路径 trap。旧画像 API、全局 refresh 开关、TTL 缓存和知识
+  图谱参数均明确不采用。本任务没有修改官方 submodule、正式 Compose 或检索算法，私有依赖切换仍
+  留在 R2-07。
+- 清理与遗留：只保留 Git 忽略的官方报告
+  `.local/benchmarks/r2-04/official/baseline.json` 与最终报告
+  `.local/benchmarks/r2-04/e81ce4fdf/final.json`；参数中间报告、临时 Dockerfile/Compose override 和两个
+  无容器引用的候选镜像已精确删除。稳定栈恢复为 `infiniflow/ragflow:v0.26.4`，版本端点与百炼
+  embedding/rerank/defaults 均 ready，项目 Volume 保留。下一任务为 R2-05。
+- 提交：RAGFlow fork 提交 `32aa5fa7c`、`9c88b3073`、`8b02c52ec`、`e81ce4fdf`；common-agent
+  本任务提交见 Git 历史。
