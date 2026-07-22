@@ -130,6 +130,12 @@ class PageableKnowledgeService(Protocol):
 
 @runtime_checkable
 class RetryableKnowledgeService(Protocol):
+    async def get_document(
+        self,
+        knowledge_base_id: str,
+        document_id: str,
+    ) -> KnowledgeDocument | None: ...
+
     async def retry_document(
         self,
         knowledge_base_id: str,

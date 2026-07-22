@@ -124,10 +124,15 @@ class _RetryKnowledgeProbe(_KnowledgeProbe):
             ),
         )
         self.retried: list[tuple[str, KnowledgeDocument]] = []
+        self.document_lookups: list[tuple[str, str]] = []
 
-    async def list_documents(self, knowledge_base_id: str) -> tuple[KnowledgeDocument, ...]:
-        assert knowledge_base_id == "kb-1"
-        return self.documents
+    async def get_document(
+        self,
+        knowledge_base_id: str,
+        document_id: str,
+    ) -> KnowledgeDocument | None:
+        self.document_lookups.append((knowledge_base_id, document_id))
+        return next((document for document in self.documents if document.id == document_id), None)
 
     async def retry_document(
         self,
@@ -238,6 +243,7 @@ def test_retry_document_requires_owned_failed_document_before_calling_provider()
     retried = asyncio.run(service.retry_document("kb-1", "doc-failed"))
 
     assert retried.parsing_status is DocumentParsingStatus.PARSING
+    assert probe.document_lookups == [("kb-1", "doc-failed")]
     assert [(knowledge_base_id, document.id) for knowledge_base_id, document in probe.retried] == [
         ("kb-1", "doc-failed")
     ]

@@ -320,6 +320,54 @@ def test_ragflow_retries_failed_document_through_public_parse_endpoint() -> None
     assert len(requests) == 1
 
 
+def test_ragflow_gets_retry_candidate_by_id_instead_of_first_document_page() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.method == "GET"
+        assert request.url.path == "/api/v1/datasets/kb-1/documents"
+        assert request.url.params["ids"] == "doc-older-than-first-page"
+        assert request.url.params["page"] == "1"
+        assert request.url.params["page_size"] == "1"
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "total": 1,
+                    "docs": [
+                        {
+                            "id": "doc-older-than-first-page",
+                            "dataset_id": "kb-1",
+                            "name": "old-failed.pdf",
+                            "run": "FAIL",
+                            "size": 128,
+                        }
+                    ],
+                },
+            },
+        )
+
+    async def scenario() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://ragflow") as client:
+            service = RagFlowKnowledgeService(
+                base_url="http://ragflow",
+                api_key="test-key",
+                expected_version="v0.26.4",
+                client=client,
+            )
+            document = await service.get_document("kb-1", "doc-older-than-first-page")
+
+        assert document is not None
+        assert document.id == "doc-older-than-first-page"
+        assert document.parsing_status is DocumentParsingStatus.FAILED
+
+    _run(scenario())
+    assert len(requests) == 1
+
+
 def test_ragflow_dataset_pagination_translates_opaque_cursor_and_server_search() -> None:
     requests: list[httpx.Request] = []
 

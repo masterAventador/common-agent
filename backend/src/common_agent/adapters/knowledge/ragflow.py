@@ -328,6 +328,21 @@ class RagFlowKnowledgeService:
         payload = _validate(_DOCUMENT_LIST_ADAPTER, data)
         return tuple(self._document(item, knowledge_base_id) for item in payload.docs)
 
+    async def get_document(
+        self,
+        knowledge_base_id: str,
+        document_id: str,
+    ) -> KnowledgeDocument | None:
+        data = await self._request(
+            "GET",
+            f"/api/v1/datasets/{knowledge_base_id}/documents",
+            dataset_scoped=True,
+            params={"ids": document_id, "page": 1, "page_size": 1},
+        )
+        payload = _validate(_DOCUMENT_LIST_ADAPTER, data)
+        matched = next((item for item in payload.docs if item.id == document_id), None)
+        return None if matched is None else self._document(matched, knowledge_base_id)
+
     async def retry_document(
         self,
         knowledge_base_id: str,

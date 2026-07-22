@@ -248,14 +248,13 @@ class KnowledgeBaseService:
     ) -> KnowledgeDocument:
         await self._ensure_available()
         await self._ensure_owned(knowledge_base_id)
-        documents = await self._knowledge.list_documents(knowledge_base_id)
-        document = next((value for value in documents if value.id == document_id), None)
+        if not isinstance(self._knowledge, RetryableKnowledgeService):
+            raise KnowledgeServiceUnavailable()
+        document = await self._knowledge.get_document(knowledge_base_id, document_id)
         if document is None:
             raise KnowledgeDocumentNotFound()
         if document.parsing_status is not DocumentParsingStatus.FAILED:
             raise KnowledgeDocumentRetryRejected()
-        if not isinstance(self._knowledge, RetryableKnowledgeService):
-            raise KnowledgeServiceUnavailable()
         return await self._knowledge.retry_document(knowledge_base_id, document)
 
     async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult:
