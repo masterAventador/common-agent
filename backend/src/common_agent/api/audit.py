@@ -251,6 +251,20 @@ def _classify(
         ),
         (
             "PUT",
+            r"/api/v1/employees/[^/]+/tool-grants",
+            AuditAction.TOOL_GRANTS_UPDATED,
+            AuditResourceType.EMPLOYEE,
+            "employee_id",
+        ),
+        (
+            "PUT",
+            r"/api/v1/conversations/[^/]+/tool-grants",
+            AuditAction.TOOL_GRANTS_UPDATED,
+            AuditResourceType.CONVERSATION,
+            "conversation_id",
+        ),
+        (
+            "PUT",
             r"/api/v1/employees/[^/]+",
             AuditAction.EMPLOYEE_CONFIGURATION_AND_BINDINGS_UPDATED,
             AuditResourceType.EMPLOYEE,

@@ -12,7 +12,10 @@ from common_agent.conversations.contracts import (
     StopAccepted,
     TurnAccepted,
 )
-from common_agent.conversations.events import ConversationEvent, ConversationEventKind
+from common_agent.conversations.events import (
+    ConversationEvent,
+    ConversationEventKind,
+)
 from common_agent.domain.conversation import (
     CONVERSATION_TITLE_MAX_LENGTH,
     MESSAGE_CONTENT_MAX_LENGTH,
@@ -131,10 +134,19 @@ class StopAcceptedResponse(BaseModel):
     assistant_message_id: UUID
 
 
+class ToolCallEventResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    tool_call_id: UUID
+    capability_id: UUID
+    capability_name: str
+    error_code: str | None
+
+
 class ConversationEventResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     sequence: int
     conversation_id: UUID
     turn_id: UUID
@@ -142,6 +154,7 @@ class ConversationEventResponse(BaseModel):
     type: ConversationEventKind
     delta: str | None
     retry: bool
+    tool_call: ToolCallEventResponse | None
     message: MessageResponse
     occurred_at: datetime
 
@@ -207,6 +220,11 @@ def conversation_event_response(event: ConversationEvent) -> ConversationEventRe
         type=event.kind,
         delta=event.delta,
         retry=event.retry,
+        tool_call=(
+            None
+            if event.tool_call is None
+            else ToolCallEventResponse.model_validate(event.tool_call)
+        ),
         message=message_response(event.message),
         occurred_at=event.occurred_at,
     )
@@ -222,6 +240,7 @@ __all__ = [
     "MessageResponse",
     "SendMessageBody",
     "StopAcceptedResponse",
+    "ToolCallEventResponse",
     "TurnAcceptedResponse",
     "conversation_event_response",
     "conversation_history_response",

@@ -22,6 +22,39 @@ class ConversationEventKind(StrEnum):
     ASSISTANT_COMPLETED = "assistant.completed"
     ASSISTANT_FAILED = "assistant.failed"
     ASSISTANT_STOPPED = "assistant.stopped"
+    ASSISTANT_TOOL_STARTED = "assistant.tool.started"
+    ASSISTANT_TOOL_COMPLETED = "assistant.tool.completed"
+    ASSISTANT_TOOL_FAILED = "assistant.tool.failed"
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCallEvent:
+    tool_call_id: UUID
+    capability_id: UUID
+    capability_name: str
+    error_code: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.tool_call_id, UUID):
+            raise ValueError("tool_call_id must be UUID")
+        if not isinstance(self.capability_id, UUID):
+            raise ValueError("capability_id must be UUID")
+        if (
+            not isinstance(self.capability_name, str)
+            or not self.capability_name
+            or self.capability_name != self.capability_name.strip()
+            or len(self.capability_name) > 128
+            or any(character in self.capability_name for character in "\r\n\0")
+        ):
+            raise ValueError("capability_name must be safe non-empty text")
+        if self.error_code is not None and (
+            not isinstance(self.error_code, str)
+            or not self.error_code
+            or self.error_code != self.error_code.strip()
+            or len(self.error_code) > 128
+            or any(character in self.error_code for character in "\r\n\0")
+        ):
+            raise ValueError("error_code must be safe non-empty text")
 
 
 class EventHistoryUnavailable(Exception):
@@ -54,6 +87,7 @@ class ConversationEvent:
     kind: ConversationEventKind
     delta: str | None = field(default=None, repr=False)
     retry: bool = False
+    tool_call: ToolCallEvent | None = None
     occurred_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
@@ -167,8 +201,15 @@ class ConversationEventBroker:
         kind: ConversationEventKind,
         delta: str | None = None,
         retry: bool = False,
+        tool_call: ToolCallEvent | None = None,
     ) -> ConversationEvent:
-        _validate_event(message=message, kind=kind, delta=delta, retry=retry)
+        _validate_event(
+            message=message,
+            kind=kind,
+            delta=delta,
+            retry=retry,
+            tool_call=tool_call,
+        )
         if self._journal is not None:
             self._ensure_open()
             return await self._publish_persistent(
@@ -177,6 +218,7 @@ class ConversationEventBroker:
                 kind=kind,
                 delta=delta,
                 retry=retry,
+                tool_call=tool_call,
             )
         async with self._lock:
             self._ensure_open()
@@ -189,6 +231,7 @@ class ConversationEventBroker:
                 kind=kind,
                 delta=delta,
                 retry=retry,
+                tool_call=tool_call,
             )
             state.next_sequence += 1
             state.history.append(event)
@@ -296,6 +339,7 @@ class ConversationEventBroker:
         kind: ConversationEventKind,
         delta: str | None,
         retry: bool,
+        tool_call: ToolCallEvent | None,
     ) -> ConversationEvent:
         journal = self._persistent_journal
         tenant_id = self._persistent_tenant_id
@@ -305,6 +349,7 @@ class ConversationEventBroker:
             message=message,
             delta=delta,
             retry=retry,
+            tool_call=tool_call,
         )
         event_key = _durable_event_key(message.id, kind.value, payload)
         durable = await journal.append(
@@ -522,15 +567,24 @@ def _validate_event(
     kind: ConversationEventKind,
     delta: str | None,
     retry: bool,
+    tool_call: ToolCallEvent | None,
 ) -> None:
-    expected_status = {
+    message_statuses = {
         ConversationEventKind.ASSISTANT_STARTED: MessageStatus.PENDING,
         ConversationEventKind.ASSISTANT_DELTA: MessageStatus.STREAMING,
         ConversationEventKind.ASSISTANT_COMPLETED: MessageStatus.COMPLETED,
         ConversationEventKind.ASSISTANT_FAILED: MessageStatus.FAILED,
         ConversationEventKind.ASSISTANT_STOPPED: MessageStatus.STOPPED,
-    }[kind]
-    if message.status is not expected_status:
+    }
+    tool_kinds = {
+        ConversationEventKind.ASSISTANT_TOOL_STARTED,
+        ConversationEventKind.ASSISTANT_TOOL_COMPLETED,
+        ConversationEventKind.ASSISTANT_TOOL_FAILED,
+    }
+    if kind in tool_kinds:
+        if message.status not in {MessageStatus.PENDING, MessageStatus.STREAMING}:
+            raise ValueError("tool event requires an active assistant message")
+    elif message.status is not message_statuses[kind]:
         raise ValueError("event kind does not match persisted message status")
     if kind is ConversationEventKind.ASSISTANT_DELTA:
         if delta is None or not delta:
@@ -539,6 +593,16 @@ def _validate_event(
         raise ValueError("only delta events may contain delta content")
     if retry and kind is not ConversationEventKind.ASSISTANT_STARTED:
         raise ValueError("only started events may be marked as retry")
+    if kind in tool_kinds:
+        if not isinstance(tool_call, ToolCallEvent):
+            raise ValueError("tool event requires safe tool call metadata")
+        if kind is ConversationEventKind.ASSISTANT_TOOL_FAILED:
+            if tool_call.error_code is None:
+                raise ValueError("failed tool event requires error code")
+        elif tool_call.error_code is not None:
+            raise ValueError("only failed tool event may contain error code")
+    elif tool_call is not None:
+        raise ValueError("only tool events may contain tool call metadata")
 
 
 def _validate_resume_position(state: _ConversationState, after_sequence: int) -> None:
@@ -554,6 +618,7 @@ def _conversation_payload(
     message: Message,
     delta: str | None,
     retry: bool,
+    tool_call: ToolCallEvent | None,
 ) -> dict[str, object]:
     return {
         "turn_id": str(turn_id),
@@ -588,6 +653,16 @@ def _conversation_payload(
         },
         "delta": delta,
         "retry": retry,
+        "tool_call": (
+            None
+            if tool_call is None
+            else {
+                "tool_call_id": str(tool_call.tool_call_id),
+                "capability_id": str(tool_call.capability_id),
+                "capability_name": tool_call.capability_name,
+                "error_code": tool_call.error_code,
+            }
+        ),
     }
 
 
@@ -634,6 +709,20 @@ def _conversation_event(sequence: int, request: EventAppendRequest) -> Conversat
         created_at=datetime.fromisoformat(str(raw_message["created_at"])),
         updated_at=datetime.fromisoformat(str(raw_message["updated_at"])),
     )
+    raw_tool_call = payload.get("tool_call")
+    tool_call = None
+    if raw_tool_call is not None:
+        raw_tool_call = cast(dict[str, object], raw_tool_call)
+        tool_call = ToolCallEvent(
+            tool_call_id=UUID(str(raw_tool_call["tool_call_id"])),
+            capability_id=UUID(str(raw_tool_call["capability_id"])),
+            capability_name=str(raw_tool_call["capability_name"]),
+            error_code=(
+                None
+                if raw_tool_call.get("error_code") is None
+                else str(raw_tool_call["error_code"])
+            ),
+        )
     return ConversationEvent(
         sequence=sequence,
         turn_id=UUID(str(payload["turn_id"])),
@@ -641,5 +730,6 @@ def _conversation_event(sequence: int, request: EventAppendRequest) -> Conversat
         kind=ConversationEventKind(request.event_type),
         delta=None if payload["delta"] is None else str(payload["delta"]),
         retry=bool(payload["retry"]),
+        tool_call=tool_call,
         occurred_at=request.occurred_at,
     )

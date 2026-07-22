@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from common_agent.adapters.persistence.database import Database, DatabaseStartupError
 from tests.support.settings import TEST_DATABASE_URL
 
-HEAD_REVISION = "20260722_0022"
+HEAD_REVISION = "20260722_0023"
 
 
 def _database_url() -> str:
@@ -86,6 +86,58 @@ def test_authentication_tables_are_migrated_with_server_side_secret_boundaries()
         "failure_count",
         "locked_until",
     }
+
+
+def test_tool_catalog_and_exact_grants_have_tenant_scoped_relational_tables() -> None:
+    expected = {
+        "mcp_sources",
+        "tool_capabilities",
+        "tool_collections",
+        "tool_collection_sources",
+        "employee_tool_collection_selections",
+        "employee_tool_grants",
+        "conversation_tool_collection_selections",
+        "conversation_tool_grants",
+    }
+
+    async def exercise() -> tuple[set[str], dict[str, set[str]]]:
+        database = Database(_database_url())
+        await database.start()
+        try:
+            async with database.session() as session:
+                table_result = await session.execute(
+                    text(
+                        "SELECT TABLE_NAME FROM information_schema.TABLES "
+                        "WHERE TABLE_SCHEMA = DATABASE()"
+                    )
+                )
+                column_result = await session.execute(
+                    text(
+                        "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN "
+                        "('mcp_sources', 'tool_capabilities')"
+                    )
+                )
+                columns: dict[str, set[str]] = {}
+                for table_name, column_name in column_result.all():
+                    columns.setdefault(str(table_name), set()).add(str(column_name))
+                return {str(row[0]) for row in table_result.all()}, columns
+        finally:
+            await database.stop()
+
+    tables, columns = asyncio.run(exercise())
+
+    assert expected <= tables
+    assert {"tenant_id", "source_type", "endpoint_url", "status"} <= columns["mcp_sources"]
+    assert {
+        "tenant_id",
+        "source_id",
+        "remote_name",
+        "input_schema",
+        "schema_fingerprint",
+        "status",
+    } <= columns["tool_capabilities"]
+    assert not {"username", "password", "token", "headers"} & columns["mcp_sources"]
 
 
 def test_mysql_session_rolls_back_failed_transaction() -> None:

@@ -262,6 +262,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations/{conversation_id}/tool-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Conversation Tool Grants */
+        get: operations["get_conversation_tool_grants_api_v1_conversations__conversation_id__tool_grants_get"];
+        /** Replace Conversation Tool Grants */
+        put: operations["replace_conversation_tool_grants_api_v1_conversations__conversation_id__tool_grants_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/employees": {
         parameters: {
             query?: never;
@@ -294,6 +312,24 @@ export interface paths {
         post?: never;
         /** Delete Employee */
         delete: operations["delete_employee_api_v1_employees__employee_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employees/{employee_id}/tool-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Employee Tool Grants */
+        get: operations["get_employee_tool_grants_api_v1_employees__employee_id__tool_grants_get"];
+        /** Replace Employee Tool Grants */
+        put: operations["replace_employee_tool_grants_api_v1_employees__employee_id__tool_grants_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -526,6 +562,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tool-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tool Catalog */
+        get: operations["get_tool_catalog_api_v1_tool_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflow-runs": {
         parameters: {
             query?: never;
@@ -697,7 +750,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
+        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "tool.grants.updated" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
         /** AuditEventResponse */
         AuditEventResponse: {
             action: components["schemas"]["AuditAction"];
@@ -837,7 +890,7 @@ export interface components {
          * ConversationEventKind
          * @enum {string}
          */
-        ConversationEventKind: "assistant.started" | "assistant.delta" | "assistant.completed" | "assistant.failed" | "assistant.stopped";
+        ConversationEventKind: "assistant.started" | "assistant.delta" | "assistant.completed" | "assistant.failed" | "assistant.stopped" | "assistant.tool.started" | "assistant.tool.completed" | "assistant.tool.failed";
         /** ConversationEventResponse */
         ConversationEventResponse: {
             /**
@@ -862,12 +915,13 @@ export interface components {
             retry: boolean;
             /**
              * Schema Version
-             * @default 1
+             * @default 2
              * @constant
              */
-            schema_version: "1";
+            schema_version: "2";
             /** Sequence */
             sequence: number;
+            tool_call: components["schemas"]["ToolCallEventResponse"] | null;
             /**
              * Turn Id
              * Format: uuid
@@ -1250,6 +1304,42 @@ export interface components {
              */
             password: string;
         };
+        /** McpSourceResponse */
+        McpSourceResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Endpoint Url */
+            endpoint_url: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            source_type: components["schemas"]["McpSourceType"];
+            status: components["schemas"]["McpSourceStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * McpSourceStatus
+         * @enum {string}
+         */
+        McpSourceStatus: "draft" | "ready" | "unavailable" | "disabled";
+        /**
+         * McpSourceType
+         * @enum {string}
+         */
+        McpSourceType: "platform" | "managed_http" | "external";
         /** MessageResponse */
         MessageResponse: {
             /** Citations */
@@ -1553,6 +1643,122 @@ export interface components {
          * @enum {string}
          */
         TenantRole: "owner" | "editor" | "viewer";
+        /** ToolCallEventResponse */
+        ToolCallEventResponse: {
+            /**
+             * Capability Id
+             * Format: uuid
+             */
+            capability_id: string;
+            /** Capability Name */
+            capability_name: string;
+            /** Error Code */
+            error_code: string | null;
+            /**
+             * Tool Call Id
+             * Format: uuid
+             */
+            tool_call_id: string;
+        };
+        /** ToolCapabilityResponse */
+        ToolCapabilityResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Input Schema */
+            input_schema: {
+                [key: string]: unknown;
+            };
+            /** Remote Name */
+            remote_name: string;
+            /** Schema Fingerprint */
+            schema_fingerprint: string;
+            /**
+             * Source Id
+             * Format: uuid
+             */
+            source_id: string;
+            status: components["schemas"]["ToolCapabilityStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ToolCapabilityStatus
+         * @enum {string}
+         */
+        ToolCapabilityStatus: "active" | "unavailable" | "disabled";
+        /** ToolCatalogResponse */
+        ToolCatalogResponse: {
+            /** Capabilities */
+            capabilities: components["schemas"]["ToolCapabilityResponse"][];
+            /** Collections */
+            collections: components["schemas"]["ToolCollectionResponse"][];
+            /** Sources */
+            sources: components["schemas"]["McpSourceResponse"][];
+        };
+        /** ToolCollectionResponse */
+        ToolCollectionResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Source Ids */
+            source_ids: string[];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ToolGrantResponse */
+        ToolGrantResponse: {
+            /** Capability Ids */
+            capability_ids: string[];
+            /** Collection Ids */
+            collection_ids: string[];
+            /**
+             * Target Id
+             * Format: uuid
+             */
+            target_id: string;
+            target_type: components["schemas"]["ToolGrantTargetType"];
+        };
+        /** ToolGrantSelectionBody */
+        ToolGrantSelectionBody: {
+            /** Capability Ids */
+            capability_ids: string[];
+            /** Collection Ids */
+            collection_ids: string[];
+        };
+        /**
+         * ToolGrantTargetType
+         * @enum {string}
+         */
+        ToolGrantTargetType: "employee" | "conversation";
         /** TurnAcceptedResponse */
         TurnAcceptedResponse: {
             assistant_message: components["schemas"]["MessageResponse"];
@@ -2877,6 +3083,161 @@ export interface operations {
             };
         };
     };
+    get_conversation_tool_grants_api_v1_conversations__conversation_id__tool_grants_get: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolGrantResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    replace_conversation_tool_grants_api_v1_conversations__conversation_id__tool_grants_put: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolGrantSelectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolGrantResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_employees_api_v1_employees_get: {
         parameters: {
             query?: {
@@ -3219,6 +3580,161 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_employee_tool_grants_api_v1_employees__employee_id__tool_grants_get: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolGrantResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    replace_employee_tool_grants_api_v1_employees__employee_id__tool_grants_put: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolGrantSelectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolGrantResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4478,6 +4994,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tool_catalog_api_v1_tool_catalog_get: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolCatalogResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

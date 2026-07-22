@@ -81,7 +81,7 @@ const turn = {
 };
 
 const event = {
-  schema_version: "1" as const,
+  schema_version: "2" as const,
   sequence: 4,
   conversation_id: conversation.id,
   turn_id: turn.turn_id,
@@ -89,6 +89,7 @@ const event = {
   type: "assistant.completed" as const,
   delta: null,
   retry: false,
+  tool_call: null,
   message: assistantMessage,
   occurred_at: "2026-07-20T02:00:02Z",
 };
@@ -134,7 +135,7 @@ describe("conversation API and SSE boundary", () => {
     expect(parseConversationEvent(event)).toEqual(event);
 
     expect(() => parseMessagesResponse([{ ...userMessage, private_prompt: "secret" }])).toThrow();
-    expect(() => parseConversationEvent({ ...event, schema_version: "2" })).toThrow();
+    expect(() => parseConversationEvent({ ...event, schema_version: "1" })).toThrow();
     expect(() =>
       parseConversationEvent({
         ...event,
@@ -260,7 +261,7 @@ describe("conversation API and SSE boundary", () => {
     expect(source?.eventSourceInit).toEqual({ withCredentials: true });
 
     source?.emit("assistant.completed", event);
-    source?.emit("assistant.delta", { ...event, schema_version: "2" });
+    source?.emit("assistant.delta", { ...event, schema_version: "1" });
 
     expect(onEvent).toHaveBeenCalledWith(event);
     expect(onError).toHaveBeenCalledTimes(1);

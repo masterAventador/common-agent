@@ -636,7 +636,7 @@ describe("ChatPage", () => {
 
     act(() => {
       chatApi.streamOptions?.onEvent({
-        schema_version: "1",
+        schema_version: "2",
         sequence: 3,
         conversation_id: conversation.id,
         turn_id: "3a64b792-d4a9-4296-a7fd-79013bb42c2b",
@@ -644,6 +644,7 @@ describe("ChatPage", () => {
         type: "assistant.stopped",
         delta: null,
         retry: false,
+        tool_call: null,
         message: stoppedAssistant,
         occurred_at: "2026-07-20T02:00:02Z",
       });
@@ -655,7 +656,7 @@ describe("ChatPage", () => {
 
     act(() => {
       chatApi.streamOptions?.onEvent({
-        schema_version: "1",
+        schema_version: "2",
         sequence: 5,
         conversation_id: conversation.id,
         turn_id: "a8f4569b-2cff-46fa-b8ed-006068f60335",
@@ -663,11 +664,12 @@ describe("ChatPage", () => {
         type: "assistant.completed",
         delta: null,
         retry: true,
+        tool_call: null,
         message: assistantMessage,
         occurred_at: "2026-07-20T02:00:03Z",
       });
       chatApi.streamOptions?.onEvent({
-        schema_version: "1",
+        schema_version: "2",
         sequence: 4,
         conversation_id: conversation.id,
         turn_id: "a8f4569b-2cff-46fa-b8ed-006068f60335",
@@ -675,6 +677,7 @@ describe("ChatPage", () => {
         type: "assistant.delta",
         delta: "晚到内容",
         retry: true,
+        tool_call: null,
         message: { ...assistantMessage, content: "晚到内容", status: "streaming" },
         occurred_at: "2026-07-20T02:00:04Z",
       });
@@ -715,7 +718,7 @@ describe("ChatPage", () => {
     await waitFor(() => expect(chatApi.streamOptions).toBeDefined());
     act(() => {
       chatApi.streamOptions?.onEvent({
-        schema_version: "1",
+        schema_version: "2",
         sequence: 2,
         conversation_id: conversation.id,
         turn_id: "3a64b792-d4a9-4296-a7fd-79013bb42c2b",
@@ -723,6 +726,7 @@ describe("ChatPage", () => {
         type: "assistant.delta",
         delta: streamingAssistant.content,
         retry: false,
+        tool_call: null,
         message: streamingAssistant,
         occurred_at: streamingAssistant.updated_at,
       });

@@ -22,6 +22,7 @@ class AuditAction(StrEnum):
     TENANT_CREATED = "tenant.created"
     EMPLOYEE_CREATED = "employee.created"
     EMPLOYEE_CONFIGURATION_AND_BINDINGS_UPDATED = "employee.configuration_and_bindings.updated"
+    TOOL_GRANTS_UPDATED = "tool.grants.updated"
     MODEL_CONFIGURATION_CREATED = "model.configuration.created"
     MODEL_CONFIGURATION_UPDATED = "model.configuration.updated"
     MODEL_CONFIGURATION_VERIFIED = "model.configuration.verified"

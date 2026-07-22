@@ -50,7 +50,10 @@
         "assistant.delta",
         "assistant.completed",
         "assistant.failed",
-        "assistant.stopped"
+        "assistant.stopped",
+        "assistant.tool.started",
+        "assistant.tool.completed",
+        "assistant.tool.failed"
       ],
       "title": "ConversationEventKind",
       "type": "string"
@@ -169,6 +172,44 @@
       ],
       "title": "MessageStatus",
       "type": "string"
+    },
+    "ToolCallEventResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "capability_id": {
+          "format": "uuid",
+          "title": "Capability Id",
+          "type": "string"
+        },
+        "capability_name": {
+          "title": "Capability Name",
+          "type": "string"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error Code"
+        },
+        "tool_call_id": {
+          "format": "uuid",
+          "title": "Tool Call Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_call_id",
+        "capability_id",
+        "capability_name",
+        "error_code"
+      ],
+      "title": "ToolCallEventResponse",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -207,14 +248,24 @@
       "type": "boolean"
     },
     "schema_version": {
-      "const": "1",
-      "default": "1",
+      "const": "2",
+      "default": "2",
       "title": "Schema Version",
       "type": "string"
     },
     "sequence": {
       "title": "Sequence",
       "type": "integer"
+    },
+    "tool_call": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ToolCallEventResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "turn_id": {
       "format": "uuid",
@@ -233,6 +284,7 @@
     "type",
     "delta",
     "retry",
+    "tool_call",
     "message",
     "occurred_at"
   ],

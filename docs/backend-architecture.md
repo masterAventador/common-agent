@@ -198,8 +198,10 @@ Employee/Conversation exact grants
 - `tool_capabilities` 保存稳定 UUID、来源、远端名称、显示名、描述、输入 Schema、状态和 Schema
   fingerprint；托管 HTTP 能力另存 method/path/参数位置/超时/响应映射。远端改名视为新能力，旧能力
   标记不可用并保留历史引用；
-- `tool_collections` 与来源关联只负责聚合目录；`employee_tool_grants`、`conversation_tool_grants`
-  才是运行时权限。选择父集合只在保存时展开为当前叶子 UUID，任何同步都不得写授权表；
+- `tool_collections` 与 `tool_collection_sources` 只负责聚合目录；
+  `employee_tool_collection_selections`、`conversation_tool_collection_selections` 只还原用户选择快照，
+  `employee_tool_grants`、`conversation_tool_grants` 才是运行时权限。选择父集合只在显式保存时展开为
+  当前可用叶子 UUID，任何发现、同步或新增能力都不得写授权表；
 - 平台原生、托管和外部能力统一通过 MCP `tools/list` / `tools/call` 语义执行，再转换成平台自有结果
   与持久事件；Deep Agents 看不到来源类型，业务系统也不需要实现平台私有工具协议；
 - V2 托管 HTTP 鉴权只允许 none、Bearer 和自定义 Header。可逆凭据以独立主密钥认证加密落库，
@@ -653,6 +655,11 @@ GET    /api/v1/tool-collections/{collection_id}
 PUT    /api/v1/tool-collections/{collection_id}
 DELETE /api/v1/tool-collections/{collection_id}
 GET    /api/v1/tool-capabilities
+GET    /api/v1/tool-catalog
+GET    /api/v1/employees/{employee_id}/tool-grants
+PUT    /api/v1/employees/{employee_id}/tool-grants
+GET    /api/v1/conversations/{conversation_id}/tool-grants
+PUT    /api/v1/conversations/{conversation_id}/tool-grants
 
 GET    /api/v1/employees
 POST   /api/v1/employees

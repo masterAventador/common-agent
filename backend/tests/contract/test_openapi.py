@@ -31,6 +31,28 @@ def test_openapi_exposes_health_and_stable_error_envelope() -> None:
     assert set(error_schema["required"]) == {"code", "message", "request_id", "retryable"}
 
 
+def test_openapi_exposes_tool_catalog_and_exact_grant_contracts() -> None:
+    schema = _schema()
+    paths = schema["paths"]
+
+    assert set(paths["/api/v1/tool-catalog"]) == {"get"}
+    assert set(paths["/api/v1/employees/{employee_id}/tool-grants"]) == {"get", "put"}
+    assert set(paths["/api/v1/conversations/{conversation_id}/tool-grants"]) == {
+        "get",
+        "put",
+    }
+    body = schema["components"]["schemas"]["ToolGrantSelectionBody"]
+    assert body["additionalProperties"] is False
+    assert set(body["required"]) == {"capability_ids", "collection_ids"}
+    response = schema["components"]["schemas"]["ToolGrantResponse"]
+    assert set(response["required"]) == {
+        "capability_ids",
+        "collection_ids",
+        "target_id",
+        "target_type",
+    }
+
+
 def test_openapi_exposes_cookie_session_contract_without_session_tokens() -> None:
     schema = _schema()
     paths = schema["paths"]
@@ -218,8 +240,16 @@ def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> Non
         schema["components"]["schemas"]["ConversationEventResponse"]["properties"][
             "schema_version"
         ]["const"]
-        == "1"
+        == "2"
     )
+    event = schema["components"]["schemas"]["ConversationEventResponse"]
+    assert "tool_call" in event["required"]
+    kinds = schema["components"]["schemas"]["ConversationEventKind"]["enum"]
+    assert {
+        "assistant.tool.started",
+        "assistant.tool.completed",
+        "assistant.tool.failed",
+    } <= set(kinds)
 
     create_body = schema["components"]["schemas"]["CreateConversationBody"]
     first_turn_body = schema["components"]["schemas"]["CreateConversationTurnBody"]

@@ -6,7 +6,11 @@ from uuid import uuid4
 
 from common_agent.adapters.persistence.database import Database
 from common_agent.adapters.persistence.events import SqlAlchemyEventJournal
-from common_agent.conversations.events import ConversationEventBroker, ConversationEventKind
+from common_agent.conversations.events import (
+    ConversationEventBroker,
+    ConversationEventKind,
+    ToolCallEvent,
+)
 from common_agent.domain.conversation import Message
 from common_agent.domain.workflow import AiChatTargetType
 from common_agent.domain.workflow_run import (
@@ -77,6 +81,50 @@ def test_conversation_sse_history_and_live_events_cross_broker_instances() -> No
             await stream.aclose()
             await producer.aclose()
             await consumer.aclose()
+            await database.stop()
+
+    asyncio.run(scenario())
+
+
+def test_tool_event_safe_metadata_survives_persistent_reconstruction() -> None:
+    async def scenario() -> None:
+        database = Database(TEST_DATABASE_URL)
+        await database.start()
+        message = Message.create_assistant(
+            conversation_id=uuid4(),
+            sequence_number=2,
+        )
+        tool_call = ToolCallEvent(
+            tool_call_id=uuid4(),
+            capability_id=uuid4(),
+            capability_name="持久工具",
+            error_code="tool_timeout",
+        )
+        producer = ConversationEventBroker(
+            journal=SqlAlchemyEventJournal(database),
+            tenant_id_provider=lambda: DEFAULT_TENANT_ID,
+            persistent_poll_seconds=0.01,
+        )
+        reconstructed = ConversationEventBroker(
+            journal=SqlAlchemyEventJournal(database),
+            tenant_id_provider=lambda: DEFAULT_TENANT_ID,
+            persistent_poll_seconds=0.01,
+        )
+        stream = reconstructed.stream(message.conversation_id)
+        try:
+            published = await producer.publish(
+                turn_id=uuid4(),
+                message=message,
+                kind=ConversationEventKind.ASSISTANT_TOOL_FAILED,
+                tool_call=tool_call,
+            )
+            restored = await asyncio.wait_for(anext(stream), timeout=1)
+            assert restored == published
+            assert restored.tool_call == tool_call
+        finally:
+            await stream.aclose()
+            await producer.aclose()
+            await reconstructed.aclose()
             await database.stop()
 
     asyncio.run(scenario())

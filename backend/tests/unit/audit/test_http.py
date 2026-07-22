@@ -53,12 +53,13 @@ def _request(
     service: AuditService,
     *,
     path: str = "/api/v1/employees",
+    method: str = "POST",
 ) -> Request:
     return Request(
         {
             "type": "http",
             "http_version": "1.1",
-            "method": "POST",
+            "method": method,
             "scheme": "http",
             "path": path,
             "raw_path": path.encode(),
@@ -91,6 +92,32 @@ def test_atomic_first_conversation_turn_uses_the_reply_audit_action() -> None:
         AuditAction.CONVERSATION_REPLY_STARTED,
         AuditAction.CONVERSATION_REPLY_STARTED,
     ]
+
+
+def test_exact_tool_grant_writes_use_metadata_only_audit_actions() -> None:
+    async def scenario(path: str) -> _AuditStoreProbe:
+        store = _AuditStoreProbe(fail_on=99)
+
+        async def handler(request: Request) -> Response:
+            del request
+            return Response(status_code=200)
+
+        response = await audit_http_request(
+            _request(AuditService(store), path=path, method="PUT"),
+            handler,
+        )
+        assert response.status_code == 200
+        return store
+
+    for path in (
+        "/api/v1/employees/00000000-0000-4000-8000-000000000101/tool-grants",
+        "/api/v1/conversations/00000000-0000-4000-8000-000000000102/tool-grants",
+    ):
+        store = asyncio.run(scenario(path))
+        assert [entry.action for entry in store.entries] == [
+            AuditAction.TOOL_GRANTS_UPDATED,
+            AuditAction.TOOL_GRANTS_UPDATED,
+        ]
 
 
 def test_observability_wraps_the_fail_closed_audit_middleware() -> None:

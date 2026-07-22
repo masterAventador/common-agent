@@ -3,6 +3,7 @@ from common_agent.conversations.events import (
     ConversationEventBroker,
     ConversationEventKind,
     EventHistoryUnavailable,
+    ToolCallEvent,
 )
 from common_agent.conversations.service import ConversationService
 
@@ -12,4 +13,5 @@ __all__ = [
     "ConversationEventKind",
     "ConversationService",
     "EventHistoryUnavailable",
+    "ToolCallEvent",
 ]

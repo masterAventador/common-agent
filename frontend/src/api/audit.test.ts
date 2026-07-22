@@ -12,7 +12,7 @@ const event = {
   event_id: "10000000-0000-4000-8000-000000000001",
   tenant_id: "20000000-0000-4000-8000-000000000002",
   actor_user_id: "30000000-0000-4000-8000-000000000003",
-  action: "employee.configuration_and_bindings.updated",
+  action: "tool.grants.updated",
   outcome: "succeeded",
   request_id: "40000000-0000-4000-8000-000000000004",
   trace_id: "1234567890abcdef1234567890abcdef",

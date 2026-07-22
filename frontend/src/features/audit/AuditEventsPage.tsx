@@ -38,6 +38,7 @@ const actionLabels: Record<AuditAction, string> = {
   "tenant.created": "工作区创建",
   "employee.created": "数字员工创建",
   "employee.configuration_and_bindings.updated": "数字员工配置与绑定已更新",
+  "tool.grants.updated": "工具精确授权已更新",
   "model.configuration.created": "模型配置创建",
   "model.configuration.updated": "模型配置更新",
   "model.configuration.verified": "模型调用验证",

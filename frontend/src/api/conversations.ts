@@ -74,8 +74,14 @@ const stopAcceptedSchema = z.strictObject({
   turn_id: z.uuid(),
   assistant_message_id: z.uuid(),
 });
+const toolCallEventSchema = z.strictObject({
+  tool_call_id: z.uuid(),
+  capability_id: z.uuid(),
+  capability_name: z.string().min(1).max(128),
+  error_code: z.string().min(1).max(128).nullable(),
+});
 const conversationEventSchema = z.strictObject({
-  schema_version: z.literal("1"),
+  schema_version: z.literal("2"),
   sequence: z.int().positive(),
   conversation_id: z.uuid(),
   turn_id: z.uuid(),
@@ -86,9 +92,13 @@ const conversationEventSchema = z.strictObject({
     "assistant.completed",
     "assistant.failed",
     "assistant.stopped",
+    "assistant.tool.started",
+    "assistant.tool.completed",
+    "assistant.tool.failed",
   ]),
   delta: z.string().nullable(),
   retry: z.boolean(),
+  tool_call: toolCallEventSchema.nullable(),
   message: messageSchema,
   occurred_at: timestampSchema,
 });
@@ -101,6 +111,9 @@ const conversationEventTypes = [
   "assistant.completed",
   "assistant.failed",
   "assistant.stopped",
+  "assistant.tool.started",
+  "assistant.tool.completed",
+  "assistant.tool.failed",
 ] as const;
 
 export function parseConversationsResponse(data: unknown): CursorPage<ConversationHistoryItem> {

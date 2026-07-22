@@ -56,6 +56,16 @@ from common_agent.domain.workflow_run import (
     WORKFLOW_RUN_INPUT_MAX_LENGTH,
     WORKFLOW_RUN_OUTPUT_MAX_LENGTH,
 )
+from common_agent.tools.models import (
+    MCP_SOURCE_DESCRIPTION_MAX_LENGTH,
+    MCP_SOURCE_ENDPOINT_MAX_LENGTH,
+    MCP_SOURCE_NAME_MAX_LENGTH,
+    TOOL_CAPABILITY_DESCRIPTION_MAX_LENGTH,
+    TOOL_CAPABILITY_DISPLAY_NAME_MAX_LENGTH,
+    TOOL_CAPABILITY_REMOTE_NAME_MAX_LENGTH,
+    TOOL_COLLECTION_DESCRIPTION_MAX_LENGTH,
+    TOOL_COLLECTION_NAME_MAX_LENGTH,
+)
 
 
 class PersistenceBase(DeclarativeBase):
@@ -1372,4 +1382,330 @@ class RagFlowKnowledgeBaseOwnershipRow(PersistenceBase):
     knowledge_base_id: Mapped[str] = mapped_column(
         String(KNOWLEDGE_BASE_ID_MAX_LENGTH), primary_key=True
     )
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class McpSourceRow(PersistenceBase):
+    __tablename__ = "mcp_sources"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(id) = 36 AND id = TRIM(id)", name="ck_mcp_sources_id"),
+        CheckConstraint(
+            f"CHAR_LENGTH(name) BETWEEN 1 AND {MCP_SOURCE_NAME_MAX_LENGTH} "
+            "AND name = TRIM(name)",
+            name="ck_mcp_sources_name",
+        ),
+        CheckConstraint(
+            f"CHAR_LENGTH(description) <= {MCP_SOURCE_DESCRIPTION_MAX_LENGTH} "
+            "AND description = TRIM(description)",
+            name="ck_mcp_sources_description",
+        ),
+        CheckConstraint(
+            "source_type IN ('platform', 'managed_http', 'external')",
+            name="ck_mcp_sources_type",
+        ),
+        CheckConstraint(
+            "(source_type = 'platform' AND endpoint_url IS NULL) OR "
+            "(source_type IN ('managed_http', 'external') AND endpoint_url IS NOT NULL)",
+            name="ck_mcp_sources_endpoint",
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'ready', 'unavailable', 'disabled')",
+            name="ck_mcp_sources_status",
+        ),
+        CheckConstraint("updated_at >= created_at", name="ck_mcp_sources_timestamps"),
+        UniqueConstraint("tenant_id", "id", name="uq_mcp_sources_tenant_id"),
+        UniqueConstraint("tenant_id", "name", name="uq_mcp_sources_tenant_name"),
+        Index("ix_mcp_sources_tenant_created", "tenant_id", "created_at", "id"),
+        Index("ix_mcp_sources_tenant_type_status", "tenant_id", "source_type", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_mcp_sources_tenant_id"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(MCP_SOURCE_NAME_MAX_LENGTH), nullable=False)
+    description: Mapped[str] = mapped_column(
+        String(MCP_SOURCE_DESCRIPTION_MAX_LENGTH), nullable=False
+    )
+    source_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    endpoint_url: Mapped[str | None] = mapped_column(
+        String(MCP_SOURCE_ENDPOINT_MAX_LENGTH), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class ToolCapabilityRow(PersistenceBase):
+    __tablename__ = "tool_capabilities"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(id) = 36 AND id = TRIM(id)", name="ck_tool_capabilities_id"),
+        CheckConstraint(
+            f"CHAR_LENGTH(remote_name) BETWEEN 1 AND {TOOL_CAPABILITY_REMOTE_NAME_MAX_LENGTH} "
+            "AND remote_name = TRIM(remote_name)",
+            name="ck_tool_capabilities_remote_name",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(display_name) BETWEEN 1 AND "
+            f"{TOOL_CAPABILITY_DISPLAY_NAME_MAX_LENGTH} AND display_name = TRIM(display_name)",
+            name="ck_tool_capabilities_display_name",
+        ),
+        CheckConstraint(
+            f"CHAR_LENGTH(description) <= {TOOL_CAPABILITY_DESCRIPTION_MAX_LENGTH} "
+            "AND description = TRIM(description)",
+            name="ck_tool_capabilities_description",
+        ),
+        CheckConstraint("JSON_TYPE(input_schema) = 'OBJECT'", name="ck_tool_capabilities_schema"),
+        CheckConstraint(
+            "CHAR_LENGTH(schema_fingerprint) = 64 AND "
+            "schema_fingerprint REGEXP '^[0-9a-f]{64}$'",
+            name="ck_tool_capabilities_fingerprint",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'unavailable', 'disabled')",
+            name="ck_tool_capabilities_status",
+        ),
+        CheckConstraint("updated_at >= created_at", name="ck_tool_capabilities_timestamps"),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["mcp_sources.tenant_id", "mcp_sources.id"],
+            name="fk_tool_capabilities_source",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("tenant_id", "id", name="uq_tool_capabilities_tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "source_id",
+            "remote_name",
+            name="uq_tool_capabilities_tenant_source_remote",
+        ),
+        Index("ix_tool_capabilities_tenant_created", "tenant_id", "created_at", "id"),
+        Index(
+            "ix_tool_capabilities_tenant_source_status",
+            "tenant_id",
+            "source_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_tool_capabilities_tenant_id"),
+        nullable=False,
+    )
+    source_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    remote_name: Mapped[str] = mapped_column(
+        String(TOOL_CAPABILITY_REMOTE_NAME_MAX_LENGTH), nullable=False
+    )
+    display_name: Mapped[str] = mapped_column(
+        String(TOOL_CAPABILITY_DISPLAY_NAME_MAX_LENGTH), nullable=False
+    )
+    description: Mapped[str] = mapped_column(
+        String(TOOL_CAPABILITY_DESCRIPTION_MAX_LENGTH), nullable=False
+    )
+    input_schema: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    schema_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class ToolCollectionRow(PersistenceBase):
+    __tablename__ = "tool_collections"
+    __table_args__ = (
+        CheckConstraint("CHAR_LENGTH(id) = 36 AND id = TRIM(id)", name="ck_tool_collections_id"),
+        CheckConstraint(
+            f"CHAR_LENGTH(name) BETWEEN 1 AND {TOOL_COLLECTION_NAME_MAX_LENGTH} "
+            "AND name = TRIM(name)",
+            name="ck_tool_collections_name",
+        ),
+        CheckConstraint(
+            f"CHAR_LENGTH(description) <= {TOOL_COLLECTION_DESCRIPTION_MAX_LENGTH} "
+            "AND description = TRIM(description)",
+            name="ck_tool_collections_description",
+        ),
+        CheckConstraint("updated_at >= created_at", name="ck_tool_collections_timestamps"),
+        UniqueConstraint("tenant_id", "id", name="uq_tool_collections_tenant_id"),
+        UniqueConstraint("tenant_id", "name", name="uq_tool_collections_tenant_name"),
+        Index("ix_tool_collections_tenant_created", "tenant_id", "created_at", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_tool_collections_tenant_id"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(TOOL_COLLECTION_NAME_MAX_LENGTH), nullable=False)
+    description: Mapped[str] = mapped_column(
+        String(TOOL_COLLECTION_DESCRIPTION_MAX_LENGTH), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class ToolCollectionSourceRow(PersistenceBase):
+    __tablename__ = "tool_collection_sources"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "collection_id"],
+            ["tool_collections.tenant_id", "tool_collections.id"],
+            name="fk_tool_collection_sources_collection",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["mcp_sources.tenant_id", "mcp_sources.id"],
+            name="fk_tool_collection_sources_source",
+            ondelete="CASCADE",
+        ),
+        Index("ix_tool_collection_sources_source", "tenant_id", "source_id"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_tool_collection_sources_tenant_id",
+        ),
+        primary_key=True,
+    )
+    collection_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class EmployeeToolCollectionSelectionRow(PersistenceBase):
+    __tablename__ = "employee_tool_collection_selections"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "employee_id"],
+            ["employees.tenant_id", "employees.id"],
+            name="fk_employee_tool_collection_selections_employee",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "collection_id"],
+            ["tool_collections.tenant_id", "tool_collections.id"],
+            name="fk_employee_tool_collection_selections_collection",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "ix_employee_tool_collection_selections_collection",
+            "tenant_id",
+            "collection_id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_employee_tool_collection_selections_tenant_id",
+        ),
+        primary_key=True,
+    )
+    employee_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class EmployeeToolGrantRow(PersistenceBase):
+    __tablename__ = "employee_tool_grants"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "employee_id"],
+            ["employees.tenant_id", "employees.id"],
+            name="fk_employee_tool_grants_employee",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "capability_id"],
+            ["tool_capabilities.tenant_id", "tool_capabilities.id"],
+            name="fk_employee_tool_grants_capability",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_employee_tool_grants_capability", "tenant_id", "capability_id"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE", name="fk_employee_tool_grants_tenant_id"),
+        primary_key=True,
+    )
+    employee_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    capability_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class ConversationToolCollectionSelectionRow(PersistenceBase):
+    __tablename__ = "conversation_tool_collection_selections"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "conversation_id"],
+            ["conversations.tenant_id", "conversations.id"],
+            name="fk_conversation_tool_collection_selections_conversation",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "collection_id"],
+            ["tool_collections.tenant_id", "tool_collections.id"],
+            name="fk_conversation_tool_collection_selections_collection",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "ix_conversation_tool_collection_selections_collection",
+            "tenant_id",
+            "collection_id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_conversation_tool_collection_selections_tenant_id",
+        ),
+        primary_key=True,
+    )
+    conversation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class ConversationToolGrantRow(PersistenceBase):
+    __tablename__ = "conversation_tool_grants"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "conversation_id"],
+            ["conversations.tenant_id", "conversations.id"],
+            name="fk_conversation_tool_grants_conversation",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "capability_id"],
+            ["tool_capabilities.tenant_id", "tool_capabilities.id"],
+            name="fk_conversation_tool_grants_capability",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_conversation_tool_grants_capability", "tenant_id", "capability_id"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_conversation_tool_grants_tenant_id",
+        ),
+        primary_key=True,
+    )
+    conversation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    capability_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)

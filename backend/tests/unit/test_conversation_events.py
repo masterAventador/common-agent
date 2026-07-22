@@ -13,6 +13,7 @@ from common_agent.conversations.events import (
     EventHistoryUnavailable,
     EventStreamOverflow,
     EventSubscriberLimitExceeded,
+    ToolCallEvent,
 )
 from common_agent.domain.conversation import Message
 
@@ -65,6 +66,45 @@ def test_event_broker_replays_monotonic_events_and_delivers_live_events() -> Non
         ]
         assert delta_event.delta == "第一段"
         assert completed_event.message == completed
+
+    asyncio.run(exercise())
+
+
+def test_tool_events_carry_only_stable_safe_metadata_and_share_one_call_id() -> None:
+    async def exercise() -> None:
+        message = Message.create_assistant(
+            conversation_id=uuid4(),
+            sequence_number=2,
+        )
+        turn_id = uuid4()
+        capability_id = uuid4()
+        tool_call_id = uuid4()
+        broker = ConversationEventBroker()
+
+        started = await broker.publish(
+            turn_id=turn_id,
+            message=message,
+            kind=ConversationEventKind.ASSISTANT_TOOL_STARTED,
+            tool_call=ToolCallEvent(
+                tool_call_id=tool_call_id,
+                capability_id=capability_id,
+                capability_name="查询订单",
+            ),
+        )
+        completed = await broker.publish(
+            turn_id=turn_id,
+            message=message,
+            kind=ConversationEventKind.ASSISTANT_TOOL_COMPLETED,
+            tool_call=ToolCallEvent(
+                tool_call_id=tool_call_id,
+                capability_id=capability_id,
+                capability_name="查询订单",
+            ),
+        )
+
+        assert started.tool_call == completed.tool_call
+        assert not hasattr(started.tool_call, "arguments")
+        assert not hasattr(completed.tool_call, "result")
 
     asyncio.run(exercise())
 

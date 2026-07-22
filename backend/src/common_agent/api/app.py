@@ -33,6 +33,7 @@ from common_agent.adapters.persistence import (
     SqlAlchemyKnowledgeOwnershipStore,
     SqlAlchemyTaskQueue,
     SqlAlchemyTenancyStore,
+    SqlAlchemyToolUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.conversations import (
     SqlAlchemyConversationUnitOfWorkFactory,
@@ -60,6 +61,7 @@ from common_agent.api.routers import (
     model_configuration_router,
     system_router,
     tenant_router,
+    tool_router,
     workflow_router,
     workflow_run_router,
 )
@@ -104,6 +106,7 @@ from common_agent.tenancy import (
     current_tenant,
 )
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
+from common_agent.tools import ToolService
 from common_agent.workflows.ai_targets import (
     StaticWorkflowModelResolver,
     WorkflowAiTargetExecutor,
@@ -157,6 +160,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         def key_namespace(key: str) -> str:
             return f"tenant:{current_tenant().tenant_id}:{key}"
+
+        app.state.tools = ToolService(SqlAlchemyToolUnitOfWorkFactory(database, tenant_id_provider))
 
         integration_mode: IntegrationModeSettings = app.state.integration_mode
         worker_settings: WorkerSettings = app.state.worker_settings
@@ -316,6 +321,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.authentication = None
         app.state.audit = None
         app.state.tenancy = None
+        app.state.tools = None
         app.state.conversations = None
         app.state.conversation_events = None
         app.state.employees = None
@@ -372,6 +378,7 @@ def create_app() -> FastAPI:
     app.state.cors_settings = cors
     app.state.authentication = None
     app.state.tenancy = None
+    app.state.tools = None
     app.state.ragflow_settings = (
         RagFlowSettings.from_env() if integration_mode.mode == "real" else None
     )
@@ -427,6 +434,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         workflow_run_router,
+        dependencies=protected,
+        responses=protected_responses,
+    )
+    app.include_router(
+        tool_router,
         dependencies=protected,
         responses=protected_responses,
     )
