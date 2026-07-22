@@ -1,9 +1,17 @@
+import importlib
 from pathlib import Path
 from unittest.mock import Mock
 
 from pytest import MonkeyPatch
 
 import common_agent.adapters.persistence.migrations as migrations
+
+
+def test_tenant_resource_migration_index_definitions_have_stable_shape() -> None:
+    migration = importlib.import_module("migrations.versions.20260721_0014_tenant_resources")
+
+    assert all(len(definition) == 4 for definition in migration._LEGACY_INDEXES)
+    assert all(len(definition) == 4 for definition in migration._TENANT_INDEXES)
 
 
 def test_upgrade_database_uses_runtime_alembic_config_after_wheel_install(

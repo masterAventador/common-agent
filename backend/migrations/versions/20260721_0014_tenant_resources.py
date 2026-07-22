@@ -6,6 +6,7 @@ Create Date: 2026-07-21
 """
 
 from collections.abc import Sequence
+from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
@@ -17,6 +18,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 DEFAULT_TENANT_ID = "00000000-0000-4000-8000-000000000002"
+IndexDefinition = tuple[str, str, tuple[str, ...], dict[str, Any]]
 
 _RESOURCE_TABLES = (
     "demo_knowledge_bases",
@@ -34,7 +36,7 @@ _LEGACY_FOREIGN_KEYS = (
     ("workflow_runs", "fk_workflow_runs_assistant_message_id"),
 )
 
-_LEGACY_INDEXES = (
+_LEGACY_INDEXES: tuple[IndexDefinition, ...] = (
     ("demo_knowledge_bases", "ix_demo_knowledge_bases_created", ("created_at", "id"), {}),
     (
         "demo_knowledge_documents",
@@ -98,7 +100,7 @@ _LEGACY_INDEXES = (
     ("workflow_runs", "ix_workflow_runs_status", ("status",), {}),
 )
 
-_TENANT_INDEXES = (
+_TENANT_INDEXES: tuple[IndexDefinition, ...] = (
     (
         "demo_knowledge_bases",
         "ix_demo_knowledge_bases_tenant_created",
