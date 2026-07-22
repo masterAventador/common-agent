@@ -48,8 +48,10 @@ infra/production/manage.sh drill
 ```
 
 演练会依次构建两个不可变 release、向前迁移数据库、蓝绿切流、通过正式 Chromium 验收五个入口、
-注入 active API 故障并回滚。退出时停止生产演练与按需启动的 RAGFlow 容器，删除临时状态、凭据和
-演练 MySQL Volume，保留可复用的固定镜像与 RAGFlow 稳定数据。
+执行权限与输入攻击矩阵，并通过 k6 从正式 TLS 域名持续运行 60 秒鉴权读容量基线，最后注入 active
+API 故障并回滚。k6 是后续容量和 SLO 复验的长期工具，macOS 本机缺少时直接执行 `brew install k6`。
+退出时停止生产演练与按需启动的 RAGFlow 容器，删除临时状态、凭据和演练 MySQL Volume，保留可
+复用的固定镜像与 RAGFlow 稳定数据。
 
 ## RAGFlow 节点
 

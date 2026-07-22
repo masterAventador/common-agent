@@ -120,6 +120,18 @@ run_formal_page_smoke() {
   )
 }
 
+run_formal_capacity_test() {
+  command -v k6 >/dev/null 2>&1 || fail "生产容量压测缺少 k6，请先通过 Homebrew 安装"
+  (
+    export COMMON_AGENT_PERFORMANCE_BASE_URL='https://common-agent.test:18443'
+    export COMMON_AGENT_PERFORMANCE_EMAIL='production-drill@example.com'
+    export COMMON_AGENT_PERFORMANCE_PASSWORD='Production-Drill-2026!'
+    cd "${REPOSITORY_ROOT}"
+    k6 run --quiet --no-color --include-system-env-vars --insecure-skip-tls-verify \
+      "${SCRIPT_DIR}/load-test.js"
+  )
+}
+
 verify_untrusted_host_is_rejected() {
   local status
   status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
@@ -214,6 +226,7 @@ write_runtime_configuration
 run_formal_page_smoke
 verify_untrusted_host_is_rejected
 verify_path_traversal_is_rejected
+run_formal_capacity_test
 verify_forwarded_for_spoof_is_rate_limited
 exercise_failure_and_rollback
 
