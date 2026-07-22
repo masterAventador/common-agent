@@ -1,5 +1,9 @@
 packages:
   - "."
 
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+blockExoticSubdeps: true
+
 overrides:
   js-yaml: 4.3.0
