@@ -1291,6 +1291,7 @@ a,
 .entry-shell,
 .employees-page,
 .model-configurations-page,
+.tools-page,
 .knowledge-page,
 .chat-page,
 .workflows-page,
@@ -1303,6 +1304,7 @@ a,
 .entry-shell,
 .employees-page,
 .model-configurations-page,
+.tools-page,
 .knowledge-page {
   min-height: calc(100vh - 112px);
   padding: 0;
@@ -1314,6 +1316,7 @@ a,
 
 .employees-page-heading,
 .model-configurations-heading,
+.tools-heading,
 .knowledge-page-heading,
 .chat-page-heading,
 .workflows-heading,
@@ -1326,6 +1329,7 @@ a,
 
 .employees-page-heading h2,
 .model-configurations-heading h2,
+.tools-heading h2,
 .knowledge-page-heading h2,
 .chat-page-heading h2,
 .workflows-heading h2,
@@ -1338,6 +1342,7 @@ a,
 
 .employees-page-heading .ant-typography,
 .model-configurations-heading .ant-typography,
+.tools-heading .ant-typography,
 .knowledge-page-heading .ant-typography,
 .chat-page-heading .ant-typography,
 .workflows-heading .ant-typography,
@@ -1351,6 +1356,38 @@ a,
 .chat-title-icon,
 .workflows-title-icon {
   color: var(--text-heading);
+}
+
+.tools-inline-alert {
+  margin-bottom: 16px;
+}
+
+.tools-full-width {
+  width: 100%;
+}
+
+.tools-modal-alert {
+  margin-bottom: 16px;
+}
+
+.tools-parameter-list {
+  margin-top: 12px;
+}
+
+.tools-json-editor,
+.tools-test-result {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.tools-test-result {
+  overflow: auto;
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-hover);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .employee-card-grid {
@@ -1725,6 +1762,7 @@ a,
 
   .employees-page-heading,
   .model-configurations-heading,
+  .tools-heading,
   .knowledge-page-heading,
   .chat-page-heading,
   .workflows-heading,

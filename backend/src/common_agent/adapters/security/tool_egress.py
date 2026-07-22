@@ -281,6 +281,7 @@ class SafeOutboundHttpClient:
         maximum_response_bytes: int,
         maximum_concurrency: int,
         ssl_context: ssl.SSLContext | None = None,
+        concurrency_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         origin = _origin(endpoint_url, endpoint=True)
         if connect_timeout_seconds <= 0 or read_timeout_seconds <= 0:
@@ -293,7 +294,7 @@ class SafeOutboundHttpClient:
         self._policy = policy
         self._call_timeout_seconds = call_timeout_seconds
         self._maximum_response_bytes = maximum_response_bytes
-        self._semaphore = asyncio.Semaphore(maximum_concurrency)
+        self._semaphore = concurrency_semaphore or asyncio.Semaphore(maximum_concurrency)
         self._ssl_context = ssl_context or ssl.create_default_context()
         self._timeout = httpx.Timeout(
             connect=connect_timeout_seconds,

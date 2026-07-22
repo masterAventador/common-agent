@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid4
@@ -20,8 +21,13 @@ from common_agent.audit import (
     AuditResourceType,
     AuditService,
 )
+from common_agent.ports.mcp import McpToolCallResponse, McpToolDescriptor
 from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant
 from common_agent.tools import (
+    McpSource,
+    McpSourceStatus,
+    McpSourceType,
+    ToolCapability,
     ToolCapabilityUnavailable,
     ToolGrantTarget,
     ToolGrantTargetType,
@@ -157,3 +163,103 @@ def test_platform_tool_denies_a_grant_removed_after_resolution() -> None:
         AuditOutcome.DENIED,
     ]
     assert audit.entries[-1].error_code == "tool_unauthorized"
+
+
+class _ManagedDirectory:
+    def __init__(self, target: ToolGrantTarget) -> None:
+        source = McpSource.create(
+            name="订单系统",
+            source_type=McpSourceType.MANAGED_HTTP,
+            endpoint_url="https://business.example/api",
+            status=McpSourceStatus.READY,
+        )
+        capability = ToolCapability.create(
+            source_id=source.id,
+            remote_name="orders.get",
+            display_name="查询订单",
+            description="按编号查询订单。",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "order_id": {"type": "string", "description": "订单编号"},
+                },
+                "required": ["order_id"],
+                "additionalProperties": False,
+            },
+        )
+        self.target = target
+        self.capability = ToolRuntimeCapability(source, capability)
+        self.enabled = True
+        self.calls = 0
+
+    async def authorized_runtime_capabilities(
+        self,
+        target: ToolGrantTarget,
+        capability_ids: tuple[UUID, ...],
+    ) -> tuple[ToolRuntimeCapability, ...]:
+        self.calls += 1
+        if (
+            not self.enabled
+            or target != self.target
+            or capability_ids != (self.capability.capability.id,)
+        ):
+            raise ToolCapabilityUnavailable
+        return (self.capability,)
+
+
+class _ManagedMcp:
+    def __init__(self, capability: ToolRuntimeCapability) -> None:
+        self.capability = capability
+        self.calls: list[tuple[UUID, str, dict[str, object]]] = []
+
+    async def list_tools(self, source_id: UUID) -> tuple[McpToolDescriptor, ...]:
+        assert source_id == self.capability.source.id
+        tool = self.capability.capability
+        return (
+            McpToolDescriptor(
+                name=tool.remote_name,
+                display_name=tool.display_name,
+                description=tool.description,
+                input_schema=tool.input_schema,
+            ),
+        )
+
+    async def call_tool(
+        self,
+        source_id: UUID,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolCallResponse:
+        self.calls.append((source_id, name, dict(arguments)))
+        return McpToolCallResponse(output={"id": arguments["order_id"]})
+
+
+def test_managed_http_tool_is_namespaced_and_rechecks_exact_grant() -> None:
+    target = ToolGrantTarget(ToolGrantTargetType.CONVERSATION, uuid4())
+    directory = _ManagedDirectory(target)
+    managed_mcp = _ManagedMcp(directory.capability)
+    registry = PlatformMcpToolRegistry(
+        directory,
+        PlatformMcpRuntime(clock=lambda: _NOW),
+        managed_mcp=managed_mcp,
+    )
+
+    async def exercise() -> str:
+        tools = await registry.resolve(
+            (directory.capability.capability.id,),
+            target=target,
+        )
+        assert tools[0].name.startswith("orders.get__")
+        return cast(str, await tools[0].ainvoke({"order_id": "A-100"}))
+
+    result = asyncio.run(exercise())
+
+    assert result == '{"id":"A-100"}'
+    assert directory.calls == 2
+    assert managed_mcp.calls == [
+        (
+            directory.capability.source.id,
+            "orders.get",
+            {"order_id": "A-100"},
+        )
+    ]

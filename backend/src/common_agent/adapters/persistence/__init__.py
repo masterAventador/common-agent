@@ -6,6 +6,9 @@ from common_agent.adapters.persistence.knowledge_ownership import (
     SqlAlchemyKnowledgeOwnershipStore,
 )
 from common_agent.adapters.persistence.locks import MySqlNamedLockProvider
+from common_agent.adapters.persistence.managed_http import (
+    SqlAlchemyManagedHttpUnitOfWorkFactory,
+)
 from common_agent.adapters.persistence.platform_tools import SqlAlchemyPlatformToolSeeder
 from common_agent.adapters.persistence.tasks import SqlAlchemyTaskQueue
 from common_agent.adapters.persistence.tenancy import SqlAlchemyTenancyStore
@@ -22,6 +25,7 @@ __all__ = [
     "SqlAlchemyAuthStore",
     "SqlAlchemyEventJournal",
     "SqlAlchemyKnowledgeOwnershipStore",
+    "SqlAlchemyManagedHttpUnitOfWorkFactory",
     "SqlAlchemyPlatformToolSeeder",
     "SqlAlchemyTaskQueue",
     "SqlAlchemyTenancyStore",

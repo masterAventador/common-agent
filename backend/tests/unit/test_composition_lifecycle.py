@@ -16,6 +16,7 @@ from common_agent.bootstrap import (
     ModelSettings,
     RagFlowSettings,
     ToolCredentialSettings,
+    ToolEgressSettings,
     WorkerSettings,
 )
 
@@ -123,6 +124,7 @@ def test_api_closes_real_model_when_later_component_bootstrap_fails(
     app.state.integration_mode = SimpleNamespace(mode="real")
     app.state.worker_settings = object()
     app.state.tool_credential_settings = ToolCredentialSettings.from_mapping({})
+    app.state.tool_egress_settings = ToolEgressSettings.from_mapping({})
     app.state.ragflow_settings = _ragflow_settings()
     monkeypatch.setattr(api_app, "RagFlowKnowledgeService", lambda **_: knowledge)
     _stub_platform_tool_bootstrap(monkeypatch, api_app)

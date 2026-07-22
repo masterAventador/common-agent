@@ -64,6 +64,7 @@ const ModelConfigurationsPage = lazy(async () => {
   );
   return { default: module.ModelConfigurationsPage };
 });
+const ToolsPage = lazy(() => import("../features/tools/ToolsPage"));
 
 const entries = [
   {
@@ -85,6 +86,11 @@ const entries = [
     path: "/workflows",
     label: "工作流",
     icon: <Workflow aria-hidden="true" size={18} strokeWidth={1.75} />,
+  },
+  {
+    path: "/tools",
+    label: "工具与 MCP",
+    icon: <PanelsTopLeft aria-hidden="true" size={18} strokeWidth={1.75} />,
   },
   {
     path: "/model-configurations",
@@ -131,6 +137,8 @@ function AuthenticatedApp() {
   );
   const roleLabels = { owner: "所有者", editor: "编辑者", viewer: "访客" } as const;
   const currentEntry = entries.find((entry) => entry.path === location.pathname);
+  const isOwner = selectedTenant?.role === "owner";
+  const isViewer = selectedTenant?.role === "viewer";
 
   const submitWorkspace = async ({ name }: { name: string }) => {
     if (await auth.createWorkspace(name)) {
@@ -171,10 +179,10 @@ function AuthenticatedApp() {
           <Menu
             mode="inline"
             selectedKeys={[location.pathname]}
-            items={menuItems(selectedTenant?.role === "owner")}
+            items={menuItems(isOwner)}
           />
         </nav>
-        <ConversationHistory readOnly={selectedTenant?.role === "viewer"} />
+        <ConversationHistory readOnly={isViewer} />
       </Sider>
       <Layout>
         <Header className="app-header">
@@ -198,7 +206,7 @@ function AuthenticatedApp() {
                 {roleLabels[selectedTenant.role]}
               </Tag>
             ) : null}
-            {selectedTenant?.role === "owner" ? (
+            {isOwner ? (
               <>
                 <Button
                   size="small"
@@ -229,7 +237,7 @@ function AuthenticatedApp() {
           </Space>
         </Header>
         <Content className="app-content">
-          {selectedTenant?.role === "viewer" ? (
+          {isViewer ? (
             <Alert
               type="info"
               showIcon
@@ -240,29 +248,33 @@ function AuthenticatedApp() {
           <Suspense fallback={<section className="entry-shell">页面加载中…</section>}>
             <Routes>
               <Route path="/" element={<Navigate to="/chat" replace />} />
-              <Route path="/chat" element={<ChatPage readOnly={selectedTenant?.role === "viewer"} />} />
+              <Route path="/chat" element={<ChatPage readOnly={isViewer} />} />
               <Route
                 path="/knowledge-bases"
-                element={<KnowledgeBasesPage readOnly={selectedTenant?.role === "viewer"} />}
+                element={<KnowledgeBasesPage readOnly={isViewer} />}
               />
               <Route
                 path="/employees"
-                element={<EmployeesPage readOnly={selectedTenant?.role === "viewer"} />}
+                element={<EmployeesPage readOnly={isViewer} />}
               />
               <Route
                 path="/workflows"
-                element={<WorkflowsPage readOnly={selectedTenant?.role === "viewer"} />}
+                element={<WorkflowsPage readOnly={isViewer} />}
               />
               <Route
                 path="/model-configurations"
                 element={
-                  <ModelConfigurationsPage readOnly={selectedTenant?.role === "viewer"} />
+                  <ModelConfigurationsPage readOnly={isViewer} />
                 }
+              />
+              <Route
+                path="/tools"
+                element={<ToolsPage readOnly={isViewer} />}
               />
               <Route
                 path="/audit-events"
                 element={
-                  selectedTenant?.role === "owner" ? (
+                  isOwner ? (
                     <AuditEventsPage />
                   ) : (
                     <Navigate to="/chat" replace />

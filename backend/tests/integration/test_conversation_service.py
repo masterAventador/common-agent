@@ -24,6 +24,7 @@ from common_agent.conversations.events import (
     ConversationEvent,
     ConversationEventBroker,
     ConversationEventKind,
+    ToolCallEvent,
 )
 from common_agent.conversations.service import ConversationService
 from common_agent.domain.conversation import Conversation, Message, MessageStatus
@@ -169,6 +170,7 @@ class _FailTerminalEventOnce(ConversationEventBroker):
         kind: ConversationEventKind,
         delta: str | None = None,
         retry: bool = False,
+        tool_call: ToolCallEvent | None = None,
     ) -> ConversationEvent:
         if kind is ConversationEventKind.ASSISTANT_COMPLETED and not self.failed:
             self.failed = True
@@ -179,6 +181,7 @@ class _FailTerminalEventOnce(ConversationEventBroker):
             kind=kind,
             delta=delta,
             retry=retry,
+            tool_call=tool_call,
         )
 
 

@@ -57,6 +57,10 @@ _BOUNDARIES = (
         (("adapters", "mcp"),),
     ),
     _Boundary(
+        frozenset({"jsonschema"}),
+        (("tools",), ("adapters", "mcp")),
+    ),
+    _Boundary(
         frozenset({"dotenv"}),
         (("bootstrap",),),
     ),

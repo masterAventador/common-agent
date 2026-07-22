@@ -39,7 +39,7 @@
 - `test-coverage.sh`：检查覆盖率依赖、生产代码范围、六项不回退阈值、报告忽略和可选 CI
   复用本机入口的契约；
 - `test-frontend-bundle.sh`：对隔离构建 fixture 故障注入，证明前端分析器会拒绝超过 500,000
-  bytes 的单 JS chunk、超过 1,500,000 bytes 的单路由首次 JS 图、缺失 manifest 或六路由入口；
+  bytes 的单 JS chunk、超过 1,500,000 bytes 的单路由首次 JS 图、缺失 manifest 或七路由入口；
 - `security-scan.sh`：本机权威安全门禁，`source` 使用现有凭据指纹门禁、Semgrep `p/default`、
   Trivy 文件系统与生产 IaC 扫描，`images` 扫描指定 API/Web 业务镜像中已有修复版本的
   High/Critical 漏洞和 Secret，`all` 串行执行两者；默认使用项目专属 Docker context，要求本机
@@ -59,14 +59,16 @@
   Viewer 只读和跨租户拒绝；设置 `COMMON_AGENT_E2E_SUITE=audit` 时验证 Owner 审计查询、链完整性、
   策略边界和固定脱敏元数据；设置
   `COMMON_AGENT_E2E_SUITE=demo-chat` 时只启用显式 Demo 固定适配器，验证两轮会话、引用、断流
-  和 Worker 自动重试；设置 `COMMON_AGENT_E2E_SUITE=frontend-loading` 时构建并启动生产 preview，验证六入口
+  和 Worker 自动重试；设置 `COMMON_AGENT_E2E_SUITE=frontend-loading` 时构建并启动生产 preview，验证六个 V1 入口
   首屏/交互与第二轮切换不重复请求 JS；设置 `COMMON_AGENT_E2E_SUITE=workflow-designer` 时只验收 React Flow 拖拽、连线、
   服务端校验、真实知识库引用与 MySQL 保存/刷新回显；设置
   `COMMON_AGENT_E2E_SUITE=workflow-run-ui` 时通过正式页面验收真实百炼完成、协作停止、真实
   RAGFlow 失效失败和刷新摘要恢复；设置 `COMMON_AGENT_E2E_SUITE=model-configurations` 时通过
   生产 preview、正式 API/MySQL 和真实百炼验收模型创建、验证、刷新、停用与引用安全删除；设置
   `COMMON_AGENT_E2E_SUITE=generic-chat-models` 时从模型管理页创建配置，再从空白通用会话首次
-  发送原子建会话、逐轮切换真实百炼模型并验证刷新恢复。各套件
+  发送原子建会话、逐轮切换真实百炼模型并验证刷新恢复；`managed-tools` 使用生产 preview、正式
+  API/MySQL、官方 MCP SDK 和本机真实业务 HTTP 服务，验证托管来源、Bearer、手工能力、发现、
+  测试调用和删除闭环。各套件
   都负责唯一测试数据、预置测试 Seed、本轮
   Playwright/前后端进程和成功产物清理；`COMMON_AGENT_E2E_DOCKER_CONTEXT` 可让同一脚本在
   GitHub Runner 的 `default` Docker context 下运行 Demo 门禁。

@@ -61,7 +61,7 @@ FRONTEND_PID=""
 RAGFLOW_API_KEY=""
 COMMON_AGENT_DATABASE_URL="mysql+aiomysql://common_agent:common_agent_dev@127.0.0.1:19506/common_agent_test?charset=utf8mb4"
 
-if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUITE}" != "audit" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "design-system" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" && "${E2E_SUITE}" != "resource-deletion" && "${E2E_SUITE}" != "list-pagination" && "${E2E_SUITE}" != "knowledge-pagination" && "${E2E_SUITE}" != "knowledge-batch" && "${E2E_SUITE}" != "model-configurations" && "${E2E_SUITE}" != "employee-default-model" && "${E2E_SUITE}" != "generic-chat-models" ]]; then
+if [[ "${E2E_SUITE}" != "platform" && "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUITE}" != "audit" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "design-system" && "${E2E_SUITE}" != "managed-tools" && "${E2E_SUITE}" != "workflow-designer" && "${E2E_SUITE}" != "workflow-run-ui" && "${E2E_SUITE}" != "workflow-chat-e2e" && "${E2E_SUITE}" != "mvp-acceptance" && "${E2E_SUITE}" != "resource-deletion" && "${E2E_SUITE}" != "list-pagination" && "${E2E_SUITE}" != "knowledge-pagination" && "${E2E_SUITE}" != "knowledge-batch" && "${E2E_SUITE}" != "model-configurations" && "${E2E_SUITE}" != "employee-default-model" && "${E2E_SUITE}" != "generic-chat-models" ]]; then
   echo "不支持的 E2E suite：${E2E_SUITE}" >&2
   exit 2
 fi
@@ -75,7 +75,7 @@ ensure_colima_profile() {
   local memory_gib="${REAL_E2E_MEMORY_GIB}"
   local current_memory_bytes=""
   local current_memory_gib=0
-  if [[ "${E2E_SUITE}" == "auth" || "${E2E_SUITE}" == "tenant-rbac" || "${E2E_SUITE}" == "audit" || "${E2E_SUITE}" == "demo-chat" || "${E2E_SUITE}" == "frontend-loading" || "${E2E_SUITE}" == "design-system" || "${E2E_SUITE}" == "list-pagination" ]]; then
+  if [[ "${E2E_SUITE}" == "auth" || "${E2E_SUITE}" == "tenant-rbac" || "${E2E_SUITE}" == "audit" || "${E2E_SUITE}" == "demo-chat" || "${E2E_SUITE}" == "frontend-loading" || "${E2E_SUITE}" == "design-system" || "${E2E_SUITE}" == "managed-tools" || "${E2E_SUITE}" == "list-pagination" ]]; then
     cpus=4
     memory_gib="${LIGHT_E2E_MEMORY_GIB}"
   fi
@@ -406,7 +406,7 @@ export COMMON_AGENT_E2E_TRUSTED_ORIGIN="http://127.0.0.1:${FRONTEND_PORT}"
 if [[ "${E2E_SUITE}" == "employee-default-model" ]]; then
   export BAILIAN_MODEL="common-agent-invalid-model"
 fi
-if [[ "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUITE}" != "audit" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "design-system" && "${E2E_SUITE}" != "list-pagination" ]]; then
+if [[ "${E2E_SUITE}" != "auth" && "${E2E_SUITE}" != "tenant-rbac" && "${E2E_SUITE}" != "audit" && "${E2E_SUITE}" != "demo-chat" && "${E2E_SUITE}" != "frontend-loading" && "${E2E_SUITE}" != "design-system" && "${E2E_SUITE}" != "managed-tools" && "${E2E_SUITE}" != "list-pagination" ]]; then
   export COMMON_AGENT_INTEGRATION_MODE="real"
   if ! curl --fail --silent --show-error \
     "${RAGFLOW_BASE_URL}/api/v1/system/version" >/dev/null 2>&1; then
@@ -454,7 +454,7 @@ fi
 (
   cd "${FRONTEND_ROOT}"
   unset RAGFLOW_API_KEY
-  if [[ "${E2E_SUITE}" == "frontend-loading" || "${E2E_SUITE}" == "design-system" || "${E2E_SUITE}" == "model-configurations" || "${E2E_SUITE}" == "employee-default-model" || "${E2E_SUITE}" == "generic-chat-models" || "${E2E_SUITE}" == "knowledge-batch" ]]; then
+  if [[ "${E2E_SUITE}" == "frontend-loading" || "${E2E_SUITE}" == "design-system" || "${E2E_SUITE}" == "managed-tools" || "${E2E_SUITE}" == "model-configurations" || "${E2E_SUITE}" == "employee-default-model" || "${E2E_SUITE}" == "generic-chat-models" || "${E2E_SUITE}" == "knowledge-batch" ]]; then
     VITE_API_BASE_URL="http://127.0.0.1:${API_PORT}/api/v1" pnpm build
     exec env VITE_API_BASE_URL="http://127.0.0.1:${API_PORT}/api/v1" \
       pnpm exec vite preview --host 127.0.0.1 --port "${FRONTEND_PORT}" --strictPort
@@ -518,6 +518,10 @@ wait_for_url "http://127.0.0.1:${FRONTEND_PORT}/knowledge-bases"
       exec pnpm exec playwright test \
         e2e/design-system.spec.ts e2e/entry-loading.spec.ts \
         --config playwright.config.ts
+  elif [[ "${E2E_SUITE}" == "managed-tools" ]]; then
+    COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
+    COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
+      exec pnpm exec playwright test e2e/tools.spec.ts --config playwright.config.ts
   elif [[ "${E2E_SUITE}" == "workflow-designer" ]]; then
     COMMON_AGENT_E2E_WORKFLOW_NAME="${COMMON_AGENT_E2E_WORKFLOW_NAME}" \
     COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME="${COMMON_AGENT_E2E_WORKFLOW_KNOWLEDGE_NAME}" \

@@ -7,7 +7,11 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from common_agent.ports.tools import ToolGrantResolution, ToolRepository
+from common_agent.ports.tools import (
+    ToolGrantResolution,
+    ToolRepository,
+    ToolRuntimeResolution,
+)
 from common_agent.tools.models import (
     McpSource,
     McpSourceStatus,
@@ -17,7 +21,9 @@ from common_agent.tools.models import (
     ToolCollection,
     ToolGrantSelection,
     ToolGrantSnapshot,
+    ToolGrantTarget,
     ToolGrantTargetType,
+    ToolRuntimeCapability,
 )
 from common_agent.tools.service import (
     ToolCapabilityUnavailable,
@@ -97,6 +103,24 @@ class _Repository(ToolRepository):
 
     async def replace_grants(self, snapshot: ToolGrantSnapshot) -> None:
         self.snapshots[(snapshot.target_type, snapshot.target_id)] = snapshot
+
+    async def runtime_capabilities(
+        self,
+        target: ToolGrantTarget,
+        capability_ids: tuple[UUID, ...],
+    ) -> ToolRuntimeResolution:
+        if not await self.target_exists(target.target_type, target.target_id):
+            return ToolRuntimeResolution((), capability_ids)
+        by_id = {capability.id: capability for capability in self.capabilities}
+        resolved = tuple(
+            ToolRuntimeCapability(self.source, by_id[capability_id])
+            for capability_id in capability_ids
+            if capability_id in by_id
+        )
+        missing = tuple(
+            capability_id for capability_id in capability_ids if capability_id not in by_id
+        )
+        return ToolRuntimeResolution(resolved, missing)
 
 
 class _UnitOfWork(AbstractAsyncContextManager["_UnitOfWork"]):

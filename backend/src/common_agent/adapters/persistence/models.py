@@ -59,6 +59,12 @@ from common_agent.domain.workflow_run import (
     WORKFLOW_RUN_OUTPUT_MAX_LENGTH,
 )
 from common_agent.tools.credentials import MCP_CREDENTIAL_MAX_HEADER_COUNT
+from common_agent.tools.managed_http import (
+    MANAGED_HTTP_PARAMETER_MAX_ITEMS,
+    MANAGED_HTTP_PATH_MAX_LENGTH,
+    MANAGED_HTTP_RESPONSE_POINTER_MAX_LENGTH,
+    MANAGED_HTTP_TIMEOUT_MAX_SECONDS,
+)
 from common_agent.tools.models import (
     MCP_SOURCE_DESCRIPTION_MAX_LENGTH,
     MCP_SOURCE_ENDPOINT_MAX_LENGTH,
@@ -1578,6 +1584,64 @@ class ToolCapabilityRow(PersistenceBase):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class ManagedHttpCapabilityRow(PersistenceBase):
+    __tablename__ = "managed_http_capabilities"
+    __table_args__ = (
+        CheckConstraint(
+            "http_method IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE')",
+            name="ck_managed_http_capabilities_method",
+        ),
+        CheckConstraint(
+            f"CHAR_LENGTH(path_template) BETWEEN 1 AND {MANAGED_HTTP_PATH_MAX_LENGTH} "
+            "AND path_template = TRIM(path_template)",
+            name="ck_managed_http_capabilities_path",
+        ),
+        CheckConstraint(
+            f"JSON_TYPE(parameter_bindings) = 'ARRAY' AND "
+            f"JSON_LENGTH(parameter_bindings) <= {MANAGED_HTTP_PARAMETER_MAX_ITEMS}",
+            name="ck_managed_http_capabilities_bindings",
+        ),
+        CheckConstraint(
+            f"timeout_seconds BETWEEN 1 AND {MANAGED_HTTP_TIMEOUT_MAX_SECONDS}",
+            name="ck_managed_http_capabilities_timeout",
+        ),
+        CheckConstraint(
+            "response_json_pointer IS NULL OR "
+            f"(CHAR_LENGTH(response_json_pointer) BETWEEN 1 AND "
+            f"{MANAGED_HTTP_RESPONSE_POINTER_MAX_LENGTH} AND "
+            "response_json_pointer = TRIM(response_json_pointer))",
+            name="ck_managed_http_capabilities_pointer",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "capability_id"],
+            ["tool_capabilities.tenant_id", "tool_capabilities.id"],
+            name="fk_managed_http_capabilities_capability",
+            ondelete="CASCADE",
+        ),
+        Index("ix_managed_http_capabilities_tenant", "tenant_id", "capability_id"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_managed_http_capabilities_tenant_id",
+        ),
+        primary_key=True,
+    )
+    capability_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    http_method: Mapped[str] = mapped_column(String(8), nullable=False)
+    path_template: Mapped[str] = mapped_column(
+        String(MANAGED_HTTP_PATH_MAX_LENGTH), nullable=False
+    )
+    parameter_bindings: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False)
+    timeout_seconds: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    response_json_pointer: Mapped[str | None] = mapped_column(
+        String(MANAGED_HTTP_RESPONSE_POINTER_MAX_LENGTH), nullable=True
+    )
 
 
 class ToolCollectionRow(PersistenceBase):

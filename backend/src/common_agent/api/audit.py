@@ -216,11 +216,65 @@ def _classify(
             AuditResourceType.CONVERSATION,
             None,
         ),
+        ("POST", "/api/v1/managed-mcp-sources"): (
+            AuditAction.MCP_SOURCE_CREATED,
+            AuditResourceType.MCP_SOURCE,
+            None,
+        ),
     }
     matched = exact.get((method, path))
     if matched is not None:
         return matched
     patterns = (
+        (
+            "PUT",
+            r"/api/v1/managed-mcp-sources/[^/]+",
+            AuditAction.MCP_SOURCE_UPDATED,
+            AuditResourceType.MCP_SOURCE,
+            "source_id",
+        ),
+        (
+            "DELETE",
+            r"/api/v1/managed-mcp-sources/[^/]+",
+            AuditAction.RESOURCE_DELETED,
+            AuditResourceType.MCP_SOURCE,
+            "source_id",
+        ),
+        (
+            "POST",
+            r"/api/v1/managed-mcp-sources/[^/]+/discover",
+            AuditAction.MCP_SOURCE_DISCOVERED,
+            AuditResourceType.MCP_SOURCE,
+            "source_id",
+        ),
+        (
+            "POST",
+            r"/api/v1/managed-mcp-sources/[^/]+/capabilities",
+            AuditAction.TOOL_CAPABILITY_CREATED,
+            AuditResourceType.TOOL_CAPABILITY,
+            None,
+        ),
+        (
+            "PUT",
+            r"/api/v1/managed-mcp-sources/[^/]+/capabilities/[^/]+",
+            AuditAction.TOOL_CAPABILITY_UPDATED,
+            AuditResourceType.TOOL_CAPABILITY,
+            "capability_id",
+        ),
+        (
+            "DELETE",
+            r"/api/v1/managed-mcp-sources/[^/]+/capabilities/[^/]+",
+            AuditAction.RESOURCE_DELETED,
+            AuditResourceType.TOOL_CAPABILITY,
+            "capability_id",
+        ),
+        (
+            "POST",
+            r"/api/v1/managed-mcp-sources/[^/]+/capabilities/[^/]+/test-call",
+            AuditAction.TOOL_CALLED,
+            AuditResourceType.TOOL_CAPABILITY,
+            "capability_id",
+        ),
         (
             "PUT",
             r"/api/v1/model-configurations/[^/]+",

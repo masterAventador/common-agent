@@ -20,7 +20,11 @@ from common_agent.adapters.demo import (
     DemoWorkflowModel,
 )
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
-from common_agent.adapters.mcp import PlatformMcpRuntime
+from common_agent.adapters.mcp import ManagedHttpMcpRuntime, PlatformMcpRuntime
+from common_agent.adapters.mcp.managed_http_executor import (
+    ManagedHttpRequestExecutor,
+    SafeManagedHttpClientFactory,
+)
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.adapters.model.resolver import BailianChatModelResolver
 from common_agent.adapters.model.verification import (
@@ -34,6 +38,7 @@ from common_agent.adapters.persistence import (
     SqlAlchemyAuthStore,
     SqlAlchemyEventJournal,
     SqlAlchemyKnowledgeOwnershipStore,
+    SqlAlchemyManagedHttpUnitOfWorkFactory,
     SqlAlchemyPlatformToolSeeder,
     SqlAlchemyTaskQueue,
     SqlAlchemyTenancyStore,
@@ -115,6 +120,7 @@ from common_agent.tenancy import (
 )
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from common_agent.tools import ToolCredentialService, ToolService
+from common_agent.tools.managed_http_service import ManagedHttpService
 from common_agent.workflows.ai_targets import (
     StaticWorkflowModelResolver,
     WorkflowAiTargetExecutor,
@@ -184,6 +190,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 active_key_id=credential_settings.active_key_id,
             ),
             tenant_id_provider=tenant_id_provider,
+        )
+        app.state.managed_http = ManagedHttpService(
+            SqlAlchemyManagedHttpUnitOfWorkFactory(database, tenant_id_provider)
+        )
+        app.state.managed_mcp = ManagedHttpMcpRuntime(
+            app.state.managed_http,
+            ManagedHttpRequestExecutor(
+                app.state.tool_credentials,
+                SafeManagedHttpClientFactory(app.state.tool_egress_settings),
+            ),
         )
 
         integration_mode: IntegrationModeSettings = app.state.integration_mode
@@ -300,6 +316,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     PlatformMcpToolRegistry(
                         app.state.tools,
                         platform_mcp,
+                        managed_mcp=app.state.managed_mcp,
                         audit=app.state.audit,
                     ),
                 ),
@@ -355,6 +372,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.tenancy = None
         app.state.tools = None
         app.state.tool_credentials = None
+        app.state.managed_http = None
+        app.state.managed_mcp = None
         app.state.conversations = None
         app.state.conversation_events = None
         app.state.employees = None
@@ -415,6 +434,8 @@ def create_app() -> FastAPI:
     app.state.tenancy = None
     app.state.tools = None
     app.state.tool_credentials = None
+    app.state.managed_http = None
+    app.state.managed_mcp = None
     app.state.ragflow_settings = (
         RagFlowSettings.from_env() if integration_mode.mode == "real" else None
     )

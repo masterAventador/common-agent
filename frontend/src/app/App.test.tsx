@@ -128,6 +128,20 @@ vi.mock("../api/modelConfigurations", () => ({
   verifyModelConfiguration: vi.fn(),
 }));
 
+vi.mock("../api/tools", () => ({
+  fetchManagedMcpSources: vi.fn().mockResolvedValue([]),
+  createManagedMcpSource: vi.fn(),
+  updateManagedMcpSource: vi.fn(),
+  deleteManagedMcpSource: vi.fn(),
+  addManagedMcpCapability: vi.fn(),
+  updateManagedMcpCapability: vi.fn(),
+  deleteManagedMcpCapability: vi.fn(),
+  discoverManagedMcpSource: vi.fn(),
+  testManagedMcpCapability: vi.fn(),
+  fetchMcpCredential: vi.fn(),
+  updateMcpCredential: vi.fn(),
+}));
+
 vi.mock("../api/audit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/audit")>()),
   fetchAuditEvents: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
@@ -153,6 +167,7 @@ const routes = [
   ["/workflows", "工作流"],
   ["/audit-events", "审计与安全事件"],
   ["/model-configurations", "模型管理"],
+  ["/tools", "工具与 MCP"],
 ] as const;
 
 describe("App shell", () => {

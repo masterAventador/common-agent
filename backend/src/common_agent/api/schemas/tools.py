@@ -12,6 +12,18 @@ from common_agent.tools.credentials import (
     McpCredentialKind,
     McpCredentialSummary,
 )
+from common_agent.tools.managed_http import (
+    MANAGED_HTTP_PARAMETER_MAX_ITEMS,
+    MANAGED_HTTP_PATH_MAX_LENGTH,
+    MANAGED_HTTP_RESPONSE_POINTER_MAX_LENGTH,
+    MANAGED_HTTP_TIMEOUT_MAX_SECONDS,
+    ManagedHttpCapability,
+    ManagedHttpCapabilityCommand,
+    ManagedHttpParameterBinding,
+    ManagedHttpParameterLocation,
+    ManagedHttpRuntimeSnapshot,
+    ManagedHttpSourceCommand,
+)
 from common_agent.tools.models import (
     TOOL_GRANT_CAPABILITY_MAX_ITEMS,
     TOOL_GRANT_COLLECTION_MAX_ITEMS,
@@ -130,6 +142,113 @@ class McpCredentialSummaryResponse(BaseModel):
     updated_at: datetime | None
 
 
+class ManagedHttpSourceBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=1_000)
+    base_url: str = Field(min_length=1, max_length=2_048)
+    enabled: bool = True
+
+
+class ManagedHttpParameterBindingBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    argument_name: str = Field(min_length=1, max_length=128)
+    location: ManagedHttpParameterLocation
+    target_name: str = Field(min_length=1, max_length=128)
+
+
+class ManagedHttpCapabilityBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    remote_name: str = Field(min_length=1, max_length=128)
+    display_name: str = Field(min_length=1, max_length=128)
+    description: str = Field(min_length=1, max_length=1_000)
+    input_schema: dict[str, object]
+    method: str = Field(min_length=3, max_length=6)
+    path_template: str = Field(min_length=1, max_length=MANAGED_HTTP_PATH_MAX_LENGTH)
+    parameter_bindings: list[ManagedHttpParameterBindingBody] = Field(
+        max_length=MANAGED_HTTP_PARAMETER_MAX_ITEMS
+    )
+    timeout_seconds: int = Field(ge=1, le=MANAGED_HTTP_TIMEOUT_MAX_SECONDS)
+    response_json_pointer: str | None = Field(
+        default=None,
+        max_length=MANAGED_HTTP_RESPONSE_POINTER_MAX_LENGTH,
+    )
+    enabled: bool = True
+
+
+class ManagedHttpCapabilityResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    source_id: UUID
+    remote_name: str
+    display_name: str
+    description: str
+    input_schema: dict[str, object]
+    schema_fingerprint: str
+    method: str
+    path_template: str
+    parameter_bindings: list[ManagedHttpParameterBindingBody]
+    timeout_seconds: int
+    response_json_pointer: str | None
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ManagedHttpSourceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    name: str
+    description: str
+    base_url: str
+    enabled: bool
+    capabilities: list[ManagedHttpCapabilityResponse]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ManagedHttpSourceListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ManagedHttpSourceResponse]
+
+
+class ManagedHttpDiscoveredToolResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capability_id: UUID
+    name: str
+    display_name: str
+    description: str
+    input_schema: dict[str, object]
+    schema_fingerprint: str
+
+
+class ManagedHttpDiscoveryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: UUID
+    tools: list[ManagedHttpDiscoveredToolResponse]
+
+
+class ManagedHttpTestCallBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    arguments: dict[str, object]
+
+
+class ManagedHttpTestCallResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capability_id: UUID
+    output: dict[str, object]
+
+
 def tool_catalog_response(catalog: ToolCatalog) -> ToolCatalogResponse:
     return ToolCatalogResponse(
         sources=[McpSourceResponse.model_validate(value) for value in catalog.sources],
@@ -198,7 +317,100 @@ def mcp_credential_summary_response(
     )
 
 
+def managed_http_source_command(body: ManagedHttpSourceBody) -> ManagedHttpSourceCommand:
+    return ManagedHttpSourceCommand(
+        name=body.name,
+        description=body.description,
+        base_url=body.base_url,
+        enabled=body.enabled,
+    )
+
+
+def managed_http_capability_command(
+    body: ManagedHttpCapabilityBody,
+) -> ManagedHttpCapabilityCommand:
+    return ManagedHttpCapabilityCommand(
+        remote_name=body.remote_name,
+        display_name=body.display_name,
+        description=body.description,
+        input_schema=body.input_schema,
+        method=body.method,
+        path_template=body.path_template,
+        parameter_bindings=tuple(
+            ManagedHttpParameterBinding(
+                argument_name=value.argument_name,
+                location=value.location,
+                target_name=value.target_name,
+            )
+            for value in body.parameter_bindings
+        ),
+        timeout_seconds=body.timeout_seconds,
+        response_json_pointer=body.response_json_pointer,
+        enabled=body.enabled,
+    )
+
+
+def managed_http_capability_response(
+    managed: ManagedHttpCapability,
+) -> ManagedHttpCapabilityResponse:
+    capability = managed.capability
+    return ManagedHttpCapabilityResponse(
+        id=capability.id,
+        source_id=capability.source_id,
+        remote_name=capability.remote_name,
+        display_name=capability.display_name,
+        description=capability.description,
+        input_schema=capability.input_schema,
+        schema_fingerprint=capability.schema_fingerprint,
+        method=managed.method,
+        path_template=managed.path_template,
+        parameter_bindings=[
+            ManagedHttpParameterBindingBody(
+                argument_name=value.argument_name,
+                location=value.location,
+                target_name=value.target_name,
+            )
+            for value in managed.parameter_bindings
+        ],
+        timeout_seconds=managed.timeout_seconds,
+        response_json_pointer=managed.response_json_pointer,
+        enabled=capability.status is ToolCapabilityStatus.ACTIVE,
+        created_at=capability.created_at,
+        updated_at=capability.updated_at,
+    )
+
+
+def managed_http_source_response(
+    snapshot: ManagedHttpRuntimeSnapshot,
+) -> ManagedHttpSourceResponse:
+    source = snapshot.source
+    if source.endpoint_url is None:
+        raise ValueError("托管 HTTP MCP 缺少 Base URL")
+    return ManagedHttpSourceResponse(
+        id=source.id,
+        name=source.name,
+        description=source.description,
+        base_url=source.endpoint_url,
+        enabled=source.status is McpSourceStatus.READY,
+        capabilities=[
+            managed_http_capability_response(value) for value in snapshot.capabilities
+        ],
+        created_at=source.created_at,
+        updated_at=source.updated_at,
+    )
+
+
 __all__ = [
+    "ManagedHttpCapabilityBody",
+    "ManagedHttpCapabilityResponse",
+    "ManagedHttpDiscoveredToolResponse",
+    "ManagedHttpDiscoveryResponse",
+    "ManagedHttpParameterBindingBody",
+    "ManagedHttpSourceBody",
+    "ManagedHttpSourceListResponse",
+    "ManagedHttpSourceResponse",
+    "ManagedHttpTestCallBody",
+    "ManagedHttpTestCallResponse",
     "MaskedMcpCredentialResponse",
     "McpCredentialSummaryResponse",
     "McpCredentialUpdateBody",
@@ -208,6 +420,10 @@ __all__ = [
     "ToolCollectionResponse",
     "ToolGrantResponse",
     "ToolGrantSelectionBody",
+    "managed_http_capability_command",
+    "managed_http_capability_response",
+    "managed_http_source_command",
+    "managed_http_source_response",
     "mcp_credential_command",
     "mcp_credential_summary_response",
     "tool_catalog_response",

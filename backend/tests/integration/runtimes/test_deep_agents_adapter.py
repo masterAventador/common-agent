@@ -34,6 +34,7 @@ from common_agent.models.base import (
     ModelStreamCompleted,
     ModelStreamEvent,
 )
+from common_agent.ports.mcp import McpToolCallResponse, McpToolDescriptor
 from common_agent.runtimes.base import RuntimeEvent, RuntimeEventKind, RuntimeStopToken
 from common_agent.tools.models import (
     ToolGrantTarget,
@@ -401,10 +402,14 @@ def test_official_deep_agent_calls_current_time_through_real_mcp(
             )
             self.calls: list[tuple[str, Mapping[str, object]]] = []
 
-        async def list_tools(self) -> Sequence[object]:
+        async def list_tools(self) -> Sequence[McpToolDescriptor]:
             return await self.runtime.list_tools()
 
-        async def call_tool(self, name: str, arguments: Mapping[str, object]) -> object:
+        async def call_tool(
+            self,
+            name: str,
+            arguments: Mapping[str, object],
+        ) -> McpToolCallResponse:
             self.calls.append((name, arguments))
             return await self.runtime.call_tool(name, arguments)
 

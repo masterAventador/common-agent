@@ -4,6 +4,24 @@ from common_agent.tools.credential_service import (
     ToolCredentialService,
     ToolCredentialServiceError,
 )
+from common_agent.tools.managed_http import (
+    ManagedHttpCapability,
+    ManagedHttpCapabilityCommand,
+    ManagedHttpParameterBinding,
+    ManagedHttpParameterLocation,
+    ManagedHttpRequest,
+    ManagedHttpRuntimeSnapshot,
+    ManagedHttpSourceCommand,
+    ManagedHttpValidationError,
+    build_managed_http_request,
+)
+from common_agent.tools.managed_http_service import (
+    ManagedHttpCapabilityNotFound,
+    ManagedHttpConflict,
+    ManagedHttpService,
+    ManagedHttpServiceError,
+    ManagedHttpSourceNotFound,
+)
 from common_agent.tools.models import (
     McpSource,
     McpSourceStatus,
@@ -39,6 +57,19 @@ from common_agent.tools.service import (
 
 __all__ = [
     "CURRENT_TIME_TOOL_NAME",
+    "ManagedHttpCapability",
+    "ManagedHttpCapabilityCommand",
+    "ManagedHttpCapabilityNotFound",
+    "ManagedHttpConflict",
+    "ManagedHttpParameterBinding",
+    "ManagedHttpParameterLocation",
+    "ManagedHttpRequest",
+    "ManagedHttpRuntimeSnapshot",
+    "ManagedHttpService",
+    "ManagedHttpServiceError",
+    "ManagedHttpSourceCommand",
+    "ManagedHttpSourceNotFound",
+    "ManagedHttpValidationError",
     "McpCredentialSourceNotFound",
     "McpSource",
     "McpSourceStatus",
@@ -65,6 +96,7 @@ __all__ = [
     "ToolService",
     "ToolServiceError",
     "ToolValidationError",
+    "build_managed_http_request",
     "current_time_capability_id",
     "platform_mcp_source_id",
     "platform_tool_catalog_seed",

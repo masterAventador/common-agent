@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from common_agent.adapters.persistence.database import Database, DatabaseStartupError
 from tests.support.settings import TEST_DATABASE_URL
 
-HEAD_REVISION = "20260722_0024"
+HEAD_REVISION = "20260722_0025"
 
 
 def _database_url() -> str:

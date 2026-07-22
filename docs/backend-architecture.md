@@ -184,6 +184,8 @@ React
 不导入 MCP、LangChain、HTTP 客户端或供应商 SDK。`adapters/mcp/` 独占 MCP SDK、HTTP 转换、连接和
 工具 Schema 映射；`adapters/agent/` 只在 Deep Agents 边界把平台 MCP 描述符包装成最后一跳
 `BaseTool`，MCP 适配器本身不反向依赖 LangChain。
+`jsonschema` 是该模块唯一登记的通用格式校验依赖，用于在配置写入和调用两处校验同一输入 Schema；
+它不负责网络、供应商协议或运行时装配。
 
 ```text
 Employee/Conversation exact grants
@@ -207,6 +209,9 @@ Employee/Conversation exact grants
   当前可用叶子 UUID，任何发现、同步或新增能力都不得写授权表；
 - 平台原生、托管和外部能力统一通过 MCP `tools/list` / `tools/call` 语义执行，再转换成平台自有结果
   与持久事件；Deep Agents 看不到来源类型，业务系统也不需要实现平台私有工具协议；
+- T2-04 已落地托管 HTTP 的手工配置纵向切片：租户内 Base URL 与能力配置规范化入库，官方 MCP SDK
+  负责进程内 `tools/list` / `tools/call`，调用前重新读取来源、能力、精确授权和服务端凭据，再经固定
+  origin 的安全 HTTP 客户端执行；OpenAPI 导入、外部 MCP 与业务工具集仍分别由后续任务补充；
 - 首批平台原生运行时使用官方 MCP 1.x 稳定协议和进程内双端传输，不建立匿名 HTTP MCP 入口；
   “当前时间”只接受受限 UTC offset。既有工作流能力也先经过动态 MCP `tools/list/tools/call`，取消
   MCP 调用时按该次平台调用令牌停止对应工作流，不能绕过 MCP 直接从 LangChain Tool 调服务；
@@ -651,6 +656,19 @@ GET    /api/v1/model-configurations/{model_configuration_id}
 PUT    /api/v1/model-configurations/{model_configuration_id}
 DELETE /api/v1/model-configurations/{model_configuration_id}
 POST   /api/v1/model-configurations/{model_configuration_id}/verify
+
+GET    /api/v1/managed-mcp-sources
+POST   /api/v1/managed-mcp-sources
+GET    /api/v1/managed-mcp-sources/{source_id}
+PUT    /api/v1/managed-mcp-sources/{source_id}
+DELETE /api/v1/managed-mcp-sources/{source_id}
+POST   /api/v1/managed-mcp-sources/{source_id}/discover
+POST   /api/v1/managed-mcp-sources/{source_id}/capabilities
+PUT    /api/v1/managed-mcp-sources/{source_id}/capabilities/{capability_id}
+DELETE /api/v1/managed-mcp-sources/{source_id}/capabilities/{capability_id}
+POST   /api/v1/managed-mcp-sources/{source_id}/capabilities/{capability_id}/test-call
+GET    /api/v1/mcp-sources/{source_id}/credentials
+PUT    /api/v1/mcp-sources/{source_id}/credentials
 
 GET    /api/v1/mcp-sources
 POST   /api/v1/mcp-sources
