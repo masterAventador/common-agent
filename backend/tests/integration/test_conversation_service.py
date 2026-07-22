@@ -204,6 +204,28 @@ class _InvalidSequenceRuntime:
         return None
 
 
+class _GappedSequenceRuntime:
+    async def stream(
+        self,
+        request: EmployeeRuntimeRequest,
+        *,
+        stop: RuntimeStopSignal,
+    ) -> AsyncIterator[RuntimeEvent]:
+        del stop
+        emitter = RuntimeEventEmitter(request.assistant_message_id)
+        yield emitter.delta("第一段")
+        second = emitter.delta("不应落库的跳号内容")
+        yield RuntimeEvent(
+            assistant_message_id=second.assistant_message_id,
+            sequence=3,
+            kind=second.kind,
+            delta=second.delta,
+        )
+
+    async def aclose(self) -> None:
+        return None
+
+
 class _LateEventRuntime:
     def __init__(self) -> None:
         self.resumed_after_terminal = False
@@ -880,11 +902,15 @@ def test_service_recovers_interrupted_messages_as_persisted_failures() -> None:
     [
         (_InterruptedRuntime(), MessageStatus.FAILED, "runtime_stream_interrupted"),
         (_InvalidSequenceRuntime(), MessageStatus.FAILED, "runtime_response_invalid"),
+        (_GappedSequenceRuntime(), MessageStatus.FAILED, "runtime_response_invalid"),
         (_LateEventRuntime(), MessageStatus.COMPLETED, None),
     ],
 )
 def test_service_closes_interrupted_or_invalid_streams_and_ignores_late_events(
-    runtime: _InterruptedRuntime | _InvalidSequenceRuntime | _LateEventRuntime,
+    runtime: _InterruptedRuntime
+    | _InvalidSequenceRuntime
+    | _GappedSequenceRuntime
+    | _LateEventRuntime,
     expected_status: MessageStatus,
     expected_error: str | None,
 ) -> None:
@@ -925,7 +951,7 @@ def test_service_closes_interrupted_or_invalid_streams_and_ignores_late_events(
                 assert delivered[-1].message == stored[-1]
                 assert stored[-1].status is expected_status
                 assert stored[-1].error_code == expected_error
-                if isinstance(runtime, _InvalidSequenceRuntime):
+                if isinstance(runtime, (_InvalidSequenceRuntime, _GappedSequenceRuntime)):
                     assert "不应落库" not in stored[-1].content
                 if isinstance(runtime, _LateEventRuntime):
                     assert runtime.resumed_after_terminal is False

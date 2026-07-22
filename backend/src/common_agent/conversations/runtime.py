@@ -178,7 +178,7 @@ class ConversationRuntimeCoordinator:
                         return
                     if (
                         event.assistant_message_id != assistant_message.id
-                        or event.sequence <= last_sequence
+                        or event.sequence != last_sequence + 1
                     ):
                         outcome_error = "runtime_response_invalid"
                         if persist_failures:
