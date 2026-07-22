@@ -86,6 +86,7 @@ from common_agent.employees import EmployeeService
 from common_agent.employees.seeds import seed_default_employee
 from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
 from common_agent.knowledge.service import KnowledgeBaseService
+from common_agent.lifecycle import AsyncCleanup, run_cleanups
 from common_agent.model_configurations import (
     ModelConfigurationService,
     ModelConfigurationVerifier,
@@ -321,21 +322,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.model_configurations = None
         app.state.resource_deletions = None
         app.state.system = None
+        cleanups: list[AsyncCleanup] = []
         if workflows is not None:
-            await workflows.aclose()
+            cleanups.append(workflows.aclose)
         if conversations is not None:
-            await conversations.aclose()
+            cleanups.append(conversations.aclose)
         elif runtime is not None:
-            await runtime.aclose()
+            cleanups.append(runtime.aclose)
         if conversation_events is not None:
-            await conversation_events.aclose()
+            cleanups.append(conversation_events.aclose)
         if workflow_events is not None:
-            await workflow_events.aclose()
+            cleanups.append(workflow_events.aclose)
         if knowledge_adapter is not None:
-            await knowledge_adapter.aclose()
+            cleanups.append(knowledge_adapter.aclose)
         if demo_workflow_model is not None:
-            await demo_workflow_model.aclose()
-        await database.stop()
+            cleanups.append(demo_workflow_model.aclose)
+        cleanups.append(database.stop)
+        await run_cleanups(*cleanups)
 
 
 def create_app() -> FastAPI:
