@@ -134,10 +134,9 @@ test("completes the whole MVP through one isolated real user journey", async ({
   await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
 
   await expect(page).toHaveURL(new RegExp(`/chat\\?employee_id=${employee.id}$`));
-  await sendMessage(
-    page,
-    "第一轮：根据绑定知识库回答 Common Agent 是什么，并明确输出真实两轮验收标记。",
-  );
+  const firstPrompt =
+    "第一轮：根据绑定知识库回答 Common Agent 是什么，并明确输出真实两轮验收标记。";
+  await sendMessage(page, firstPrompt);
   const assistantAnswers = page.locator(".chat-message.is-assistant .chat-message-content");
   await expect(assistantAnswers).toHaveCount(1);
   await expect(assistantAnswers.first()).toContainText("COMMON_AGENT_REAL_TWO_TURN_OK", {
@@ -223,7 +222,10 @@ test("completes the whole MVP through one isolated real user journey", async ({
   expect((await updatedEmployeeResponse).status()).toBe(200);
   await expect(employeeCard).toContainText("已授权 1 个工作流");
   await expect(employeeCard).toContainText(knowledgeBaseName);
-  await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
+  await page
+    .getByRole("region", { name: "历史会话" })
+    .getByRole("link", { name: `打开会话 ${firstPrompt}` })
+    .click();
   await expect(assistantAnswers).toHaveCount(2);
 
   const employeeMarker = `COMMON_AGENT_Q6_04_WORKFLOW_${Date.now()}`;
