@@ -109,7 +109,10 @@ run_formal_page_smoke() {
     COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN="${auth_token}" \
     COMMON_AGENT_E2E_AUTH_EMAIL='production-drill@example.com' \
     COMMON_AGENT_E2E_AUTH_PASSWORD='Production-Drill-2026!' \
-      pnpm exec playwright test entry-loading.spec.ts production-request-limits.spec.ts
+      pnpm exec playwright test \
+        entry-loading.spec.ts \
+        production-request-limits.spec.ts \
+        production-security-headers.spec.ts
   )
 }
 

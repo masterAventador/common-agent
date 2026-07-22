@@ -85,11 +85,23 @@ grep -Fq 'ssl_protocols TLSv1.2 TLSv1.3' "${SCRIPT_DIR}/edge.conf.template" || \
   fail "TLS 边缘入口没有固定安全协议"
 grep -Fq 'client_max_body_size 24m' "${SCRIPT_DIR}/edge.conf.template" || \
   fail "TLS 边缘入口没有为 20 MiB 文档保留有界 multipart 空间"
+for security_header in \
+  'Strict-Transport-Security' \
+  'Content-Security-Policy' \
+  'X-Content-Type-Options' \
+  'X-Frame-Options' \
+  'Referrer-Policy' \
+  'Permissions-Policy'; do
+  grep -Fq "${security_header}" "${SCRIPT_DIR}/edge.conf.template" || \
+    fail "TLS 边缘入口缺少浏览器安全响应头：${security_header}"
+done
 grep -Fq 'proxy_buffering off' "${SCRIPT_DIR}/web.conf.template" || \
   fail "前端代理没有关闭 SSE 缓冲"
 grep -Fq 'backup-recovery' "${DRILL}" || fail "生产演练没有复用正式页面恢复验证"
 grep -Fq 'production-request-limits.spec.ts' "${DRILL}" || \
   fail "生产演练没有从正式浏览器与 TLS Edge 验证请求体边界"
+grep -Fq 'production-security-headers.spec.ts' "${DRILL}" || \
+  fail "生产演练没有从正式浏览器验证安全响应头与页面兼容性"
 grep -Fq 'verify_forwarded_for_spoof_is_rate_limited' "${DRILL}" || \
   fail "生产演练没有从正式 TLS Edge 验证伪造来源头"
 grep -Fq 'X-Forwarded-For: 203.0.113.${attempt}' "${DRILL}" || \

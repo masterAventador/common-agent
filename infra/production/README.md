@@ -33,6 +33,11 @@
 另加入受宿主机防火墙约束的 egress 网络，以访问私网 RAGFlow 与百炼。两个节点间使用私网 DNS/IP、
 网络 ACL 和正式 CA 证书，不向公网暴露 RAGFlow、MySQL 或容器管理端口。
 
+业务 TLS Edge 对页面、静态资源、API、SSE 和错误响应统一发送 HSTS、同源 CSP、MIME 嗅探保护、
+禁止嵌入、无 Referer 及相机/麦克风/定位禁用策略。当前 CSP 只允许同源脚本、连接和表单；Ant Design
+运行时样式需要同源页面的 inline style，因此 `style-src` 保留 `unsafe-inline`，但不允许 inline script、
+第三方脚本、object 或外部连接。新增外部前端资源前必须先更新本策略并走正式浏览器验收。
+
 ## 本机权威演练
 
 本机演练使用 `local-shared-network` 覆盖层模拟两节点，但应用请求仍经 RAGFlow HTTPS Edge，

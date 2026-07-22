@@ -2276,5 +2276,11 @@ S10-07I 已完成可选员工或模型的工作流 AI 对话节点；下一步�
   `document_too_large`，24 MiB 文件连同 multipart 超过网关上限后由 Edge 返回 413；三条页面/API
   用例 `3 passed (5.6s)`，随后故障注入、蓝绿切换与代码回滚也通过。演练容器、网络、MySQL Volume、
   TLS/认证状态、浏览器进程和四个临时 release 镜像均已精确清理，稳定 RAGFlow 与正式候选保留复用
+- 浏览器安全头整改：生产 TLS Edge 对 HTML、静态资源、API、SSE 和错误统一增加一年 HSTS、同源
+  CSP、`nosniff`、`DENY` 防嵌入、`no-referrer` 及相机/麦克风/定位禁用策略；CSP 只为 Ant Design
+  运行时样式保留 inline style，不允许 inline/第三方脚本、object、外部连接或跨源表单。正式 HTTPS
+  页面与健康 API 均逐头验证，四个 React 路由在 CSP 下无页面异常，本轮生产套件 `4 passed (6.6s)`，
+  蓝绿切换、API 故障注入和回滚继续通过；本轮容器、网络、临时卷/凭据、无头浏览器和四个 release
+  镜像已精确清理
 - 当前下一步：补齐权限与输入攻击矩阵，再执行并发、容量、SSE 长连接、故障恢复、SLO/告警及新
   租户正式浏览器全链、审计、备份和回滚终验；S10-08 尚未完成，不以本阶段扫描结果冒充最终交付
