@@ -27,6 +27,7 @@ const chatApi = vi.hoisted(() => ({
     | undefined,
 }));
 const modelConfigurationApi = vi.hoisted(() => ({
+  fetchModelConfiguration: vi.fn(),
   fetchModelConfigurations: vi.fn(),
 }));
 const workflowRunApi = vi.hoisted(() => ({
@@ -224,6 +225,7 @@ describe("ChatPage", () => {
       items: [modelConfiguration],
       next_cursor: null,
     });
+    modelConfigurationApi.fetchModelConfiguration.mockResolvedValue(modelConfiguration);
     chatApi.fetchConversationMessages.mockResolvedValue([userMessage, assistantMessage]);
     workflowRunApi.fetchConversationWorkflowRuns.mockResolvedValue({ items: [], next_cursor: null });
     workflowApi.fetchWorkflows.mockResolvedValue({ items: [workflow], next_cursor: null });
@@ -402,6 +404,9 @@ describe("ChatPage", () => {
     };
     employeeApi.fetchEmployees.mockResolvedValue({ items: [], next_cursor: null });
     employeeApi.fetchEmployee.mockResolvedValue(currentEmployee);
+    modelConfigurationApi.fetchModelConfiguration.mockResolvedValue(
+      alternateModelConfiguration,
+    );
     modelConfigurationApi.fetchModelConfigurations.mockResolvedValue({
       items: [modelConfiguration, alternateModelConfiguration],
       next_cursor: null,
@@ -412,6 +417,46 @@ describe("ChatPage", () => {
     await waitFor(() => expect(employeeApi.fetchEmployee).toHaveBeenCalledWith(employee.id));
     expect(await screen.findByRole("heading", { name: currentEmployee.name })).toBeInTheDocument();
     expect(screen.getByTitle(alternateModelConfiguration.display_name)).toBeInTheDocument();
+  });
+
+  it("restores an employee default model that is beyond the first model page", async () => {
+    const currentEmployee = {
+      ...employee,
+      default_model_configuration_id: alternateModelConfiguration.id,
+      default_model_identifier: alternateModelConfiguration.model_identifier,
+    };
+    employeeApi.fetchEmployee.mockResolvedValue(currentEmployee);
+    modelConfigurationApi.fetchModelConfigurations.mockResolvedValue({
+      items: [modelConfiguration],
+      next_cursor: "next-model-page",
+    });
+    modelConfigurationApi.fetchModelConfiguration.mockResolvedValue(
+      alternateModelConfiguration,
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(modelConfigurationApi.fetchModelConfiguration).toHaveBeenCalledWith(
+        alternateModelConfiguration.id,
+      ),
+    );
+    expect(await screen.findByTitle(alternateModelConfiguration.display_name)).toBeInTheDocument();
+  });
+
+  it("blocks sending instead of silently falling back when the context model cannot load", async () => {
+    modelConfigurationApi.fetchModelConfiguration
+      .mockRejectedValueOnce(new Error("默认模型暂不可用"))
+      .mockResolvedValue(modelConfiguration);
+    const user = userEvent.setup();
+
+    renderPage();
+
+    expect(await screen.findByText("当前会话模型加载失败")).toBeInTheDocument();
+    expect(screen.getByText("默认模型暂不可用")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "消息输入" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重试加载" }));
+    expect(await screen.findByRole("textbox", { name: "消息输入" })).toBeEnabled();
   });
 
   it("blocks a restored employee conversation when its linked employee is unavailable", async () => {

@@ -13,6 +13,7 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
 
   if (
     modelConfigurations.isPending ||
+    controller.contextModelConfiguration.isFetching ||
     (Boolean(controller.selectedConversationId) && controller.selectedConversationQuery.isPending) ||
     (Boolean(controller.selectedEmployeeId) && controller.selectedEmployeeQuery.isPending)
   ) {
@@ -34,6 +35,26 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
             <Button
               icon={<RefreshCw aria-hidden="true" size={16} />}
               onClick={() => void modelConfigurations.refetch()}
+            >
+              重试加载
+            </Button>
+          }
+        />
+      </section>
+    );
+  }
+  if (controller.contextModelConfiguration.isError) {
+    return (
+      <section className="chat-page">
+        <Alert
+          type="error"
+          showIcon
+          title="当前会话模型加载失败"
+          description={getErrorMessage(controller.contextModelConfiguration.error)}
+          action={
+            <Button
+              icon={<RefreshCw aria-hidden="true" size={16} />}
+              onClick={() => void controller.contextModelConfiguration.refetch()}
             >
               重试加载
             </Button>

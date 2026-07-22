@@ -42,7 +42,9 @@ test("persists an employee model and routes its real reply through that model", 
       response.request().method() === "POST",
   );
   await modelDialog.getByRole("button", { name: "确认创建" }).click();
-  expect((await modelResponse).status()).toBe(201);
+  const createdModelResponse = await modelResponse;
+  expect(createdModelResponse.status()).toBe(201);
+  const createdModel = (await createdModelResponse.json()) as { id: string };
 
   await page.getByRole("link", { name: "数字员工" }).click();
   await page.getByRole("button", { name: "创建数字员工" }).click();
@@ -160,7 +162,13 @@ test("persists an employee model and routes its real reply through that model", 
 
   await page.getByRole("link", { name: "数字员工" }).click();
   employeeCard = page.locator(".employee-card", { hasText: employeeName });
+  const exactModelResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/model-configurations/${createdModel.id}`) &&
+      response.request().method() === "GET",
+  );
   await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
+  expect((await exactModelResponse).status()).toBe(200);
   await expect(page.locator(".chat-model-select")).toContainText(modelName);
   await selectChatModel(page, "平台默认模型");
   const prompt = `只输出这个标记：${replyMarker}`;

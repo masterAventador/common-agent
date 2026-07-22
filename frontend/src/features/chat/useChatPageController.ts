@@ -20,7 +20,10 @@ import {
   type ConversationMessage,
 } from "../../api/conversations";
 import { fetchEmployee, fetchEmployees } from "../../api/employees";
-import { fetchModelConfigurations } from "../../api/modelConfigurations";
+import {
+  fetchModelConfiguration,
+  fetchModelConfigurations,
+} from "../../api/modelConfigurations";
 import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 import { fetchConversationWorkflowRuns } from "../../api/workflowRuns";
 import { fetchWorkflows } from "../../api/workflows";
@@ -73,6 +76,10 @@ export function useChatPageController() {
     [listedEmployeeItems, selectedEmployee],
   );
   const contextKey = selectedEmployeeId ? `employee:${selectedEmployeeId}` : "generic";
+  const defaultModelConfigurationId =
+    selectedConversation?.source === "generic"
+      ? selectedConversation.model_configuration_id
+      : selectedEmployee?.default_model_configuration_id;
   const modelConfigurations = useInfiniteQuery({
     queryKey: ["model-configurations", "chat"],
     queryFn: ({ pageParam }) =>
@@ -84,14 +91,28 @@ export function useChatPageController() {
     () => flattenCursorPages(modelConfigurations.data),
     [modelConfigurations.data],
   );
+  const contextModelConfiguration = useQuery({
+    queryKey: ["model-configuration", defaultModelConfigurationId],
+    queryFn: () => fetchModelConfiguration(defaultModelConfigurationId ?? ""),
+    enabled: Boolean(defaultModelConfigurationId),
+  });
   const modelConfigurationItems = useMemo(
-    () =>
-      allModelConfigurationItems.filter(
+    () => {
+      const exact = contextModelConfiguration.data;
+      const available = exact
+        ? [exact, ...allModelConfigurationItems.filter((item) => item.id !== exact.id)]
+        : allModelConfigurationItems;
+      return available.filter(
         (configuration) =>
           configuration.enabled ||
           configuration.id === selectedEmployee?.default_model_configuration_id,
-      ),
-    [allModelConfigurationItems, selectedEmployee?.default_model_configuration_id],
+      );
+    },
+    [
+      allModelConfigurationItems,
+      contextModelConfiguration.data,
+      selectedEmployee?.default_model_configuration_id,
+    ],
   );
   const selectedConversationId = requestedConversationId ?? undefined;
   const messages = useQuery({
@@ -136,15 +157,17 @@ export function useChatPageController() {
     [workflowRunItems],
   );
 
-  const defaultModelConfigurationId =
-    selectedConversation?.source === "generic"
-      ? selectedConversation.model_configuration_id
-      : selectedEmployee?.default_model_configuration_id;
   const modelContextKey = `${contextKey}:${requestedConversationId ?? "new"}:${
     defaultModelConfigurationId ?? "first"
   }`;
   useEffect(() => {
-    if (!modelConfigurationItems.length || modelContextRef.current === modelContextKey) return;
+    if (
+      !modelConfigurationItems.length ||
+      modelContextRef.current === modelContextKey ||
+      (defaultModelConfigurationId && contextModelConfiguration.isPending)
+    ) {
+      return;
+    }
     const availableDefault = modelConfigurationItems.some(
       (item) => item.id === defaultModelConfigurationId,
     );
@@ -154,7 +177,12 @@ export function useChatPageController() {
         : modelConfigurationItems[0].id,
     );
     modelContextRef.current = modelContextKey;
-  }, [defaultModelConfigurationId, modelConfigurationItems, modelContextKey]);
+  }, [
+    contextModelConfiguration.isPending,
+    defaultModelConfigurationId,
+    modelConfigurationItems,
+    modelContextKey,
+  ]);
 
   useEffect(() => {
     if (!selectedConversationId) return;
@@ -286,6 +314,7 @@ export function useChatPageController() {
     employeeSearch,
     messages,
     modelConfigurations,
+    contextModelConfiguration,
     modelConfigurationItems,
     selectedModelConfigurationId,
     operationError:

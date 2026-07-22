@@ -62,6 +62,23 @@ export async function fetchModelConfigurations(
   }
 }
 
+export async function fetchModelConfiguration(
+  modelConfigurationId: string,
+): Promise<ModelConfiguration> {
+  try {
+    const response = await apiClient.get<unknown>(
+      `/model-configurations/${encodeURIComponent(modelConfigurationId)}`,
+    );
+    const configuration = parseModelConfigurationResponse(response.data);
+    if (configuration.id !== modelConfigurationId) {
+      throw new Error("模型配置响应与请求不匹配");
+    }
+    return configuration;
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
 export async function createModelConfiguration(
   input: ModelConfigurationInput,
 ): Promise<ModelConfiguration> {

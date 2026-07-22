@@ -4,6 +4,7 @@ import { apiClient } from "./client";
 import {
   createModelConfiguration,
   deleteModelConfiguration,
+  fetchModelConfiguration,
   fetchModelConfigurations,
   parseModelConfigurationResponse,
   parseModelConfigurationsResponse,
@@ -65,9 +66,9 @@ describe("model configuration API boundary", () => {
   });
 
   it("uses only formal platform endpoints for filtered list, CRUD, and verification", async () => {
-    vi.mocked(apiClient.get).mockResolvedValue({
-      data: { items: [model], next_cursor: null },
-    });
+    vi.mocked(apiClient.get)
+      .mockResolvedValueOnce({ data: { items: [model], next_cursor: null } })
+      .mockResolvedValueOnce({ data: model });
     vi.mocked(apiClient.post)
       .mockResolvedValueOnce({ data: model })
       .mockResolvedValueOnce({ data: verification });
@@ -77,6 +78,7 @@ describe("model configuration API boundary", () => {
     await expect(
       fetchModelConfigurations({ search: "Qwen", limit: 20, cursor: "next" }, true),
     ).resolves.toEqual({ items: [model], next_cursor: null });
+    await expect(fetchModelConfiguration(model.id)).resolves.toEqual(model);
     await expect(createModelConfiguration(input)).resolves.toEqual(model);
     await expect(updateModelConfiguration("model/with space", input)).resolves.toEqual(model);
     await expect(verifyModelConfiguration("model/with space")).resolves.toEqual(verification);
@@ -85,6 +87,9 @@ describe("model configuration API boundary", () => {
     expect(apiClient.get).toHaveBeenCalledWith("/model-configurations", {
       params: { search: "Qwen", limit: 20, cursor: "next", enabled_only: true },
     });
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/model-configurations/${model.id}`,
+    );
     expect(apiClient.post).toHaveBeenNthCalledWith(1, "/model-configurations", input);
     expect(apiClient.put).toHaveBeenCalledWith("/model-configurations/model%2Fwith%20space", input);
     expect(apiClient.post).toHaveBeenNthCalledWith(
