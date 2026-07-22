@@ -1,5 +1,6 @@
 import { expect, test } from "./fixtures/auth";
 import { selectEmployeeDefaultModel } from "./fixtures/models";
+import { expectRouteSearchParam } from "./fixtures/url";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -104,7 +105,7 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
   await expect(employeeCard).toContainText(knowledgeBaseName);
   await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
 
-  await expect(page).toHaveURL(new RegExp(`/chat\\?employee_id=${createdEmployee.id}$`));
+  await expectRouteSearchParam(page, "/chat", "employee_id", createdEmployee.id);
   await expect(page.getByRole("heading", { name: "AI 会话" })).toBeVisible();
   await expect(page.getByRole("region", { name: "会话列表" })).toBeVisible();
   await expect(page.getByRole("region", { name: "消息区域" })).toBeVisible();

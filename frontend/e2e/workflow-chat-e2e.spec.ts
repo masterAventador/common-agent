@@ -2,6 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/auth";
 import { selectEmployeeDefaultModel } from "./fixtures/models";
+import { expectRouteSearchParam } from "./fixtures/url";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -110,7 +111,7 @@ test("designs, runs, triggers, and restores an employee workflow through the rea
   await expect(employeeCard).toContainText("已授权 1 个工作流");
   await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
 
-  await expect(page).toHaveURL(new RegExp(`/chat\\?employee_id=${createdEmployee.id}$`));
+  await expectRouteSearchParam(page, "/chat", "employee_id", createdEmployee.id);
   const employeeMarker = `COMMON_AGENT_W5_08_EMPLOYEE_${Date.now()}`;
   await page
     .getByRole("textbox", { name: "消息输入" })

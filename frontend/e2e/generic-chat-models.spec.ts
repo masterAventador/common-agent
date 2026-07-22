@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/auth";
+import { expectRouteSearchParam } from "./fixtures/url";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -76,9 +77,7 @@ test("creates a generic conversation on first send and switches real Bailian mod
   expect(firstTurn.conversation.employee_id).toBeNull();
   expect(firstTurn.turn.assistant_message.model_configuration_id).toBe(createdModel.id);
   expect(firstTurn.turn.assistant_message.model_identifier).toBe("qwen-turbo");
-  await expect(page).toHaveURL(
-    new RegExp(`/chat\\?conversation_id=${firstTurn.conversation.id}$`),
-  );
+  await expectRouteSearchParam(page, "/chat", "conversation_id", firstTurn.conversation.id);
   await expect(page.locator(".chat-message.is-assistant .chat-message-content").last()).toContainText(
     firstMarker,
     { timeout: 180_000 },
@@ -119,9 +118,7 @@ test("creates a generic conversation on first send and switches real Bailian mod
   await history
     .getByRole("link", { name: `打开会话 ${firstPrompt.slice(0, 200)}` })
     .click();
-  await expect(page).toHaveURL(
-    new RegExp(`/chat\\?conversation_id=${firstTurn.conversation.id}$`),
-  );
+  await expectRouteSearchParam(page, "/chat", "conversation_id", firstTurn.conversation.id);
   await expect(page.locator(".chat-model-select")).toContainText("平台默认模型");
   await expect(page.locator(".chat-message.is-user .chat-message-content")).toHaveCount(2);
   await expect(

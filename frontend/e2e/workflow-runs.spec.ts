@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import { expect, platformWriteHeaders, test } from "./fixtures/auth";
+import { expectRouteSearchParam } from "./fixtures/url";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -152,7 +153,7 @@ test("runs, stops, fails, and restores workflow summaries through the real UI", 
   await page.getByRole("button", { name: `选择工作流 ${successWorkflowName}` }).click();
 
   const completedRun = await runFromPage(page, "执行真实工作流并返回唯一验收标记");
-  await expect(page).toHaveURL(new RegExp(`run_id=${completedRun.id}`));
+  await expectRouteSearchParam(page, "/workflows", "run_id", completedRun.id);
   await expect(page.getByRole("button", { name: "停止工作流" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "工作流名称" })).toBeDisabled();
   await expect(page.getByText("运行完成")).toBeVisible({ timeout: 180_000 });
@@ -163,7 +164,7 @@ test("runs, stops, fails, and restores workflow summaries through the real UI", 
   await expect(page.locator(".react-flow__node.is-run-completed")).toHaveCount(3);
 
   await page.reload();
-  await expect(page).toHaveURL(new RegExp(`run_id=${completedRun.id}`));
+  await expectRouteSearchParam(page, "/workflows", "run_id", completedRun.id);
   await expect(page.getByText("运行完成")).toBeVisible();
   await expect(page.getByText("COMMON_AGENT_WORKFLOW_UI_REAL_OK", { exact: false })).toBeVisible();
   await expect(page.locator(".workflow-run-targets")).toContainText("模型 · qwen-plus", {
@@ -186,7 +187,7 @@ test("runs, stops, fails, and restores workflow summaries through the real UI", 
   await expect(page.getByText("工作流已停止")).toBeVisible({ timeout: 180_000 });
 
   await page.reload();
-  await expect(page).toHaveURL(new RegExp(`run_id=${stoppedRun.id}`));
+  await expectRouteSearchParam(page, "/workflows", "run_id", stoppedRun.id);
   await expect(page.getByText("工作流已停止")).toBeVisible();
 
   await page.getByRole("button", { name: `选择工作流 ${failureWorkflowName}` }).click();

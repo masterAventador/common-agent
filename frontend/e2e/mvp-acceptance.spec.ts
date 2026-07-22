@@ -2,6 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/auth";
 import { selectEmployeeDefaultModel, selectWorkflowAiTarget } from "./fixtures/models";
+import { expectRouteSearchParam } from "./fixtures/url";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -133,7 +134,7 @@ test("completes the whole MVP through one isolated real user journey", async ({
   await expect(employeeCard).toContainText(knowledgeBaseName);
   await employeeCard.getByRole("button", { name: `与${employeeName}开始对话` }).click();
 
-  await expect(page).toHaveURL(new RegExp(`/chat\\?employee_id=${employee.id}$`));
+  await expectRouteSearchParam(page, "/chat", "employee_id", employee.id);
   const firstPrompt =
     "第一轮：根据绑定知识库回答 Common Agent 是什么，并明确输出真实两轮验收标记。";
   await sendMessage(page, firstPrompt);
