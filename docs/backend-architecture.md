@@ -907,9 +907,11 @@ completed/failed/stopped 都严格提交后发布。停止接口只接受活跃�
 互不冲突的项目专属 launchd 标签和日志。平台 MySQL 数据、上传临时文件、服务 Volume 映射和
 日志统一放在根目录 `.local/`；平台 MySQL 与 RAGFlow 使用不同的 Compose project、容器、网络和 Volume。
 
-R2-07 切换前，RAGFlow 当前仍固定为官方 `v0.26.4` 及其 tag 提交
-`cb93883f3f8c975eecb2fed81210effeb3bdb06f`；切换后 `third_party/ragflow` 固定到以该提交为上游
-基线的私有补丁 revision，并由 `infra/ragflow/manage.sh` 同时验证 upstream/fork/image。知识库新建、既有索引
+RAGFlow 正式 submodule 已固定私有补丁 revision
+`9140f309de9129dc7cd6c889f2e0335b3f384628`，其官方上游基线仍为
+`v0.26.4@cb93883f3f8c975eecb2fed81210effeb3bdb06f`；`infra/ragflow/manage.sh` 同时验证
+upstream tag/祖先关系、fork origin/commit、官方基底 digest、镜像 OCI revision 和补丁文件哈希。
+知识库新建、既有索引
 重建和检索分别显式固定阿里百炼
 `text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible` 与
 `qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible`，不启动或兜底到本地

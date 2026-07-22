@@ -1,11 +1,11 @@
 # RAGFlow 独立开发栈
 
-本项目固定使用 RAGFlow 官方稳定版 `v0.26.4`，并同时固定官方 tag 对应提交
-`cb93883f3f8c975eecb2fed81210effeb3bdb06f`，禁止使用 `latest` 或漂移分支。
-未修改的官方 checkout 以 `third_party/ragflow` Git submodule 纳入父仓库，`manage.sh` 只读取
-该目录。R2-02 已建立私有镜像仓库和独立补丁工作区，但在 R2-07 完成补丁回归与依赖切换前，
-正式运行栈仍只使用当前未修改的官方 submodule 和官方镜像；不得把未提交补丁工作区临时挂入
-Compose。commit、tag、origin 或工作区任一不匹配时管理脚本都会关闭失败。
+本项目以 RAGFlow 官方稳定版
+`v0.26.4@cb93883f3f8c975eecb2fed81210effeb3bdb06f` 为不可漂移基线，正式依赖锁定私有 fork
+`9140f309de9129dc7cd6c889f2e0335b3f384628`，禁止使用 `latest` 或漂移分支。
+`third_party/ragflow` Git submodule 通过相对 URL 指向 `masterAventador/common-agent-ragflow`，因此会
+跟随父仓库所用 SSH/HTTPS 协议；`manage.sh` 只读取该锁定目录，不读取 `.local/ragflow-fork` 开发
+工作区。fork commit、官方 tag/基线、origin、工作区或镜像 revision 任一不匹配时都会关闭失败。
 
 ## 私有补丁仓库
 
@@ -29,16 +29,20 @@ infra/ragflow/verify-patchset.sh
 
 `verify-remote` 同时校验 GitHub 仓库仍为 private、默认分支仍为 `main`、官方与私有 tag 指向同一
 基线、私有 `main` 未漂移，以及远端补丁分支仍包含基线。补丁开发只在 `.local/ragflow-fork`
-完成并推送，不直接修改 `third_party/ragflow`；common-agent submodule、镜像和 Compose 的正式切换
-统一留到 R2-07，避免尚未完成回归的源码进入稳定栈。
+完成并推送，不直接在 detached 的 `third_party/ragflow` 中开发；该 submodule 只消费已回归、已推送
+的精确 fork commit。
+
+本机通过父仓库同一 SSH/HTTPS 凭据解析相对 submodule URL。可选 GitHub Actions 若要递归检出两个
+私有 sibling 仓库，需要把同时只读授权这两个仓库的细粒度 Token 保存为
+`COMMON_AGENT_REPOSITORIES_TOKEN`；本机权威验收不依赖该 Secret 或 Hosted Runner。
 
 `patchset.env` 固定补丁基线、最终提交、有序提交栈、允许改动目录、升级审计目标以及已确认的冲突
 文件；`verify-patchset.sh` 同时检查本地与远端补丁头、线性历史、工作区洁净和 `merge-tree` 冲突集。
 当前对官方 `main` 快照的审计只允许 `api/apps/services/dataset_api_service.py` 一处已知人工合并点，
 任何提交顺序、远端提交或升级冲突集合漂移都会关闭失败。
 
-性能补丁候选必须让基准源码、预期 Git commit 和临时镜像 OCI revision 三者一致，并显式使用
-`patched` 源码审计模式；正式栈仍由 `manage.sh up` 恢复为官方镜像。基准运行器沿用 R2-01 的规模
+性能补丁候选必须让基准源码、预期 Git commit 和镜像 OCI revision 三者一致，并显式使用
+`patched` 源码审计模式；正式栈固定使用本地可复现的 fork 覆盖镜像。基准运行器沿用 R2-01 的规模
 档位和报告变量，以保证补丁前后可以直接比较：
 
 ```bash
@@ -52,7 +56,10 @@ COMMON_AGENT_R2_01_REPORT_PATH="$PWD/.local/benchmarks/candidate/baseline.json" 
 
 运行器会按源码模式分别记录官方 JOIN 查询或补丁后的独立计数、分页 ID、页内详情和定向删除
 `EXPLAIN ANALYZE`，并校验写入、检索、删除后不可见、资源采样和隔离数据清理。候选镜像如何构建与
-正式接入由对应补丁任务和 R2-07 统一固化，不允许仅靠环境变量把未提交源码变成项目依赖。
+正式镜像由 `Dockerfile.fork` 从锁定官方 digest 起步，只覆盖 submodule 的完整 `api/rag` 目录；
+`docker/` 配置由同一 submodule 的 Compose 直接消费。构建不下载、不重解依赖，也不允许仅靠环境变量
+把未提交源码变成项目依赖。外围 Elasticsearch、MySQL、MinIO、Valkey 继续使用官方镜像，但 Compose
+从 `image.env` 读取已审阅的精确 digest，不再依赖可变 tag。
 
 R2-06 补丁集回归报告必须来自 `patchset.env` 固定的最终提交，分别覆盖 25 万行列表/定向删除、
 真实批量写入与 embedding 并发、合法和越界检索及 12k 切片读取。执行
@@ -67,6 +74,8 @@ colima start common-agent-dev --cpus 8 --memory 32 --disk 100 --root-disk 20 \
   --runtime docker --vm-type vz --vz-rosetta --activate=false
 infra/ragflow/manage.sh prepare
 infra/ragflow/manage.sh pull-image
+infra/ragflow/manage.sh verify-image
+infra/ragflow/manage.sh scan-image
 infra/ragflow/manage.sh migrate-native-volumes
 infra/ragflow/manage.sh check-ports
 infra/ragflow/manage.sh up
@@ -80,14 +89,15 @@ infra/ragflow/manage.sh stop
 infra/ragflow/manage.sh down
 bash infra/ragflow/test-manage.sh
 bash infra/ragflow/test-patchset.sh
+bash infra/ragflow/test-image.sh
 ```
 
 固定开发栈 Compose project name 为 `common-agent-dev`。普通开发和定向测试复用该栈，
 不因 FastAPI 或 React 改动重建 RAGFlow；`stop` 停止服务但保留容器，`down` 删除容器和
 网络但保留数据。Elasticsearch、MySQL、MinIO 和 Valkey 状态使用项目专属 Colima 内的原生
-Docker Volume，日志位于被 Git 忽略的 `.local/dev/common-agent-dev/ragflow/data/logs/`，官方
+Docker Volume，日志位于被 Git 忽略的 `.local/dev/common-agent-dev/ragflow/data/logs/`，私有 fork
 checkout 位于 `third_party/ragflow` submodule。只有改动 RAGFlow 版本、submodule 指针、Compose
-或存储时才重建整栈；任务镜像清理不得删除仍由稳定栈使用的官方镜像。
+或存储时才重建整栈；任务镜像清理不得删除仍由稳定栈使用的 fork 镜像或其官方固定基底。
 
 旧版外围层曾把四个数据卷 bind 到 macOS `.local/`。VZ/virtiofs 在 Colima 重启后会把这些文件
 重新映射为容器内 `root:root`，导致 MySQL 无法写 binlog；旧 MySQL 还使用只能在大小写不敏感
@@ -173,17 +183,19 @@ RAGFLOW_CONFIRM_BAILIAN_REINDEX=yes \
 恢复后使用同一命令重新执行，不需要修改 RAGFlow 数据库或源码。等待上限默认 3600 秒，可通过
 `RAGFLOW_BAILIAN_MIGRATION_TIMEOUT_SECONDS` 在 1-86400 秒内调整。
 
-Apple Silicon 使用官方 `linux/amd64` 镜像并由独立 Colima VZ/Rosetta 环境运行。镜像已存在时
-`pull-image` 直接复用；下载 Docker Hub 不稳定时，可通过官方 tag 对应镜像源覆盖：
+Apple Silicon 使用 `linux/amd64` fork 覆盖镜像并由独立 Colima VZ/Rosetta 环境运行。`pull-image`
+先验证 submodule、官方基底 digest、OCI 标签和补丁文件哈希；镜像已存在且完全匹配时复用，否则从
+锁定官方基底本地重建。四个外围服务保持原生 arm64，并由各自精确 digest 固定：
 
 ```bash
-RAGFLOW_IMAGE_SOURCE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v0.26.4 \
-  infra/ragflow/manage.sh pull-image
+infra/ragflow/manage.sh pull-image
+infra/ragflow/manage.sh verify-image
+infra/ragflow/manage.sh scan-image
 ```
 
 从 v0.25.6 升级到 v0.26.4 时保持四个原生数据卷不变，停止服务后先创建冷备份，且禁止执行
 `docker compose down -v`。v0.26.4 官方入口会在 API 启动前执行数据库 schema 同步和模型供应商表
 迁移；首次启动后必须检查迁移日志、版本端点、既有数据集/文档和真实检索，再清理临时回滚资源。
-后续升级仍必须作为独立路线图任务：同步修改 submodule 指针、`VERSION` 与 `UPSTREAM_COMMIT`，
-运行配置契约、正式适配器契约和完整纵向链路回归；禁止直接修改 submodule、运行中容器或官方
-镜像，补丁只能在已锁定基线的版本化私有分支中维护。
+后续升级仍必须作为独立路线图任务：同步修改 submodule 指针、`VERSION`、`UPSTREAM_COMMIT`、
+`patchset.env` 与 `image.env`，运行配置契约、镜像安全扫描、正式适配器契约和完整纵向链路回归；
+禁止直接修改 detached submodule 或运行中容器，补丁只能在已锁定基线的版本化私有分支中维护。

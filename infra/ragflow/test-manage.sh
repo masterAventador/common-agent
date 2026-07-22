@@ -6,8 +6,15 @@ REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 MANAGER="${SCRIPT_DIR}/manage.sh"
 VERSION="$(tr -d '[:space:]' < "${SCRIPT_DIR}/VERSION")"
 SUBMODULE_ROOT="${REPOSITORY_ROOT}/third_party/ragflow"
-EXPECTED_COMMIT="$(tr -d '[:space:]' < "${SCRIPT_DIR}/UPSTREAM_COMMIT")"
+UPSTREAM_COMMIT="$(tr -d '[:space:]' < "${SCRIPT_DIR}/UPSTREAM_COMMIT")"
 TEST_DOCKER_CONTEXT="${COMMON_AGENT_TEST_DOCKER_CONTEXT:-colima}"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/fork.env"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/patchset.env"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/image.env"
+EXPECTED_COMMIT="${RAGFLOW_PATCH_HEAD}"
 
 fail() {
   echo "$1" >&2
@@ -16,7 +23,9 @@ fail() {
 
 [[ -x "${MANAGER}" ]] || fail "缺少可执行的 RAGFlow 管理脚本"
 [[ "${VERSION}" == "v0.26.4" ]] || fail "RAGFlow 版本未固定为 v0.26.4"
-[[ "${EXPECTED_COMMIT}" == "cb93883f3f8c975eecb2fed81210effeb3bdb06f" ]] || fail "RAGFlow 上游提交未固定"
+[[ "${UPSTREAM_COMMIT}" == "${RAGFLOW_UPSTREAM_COMMIT}" ]] || fail "RAGFlow 上游提交未固定"
+[[ "${EXPECTED_COMMIT}" == "9140f309de9129dc7cd6c889f2e0335b3f384628" ]] || fail "RAGFlow fork 提交未固定"
+[[ "${RAGFLOW_FORK_IMAGE_REVISION}" == "${EXPECTED_COMMIT}" ]] || fail "RAGFlow 镜像 revision 未固定"
 ENV_VERSION_LINE="$(rg --color=never --only-matching '^RAGFLOW_EXPECTED_VERSION=.*' "${REPOSITORY_ROOT}/.env.example" || true)"
 [[ "${ENV_VERSION_LINE#*=}" == "${VERSION}" ]] || fail "后端期望的 RAGFlow 版本与基础设施版本不一致"
 
@@ -39,15 +48,31 @@ fi
 [[ -f "${REPOSITORY_ROOT}/.gitmodules" ]] || fail "缺少第三方源码 submodule 清单"
 [[ "$(git config -f "${REPOSITORY_ROOT}/.gitmodules" --get submodule.third_party/ragflow.path)" == "third_party/ragflow" ]] || \
   fail "RAGFlow submodule 路径未固定"
-[[ "$(git config -f "${REPOSITORY_ROOT}/.gitmodules" --get submodule.third_party/ragflow.url)" == "https://github.com/infiniflow/ragflow.git" ]] || \
-  fail "RAGFlow submodule 未指向官方仓库"
+[[ "$(git config -f "${REPOSITORY_ROOT}/.gitmodules" --get submodule.third_party/ragflow.url)" == "../common-agent-ragflow.git" ]] || \
+  fail "RAGFlow submodule 未指向私有相对仓库"
 [[ "$(git -C "${SUBMODULE_ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || \
   fail "RAGFlow submodule commit 与基础设施锁定值不一致"
+[[ "$(git -C "${SUBMODULE_ROOT}" rev-parse "refs/tags/${VERSION}^{commit}")" == "${UPSTREAM_COMMIT}" ]] || \
+  fail "RAGFlow submodule 官方 tag 未锁定上游基线"
+git -C "${SUBMODULE_ROOT}" merge-base --is-ancestor "${UPSTREAM_COMMIT}" "${EXPECTED_COMMIT}" || \
+  fail "RAGFlow submodule fork commit 不包含上游基线"
+case "$(git -C "${SUBMODULE_ROOT}" remote get-url origin)" in
+  "${RAGFLOW_FORK_SSH_URL}" | "${RAGFLOW_FORK_HTTPS_URL}") ;;
+  *) fail "RAGFlow submodule origin 未指向私有 fork" ;;
+esac
 git -C "${SUBMODULE_ROOT}" diff --quiet || fail "RAGFlow submodule 工作区被修改"
 git -C "${SUBMODULE_ROOT}" diff --cached --quiet || fail "RAGFlow submodule 暂存区被修改"
 
 rg --color=never --fixed-strings --quiet 'third_party/ragflow' "${MANAGER}" || \
   fail "RAGFlow 管理脚本没有使用项目 submodule"
+rg --color=never --fixed-strings --quiet '"${IMAGE_MANAGER}" ensure' "${MANAGER}" || \
+  fail "RAGFlow 管理脚本没有构建或复用已验证 fork 镜像"
+rg --color=never --fixed-strings --quiet 'build-image) prepare; "${IMAGE_MANAGER}" build' "${MANAGER}" || \
+  fail "RAGFlow 管理脚本缺少 fork 镜像显式构建入口"
+rg --color=never --fixed-strings --quiet 'verify-image) prepare; "${IMAGE_MANAGER}" verify' "${MANAGER}" || \
+  fail "RAGFlow 管理脚本缺少 fork 镜像验证入口"
+rg --color=never --fixed-strings --quiet 'scan-image) prepare; "${IMAGE_MANAGER}" scan' "${MANAGER}" || \
+  fail "RAGFlow 管理脚本缺少 fork 镜像安全扫描入口"
 if rg --color=never --quiet 'git clone' "${MANAGER}"; then
   fail "RAGFlow 管理脚本不得在运行时临时 clone 上游源码"
 fi
@@ -112,7 +137,17 @@ service_block() {
 
 rg --color=never --quiet '^name: common-agent-dev$' <<< "${CONFIG}"
 rg --color=never --quiet 'container_name: common-agent-ragflow-api' <<< "${CONFIG}"
-rg --color=never --quiet 'image: infiniflow/ragflow:v0\.26\.4' <<< "${CONFIG}"
+rg --color=never --fixed-strings --quiet "image: ${RAGFLOW_FORK_IMAGE}" <<< "${CONFIG}"
+rg --color=never --fixed-strings --quiet "RAGFLOW_IMAGE: ${RAGFLOW_FORK_IMAGE}" <<< "$(service_block ragflow-cpu)" || \
+  fail "RAGFlow API 容器内镜像元数据没有同步 fork 标签"
+rg --color=never --fixed-strings --quiet "image: ${RAGFLOW_ELASTICSEARCH_IMAGE}" <<< "$(service_block es01)" || \
+  fail "RAGFlow Elasticsearch 没有锁定已审阅 digest"
+rg --color=never --fixed-strings --quiet "image: ${RAGFLOW_MYSQL_IMAGE}" <<< "$(service_block mysql)" || \
+  fail "RAGFlow MySQL 没有锁定已审阅 digest"
+rg --color=never --fixed-strings --quiet "image: ${RAGFLOW_MINIO_IMAGE}" <<< "$(service_block minio)" || \
+  fail "RAGFlow MinIO 没有锁定已审阅 digest"
+rg --color=never --fixed-strings --quiet "image: ${RAGFLOW_VALKEY_IMAGE}" <<< "$(service_block redis)" || \
+  fail "RAGFlow Valkey 没有锁定已审阅 digest"
 rg --color=never --fixed-strings --quiet -- '--init-model-provider-tables' <<< "$(service_block ragflow-cpu)" || \
   fail "RAGFlow v0.26.4 启动入口没有执行官方模型供应商表迁移"
 if rg --color=never --quiet '^  nats:' <<< "${CONFIG}"; then
@@ -192,6 +227,7 @@ HEALTH_TEST_OUTPUT="$(mktemp)"
 if PATH="${FAKE_DOCKER_PATH}" \
   COMMON_AGENT_TEST_DOCKER_SCENARIO=ragflow-unhealthy \
   COMMON_AGENT_TEST_DOCKER_MEMORY_BYTES="$((32 * 1024 * 1024 * 1024))" \
+  RAGFLOW_IMAGE_SKIP_DOCKER=1 \
   RAGFLOW_HEALTH_TIMEOUT_SECONDS=1 \
   "${MANAGER}" up > "${HEALTH_TEST_OUTPUT}" 2>&1; then
   rm -f "${HEALTH_TEST_OUTPUT}"

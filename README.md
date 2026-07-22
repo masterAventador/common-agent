@@ -22,7 +22,8 @@
 
 ## 克隆与第三方源码
 
-RAGFlow 是项目直接消费其官方 Compose 的源码级依赖，作为 Git submodule 固定到已验收 commit：
+RAGFlow 是项目直接消费的私有补丁源码依赖，作为 Git submodule 固定到已验收并推送的 fork commit；
+submodule 使用相对 URL，会跟随父仓库的 SSH/HTTPS 协议解析到同一 GitHub 账号下的私有仓库：
 
 ```bash
 git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
@@ -31,22 +32,27 @@ git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
 已有工作区使用 `git submodule update --init --recursive` 初始化。普通 Python/npm 依赖仍分别由
 `backend/uv.lock` 和 `frontend/pnpm-lock.yaml` 冻结，不能用未参与实际安装的源码副本冒充版本锁定。
 
-当前主仓库 gitlink 固定 `third_party/ragflow` 到 commit
-`cb93883f3f8c975eecb2fed81210effeb3bdb06f`，该 commit 精确对应 tag `v0.26.4`。submodule 初始化后
+当前主仓库 gitlink 固定 `third_party/ragflow` 到 fork commit
+`9140f309de9129dc7cd6c889f2e0335b3f384628`；它以官方
+`v0.26.4@cb93883f3f8c975eecb2fed81210effeb3bdb06f` 为祖先。submodule 初始化后
 通常显示 `HEAD (no branch)`，这是 Git 用 detached HEAD 精确复现主仓库 gitlink 的正常行为；
-不能用“当前没有分支名”判断版本未锁定。可用下面五条命令分别查看主仓库记录、工作区 commit、
-精确 tag 和 detached 状态：
+不能用“当前没有分支名”判断版本未锁定。可用下面命令分别查看 gitlink、fork commit、官方基线 tag、
+祖先关系和 detached 状态：
 
 ```bash
 git submodule status third_party/ragflow
 git ls-tree HEAD third_party/ragflow
 git -C third_party/ragflow rev-parse HEAD
-git -C third_party/ragflow describe --tags --exact-match HEAD
+git -C third_party/ragflow rev-parse 'refs/tags/v0.26.4^{commit}'
+git -C third_party/ragflow merge-base --is-ancestor cb93883f3f8c975eecb2fed81210effeb3bdb06f HEAD
 git -C third_party/ragflow status --short --branch
 ```
 
-升级 RAGFlow 时必须先在 submodule 中检出目标正式 tag、完成真实迁移与回归，再由主仓库提交新的
-gitlink；禁止只切 submodule 分支或拉取最新代码而不更新主仓库引用。
+稳定栈从官方固定 digest 本地构建 `common-agent/ragflow:v0.26.4-9140f309d`，覆盖 fork 的完整
+`api/rag` 源码并逐个校验补丁文件哈希；`infra/ragflow/manage.sh pull-image` 会在缺失时构建，在已有时
+验证 revision、基底、安全元数据和容器内源码。Elasticsearch、MySQL、MinIO、Valkey 也通过已审阅
+的精确 digest 锁定，避免官方可变标签在另一台电脑拉到不同内容。升级 RAGFlow 或补丁集时必须先完成回归，再同步
+submodule gitlink、补丁/镜像元数据和安全基线；禁止只切分支或拉取最新代码。
 
 ## 日常轻量开发
 
@@ -68,7 +74,7 @@ scripts/dev.sh clean
 <http://127.0.0.1:18200/api/v1>。脚本使用 `packageManager` 锁定的 pnpm 11.9.0，不修改本机全局
 pnpm；macOS API、Worker 和前端进程使用项目专属 launchd 标签托管，`stop/clean` 不按模糊进程名停止其他项目。
 `clean` 删除本入口的进程、容器、日志和已被 submodule 取代的旧 RAGFlow checkout，但保留
-MySQL/RAGFlow 数据、依赖和官方镜像。
+MySQL/RAGFlow 数据、依赖和已验证 fork 镜像。
 
 空数据库首次打开会进入“创建首位所有者”页面。一次性引导令牌由统一启动脚本在工作区内 Git
 忽略的 `.local/dev/common-agent-dev/secrets/owner-bootstrap-token` 自动生成并以 `0600`

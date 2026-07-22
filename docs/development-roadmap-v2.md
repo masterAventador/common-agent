@@ -2,8 +2,8 @@
 
 > 文档性质：V2 当前任务与执行结果的唯一台账
 > 建立日期：2026-07-22
-> 当前阶段：R2-07 推送私有仓库并切换 common-agent 的 fork 依赖
-> 当前下一步：把已回归的私有提交锁进 submodule、镜像构建与稳定栈脚本，并验证全新递归克隆
+> 当前阶段：R2-08 真实知识链、备份恢复、资源与全新递归克隆验收
+> 当前下一步：从全新空目录递归克隆私有主仓及 submodule，再用正式 fork 栈完成知识链、备份恢复和资源验收
 
 任务状态、执行顺序、TDD、生产同路径、失败矩阵、完成定义、安全、资源清理和提交规则统一见
 根目录 `CLAUDE.md`，本文件不复制长期规则。
@@ -100,8 +100,8 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
 | R2-04 | 重做批量写入、独立 embedding 并发、Tika 启动与必要目录缓存 | R2-03 | ✅ 已完成 |
 | R2-05 | 评估并优化语义检索、文档/切片读取和大结果边界 | R2-04 | ✅ 已完成 |
 | R2-06 | 私有补丁集的正确性、性能、升级冲突和安全回归 | R2-05 | ✅ 已完成 |
-| R2-07 | 推送私有仓库并把 common-agent submodule/镜像/脚本切到 fork 提交 | R2-06 | ⬜ 未开始 |
-| R2-08 | 真实知识链、备份恢复、资源与全新递归克隆验收 | R2-07 | ⬜ 未开始 |
+| R2-07 | 推送私有仓库并把 common-agent submodule/镜像/脚本切到 fork 提交 | R2-06 | ✅ 已完成 |
+| R2-08 | 真实知识链、备份恢复、资源与全新递归克隆验收 | R2-07 | 🚧 实现中 |
 
 ### 3.4 V2 收口
 
@@ -821,3 +821,41 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
   embedding/rerank/defaults ready，项目 Volume 保留。官方 submodule、正式 Compose 和镜像依赖尚未
   切换，下一任务 R2-07 才把已推送且已回归的 fork 提交作为 common-agent 正式依赖。
 - 提交：RAGFlow fork 最终补丁集 HEAD `9140f309d`；common-agent 本任务提交见 Git 历史。
+
+### R2-07 推送私有仓库并把 common-agent submodule/镜像/脚本切到 fork 提交
+
+- 状态：✅ 已完成
+- 日期：2026-07-23
+- RED 与依赖锁定：先以缺失 `image.sh` 建立 fork 镜像契约并观察预期失败；随后把 `.gitmodules`
+  改为可随父仓库 SSH/HTTPS 协议解析的私有 sibling 相对 URL，submodule gitlink、私有远端补丁分支和
+  本地工作区统一锁定
+  `9140f309de9129dc7cd6c889f2e0335b3f384628`。官方 `v0.26.4` tag 仍精确指向
+  `cb93883f3f8c975eecb2fed81210effeb3bdb06f` 且是 fork HEAD 祖先；来源脏改、origin、tag、祖先、revision
+  或补丁路径任一漂移都会关闭失败。
+- 可复现镜像：新增 `Dockerfile.fork`、`image.env`、`image.sh` 和契约测试，从官方固定
+  `infiniflow/ragflow@sha256:e0048bb...` 基底覆盖完整 `api/rag`，不在构建中下载或重解依赖。首次正式
+  构建分别暴露 Docker ARG 作用域和空行哈希比较问题，修复后逐一核对 17 个补丁生产文件、OCI
+  source/revision/base 标签和 amd64 架构；最终镜像固定为
+  `common-agent/ragflow:v0.26.4-9140f309d`，容器内源码与 submodule 完全一致。
+- Compose、脚本与 CI：稳定栈、备份恢复、开发/real 入口和三组正式基准默认统一消费 fork 提交；写入
+  默认同步为实测的 `bulk=32/embedding=8`。CI 递归检出加入可选的跨私有 sibling 仓库细粒度 Token，
+  并加入无 Docker 的 image/source 契约；本机权威验收不依赖 Hosted Runner Secret。README、项目结构、
+  后端架构和运维说明已从“官方 checkout/镜像”切到正式私有依赖。
+- 可变标签失败与修复：实际第三方镜像门禁在切换后发现 Elasticsearch tag digest 被官方重新发布、
+  Valkey 滚动 `:8` 已漂移到两条有修复版本的 High 漏洞。没有更新基线放行：Valkey 固定回零
+  High/Critical 的既有已审阅 digest；Elasticsearch 旧 digest 已被官方仓库移除，重新审阅的当前 arm64
+  digest 与原 High/Critical 数量及规范化指纹完全相同后才替换。Elasticsearch、MySQL、MinIO、Valkey
+  最终全部由 Compose 直接消费精确 digest，安全扫描也直接扫描 digest，不再依赖本机可变 tag。
+- 真实稳定栈：保留四个原生 Volume 重建外围容器并复用 fork API 镜像；最终 API、Elasticsearch、
+  MySQL、MinIO、Valkey 均运行，重启 0、OOM=false，API 容器参数为
+  `DOC_BULK_SIZE=32`、task/chunk/embedding `5/1/8`，百炼 embedding/rerank/defaults 全部 ready。
+  fork 镜像安全基线为 High 75、Critical 5，相对官方基底没有新增或改变 Secret；六个第三方镜像的
+  精确 digest、漏洞数量和明细指纹全部通过。
+- 全量门禁：后端 `941 passed, 15 skipped`，Ruff 与 Mypy（387 个源文件）通过；前端 30 个文件
+  `163 passed`，ESLint、TypeScript、生产构建、七路由包体预算和 OpenAPI/事件/生成 DTO 漂移通过。
+  RAGFlow image/manage/fork/patchset、platform/backup/production、CI/覆盖率/Bundle、安全/Secret、实际
+  Semgrep/Trivy、Python 98 包和前端依赖审计、主仓 ShellCheck、V1 冻结哈希及 `git diff --check` 均通过。
+- 清理与阶段边界：镜像扫描临时报告均已删除，失败构建未留下悬空镜像；稳定数据 Volume 保留，正式
+  fork 栈继续运行供 R2-08 真实链路复用。本任务验证了私有远端与当前工作区依赖闭环；从全新空目录
+  递归克隆、完整知识链、备份恢复和资源/清理由 R2-08 独立执行。
+- 提交：RAGFlow 私有补丁 HEAD `9140f309d` 已在远端；common-agent 本任务提交见 Git 历史。

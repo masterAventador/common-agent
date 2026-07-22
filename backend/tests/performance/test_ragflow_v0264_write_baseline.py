@@ -102,6 +102,10 @@ def test_formal_write_runner_pins_runtime_configuration_and_secrets() -> None:
 
     assert "COMMON_AGENT_RAGFLOW_WRITE_EXPECTED_COMMIT" in runner
     assert "COMMON_AGENT_RAGFLOW_WRITE_IMAGE_REVISION" in runner
+    assert "RAGFLOW_PATCH_HEAD" in runner
+    assert 'COMMON_AGENT_RAGFLOW_WRITE_SOURCE_MODE:-patched' in runner
+    assert 'COMMON_AGENT_RAGFLOW_WRITE_DOC_BULK_SIZE:-32' in runner
+    assert 'COMMON_AGENT_RAGFLOW_WRITE_EMBEDDING_CONCURRENCY:-8' in runner
     assert "COMMON_AGENT_RAGFLOW_WRITE_DOC_BULK_SIZE" in runner
     assert "COMMON_AGENT_RAGFLOW_WRITE_EMBEDDING_CONCURRENCY" in runner
     assert '[[ "${SOURCE_MODE}" == "patched" && -z "${EXPECTED_IMAGE_REVISION}" ]]' in runner

@@ -5,12 +5,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "${SCRIPT_DIR}/VERSION")"
-EXPECTED_COMMIT="$(tr -d '[:space:]' < "${SCRIPT_DIR}/UPSTREAM_COMMIT")"
+UPSTREAM_COMMIT="$(tr -d '[:space:]' < "${SCRIPT_DIR}/UPSTREAM_COMMIT")"
+FORK_METADATA="${SCRIPT_DIR}/fork.env"
+PATCHSET_METADATA="${SCRIPT_DIR}/patchset.env"
+IMAGE_METADATA="${SCRIPT_DIR}/image.env"
+IMAGE_MANAGER="${SCRIPT_DIR}/image.sh"
+# shellcheck disable=SC1090
+source "${FORK_METADATA}"
+# shellcheck disable=SC1090
+source "${PATCHSET_METADATA}"
+# shellcheck disable=SC1090
+source "${IMAGE_METADATA}"
+EXPECTED_COMMIT="${RAGFLOW_PATCH_HEAD}"
 STACK_ROOT="${REPOSITORY_ROOT}/.local/dev/common-agent-dev/ragflow"
 RUNTIME_ROOT="${RAGFLOW_RUNTIME_ROOT:-${REPOSITORY_ROOT}/third_party/ragflow}"
 DATA_ROOT="${RAGFLOW_DATA_ROOT:-${STACK_ROOT}/data}"
-UPSTREAM_URL="https://github.com/infiniflow/ragflow.git"
-OFFICIAL_IMAGE="infiniflow/ragflow:${VERSION}"
 VOLUME_MIGRATION_IMAGE="mysql:8.0.39"
 VOLUME_MARKER=".common-agent-native-volume-ready"
 MYSQL_MIGRATION_SOURCE_CONTAINER="common-agent-ragflow-mysql-migration-source"
@@ -113,27 +122,20 @@ prepare() {
     exit 1
   fi
 
-  local actual_commit actual_tag origin worktree_status
-  actual_commit="$(git -C "${RUNTIME_ROOT}" rev-parse HEAD)"
-  actual_tag="$(git -C "${RUNTIME_ROOT}" describe --tags --exact-match HEAD)"
-  origin="$(git -C "${RUNTIME_ROOT}" remote get-url origin)"
-  [[ "${origin}" == "${UPSTREAM_URL}" ]] || {
-    echo "RAGFlow 上游地址不匹配：${origin}" >&2
+  [[ "${VERSION}" == "${RAGFLOW_UPSTREAM_VERSION}" ]] || {
+    echo "RAGFlow 版本元数据不一致：${VERSION}" >&2
     exit 1
   }
-  [[ "${actual_tag}" == "${VERSION}" ]] || {
-    echo "RAGFlow 运行目录版本不匹配：期望 ${VERSION}，实际 ${actual_tag}" >&2
+  [[ "${UPSTREAM_COMMIT}" == "${RAGFLOW_UPSTREAM_COMMIT}" && \
+      "${RAGFLOW_PATCH_BASE}" == "${RAGFLOW_UPSTREAM_COMMIT}" ]] || {
+    echo "RAGFlow 官方基线元数据不一致" >&2
     exit 1
   }
-  [[ "${actual_commit}" == "${EXPECTED_COMMIT}" ]] || {
-    echo "RAGFlow 上游提交不匹配：期望 ${EXPECTED_COMMIT}，实际 ${actual_commit}" >&2
+  [[ "${RAGFLOW_FORK_IMAGE_REVISION}" == "${EXPECTED_COMMIT}" ]] || {
+    echo "RAGFlow 镜像 revision 与补丁提交不一致" >&2
     exit 1
   }
-  worktree_status="$(git -C "${RUNTIME_ROOT}" status --short)"
-  [[ -z "${worktree_status}" ]] || {
-    echo "RAGFlow submodule 必须保持未修改状态：${RUNTIME_ROOT}" >&2
-    exit 1
-  }
+  "${IMAGE_MANAGER}" verify-source >/dev/null
 }
 
 compose() {
@@ -146,7 +148,11 @@ compose() {
   fi
   RAGFLOW_DATA_ROOT="${DATA_ROOT}" \
   RAGFLOW_DASHSCOPE_HTTP_BASE_URL="${dashscope_http_base_url}" \
-  RAGFLOW_IMAGE="${OFFICIAL_IMAGE}" \
+  RAGFLOW_IMAGE="${RAGFLOW_FORK_IMAGE}" \
+  RAGFLOW_ELASTICSEARCH_IMAGE="${RAGFLOW_ELASTICSEARCH_IMAGE}" \
+  RAGFLOW_MYSQL_IMAGE="${RAGFLOW_MYSQL_IMAGE}" \
+  RAGFLOW_MINIO_IMAGE="${RAGFLOW_MINIO_IMAGE}" \
+  RAGFLOW_VALKEY_IMAGE="${RAGFLOW_VALKEY_IMAGE}" \
   ES_PORT="127.0.0.1:$(port_value es)" \
   EXPOSE_MYSQL_PORT="127.0.0.1:$(port_value mysql)" \
   MINIO_PORT="127.0.0.1:$(port_value minio)" \
@@ -175,15 +181,7 @@ stack_has_containers() {
 
 pull_image() {
   prepare
-  if docker_cli image inspect "${OFFICIAL_IMAGE}" > /dev/null 2>&1; then
-    echo "复用本机 RAGFlow 镜像：${OFFICIAL_IMAGE}"
-    return
-  fi
-  local source="${RAGFLOW_IMAGE_SOURCE:-${OFFICIAL_IMAGE}}"
-  docker_cli pull --platform linux/amd64 "${source}"
-  if [[ "${source}" != "${OFFICIAL_IMAGE}" ]]; then
-    docker_cli tag "${source}" "${OFFICIAL_IMAGE}"
-  fi
+  "${IMAGE_MANAGER}" ensure
 }
 
 volume_exists() {
@@ -413,6 +411,9 @@ case "${1:-}" in
   prepare) prepare ;;
   check-resources) check_resources ;;
   pull-image) pull_image ;;
+  build-image) prepare; "${IMAGE_MANAGER}" build ;;
+  verify-image) prepare; "${IMAGE_MANAGER}" verify ;;
+  scan-image) prepare; "${IMAGE_MANAGER}" scan ;;
   migrate-native-volumes) migrate_native_volumes ;;
   check-ports) check_ports ;;
   configure-bailian) configure_bailian_models apply ;;
@@ -426,6 +427,7 @@ case "${1:-}" in
     }
     health_timeout_seconds="$(health_timeout)"
     check_resources
+    pull_image
     if ! stack_has_containers; then
       check_ports
     fi
@@ -438,7 +440,7 @@ case "${1:-}" in
   config) compose config ;;
   logs) compose logs -f ragflow-cpu ;;
   *)
-    echo "用法: $0 {prepare|pull-image|migrate-native-volumes|check-resources|check-ports|up|configure-bailian|check-bailian|plan-bailian-migration|migrate-bailian|stop|down|status|config|logs}" >&2
+    echo "用法: $0 {prepare|pull-image|build-image|verify-image|scan-image|migrate-native-volumes|check-resources|check-ports|up|configure-bailian|check-bailian|plan-bailian-migration|migrate-bailian|stop|down|status|config|logs}" >&2
     exit 2
     ;;
 esac

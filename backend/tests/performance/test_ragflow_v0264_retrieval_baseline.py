@@ -131,6 +131,8 @@ def test_formal_runner_pins_source_image_and_secret_file() -> None:
 
     assert "COMMON_AGENT_RAGFLOW_RETRIEVAL_EXPECTED_COMMIT" in runner
     assert "COMMON_AGENT_RAGFLOW_RETRIEVAL_IMAGE_REVISION" in runner
+    assert "RAGFLOW_PATCH_HEAD" in runner
+    assert 'COMMON_AGENT_RAGFLOW_RETRIEVAL_SOURCE_MODE:-patched' in runner
     assert '[[ "${SOURCE_MODE}" == "patched" && -z "${EXPECTED_IMAGE_REVISION}" ]]' in runner
     assert "--api-key-file" in runner
     assert "--mysql-password" not in runner

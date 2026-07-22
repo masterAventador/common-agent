@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "reviewed_at": "2026-07-22",
+  "reviewed_at": "2026-07-23",
   "policy": "只允许 RAGFlow v0.26.4 最新稳定版及其官方固定依赖；已知结果由精确镜像 digest、规范化漏洞明细摘要和隔离控制共同约束，任何镜像或扫描结果漂移都关闭失败并重新审阅。",
   "upstream": {
     "release": "v0.26.4",
@@ -70,12 +70,12 @@
     },
     {
       "component": "ragflow-elasticsearch",
-      "image": "elasticsearch:8.11.3",
-      "digest": "elasticsearch@sha256:0f652091e956e6af1dd7d8983f7295b56e3b659aa7580dde3a2b7d6408cffb95",
+      "image": "elasticsearch@sha256:58a3a280935d830215802322e9a0373faaacdfd646477aa7e718939c2f29292a",
+      "digest": "elasticsearch@sha256:58a3a280935d830215802322e9a0373faaacdfd646477aa7e718939c2f29292a",
       "high": 27,
       "critical": 3,
       "findings_sha256": "9966380ca76055aac93de3a22a1e578c73105ae448b2da4f6edd01ada3c83fa8",
-      "review": "RAGFlow v0.26.4 官方 Compose 固定版本。Critical 位于 ingest-attachment 的 Tika PDF 模块；当前集群没有自定义 attachment pipeline，平台文档解析只经 RAGFlow，不直接开放 Elasticsearch。生产端口只在 RAGFlow 私网。",
+      "review": "RAGFlow v0.26.4 官方 Compose 固定版本。官方仓库移除旧 arm64 digest 后，重新审阅的当前 digest 与原基线 High/Critical 集合和指纹完全相同；Critical 位于 ingest-attachment 的 Tika PDF 模块，当前集群没有自定义 attachment pipeline，平台文档解析只经 RAGFlow，不直接开放 Elasticsearch。生产端口只在 RAGFlow 私网。",
       "critical_findings": [
         {
           "id": "CVE-2025-54988",
@@ -99,7 +99,7 @@
     },
     {
       "component": "ragflow-mysql",
-      "image": "mysql:8.0.39",
+      "image": "mysql@sha256:ccb8f749bb5e59f9f8f03bf7282c7ef27a93a1814a24f0a8a926fb4e19b7fb97",
       "digest": "mysql@sha256:ccb8f749bb5e59f9f8f03bf7282c7ef27a93a1814a24f0a8a926fb4e19b7fb97",
       "high": 140,
       "critical": 4,
@@ -138,7 +138,7 @@
     },
     {
       "component": "ragflow-minio",
-      "image": "pgsty/minio:RELEASE.2026-03-25T00-00-00Z",
+      "image": "pgsty/minio@sha256:a72bf37c235a83a73890d2a46c5b36801fed61c335175e0396070bf84a8bbb98",
       "digest": "pgsty/minio@sha256:a72bf37c235a83a73890d2a46c5b36801fed61c335175e0396070bf84a8bbb98",
       "high": 32,
       "critical": 0,
@@ -147,7 +147,7 @@
     },
     {
       "component": "ragflow-valkey",
-      "image": "valkey/valkey:8",
+      "image": "valkey/valkey@sha256:3e31dd49b6b742e614975e8ab7b1b19809d00ecac7657c6b34bff23582a433cd",
       "digest": "valkey/valkey@sha256:3e31dd49b6b742e614975e8ab7b1b19809d00ecac7657c6b34bff23582a433cd",
       "high": 0,
       "critical": 0,

@@ -214,7 +214,9 @@ def test_formal_runner_pins_source_and_keeps_secrets_out_of_arguments() -> None:
         encoding="utf-8"
     )
 
-    assert EXPECTED_RAGFLOW_COMMIT in runner
+    assert "infra/ragflow/patchset.env" in runner
+    assert "RAGFLOW_PATCH_HEAD" in runner
+    assert 'COMMON_AGENT_RAGFLOW_BENCHMARK_SOURCE_MODE:-patched' in runner
     assert "RAGFLOW_BENCHMARK_MYSQL_PASSWORD" in runner
     assert "--api-key-file" in runner
     assert "--mysql-password" not in runner

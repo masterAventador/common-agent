@@ -226,9 +226,15 @@ FastAPI / Pydantic
 infra/ragflow/
 ├── VERSION                     # 确切版本，禁止 latest
 ├── UPSTREAM_COMMIT             # 官方 tag 对应提交，防止上游引用漂移
-├── compose.override.yaml       # loopback、名称、数据目录和资源覆盖
+├── fork.env                    # 私有仓库、官方 upstream 和补丁分支元数据
+├── patchset.env                # 最终补丁提交栈与升级冲突快照
+├── image.env                   # fork 镜像/基底、外围官方 digest 与安全基线
+├── Dockerfile.fork             # 从官方固定镜像覆盖锁定 fork 的 api/rag 源码
+├── image.sh                    # 构建、逐文件验证、复用和安全扫描 fork 镜像
+├── compose.override.yaml       # loopback、名称、外围 digest、数据目录和资源覆盖
 ├── manage.sh                   # 准备、校验、启动和停止稳定栈
-├── test-manage.sh              # Compose 与端口失败门禁
+├── test-manage.sh              # Compose、fork 镜像与端口失败门禁
+├── test-image.sh               # 私有 submodule、镜像元数据和源码覆盖契约
 └── README.md                   # 独立服务、配置和验证说明
 
 infra/platform/                 # 当前路线图实际采用的平台基础设施
@@ -246,7 +252,7 @@ infra/backup/                   # 平台与 RAGFlow 的可恢复备份边界
 └── README.md                   # 密钥分离、调度和恢复 Runbook
 
 third_party/
-└── ragflow/                    # 当前官方 submodule；V2 切换到私有补丁仓库的锁定提交
+└── ragflow/                    # 私有补丁仓库 submodule；锁定已推送、已回归的精确 fork 提交
 ```
 
 不让平台代码直连 RAGFlow 的内部依赖。V2 只允许在独立私有 RAGFlow 仓库中维护基于精确官方

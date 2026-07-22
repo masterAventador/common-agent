@@ -7,6 +7,10 @@ REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 BACKEND_ROOT="${REPOSITORY_ROOT}/backend"
 FRONTEND_ROOT="${REPOSITORY_ROOT}/frontend"
 RAGFLOW_ROOT="${REPOSITORY_ROOT}/third_party/ragflow"
+RAGFLOW_IMAGE_MANAGER="${REPOSITORY_ROOT}/infra/ragflow/image.sh"
+RAGFLOW_IMAGE_METADATA="${REPOSITORY_ROOT}/infra/ragflow/image.env"
+# shellcheck disable=SC1090
+source "${RAGFLOW_IMAGE_METADATA}"
 DOCKER_CONTEXT_NAME="${BACKUP_DOCKER_CONTEXT:-colima-common-agent-dev}"
 RUN_ID="$(date -u '+%Y%m%d%H%M%S')-$$"
 SOURCE_ID="s1006-source-${RUN_ID}"
@@ -75,6 +79,7 @@ check_prerequisites() {
     echo "RAGFlow submodule 必须保持未修改" >&2
     return 1
   fi
+  RAGFLOW_DOCKER_CONTEXT="${DOCKER_CONTEXT_NAME}" "${RAGFLOW_IMAGE_MANAGER}" verify
 }
 
 check_ports() {
@@ -138,7 +143,8 @@ ragflow_compose() {
     export BACKUP_RECOVERY_ID="${instance_id}"
     export RAGFLOW_RECOVERY_DATA_ROOT="${data_root}"
     export RAGFLOW_DASHSCOPE_HTTP_BASE_URL="${RAGFLOW_NATIVE_BASE_URL}"
-    export RAGFLOW_IMAGE="infiniflow/ragflow:v0.26.4"
+    export RAGFLOW_IMAGE="${RAGFLOW_FORK_IMAGE}"
+    export RAGFLOW_ELASTICSEARCH_IMAGE RAGFLOW_MYSQL_IMAGE RAGFLOW_MINIO_IMAGE RAGFLOW_VALKEY_IMAGE
     export ES_PORT="127.0.0.1:${RAGFLOW_ES_PORT}"
     export REDIS_PORT="127.0.0.1:${RAGFLOW_REDIS_PORT}"
     export SVR_HTTP_PORT="127.0.0.1:${RAGFLOW_API_PORT}"

@@ -279,7 +279,7 @@ doctor() {
   if ! "${RAGFLOW_MANAGER}" prepare; then
     failed=1
   else
-    echo "RAGFlow 官方源码：ready（固定 tag/commit、工作区未修改）"
+    echo "RAGFlow 私有补丁源码：ready（固定 upstream/fork commit、工作区未修改）"
   fi
   diagnose_bailian || failed=1
   check_disk || failed=1
@@ -642,7 +642,7 @@ stop() {
     stop_infrastructure_if_running
     colima stop "${PROFILE_NAME}"
   fi
-  echo "real 已停止；稳定容器、数据、0600 Token 文件与官方镜像保留"
+  echo "real 已停止；稳定容器、数据、0600 Token 文件与已验证 fork 镜像保留"
 }
 
 case "${1:-}" in

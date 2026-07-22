@@ -90,9 +90,11 @@ validate_tool_versions() {
 }
 
 submodule_ready() {
+  local expected_revision
+  expected_revision="$(sed -n 's/^RAGFLOW_PATCH_HEAD=//p' "${REPOSITORY_ROOT}/infra/ragflow/patchset.env")"
   [[ -e "${REPOSITORY_ROOT}/third_party/ragflow/.git" ]] &&
     [[ "$(git -C "${REPOSITORY_ROOT}/third_party/ragflow" rev-parse HEAD 2>/dev/null)" == \
-      "$(tr -d '[:space:]' < "${REPOSITORY_ROOT}/infra/ragflow/UPSTREAM_COMMIT")" ]]
+      "${expected_revision}" ]]
 }
 
 profile_running() {
@@ -467,7 +469,7 @@ clean() {
     esac
   fi
   echo "demo-light 运行进程、容器、日志和已被 submodule 取代的旧 RAGFlow checkout 已清理"
-  echo "MySQL/RAGFlow 数据、冻结依赖和官方镜像保留"
+  echo "MySQL/RAGFlow 数据、冻结依赖和已验证 fork 镜像保留"
 }
 
 case "${1:-}" in

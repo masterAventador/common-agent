@@ -47,6 +47,7 @@ for expected in \
   'bash infra/ragflow/test-manage.sh' \
   'bash infra/ragflow/test-fork.sh' \
   'bash infra/ragflow/test-patchset.sh' \
+  'bash infra/ragflow/test-image.sh' \
   'bash infra/platform/test-manage.sh' \
   'bash infra/backup/test-manage.sh' \
   'bash infra/production/test-manage.sh' \
@@ -63,6 +64,8 @@ for expected in \
 done
 
 grep -Fq 'submodules: recursive' "${WORKFLOW}" || fail "CI 没有检出固定 RAGFlow submodule"
+grep -Fq 'secrets.COMMON_AGENT_REPOSITORIES_TOKEN || github.token' "${WORKFLOW}" || \
+  fail "CI 没有为私有 RAGFlow sibling submodule 配置可选跨仓库 Token"
 grep -Fq 'fetch-depth: 0' "${WORKFLOW}" || fail "Secret 门禁没有检出完整 Git 历史"
 grep -Fq 'version: 0.11.16' "${WORKFLOW}" || fail "CI 没有固定 uv 版本"
 grep -Fq 'version: 11.9.0' "${WORKFLOW}" || fail "CI 没有固定 pnpm 版本"

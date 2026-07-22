@@ -1,3 +1,3 @@
 [submodule "third_party/ragflow"]
 	path = third_party/ragflow
-	url = https://github.com/infiniflow/ragflow.git
+	url = ../common-agent-ragflow.git

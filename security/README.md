@@ -21,3 +21,7 @@ rule. Their reviewed residual findings are therefore constrained by the exact up
 fixed High/Critical finding count and SHA-256, plus the private-network controls described in the baseline. A new
 upstream image, vulnerability database result, package version, severity, or fix changes the normalized digest and
 fails closed until the supported upstream release and production path are reviewed again.
+
+The local RAGFlow Compose stack consumes the reviewed Elasticsearch, MySQL, MinIO, and Valkey digests directly;
+the baseline scanner also targets those digests instead of mutable tags. If an upstream registry removes a digest,
+the replacement must retain the reviewed architecture and be rescanned before both the stack and baseline move.
