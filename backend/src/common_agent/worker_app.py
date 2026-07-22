@@ -12,7 +12,16 @@ from common_agent.adapters.agent.tool_resolver import CompositeDeepAgentToolReso
 from common_agent.adapters.agent.workflow_tools import WorkflowToolRegistry
 from common_agent.adapters.demo import DemoEmployeeRuntime, DemoKnowledgeService, DemoWorkflowModel
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
-from common_agent.adapters.mcp import PlatformMcpRuntime
+from common_agent.adapters.mcp import (
+    ExternalMcpRuntime,
+    ManagedHttpMcpRuntime,
+    PlatformMcpRuntime,
+    SafeExternalMcpHttpClientFactory,
+)
+from common_agent.adapters.mcp.managed_http_executor import (
+    ManagedHttpRequestExecutor,
+    SafeManagedHttpClientFactory,
+)
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.adapters.model.resolver import BailianChatModelResolver
 from common_agent.adapters.model.verification import (
@@ -25,9 +34,11 @@ from common_agent.adapters.persistence import (
     SqlAlchemyAuditStore,
     SqlAlchemyEventJournal,
     SqlAlchemyKnowledgeOwnershipStore,
+    SqlAlchemyManagedHttpUnitOfWorkFactory,
     SqlAlchemyPlatformToolSeeder,
     SqlAlchemyTaskQueue,
     SqlAlchemyTenancyStore,
+    SqlAlchemyToolCredentialUnitOfWorkFactory,
     SqlAlchemyToolUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.conversations import (
@@ -41,6 +52,7 @@ from common_agent.adapters.persistence.model_configurations import (
     SqlAlchemyModelConfigurationUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
+from common_agent.adapters.security import AesGcmToolCredentialCipher
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.application.resource_locks import ResourceMutationGuard
 from common_agent.application.workflow_service import WorkflowService
@@ -52,6 +64,8 @@ from common_agent.bootstrap import (
     IntegrationModeSettings,
     ModelSettings,
     RagFlowSettings,
+    ToolCredentialSettings,
+    ToolEgressSettings,
     WorkerSettings,
 )
 from common_agent.concurrency import CoordinatedLockPool
@@ -68,6 +82,8 @@ from common_agent.models.base import TextStreamingModel
 from common_agent.observability import configure_json_logging
 from common_agent.tasks import TaskKind, TaskWorker, TaskWorkerPool
 from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant, current_tenant
+from common_agent.tools.credential_service import ToolCredentialService
+from common_agent.tools.managed_http_service import ManagedHttpService
 from common_agent.tools.service import ToolService
 from common_agent.workflows.ai_targets import (
     StaticWorkflowModelResolver,
@@ -139,6 +155,41 @@ async def run_worker(stop: asyncio.Event) -> None:
             real_model = BailianChatModelAdapter(model_settings)
             workflow_model = real_model
             model_configuration_verifier = BailianModelConfigurationVerifier(model_settings)
+
+        managed_mcp: ManagedHttpMcpRuntime | None = None
+        external_mcp: ExternalMcpRuntime | None = None
+        if integration_mode.mode != "demo":
+            credential_settings = ToolCredentialSettings.from_env()
+            egress_settings = ToolEgressSettings.from_env()
+            tool_credentials = ToolCredentialService(
+                SqlAlchemyToolCredentialUnitOfWorkFactory(database, tenant_id_provider),
+                cipher=AesGcmToolCredentialCipher(
+                    keys=credential_settings.keys,
+                    active_key_id=credential_settings.active_key_id,
+                ),
+                tenant_id_provider=tenant_id_provider,
+            )
+            tool_egress_semaphore = asyncio.Semaphore(egress_settings.maximum_concurrency)
+            external_mcp = ExternalMcpRuntime(
+                tool_credentials,
+                SafeExternalMcpHttpClientFactory(
+                    egress_settings,
+                    concurrency_semaphore=tool_egress_semaphore,
+                ),
+            )
+            managed_http = ManagedHttpService(
+                SqlAlchemyManagedHttpUnitOfWorkFactory(database, tenant_id_provider)
+            )
+            managed_mcp = ManagedHttpMcpRuntime(
+                managed_http,
+                ManagedHttpRequestExecutor(
+                    tool_credentials,
+                    SafeManagedHttpClientFactory(
+                        egress_settings,
+                        concurrency_semaphore=tool_egress_semaphore,
+                    ),
+                ),
+            )
 
         knowledge_bases = KnowledgeBaseService(
             knowledge_adapter,
@@ -217,7 +268,13 @@ async def run_worker(stop: asyncio.Event) -> None:
                 deep_agent_model_resolver,
                 tools=CompositeDeepAgentToolResolver(
                     WorkflowToolRegistry(workflows, audit=audit),
-                    PlatformMcpToolRegistry(tools, platform_mcp, audit=audit),
+                    PlatformMcpToolRegistry(
+                        tools,
+                        platform_mcp,
+                        managed_mcp=managed_mcp,
+                        external_mcp=external_mcp,
+                        audit=audit,
+                    ),
                 ),
             )
             workflow_ai_targets.bind_employee_runtime(runtime)

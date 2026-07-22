@@ -216,6 +216,7 @@ def _mcp_error(error: McpToolCallError) -> AppError:
         "tool_timeout": 504,
         "tool_response_too_large": 502,
         "tool_protocol_error": 502,
+        "tool_result_unknown": 502,
         "tool_execution_failed": 502,
     }
     return AppError(

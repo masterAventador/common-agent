@@ -25,21 +25,20 @@ class ConversationMessageProjector:
     async def recover_interrupted(self) -> int:
         async with self._unit_of_work_factory() as unit_of_work:
             active_messages = await unit_of_work.messages.list_active()
-            recovered: list[Message] = []
-            for message in active_messages:
-                failed = message.fail(error_code="generation_interrupted")
-                if await unit_of_work.messages.update(failed):
-                    recovered.append(failed)
-            if recovered:
-                await unit_of_work.commit()
 
-        for message in recovered:
-            await self._events.publish(
-                turn_id=uuid4(),
-                message=message,
-                kind=ConversationEventKind.ASSISTANT_FAILED,
-            )
-        return len(recovered)
+        recovered = 0
+        for message in active_messages:
+            turn_id = uuid4()
+            if await self.prevent_unsafe_tool_replay(
+                turn_id,
+                message,
+            ) or await self.persist_failure(
+                turn_id,
+                message.id,
+                "generation_interrupted",
+            ):
+                recovered += 1
+        return recovered
 
     async def persist_runtime_event(
         self,
@@ -125,6 +124,27 @@ class ConversationMessageProjector:
             await unit_of_work.commit()
         return restarted
 
+    async def prevent_unsafe_tool_replay(self, turn_id: UUID, message: Message) -> bool:
+        recovery = await self._events.tool_call_recovery_state(
+            message.conversation_id,
+            message.id,
+        )
+        if not recovery.attempted:
+            return False
+        for tool_call in recovery.unresolved:
+            await self._events.publish(
+                turn_id=turn_id,
+                message=message,
+                kind=ConversationEventKind.ASSISTANT_TOOL_FAILED,
+                tool_call=ToolCallEvent(
+                    tool_call_id=tool_call.tool_call_id,
+                    capability_id=tool_call.capability_id,
+                    capability_name=tool_call.capability_name,
+                    error_code="tool_result_unknown",
+                ),
+            )
+        return await self.persist_failure(turn_id, message.id, "tool_result_unknown")
+
     async def republish_terminal(self, turn_id: UUID, message: Message) -> None:
         kind = {
             "completed": ConversationEventKind.ASSISTANT_COMPLETED,
@@ -140,20 +160,21 @@ class ConversationMessageProjector:
         turn_id: UUID,
         message_id: UUID,
         error_code: str,
-    ) -> None:
+    ) -> bool:
         async with self._unit_of_work_factory() as unit_of_work:
             current = await unit_of_work.messages.get(message_id)
             if current is None or current.is_terminal:
-                return
+                return False
             failed = current.fail(error_code=normalized_error_code(error_code))
             if not await unit_of_work.messages.update(failed):
-                return
+                return False
             await unit_of_work.commit()
         await self._events.publish(
             turn_id=turn_id,
             message=failed,
             kind=ConversationEventKind.ASSISTANT_FAILED,
         )
+        return True
 
     async def persist_stopped(self, turn_id: UUID, message_id: UUID) -> None:
         async with self._unit_of_work_factory() as unit_of_work:

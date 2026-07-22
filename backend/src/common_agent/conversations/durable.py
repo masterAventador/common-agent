@@ -130,6 +130,11 @@ class ConversationTaskCoordinator:
         if context.stop_requested:
             await self._projector.persist_stopped(payload.turn_id, assistant_message.id)
             raise TaskCancelled
+        if task.attempts > 1 and await self._projector.prevent_unsafe_tool_replay(
+            payload.turn_id,
+            assistant_message,
+        ):
+            raise TaskFatalError("tool_result_unknown")
         try:
             if task.attempts > 1:
                 assistant_message = await self._projector.restart_execution(assistant_message.id)

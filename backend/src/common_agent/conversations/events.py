@@ -107,6 +107,12 @@ class ConversationEventLifecycleSnapshot:
     retained_event_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class ToolCallRecoveryState:
+    attempted: bool
+    unresolved: tuple[ToolCallEvent, ...] = ()
+
+
 @dataclass(slots=True)
 class _ConversationState:
     next_sequence: int = 1
@@ -331,6 +337,38 @@ class ConversationEventBroker:
                 retained_event_count=sum(len(state.history) for state in self._states.values()),
             )
 
+    async def tool_call_recovery_state(
+        self,
+        conversation_id: UUID,
+        message_id: UUID,
+    ) -> ToolCallRecoveryState:
+        """Return durable tool-attempt evidence used to prevent side-effect replay."""
+        if self._journal is not None:
+            self._ensure_open()
+            events = await self._persistent_events(conversation_id)
+        else:
+            async with self._lock:
+                self._ensure_open()
+                state = self._states.get(self._key_namespace(conversation_id))
+                events = () if state is None else tuple(state.history)
+        active: dict[UUID, ToolCallEvent] = {}
+        attempted = False
+        for event in events:
+            if event.message_id != message_id or event.tool_call is None:
+                continue
+            if event.kind is ConversationEventKind.ASSISTANT_TOOL_STARTED:
+                attempted = True
+                active[event.tool_call.tool_call_id] = event.tool_call
+            elif event.kind in {
+                ConversationEventKind.ASSISTANT_TOOL_COMPLETED,
+                ConversationEventKind.ASSISTANT_TOOL_FAILED,
+            }:
+                active.pop(event.tool_call.tool_call_id, None)
+        return ToolCallRecoveryState(
+            attempted=attempted,
+            unresolved=tuple(active.values()),
+        )
+
     async def _publish_persistent(
         self,
         *,
@@ -388,6 +426,36 @@ class ConversationEventBroker:
         earliest, latest = bounds
         if after_sequence > latest or after_sequence < earliest - 1:
             raise EventHistoryUnavailable
+
+    async def _persistent_events(
+        self,
+        conversation_id: UUID,
+    ) -> tuple[ConversationEvent, ...]:
+        bounds = await self._persistent_journal.bounds(
+            tenant_id=self._persistent_tenant_id,
+            stream_kind=EventStreamKind.CONVERSATION,
+            stream_id=conversation_id,
+        )
+        if bounds is None:
+            return ()
+        earliest, latest = bounds
+        current_sequence = earliest - 1
+        events: list[ConversationEvent] = []
+        while current_sequence < latest:
+            batch = await self._persistent_journal.read(
+                tenant_id=self._persistent_tenant_id,
+                stream_kind=EventStreamKind.CONVERSATION,
+                stream_id=conversation_id,
+                after_sequence=current_sequence,
+                limit=1000,
+            )
+            if not batch:
+                break
+            events.extend(
+                _conversation_event(durable.sequence, durable.request) for durable in batch
+            )
+            current_sequence = batch[-1].sequence
+        return tuple(events)
 
     async def _stream_persistent(
         self,

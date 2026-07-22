@@ -27,6 +27,7 @@ _KNOWN_ERROR_CODES = frozenset(
         "tool_execution_failed",
         "tool_invalid_arguments",
         "tool_protocol_error",
+        "tool_result_unknown",
         "tool_response_too_large",
         "tool_source_unavailable",
         "tool_timeout",

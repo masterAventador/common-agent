@@ -5,9 +5,10 @@ from collections.abc import Sequence
 from typing import Annotated
 from uuid import UUID
 
-from langchain_core.tools import BaseTool, StructuredTool, ToolException
+from langchain_core.tools import BaseTool, ToolException
 
 from common_agent.adapters.agent.deep_agents import RuntimeCapabilityUnavailable
+from common_agent.adapters.agent.replay_protected_tool import ReplayProtectedStructuredTool
 from common_agent.adapters.mcp.workflows import WorkflowMcpRuntime
 from common_agent.application.workflow_service import WorkflowNotFound, WorkflowService
 from common_agent.audit import AuditService
@@ -67,7 +68,7 @@ class WorkflowToolRegistry:
             except McpToolCallError as error:
                 raise ToolException(f"工作流调用失败,错误码:{error.code}") from None
 
-        return StructuredTool.from_function(
+        return ReplayProtectedStructuredTool.from_function(
             coroutine=run_workflow,
             name=descriptor.name,
             description=descriptor.description,

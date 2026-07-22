@@ -11,11 +11,14 @@ from ipaddress import ip_network
 
 import pytest
 
+from common_agent.adapters.mcp.external import SafeExternalMcpHttpClientFactory
+from common_agent.adapters.mcp.managed_http_executor import SafeManagedHttpClientFactory
 from common_agent.adapters.security.tool_egress import (
     OutboundAccessPolicy,
     OutboundSecurityError,
     SafeOutboundHttpClient,
 )
+from common_agent.bootstrap import ToolEgressSettings
 
 
 class CountingResolver:
@@ -66,9 +69,36 @@ class Handler(BaseHTTPRequestHandler):
         del format, args
 
 
+class ConcurrencyHandler(BaseHTTPRequestHandler):
+    active = 0
+    maximum_active = 0
+    lock = threading.Lock()
+
+    def do_GET(self) -> None:
+        with self.lock:
+            type(self).active += 1
+            type(self).maximum_active = max(type(self).maximum_active, type(self).active)
+        try:
+            time.sleep(0.1)
+            body = b'{"ok":true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        finally:
+            with self.lock:
+                type(self).active -= 1
+
+    def log_message(self, format: str, *args: object) -> None:
+        del format, args
+
+
 @contextmanager
-def local_server() -> Iterator[int]:
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+def local_server(
+    handler: type[BaseHTTPRequestHandler] = Handler,
+) -> Iterator[int]:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -152,14 +182,17 @@ def test_redirect_response_size_and_total_timeout_fail_closed_without_url_leak()
         client = _client(port, resolver, call_timeout=0.05)
 
         async def exercise() -> None:
-            with pytest.raises(OutboundSecurityError, match="重定向"):
+            with pytest.raises(OutboundSecurityError, match="重定向") as redirect:
                 await client.request("GET", f"http://localhost:{port}/redirect")
+            assert redirect.value.request_may_have_been_sent is True
             secret_url = f"http://localhost:{port}/large?api_key=must-not-leak"
             with pytest.raises(OutboundSecurityError, match="过大") as too_large:
                 await client.request("GET", secret_url)
             assert "must-not-leak" not in str(too_large.value)
-            with pytest.raises(OutboundSecurityError, match="超时"):
+            assert too_large.value.request_may_have_been_sent is True
+            with pytest.raises(OutboundSecurityError, match="超时") as timeout:
                 await client.request("GET", f"http://localhost:{port}/slow")
+            assert timeout.value.request_may_have_been_sent is True
             await client.aclose()
 
         asyncio.run(exercise())
@@ -181,3 +214,43 @@ def test_stream_client_keeps_fixed_origin_and_does_not_replay_response_cookies()
             await client.aclose()
 
         asyncio.run(exercise())
+
+
+def test_managed_and_external_mcp_share_one_concurrency_limit() -> None:
+    ConcurrencyHandler.active = 0
+    ConcurrencyHandler.maximum_active = 0
+    with local_server(ConcurrencyHandler) as port:
+        settings = ToolEgressSettings(
+            allowed_hosts=("localhost",),
+            allowed_cidrs=(ip_network("127.0.0.0/8"), ip_network("::1/128")),
+            http_allowed_hosts=("localhost",),
+            allow_loopback=True,
+            connect_timeout_seconds=1,
+            read_timeout_seconds=1,
+            call_timeout_seconds=2,
+            maximum_response_bytes=1024,
+            maximum_concurrency=1,
+        )
+
+        async def exercise() -> None:
+            semaphore = asyncio.Semaphore(1)
+            managed = SafeManagedHttpClientFactory(
+                settings,
+                concurrency_semaphore=semaphore,
+            ).create(f"http://localhost:{port}/mcp", 2)
+            external = SafeExternalMcpHttpClientFactory(
+                settings,
+                concurrency_semaphore=semaphore,
+            ).create(f"http://localhost:{port}/mcp")
+            try:
+                await asyncio.gather(
+                    managed.request("GET", f"http://localhost:{port}/managed"),
+                    external.request("GET", f"http://localhost:{port}/external"),
+                )
+            finally:
+                await managed.aclose()
+                await external.aclose()
+
+        asyncio.run(exercise())
+
+    assert ConcurrencyHandler.maximum_active == 1

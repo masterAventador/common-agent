@@ -21,7 +21,7 @@ from common_agent.audit import (
     AuditResourceType,
     AuditService,
 )
-from common_agent.ports.mcp import McpToolCallResponse, McpToolDescriptor
+from common_agent.ports.mcp import McpToolCallError, McpToolCallResponse, McpToolDescriptor
 from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant
 from common_agent.tools import (
     McpSource,
@@ -85,6 +85,23 @@ class _AuditStore:
     async def verify(self, tenant_id: UUID | None) -> AuditIntegrity:
         del tenant_id
         return cast(AuditIntegrity, object())
+
+
+class _FailSucceededAuditStore(_AuditStore):
+    async def append(
+        self,
+        entry: AuditEntry,
+        *,
+        retention_until: datetime,
+        max_events_per_scope: int,
+    ) -> AuditEvent:
+        if entry.outcome is AuditOutcome.SUCCEEDED:
+            raise RuntimeError("audit unavailable")
+        return await super().append(
+            entry,
+            retention_until=retention_until,
+            max_events_per_scope=max_events_per_scope,
+        )
 
 
 @pytest.mark.parametrize(
@@ -234,6 +251,17 @@ class _ManagedMcp:
         return McpToolCallResponse(output={"id": arguments["order_id"]})
 
 
+class _UnknownResultManagedMcp(_ManagedMcp):
+    async def call_tool(
+        self,
+        source_id: UUID,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolCallResponse:
+        self.calls.append((source_id, name, dict(arguments)))
+        raise McpToolCallError("tool_result_unknown", retryable=False)
+
+
 def test_managed_http_tool_is_namespaced_and_rechecks_exact_grant() -> None:
     target = ToolGrantTarget(ToolGrantTargetType.CONVERSATION, uuid4())
     directory = _ManagedDirectory(target)
@@ -262,6 +290,104 @@ def test_managed_http_tool_is_namespaced_and_rechecks_exact_grant() -> None:
             "orders.get",
             {"order_id": "A-100"},
         )
+    ]
+
+
+def test_result_unknown_latches_tool_and_prevents_same_turn_replay() -> None:
+    target = ToolGrantTarget(ToolGrantTargetType.CONVERSATION, uuid4())
+    directory = _ManagedDirectory(target)
+    managed_mcp = _UnknownResultManagedMcp(directory.capability)
+    registry = PlatformMcpToolRegistry(
+        directory,
+        PlatformMcpRuntime(clock=lambda: _NOW),
+        managed_mcp=managed_mcp,
+    )
+
+    async def exercise() -> tuple[str, str]:
+        tools = await registry.resolve(
+            (directory.capability.capability.id,),
+            target=target,
+        )
+        first = cast(str, await tools[0].ainvoke({"order_id": "A-100"}))
+        second = cast(str, await tools[0].ainvoke({"order_id": "A-100"}))
+        return first, second
+
+    assert asyncio.run(exercise()) == (
+        "工具调用失败,错误码:tool_result_unknown",
+        "工具调用失败,错误码:tool_result_unknown",
+    )
+    assert len(managed_mcp.calls) == 1
+
+
+def test_duplicate_provider_tool_call_id_is_coalesced_before_mcp_dispatch() -> None:
+    target = ToolGrantTarget(ToolGrantTargetType.CONVERSATION, uuid4())
+    directory = _ManagedDirectory(target)
+    managed_mcp = _ManagedMcp(directory.capability)
+    registry = PlatformMcpToolRegistry(
+        directory,
+        PlatformMcpRuntime(clock=lambda: _NOW),
+        managed_mcp=managed_mcp,
+    )
+
+    async def exercise() -> None:
+        tool = (
+            await registry.resolve(
+                (directory.capability.capability.id,),
+                target=target,
+            )
+        )[0]
+        call = {
+            "type": "tool_call",
+            "id": "provider-duplicate-id",
+            "name": tool.name,
+            "args": {"order_id": "A-100"},
+        }
+        first, second = await asyncio.gather(
+            tool.ainvoke(dict(call)),
+            tool.ainvoke(dict(call)),
+        )
+        assert first == second
+
+    asyncio.run(exercise())
+
+    assert len(managed_mcp.calls) == 1
+
+
+def test_audit_failure_after_remote_result_latches_result_unknown() -> None:
+    target = ToolGrantTarget(ToolGrantTargetType.CONVERSATION, uuid4())
+    directory = _ManagedDirectory(target)
+    managed_mcp = _ManagedMcp(directory.capability)
+    audit = _FailSucceededAuditStore()
+    registry = PlatformMcpToolRegistry(
+        directory,
+        PlatformMcpRuntime(clock=lambda: _NOW),
+        managed_mcp=managed_mcp,
+        audit=AuditService(audit),
+    )
+
+    async def exercise() -> tuple[str, str]:
+        tool = (
+            await registry.resolve(
+                (directory.capability.capability.id,),
+                target=target,
+            )
+        )[0]
+        first = cast(str, await tool.ainvoke({"order_id": "A-100"}))
+        second = cast(str, await tool.ainvoke({"order_id": "A-100"}))
+        return first, second
+
+    with bind_tenant(TenantAccess(_TENANT_ID, _USER_ID, TenantRole.EDITOR)):
+        assert asyncio.run(exercise()) == (
+            "工具调用失败,错误码:tool_result_unknown",
+            "工具调用失败,错误码:tool_result_unknown",
+        )
+
+    assert len(managed_mcp.calls) == 1
+    assert [entry.outcome for entry in audit.entries] == [
+        AuditOutcome.STARTED,
+        AuditOutcome.FAILED,
+        AuditOutcome.STARTED,
+        AuditOutcome.FAILED,
     ]
 
 

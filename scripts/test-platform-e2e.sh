@@ -50,6 +50,8 @@ COMMON_AGENT_E2E_GENERIC_CHAT_MODEL_NAME="common-agent-s10-07g-model-${RUN_ID}"
 COMMON_AGENT_E2E_TOOL_EMPLOYEE_NAME="common-agent-t2-07-employee-${RUN_ID}"
 COMMON_AGENT_E2E_TOOL_GENERIC_PREFIX="common-agent-t2-07-generic-${RUN_ID}"
 COMMON_AGENT_E2E_TOOL_MODEL_NAME="common-agent-t2-08-model-${RUN_ID}"
+COMMON_AGENT_E2E_TOOL_MANAGED_SOURCE_NAME="common-agent-t2-09-managed-${RUN_ID}"
+COMMON_AGENT_E2E_TOOL_EXTERNAL_SOURCE_NAME="common-agent-t2-09-external-${RUN_ID}"
 LIGHT_E2E_MEMORY_GIB=12
 REAL_E2E_MEMORY_GIB=32
 ARTIFACT_ROOT="${REPOSITORY_ROOT}/.local/test-artifacts/platform-e2e/${E2E_SUITE}-${RUN_ID}"
@@ -141,6 +143,22 @@ provision_ragflow_api_key() {
   return 1
 }
 
+ensure_playwright_browser() {
+  local install_location=""
+  install_location="$(
+    cd "${FRONTEND_ROOT}"
+    pnpm exec playwright install --dry-run chromium-headless-shell |
+      awk -F': *' '/Install location:/ { print $2; exit }'
+  )"
+  if [[ -n "${install_location}" && -f "${install_location}/INSTALLATION_COMPLETE" ]]; then
+    return
+  fi
+  (
+    cd "${FRONTEND_ROOT}"
+    pnpm exec playwright install chromium-headless-shell
+  )
+}
+
 stop_process() {
   local pid="$1"
   if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
@@ -225,6 +243,8 @@ cleanup() {
       COMMON_AGENT_E2E_TOOL_EMPLOYEE_NAME="${COMMON_AGENT_E2E_TOOL_EMPLOYEE_NAME}" \
       COMMON_AGENT_E2E_TOOL_GENERIC_PREFIX="${COMMON_AGENT_E2E_TOOL_GENERIC_PREFIX}" \
       COMMON_AGENT_E2E_TOOL_MODEL_NAME="${COMMON_AGENT_E2E_TOOL_MODEL_NAME}" \
+      COMMON_AGENT_E2E_TOOL_MANAGED_SOURCE_NAME="${COMMON_AGENT_E2E_TOOL_MANAGED_SOURCE_NAME}" \
+      COMMON_AGENT_E2E_TOOL_EXTERNAL_SOURCE_NAME="${COMMON_AGENT_E2E_TOOL_EXTERNAL_SOURCE_NAME}" \
         "${UV_RUNNER}" run --frozen python -m tests.support.tool_authorizations_e2e_cleanup
     ); then
       echo "工具授权 E2E 数据清理失败，保留验收产物：${ARTIFACT_ROOT}" >&2
@@ -389,10 +409,7 @@ if ! port_is_free "${FRONTEND_PORT}"; then
 fi
 
 mkdir -p "${ARTIFACT_ROOT}"
-(
-  cd "${FRONTEND_ROOT}"
-  pnpm exec playwright install chromium-headless-shell
-)
+ensure_playwright_browser
 ensure_colima_profile
 if [[ "$(docker --context "${DOCKER_CONTEXT_NAME}" inspect \
   --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
@@ -416,6 +433,8 @@ export COMMON_AGENT_E2E_GENERIC_CHAT_MODEL_NAME
 export COMMON_AGENT_E2E_TOOL_EMPLOYEE_NAME
 export COMMON_AGENT_E2E_TOOL_GENERIC_PREFIX
 export COMMON_AGENT_E2E_TOOL_MODEL_NAME
+export COMMON_AGENT_E2E_TOOL_MANAGED_SOURCE_NAME
+export COMMON_AGENT_E2E_TOOL_EXTERNAL_SOURCE_NAME
 export COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN="${COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN}"
 export COMMON_AGENT_API_PORT="${API_PORT}"
 export COMMON_AGENT_CORS_ORIGINS="http://127.0.0.1:${FRONTEND_PORT}"
@@ -521,6 +540,8 @@ wait_for_url "http://127.0.0.1:${FRONTEND_PORT}/knowledge-bases"
     COMMON_AGENT_E2E_TOOL_EMPLOYEE_NAME="${COMMON_AGENT_E2E_TOOL_EMPLOYEE_NAME}" \
     COMMON_AGENT_E2E_TOOL_GENERIC_PREFIX="${COMMON_AGENT_E2E_TOOL_GENERIC_PREFIX}" \
     COMMON_AGENT_E2E_TOOL_MODEL_NAME="${COMMON_AGENT_E2E_TOOL_MODEL_NAME}" \
+    COMMON_AGENT_E2E_TOOL_MANAGED_SOURCE_NAME="${COMMON_AGENT_E2E_TOOL_MANAGED_SOURCE_NAME}" \
+    COMMON_AGENT_E2E_TOOL_EXTERNAL_SOURCE_NAME="${COMMON_AGENT_E2E_TOOL_EXTERNAL_SOURCE_NAME}" \
     COMMON_AGENT_E2E_FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}" \
     COMMON_AGENT_E2E_ARTIFACT_DIR="${ARTIFACT_ROOT}/playwright" \
       exec pnpm exec playwright test \

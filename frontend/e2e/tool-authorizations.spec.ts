@@ -1,6 +1,13 @@
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { Locator, Page } from "@playwright/test";
 
-import { expect, test } from "./fixtures/auth";
+import {
+  expect,
+  platformApiUrl,
+  platformWriteHeaders,
+  test,
+} from "./fixtures/auth";
 import { selectEmployeeDefaultModel } from "./fixtures/models";
 import { expectRouteSearchParam } from "./fixtures/url";
 
@@ -13,16 +20,261 @@ function requiredEnvironment(name: string): string {
 const employeeName = requiredEnvironment("COMMON_AGENT_E2E_TOOL_EMPLOYEE_NAME");
 const genericPrefix = requiredEnvironment("COMMON_AGENT_E2E_TOOL_GENERIC_PREFIX");
 const modelName = requiredEnvironment("COMMON_AGENT_E2E_TOOL_MODEL_NAME");
+const managedSourceName = requiredEnvironment(
+  "COMMON_AGENT_E2E_TOOL_MANAGED_SOURCE_NAME",
+);
+const externalSourceName = requiredEnvironment(
+  "COMMON_AGENT_E2E_TOOL_EXTERNAL_SOURCE_NAME",
+);
+const managedCapabilityName = "创建不确定订单";
+const externalCapabilityName = "查询外部订单 T2-09";
+const managedBearerToken = "t2-09-managed-side-effect-secret";
+const externalBearerToken = "t2-09-external-mcp-secret";
+let businessServer: Server;
+let businessPort = 0;
+let managedSideEffectCount = 0;
+let externalMcpServer: Server;
+let externalMcpPort = 0;
+let externalToolCallCount = 0;
+
+test.beforeAll(async () => {
+  businessServer = createServer((request, response) => {
+    if (request.headers.authorization !== `Bearer ${managedBearerToken}`) {
+      response.writeHead(401).end();
+      return;
+    }
+    if (request.method === "POST" && request.url === "/api/orders") {
+      managedSideEffectCount += 1;
+      request.socket.destroy();
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) =>
+    businessServer.listen(0, "127.0.0.1", resolve),
+  );
+  businessPort = (businessServer.address() as AddressInfo).port;
+
+  externalMcpServer = createServer(async (request, response) => {
+    if (request.headers.authorization !== `Bearer ${externalBearerToken}`) {
+      response.writeHead(401).end();
+      return;
+    }
+    let rawBody = "";
+    for await (const chunk of request) rawBody += chunk.toString();
+    const message = JSON.parse(rawBody) as {
+      id?: string | number;
+      method?: string;
+      params?: { name?: string; arguments?: Record<string, unknown> };
+    };
+    if (message.method === "notifications/initialized") {
+      response.writeHead(202).end();
+      return;
+    }
+    let result: Record<string, unknown>;
+    if (message.method === "initialize") {
+      result = {
+        protocolVersion: "2025-11-25",
+        capabilities: { tools: {} },
+        serverInfo: { name: "t2-09-external-orders", version: "1.0.0" },
+      };
+    } else if (message.method === "tools/list") {
+      result = {
+        tools: [
+          {
+            name: "external_orders_get",
+            title: externalCapabilityName,
+            description: "查询外部订单，必须使用 order_id。",
+            inputSchema: {
+              type: "object",
+              properties: {
+                order_id: { type: "string", description: "订单编号" },
+              },
+              required: ["order_id"],
+              additionalProperties: false,
+            },
+          },
+        ],
+      };
+    } else if (
+      message.method === "tools/call" &&
+      message.params?.name === "external_orders_get"
+    ) {
+      externalToolCallCount += 1;
+      const output = {
+        id: message.params.arguments?.order_id,
+        source: "external-mcp-worker",
+      };
+      result = {
+        content: [{ type: "text", text: JSON.stringify(output) }],
+        structuredContent: output,
+        isError: false,
+      };
+    } else {
+      const body = JSON.stringify({
+        jsonrpc: "2.0",
+        id: message.id,
+        error: { code: -32601, message: "Method not found" },
+      });
+      response.writeHead(200, {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      });
+      response.end(body);
+      return;
+    }
+    const body = JSON.stringify({ jsonrpc: "2.0", id: message.id, result });
+    response.writeHead(200, {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(body),
+    });
+    response.end(body);
+  });
+  await new Promise<void>((resolve) =>
+    externalMcpServer.listen(0, "127.0.0.1", resolve),
+  );
+  externalMcpPort = (externalMcpServer.address() as AddressInfo).port;
+});
+
+test.afterAll(async () => {
+  await new Promise<void>((resolve, reject) =>
+    businessServer.close((error) => (error ? reject(error) : resolve())),
+  );
+  await new Promise<void>((resolve, reject) =>
+    externalMcpServer.close((error) => (error ? reject(error) : resolve())),
+  );
+});
 
 async function selectCurrentTime(page: Page, scope: Locator): Promise<void> {
+  await selectCapability(page, scope, "当前时间");
+}
+
+async function selectCapability(
+  page: Page,
+  scope: Locator,
+  capabilityName: string,
+): Promise<void> {
   await scope.getByRole("combobox", { name: "单项工具能力" }).click();
   const option = page
     .locator(".ant-select-dropdown:visible .ant-select-item-option")
-    .filter({ hasText: "当前时间" })
+    .filter({ hasText: capabilityName })
     .first();
   await expect(option).toBeVisible();
   await option.click();
   await page.keyboard.press("Escape");
+}
+
+async function createWorkerToolSources(page: Page): Promise<{
+  managedCapabilityId: string;
+  externalCapabilityId: string;
+}> {
+  const headers = await platformWriteHeaders(page);
+  const managed = await page.request.post(platformApiUrl("/managed-mcp-sources"), {
+    headers,
+    data: {
+      name: managedSourceName,
+      description: "T2-09 结果未知防重放正式验收",
+      base_url: `http://localhost:${businessPort}/api`,
+      enabled: true,
+    },
+  });
+  expect(managed.status()).toBe(201);
+  const managedSource = (await managed.json()) as { id: string };
+  const managedCredential = await page.request.put(
+    platformApiUrl(`/mcp-sources/${managedSource.id}/credentials`),
+    {
+      headers,
+      data: {
+        action: "replace",
+        kind: "bearer",
+        bearer_token: managedBearerToken,
+      },
+    },
+  );
+  expect(managedCredential.status()).toBe(200);
+  const managedCapability = await page.request.post(
+    platformApiUrl(`/managed-mcp-sources/${managedSource.id}/capabilities`),
+    {
+      headers,
+      data: {
+        remote_name: "orders_create_uncertain",
+        display_name: managedCapabilityName,
+        description: "创建订单；远端断线时结果未知，禁止自动重试。",
+        input_schema: {
+          type: "object",
+          properties: {
+            order_id: { type: "string", description: "订单编号" },
+          },
+          required: ["order_id"],
+          additionalProperties: false,
+        },
+        method: "POST",
+        path_template: "/orders",
+        parameter_bindings: [
+          { argument_name: "order_id", location: "body", target_name: "order_id" },
+        ],
+        timeout_seconds: 10,
+        response_json_pointer: null,
+        enabled: true,
+      },
+    },
+  );
+  expect(managedCapability.status()).toBe(201);
+  const managedCapabilityBody = (await managedCapability.json()) as { id: string };
+
+  const external = await page.request.post(platformApiUrl("/external-mcp-sources"), {
+    headers,
+    data: {
+      name: externalSourceName,
+      description: "T2-09 Worker 外部 MCP 正式验收",
+      endpoint_url: `http://localhost:${externalMcpPort}/mcp`,
+    },
+  });
+  expect(external.status()).toBe(201);
+  const externalSource = (await external.json()) as { id: string };
+  const externalCredential = await page.request.put(
+    platformApiUrl(`/mcp-sources/${externalSource.id}/credentials`),
+    {
+      headers,
+      data: {
+        action: "replace",
+        kind: "bearer",
+        bearer_token: externalBearerToken,
+        headers: null,
+      },
+    },
+  );
+  expect(externalCredential.status()).toBe(200);
+  const sync = await page.request.post(
+    platformApiUrl(`/external-mcp-sources/${externalSource.id}/sync`),
+    { headers },
+  );
+  expect(sync.status()).toBe(200);
+  const syncBody = (await sync.json()) as {
+    source: { capabilities: Array<{ id: string; display_name: string }> };
+  };
+  const externalCapability = syncBody.source.capabilities.find(
+    (item) => item.display_name === externalCapabilityName,
+  );
+  expect(externalCapability).toBeDefined();
+  return {
+    managedCapabilityId: managedCapabilityBody.id,
+    externalCapabilityId: externalCapability!.id,
+  };
+}
+
+async function expectToolLifecycle(
+  page: Page,
+  capabilityName: string,
+  status: string,
+  errorCode?: string,
+): Promise<void> {
+  const lifecycle = page
+    .getByLabel(/工具调用 \d+/)
+    .filter({ hasText: capabilityName })
+    .last();
+  await expect(lifecycle).toContainText(status, { timeout: 180_000 });
+  if (errorCode) await expect(lifecycle).toContainText(errorCode);
 }
 
 async function expectCompletedCurrentTime(page: Page): Promise<void> {
@@ -36,7 +288,7 @@ async function expectCompletedCurrentTime(page: Page): Promise<void> {
 test("authorizes and calls current time from generic and employee chats", async ({
   page,
 }) => {
-  test.setTimeout(420_000);
+  test.setTimeout(720_000);
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -84,7 +336,7 @@ test("authorizes and calls current time from generic and employee chats", async 
       response.url().endsWith("/api/v1/conversation-turns") &&
       response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "发送消息" }).click();
+  await page.getByRole("textbox", { name: "消息输入" }).press("Enter");
   const acceptedGenericTurn = await genericTurnResponse;
   expect(acceptedGenericTurn.status()).toBe(202);
   const genericBody = acceptedGenericTurn.request().postDataJSON() as {
@@ -165,7 +417,7 @@ test("authorizes and calls current time from generic and employee chats", async 
       response.url().endsWith("/api/v1/conversation-turns") &&
       response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "发送消息" }).click();
+  await page.getByRole("textbox", { name: "消息输入" }).press("Enter");
   const acceptedEmployeeTurn = await employeeTurnResponse;
   expect(acceptedEmployeeTurn.status()).toBe(202);
   const employeeBody = acceptedEmployeeTurn.request().postDataJSON() as {
@@ -181,5 +433,88 @@ test("authorizes and calls current time from generic and employee chats", async 
 
   await page.reload();
   await expectCompletedCurrentTime(page);
+
+  const workerTools = await createWorkerToolSources(page);
+
+  await page.goto("/chat");
+  await page.getByRole("combobox", { name: "选择模型" }).click();
+  const managedModelOption = page
+    .locator(".ant-select-dropdown:visible .ant-select-item-option")
+    .filter({ hasText: modelName })
+    .first();
+  await expect(managedModelOption).toBeVisible();
+  await managedModelOption.click();
+  const managedPanel = page.getByRole("region", { name: "数字员工信息" });
+  await selectCapability(page, managedPanel, managedCapabilityName);
+  const managedPrompt =
+    `${genericPrefix}-result-unknown：必须调用 orders_create_uncertain 创建订单 ` +
+    "T2-09-ORDER；即使工具返回结果未知也禁止再次调用，只说明真实状态。";
+  await page.getByRole("textbox", { name: "消息输入" }).fill(managedPrompt);
+  const managedTurnResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/conversation-turns") &&
+      response.request().method() === "POST",
+  );
+  await page.getByRole("textbox", { name: "消息输入" }).press("Enter");
+  const acceptedManagedTurn = await managedTurnResponse;
+  expect(acceptedManagedTurn.status()).toBe(202);
+  const managedTurnBody = acceptedManagedTurn.request().postDataJSON() as {
+    tool_capability_ids: string[];
+  };
+  expect(managedTurnBody.tool_capability_ids).toEqual([
+    workerTools.managedCapabilityId,
+  ]);
+  await expectToolLifecycle(
+    page,
+    managedCapabilityName,
+    "失败",
+    "tool_result_unknown",
+  );
+  await expect
+    .poll(() => managedSideEffectCount, { timeout: 180_000 })
+    .toBe(1);
+  await expect(
+    page.locator(".chat-message.is-assistant .chat-message-content").last(),
+  ).not.toBeEmpty();
+
+  await page.getByRole("link", { name: "数字员工" }).click();
+  const workerEmployeeCard = page.locator(".employee-card", { hasText: employeeName });
+  await workerEmployeeCard.getByRole("button", { name: `编辑 ${employeeName}` }).click();
+  const workerEditDialog = page.getByRole("dialog", { name: "编辑数字员工" });
+  await selectCapability(page, workerEditDialog, externalCapabilityName);
+  const workerGrantResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/employees/${employee.id}/tool-grants`) &&
+      response.request().method() === "PUT",
+  );
+  await workerEditDialog.getByRole("button", { name: "保存修改" }).click();
+  const workerGrant = await workerGrantResponse;
+  expect(workerGrant.status()).toBe(200);
+  const workerGrantBody = (await workerGrant.json()) as {
+    capability_ids: string[];
+  };
+  expect(workerGrantBody.capability_ids).toContain(workerTools.externalCapabilityId);
+
+  await workerEmployeeCard
+    .getByRole("button", { name: `与${employeeName}开始对话` })
+    .click();
+  await page
+    .getByRole("textbox", { name: "消息输入" })
+    .fill(
+      "必须调用 external_orders_get 查询订单 EXT-T2-09，并依据工具返回的 id 和 source 回答；禁止猜测。",
+    );
+  const externalTurnResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/conversation-turns") &&
+      response.request().method() === "POST",
+  );
+  await page.getByRole("textbox", { name: "消息输入" }).press("Enter");
+  expect((await externalTurnResponse).status()).toBe(202);
+  await expectToolLifecycle(page, externalCapabilityName, "已完成");
+  await expect.poll(() => externalToolCallCount, { timeout: 180_000 }).toBe(1);
+  await expect(
+    page.locator(".chat-message.is-assistant .chat-message-content").last(),
+  ).toContainText(/EXT-T2-09|external-mcp-worker/);
+
   expect(pageErrors).toEqual([]);
 });

@@ -71,8 +71,14 @@ class _Credentials:
 
 
 class _Client:
-    def __init__(self, response: OutboundHttpResponse | Exception) -> None:
+    def __init__(
+        self,
+        response: OutboundHttpResponse | Exception,
+        *,
+        close_error: Exception | None = None,
+    ) -> None:
         self.response = response
+        self.close_error = close_error
         self.calls: list[tuple[str, str, dict[str, str], bytes | None]] = []
         self.closed = False
 
@@ -91,6 +97,8 @@ class _Client:
 
     async def aclose(self) -> None:
         self.closed = True
+        if self.close_error is not None:
+            raise self.close_error
 
 
 class _Factory:
@@ -138,7 +146,7 @@ def test_executor_injects_server_side_bearer_and_extracts_json_pointer() -> None
             OutboundHttpResponse(503, (), b'{"error":"secret-upstream-error"}'),
             "tool_execution_failed",
         ),
-        (OutboundHttpResponse(200, (), b"not-json"), "tool_protocol_error"),
+        (OutboundHttpResponse(200, (), b"not-json"), "tool_result_unknown"),
         (
             OutboundSecurityError(
                 "tool_egress_timeout",
@@ -154,6 +162,7 @@ def test_executor_injects_server_side_bearer_and_extracts_json_pointer() -> None
             ),
             "tool_response_too_large",
         ),
+        (RuntimeError("disconnected after dispatch with secret"), "tool_result_unknown"),
     ],
 )
 def test_executor_maps_failures_to_stable_codes_without_upstream_content(
@@ -168,6 +177,8 @@ def test_executor_maps_failures_to_stable_codes_without_upstream_content(
         asyncio.run(executor.execute(source, capability, {"order_id": str(uuid4())}))
 
     assert captured.value.code == error_code
+    if error_code == "tool_result_unknown":
+        assert captured.value.retryable is False
     assert "secret-upstream-error" not in str(captured.value)
     assert client.closed is True
 
@@ -194,3 +205,20 @@ def test_executor_injects_custom_credential_headers_server_side() -> None:
     )
     assert result == {}
     assert client.calls[0][2] == {"Cookie": "session-secret"}
+
+
+def test_executor_does_not_treat_cleanup_failure_as_safe_to_replay() -> None:
+    source, capability = _fixture()
+    client = _Client(
+        OutboundHttpResponse(200, (), b'{"data":{"order":{"id":"A-100"}}}'),
+        close_error=RuntimeError("connection cleanup failed with secret"),
+    )
+    executor = ManagedHttpRequestExecutor(_Credentials(None), _Factory(client))
+
+    with pytest.raises(McpToolCallError) as captured:
+        asyncio.run(executor.execute(source, capability, {"order_id": "A-100"}))
+
+    assert captured.value.code == "tool_result_unknown"
+    assert captured.value.retryable is False
+    assert "secret" not in str(captured.value)
+    assert client.closed is True

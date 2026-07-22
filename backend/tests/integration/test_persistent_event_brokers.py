@@ -130,6 +130,50 @@ def test_tool_event_safe_metadata_survives_persistent_reconstruction() -> None:
     asyncio.run(scenario())
 
 
+def test_tool_recovery_state_survives_broker_reconstruction() -> None:
+    async def scenario() -> None:
+        database = Database(TEST_DATABASE_URL)
+        await database.start()
+        message = Message.create_assistant(
+            conversation_id=uuid4(),
+            sequence_number=2,
+        )
+        tool_call = ToolCallEvent(
+            tool_call_id=uuid4(),
+            capability_id=uuid4(),
+            capability_name="创建订单",
+        )
+        producer = ConversationEventBroker(
+            journal=SqlAlchemyEventJournal(database),
+            tenant_id_provider=lambda: DEFAULT_TENANT_ID,
+            persistent_poll_seconds=0.01,
+        )
+        try:
+            await producer.publish(
+                turn_id=uuid4(),
+                message=message,
+                kind=ConversationEventKind.ASSISTANT_TOOL_STARTED,
+                tool_call=tool_call,
+            )
+            reconstructed = ConversationEventBroker(
+                journal=SqlAlchemyEventJournal(database),
+                tenant_id_provider=lambda: DEFAULT_TENANT_ID,
+                persistent_poll_seconds=0.01,
+            )
+            state = await reconstructed.tool_call_recovery_state(
+                message.conversation_id,
+                message.id,
+            )
+            assert state.attempted is True
+            assert state.unresolved == (tool_call,)
+            await reconstructed.aclose()
+        finally:
+            await producer.aclose()
+            await database.stop()
+
+    asyncio.run(scenario())
+
+
 def test_workflow_sse_history_survives_broker_reconstruction() -> None:
     async def scenario() -> None:
         database = Database(TEST_DATABASE_URL)

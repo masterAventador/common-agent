@@ -47,7 +47,12 @@ class ManagedHttpClientFactory(Protocol):
 
 
 class SafeManagedHttpClientFactory:
-    def __init__(self, settings: ToolEgressSettings) -> None:
+    def __init__(
+        self,
+        settings: ToolEgressSettings,
+        *,
+        concurrency_semaphore: asyncio.Semaphore | None = None,
+    ) -> None:
         self._settings = settings
         self._policy = OutboundAccessPolicy(
             allowed_hosts=settings.allowed_hosts,
@@ -55,7 +60,9 @@ class SafeManagedHttpClientFactory:
             http_allowed_hosts=settings.http_allowed_hosts,
             allow_loopback=settings.allow_loopback,
         )
-        self._semaphore = asyncio.Semaphore(settings.maximum_concurrency)
+        self._semaphore = concurrency_semaphore or asyncio.Semaphore(
+            settings.maximum_concurrency
+        )
 
     def create(self, endpoint_url: str, timeout_seconds: int) -> SafeOutboundHttpClient:
         call_timeout = min(float(timeout_seconds), self._settings.call_timeout_seconds)
@@ -113,21 +120,26 @@ class ManagedHttpRequestExecutor:
                 content=outbound.body,
             )
         except OutboundSecurityError as error:
+            if error.request_may_have_been_sent:
+                raise McpToolCallError("tool_result_unknown") from None
             raise McpToolCallError(egress_error_code(error), retryable=error.retryable) from None
         except Exception:
-            raise McpToolCallError("tool_source_unavailable", retryable=True) from None
+            raise McpToolCallError("tool_result_unknown") from None
         finally:
-            await client.aclose()
+            try:
+                await client.aclose()
+            except Exception:
+                raise McpToolCallError("tool_result_unknown") from None
         if not 200 <= response.status_code < 300:
             raise McpToolCallError("tool_execution_failed")
         try:
             payload = json.loads(response.body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            raise McpToolCallError("tool_protocol_error") from None
+            raise McpToolCallError("tool_result_unknown") from None
         try:
             selected = _json_pointer(payload, capability.response_json_pointer)
         except (KeyError, IndexError, TypeError, ValueError):
-            raise McpToolCallError("tool_protocol_error") from None
+            raise McpToolCallError("tool_result_unknown") from None
         if isinstance(selected, dict):
             return cast(dict[str, object], selected)
         return {"result": selected}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -200,9 +201,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ),
             tenant_id_provider=tenant_id_provider,
         )
+        tool_egress_semaphore = asyncio.Semaphore(
+            app.state.tool_egress_settings.maximum_concurrency
+        )
         external_mcp_runtime = ExternalMcpRuntime(
             app.state.tool_credentials,
-            SafeExternalMcpHttpClientFactory(app.state.tool_egress_settings),
+            SafeExternalMcpHttpClientFactory(
+                app.state.tool_egress_settings,
+                concurrency_semaphore=tool_egress_semaphore,
+            ),
         )
         app.state.external_mcp_runtime = external_mcp_runtime
         app.state.external_mcp = ExternalMcpService(
@@ -216,7 +223,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.managed_http,
             ManagedHttpRequestExecutor(
                 app.state.tool_credentials,
-                SafeManagedHttpClientFactory(app.state.tool_egress_settings),
+                SafeManagedHttpClientFactory(
+                    app.state.tool_egress_settings,
+                    concurrency_semaphore=tool_egress_semaphore,
+                ),
             ),
         )
 

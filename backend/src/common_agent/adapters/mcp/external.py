@@ -50,7 +50,12 @@ class ExternalMcpHttpClientFactory(Protocol):
 
 
 class SafeExternalMcpHttpClientFactory:
-    def __init__(self, settings: ToolEgressSettings) -> None:
+    def __init__(
+        self,
+        settings: ToolEgressSettings,
+        *,
+        concurrency_semaphore: asyncio.Semaphore | None = None,
+    ) -> None:
         self._settings = settings
         self._policy = OutboundAccessPolicy(
             allowed_hosts=settings.allowed_hosts,
@@ -58,7 +63,9 @@ class SafeExternalMcpHttpClientFactory:
             http_allowed_hosts=settings.http_allowed_hosts,
             allow_loopback=settings.allow_loopback,
         )
-        self._semaphore = asyncio.Semaphore(settings.maximum_concurrency)
+        self._semaphore = concurrency_semaphore or asyncio.Semaphore(
+            settings.maximum_concurrency
+        )
 
     def create(self, endpoint_url: str) -> SafeOutboundHttpClient:
         return SafeOutboundHttpClient(
@@ -124,21 +131,30 @@ class ExternalMcpRuntime:
     ) -> McpToolCallResponse:
         if source.status is not McpSourceStatus.READY:
             raise McpToolCallError("tool_source_unavailable")
+        dispatched = False
         try:
             async with self._session(source) as session:
+                dispatched = True
                 result = await session.call_tool(name, dict(arguments))
         except McpToolCallError:
             raise
         except OutboundSecurityError as error:
+            if dispatched:
+                raise McpToolCallError("tool_result_unknown") from None
             raise McpToolCallError(
                 egress_error_code(error),
                 retryable=error.retryable,
             ) from None
         except Exception:
+            if dispatched:
+                raise McpToolCallError("tool_result_unknown") from None
             raise McpToolCallError("tool_source_unavailable", retryable=True) from None
         if result.isError:
             raise McpToolCallError("tool_execution_failed")
-        return McpToolCallResponse(output=_result_output(result))
+        try:
+            return McpToolCallResponse(output=_result_output(result))
+        except (McpToolCallError, TypeError, ValueError):
+            raise McpToolCallError("tool_result_unknown") from None
 
     @asynccontextmanager
     async def _session(self, source: McpSource) -> AsyncIterator[ClientSession]:

@@ -156,12 +156,17 @@ def test_relative_imports_are_treated_as_platform_imports() -> None:
 def test_formal_composition_uses_persistent_events_and_an_independent_worker() -> None:
     source_root = Path(__file__).parents[2] / "src" / "common_agent"
     api_source = (source_root / "api" / "app.py").read_text(encoding="utf-8")
+    worker_source = (source_root / "worker_app.py").read_text(encoding="utf-8")
 
     assert "SqlAlchemyEventJournal" in api_source
     assert "SqlAlchemyTaskQueue" in api_source
     assert ".recover_interrupted()" not in api_source
     assert importlib.util.find_spec("common_agent.worker_app") is not None
     assert importlib.util.find_spec("common_agent.worker_main") is not None
+    assert "ManagedHttpMcpRuntime" in worker_source
+    assert "ExternalMcpRuntime" in worker_source
+    assert "managed_mcp=managed_mcp" in worker_source
+    assert "external_mcp=external_mcp" in worker_source
 
 
 def _imports(tree: ast.AST) -> tuple[tuple[int, str], ...]:

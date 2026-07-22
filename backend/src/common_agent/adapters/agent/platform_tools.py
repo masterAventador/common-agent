@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 from collections.abc import Sequence
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Annotated, Protocol
 from uuid import UUID, uuid4
 
-from langchain_core.tools import BaseTool, StructuredTool, ToolException
+from langchain_core.tools import BaseTool, ToolException
 from pydantic import BaseModel, ConfigDict, Field
 
 from common_agent.adapters.agent.deep_agents import RuntimeCapabilityUnavailable
+from common_agent.adapters.agent.replay_protected_tool import ReplayProtectedStructuredTool
 from common_agent.adapters.agent.tool_metadata import (
     TOOL_METADATA_CAPABILITY_ID,
     TOOL_METADATA_CAPABILITY_NAME,
@@ -195,7 +198,7 @@ class PlatformMcpToolRegistry:
             await self._record(capability.id, AuditOutcome.SUCCEEDED)
             return json.dumps(result.output, ensure_ascii=False, separators=(",", ":"))
 
-        return StructuredTool.from_function(
+        return ReplayProtectedStructuredTool.from_function(
             coroutine=call_current_time,
             name=descriptor.name,
             description=descriptor.description,
@@ -215,65 +218,103 @@ class PlatformMcpToolRegistry:
     ) -> BaseTool:
         source = item.source
         capability = item.capability
+        call_lock = asyncio.Lock()
+        result_unknown = False
 
         async def call_remote(**arguments: object) -> str:
-            await self._record(capability.id, AuditOutcome.STARTED)
-            try:
-                current = await self._tools.authorized_runtime_capabilities(
-                    target,
-                    (capability.id,),
-                )
-                if (
-                    len(current) != 1
-                    or current[0].source.id != source.id
-                    or current[0].source.source_type is not source.source_type
-                    or current[0].capability.remote_name != descriptor.name
-                    or current[0].capability.schema_fingerprint
-                    != capability.schema_fingerprint
-                ):
-                    raise ToolCapabilityUnavailable
-                if source.source_type is McpSourceType.MANAGED_HTTP:
-                    if self._managed_mcp is None:
-                        raise ToolCapabilityUnavailable
-                    result = await self._managed_mcp.call_tool(
-                        source.id,
-                        descriptor.name,
-                        arguments,
+            nonlocal result_unknown
+            async with call_lock:
+                await self._record(capability.id, AuditOutcome.STARTED)
+                if result_unknown:
+                    await self._record(
+                        capability.id,
+                        AuditOutcome.FAILED,
+                        error_code="tool_result_unknown",
                     )
-                else:
-                    if self._external_mcp is None:
-                        raise ToolCapabilityUnavailable
-                    result = await self._external_mcp.call_tool(
-                        current[0].source,
-                        descriptor.name,
-                        arguments,
+                    raise ToolException(
+                        "工具调用失败,错误码:tool_result_unknown"
+                    ) from None
+                try:
+                    current = await self._tools.authorized_runtime_capabilities(
+                        target,
+                        (capability.id,),
                     )
-                output = result.output
-            except ToolCapabilityUnavailable:
-                await self._record(
-                    capability.id,
-                    AuditOutcome.DENIED,
-                    error_code="tool_unauthorized",
-                )
-                raise ToolException("工具调用失败,错误码:tool_unauthorized") from None
-            except McpToolCallError as error:
-                await self._record(
-                    capability.id,
-                    AuditOutcome.FAILED,
-                    error_code=error.code,
-                )
-                raise ToolException(f"工具调用失败,错误码:{error.code}") from None
-            except Exception:
-                await self._record(
-                    capability.id,
-                    AuditOutcome.FAILED,
-                    error_code="tool_execution_failed",
-                )
-                raise ToolException("工具调用失败,错误码:tool_execution_failed") from None
-            await self._record(capability.id, AuditOutcome.SUCCEEDED)
-            return json.dumps(output, ensure_ascii=False, separators=(",", ":"))
+                    if (
+                        len(current) != 1
+                        or current[0].source.id != source.id
+                        or current[0].source.source_type is not source.source_type
+                        or current[0].capability.remote_name != descriptor.name
+                        or current[0].capability.schema_fingerprint
+                        != capability.schema_fingerprint
+                    ):
+                        raise ToolCapabilityUnavailable
+                    if source.source_type is McpSourceType.MANAGED_HTTP:
+                        if self._managed_mcp is None:
+                            raise ToolCapabilityUnavailable
+                        result = await self._managed_mcp.call_tool(
+                            source.id,
+                            descriptor.name,
+                            arguments,
+                        )
+                    else:
+                        if self._external_mcp is None:
+                            raise ToolCapabilityUnavailable
+                        result = await self._external_mcp.call_tool(
+                            current[0].source,
+                            descriptor.name,
+                            arguments,
+                        )
+                    output = result.output
+                except ToolCapabilityUnavailable:
+                    await self._record(
+                        capability.id,
+                        AuditOutcome.DENIED,
+                        error_code="tool_unauthorized",
+                    )
+                    raise ToolException("工具调用失败,错误码:tool_unauthorized") from None
+                except McpToolCallError as error:
+                    if error.code == "tool_result_unknown":
+                        result_unknown = True
+                    await self._record(
+                        capability.id,
+                        AuditOutcome.FAILED,
+                        error_code=error.code,
+                    )
+                    raise ToolException(f"工具调用失败,错误码:{error.code}") from None
+                except Exception:
+                    await self._record(
+                        capability.id,
+                        AuditOutcome.FAILED,
+                        error_code="tool_execution_failed",
+                    )
+                    raise ToolException(
+                        "工具调用失败,错误码:tool_execution_failed"
+                    ) from None
+                try:
+                    serialized = json.dumps(
+                        output,
+                        ensure_ascii=False,
+                        allow_nan=False,
+                        separators=(",", ":"),
+                    )
+                    await self._record(capability.id, AuditOutcome.SUCCEEDED)
+                except asyncio.CancelledError:
+                    result_unknown = True
+                    raise
+                except Exception:
+                    result_unknown = True
+                    with suppress(Exception):
+                        await self._record(
+                            capability.id,
+                            AuditOutcome.FAILED,
+                            error_code="tool_result_unknown",
+                        )
+                    raise ToolException(
+                        "工具调用失败,错误码:tool_result_unknown"
+                    ) from None
+                return serialized
 
-        return StructuredTool.from_function(
+        return ReplayProtectedStructuredTool.from_function(
             coroutine=call_remote,
             name=f"{capability.remote_name[:80]}__{capability.id.hex[:12]}",
             description=descriptor.description,

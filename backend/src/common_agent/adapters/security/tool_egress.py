@@ -32,10 +32,19 @@ _METADATA_ADDRESSES: frozenset[IpAddress] = frozenset(
 class OutboundSecurityError(RuntimeError):
     code: str
     retryable: bool
+    request_may_have_been_sent: bool
 
-    def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        retryable: bool = False,
+        request_may_have_been_sent: bool = False,
+    ) -> None:
         self.code = code
         self.retryable = retryable
+        self.request_may_have_been_sent = request_may_have_been_sent
         super().__init__(message)
 
 
@@ -217,6 +226,7 @@ class _CoreResponseStream(httpx.AsyncByteStream):
                 raise OutboundSecurityError(
                     "tool_egress_response_too_large",
                     "MCP 出站响应过大",
+                    request_may_have_been_sent=True,
                 )
             yield chunk
 
@@ -280,6 +290,7 @@ class _PinnedAsyncTransport(httpx.AsyncBaseTransport):
             raise OutboundSecurityError(
                 "tool_egress_redirect_blocked",
                 "MCP 出站响应重定向被阻止",
+                request_may_have_been_sent=True,
             )
         return httpx.Response(
             status_code=response.status,
@@ -376,6 +387,7 @@ class SafeOutboundHttpClient:
                             raise OutboundSecurityError(
                                 "tool_egress_redirect_blocked",
                                 "MCP 出站响应重定向被阻止",
+                                request_may_have_been_sent=True,
                             )
                         declared_length = response.headers.get("content-length")
                         if declared_length is not None:
@@ -384,6 +396,7 @@ class SafeOutboundHttpClient:
                                     raise OutboundSecurityError(
                                         "tool_egress_response_too_large",
                                         "MCP 出站响应过大",
+                                        request_may_have_been_sent=True,
                                     )
                             except ValueError:
                                 pass
@@ -394,6 +407,7 @@ class SafeOutboundHttpClient:
                                 raise OutboundSecurityError(
                                     "tool_egress_response_too_large",
                                     "MCP 出站响应过大",
+                                    request_may_have_been_sent=True,
                                 )
                         return OutboundHttpResponse(
                             status_code=response.status_code,
@@ -407,12 +421,14 @@ class SafeOutboundHttpClient:
                 "tool_egress_timeout",
                 "MCP 出站调用超时",
                 retryable=True,
+                request_may_have_been_sent=True,
             ) from None
         except (httpcore.NetworkError, httpcore.ProtocolError):
             raise OutboundSecurityError(
                 "tool_egress_unavailable",
                 "MCP 出站目标暂时不可用",
                 retryable=True,
+                request_may_have_been_sent=True,
             ) from None
 
     @asynccontextmanager
@@ -456,12 +472,14 @@ class SafeOutboundHttpClient:
                 "tool_egress_timeout",
                 "MCP 出站调用超时",
                 retryable=True,
+                request_may_have_been_sent=True,
             ) from None
         except (httpcore.NetworkError, httpcore.ProtocolError, httpx.NetworkError):
             raise OutboundSecurityError(
                 "tool_egress_unavailable",
                 "MCP 出站目标暂时不可用",
                 retryable=True,
+                request_may_have_been_sent=True,
             ) from None
 
     async def aclose(self) -> None:

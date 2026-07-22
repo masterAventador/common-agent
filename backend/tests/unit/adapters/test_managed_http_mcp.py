@@ -81,6 +81,17 @@ class _Executor:
         return {"id": arguments["order_id"], "source": source.name}
 
 
+class _UnknownResultExecutor(_Executor):
+    async def execute(
+        self,
+        source: McpSource,
+        capability: ManagedHttpCapability,
+        arguments: dict[str, object],
+    ) -> dict[str, object]:
+        del source, capability, arguments
+        raise McpToolCallError("tool_result_unknown")
+
+
 def test_managed_http_mcp_discovers_and_calls_only_active_capabilities_over_protocol() -> None:
     source = McpSource.create(
         name="订单系统",
@@ -165,3 +176,23 @@ def test_managed_http_mcp_fails_closed_when_source_is_not_ready() -> None:
     with pytest.raises(McpToolCallError, match="tool_source_unavailable"):
         asyncio.run(runtime.list_tools(source.id))
 
+
+def test_managed_http_mcp_preserves_result_unknown_over_protocol() -> None:
+    source = McpSource.create(
+        name="订单系统",
+        source_type=McpSourceType.MANAGED_HTTP,
+        endpoint_url="https://business.example/api",
+        status=McpSourceStatus.READY,
+    )
+    runtime = ManagedHttpMcpRuntime(
+        _Directory(
+            ManagedHttpRuntimeSnapshot(source, (_managed_capability(source.id),))
+        ),
+        _UnknownResultExecutor(),
+    )
+
+    with pytest.raises(McpToolCallError) as captured:
+        asyncio.run(runtime.call_tool(source.id, "orders.get", {"order_id": "A-100"}))
+
+    assert captured.value.code == "tool_result_unknown"
+    assert captured.value.retryable is False
