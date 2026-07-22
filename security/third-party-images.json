@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-07-22",
+  "policy": "只允许 RAGFlow v0.26.4 最新稳定版及其官方固定依赖；已知结果由精确镜像 digest、规范化漏洞明细摘要和隔离控制共同约束，任何镜像或扫描结果漂移都关闭失败并重新审阅。",
+  "upstream": {
+    "release": "v0.26.4",
+    "published_at": "2026-07-07T13:26:03Z",
+    "source_commit": "cb93883f3f8c975eecb2fed81210effeb3bdb06f",
+    "release_url": "https://github.com/infiniflow/ragflow/releases/tag/v0.26.4"
+  },
+  "images": [
+    {
+      "component": "platform-mysql",
+      "image": "mysql:8.4.10",
+      "digest": "mysql@sha256:c592c15aaf4a1961e15d82eb31ea5987dda862d1c4b1e93424438c0e91dc1f8d",
+      "high": 19,
+      "critical": 1,
+      "findings_sha256": "1b117caf58ca6336a957f31540e70e13b4f4d6b971a469f30f1ce4fa428d848d",
+      "review": "当前 MySQL 8.4 LTS 最新官方补丁镜像。Critical 只存在于启动阶段 gosu 内嵌 Go TLS 标准库；正式容器启动后进程降权为 mysql，数据库只在 internal 网络，不通过 gosu 建立出站 TLS。",
+      "critical_findings": [
+        {
+          "id": "CVE-2025-68121",
+          "package": "stdlib",
+          "installed_version": "v1.24.6",
+          "fixed_version": "1.24.13, 1.25.7, 1.26.0-rc.3",
+          "path": "/usr/local/bin/gosu"
+        }
+      ]
+    },
+    {
+      "component": "ragflow-api",
+      "image": "infiniflow/ragflow:v0.26.4",
+      "digest": "infiniflow/ragflow@sha256:e0048bb5ee60f8bcd2e9a2c4851de80f39a0b7318ad4e55bf7bbcef126eaa9ac",
+      "high": 75,
+      "critical": 5,
+      "findings_sha256": "725782ab941170431d0c839956ca62a47b8f75828ad701e0db0e614c45fb80ca",
+      "review": "RAGFlow 最新稳定版官方镜像，第三方零侵入规则禁止改写其 site-packages。三个 LiteLLM Critical 作用于未启动的 LiteLLM Proxy 认证/数据库入口；node-tar 只随未运行的 npm CLI 安装；NLTK 下载器不接收平台上传文档作为资源包。生产只经私网 TLS Edge 使用 RAGFlow 官方 API，管理和内部依赖端口不向公网开放。",
+      "critical_findings": [
+        {
+          "id": "CVE-2025-14009",
+          "package": "nltk",
+          "installed_version": "3.9.2",
+          "fixed_version": "3.9.3"
+        },
+        {
+          "id": "CVE-2026-35030",
+          "package": "litellm",
+          "installed_version": "1.82.5",
+          "fixed_version": "1.83.0"
+        },
+        {
+          "id": "CVE-2026-42208",
+          "package": "litellm",
+          "installed_version": "1.82.5",
+          "fixed_version": "1.83.7"
+        },
+        {
+          "id": "CVE-2026-49468",
+          "package": "litellm",
+          "installed_version": "1.82.5",
+          "fixed_version": "1.84.0"
+        },
+        {
+          "id": "CVE-2026-59873",
+          "package": "tar",
+          "installed_version": "6.2.1",
+          "fixed_version": "7.5.19"
+        }
+      ]
+    },
+    {
+      "component": "ragflow-elasticsearch",
+      "image": "elasticsearch:8.11.3",
+      "digest": "elasticsearch@sha256:0f652091e956e6af1dd7d8983f7295b56e3b659aa7580dde3a2b7d6408cffb95",
+      "high": 27,
+      "critical": 3,
+      "findings_sha256": "9966380ca76055aac93de3a22a1e578c73105ae448b2da4f6edd01ada3c83fa8",
+      "review": "RAGFlow v0.26.4 官方 Compose 固定版本。Critical 位于 ingest-attachment 的 Tika PDF 模块；当前集群没有自定义 attachment pipeline，平台文档解析只经 RAGFlow，不直接开放 Elasticsearch。生产端口只在 RAGFlow 私网。",
+      "critical_findings": [
+        {
+          "id": "CVE-2025-54988",
+          "package": "org.apache.tika:tika-parser-pdf-module",
+          "installed_version": "2.7.0",
+          "fixed_version": "3.2.2"
+        },
+        {
+          "id": "CVE-2025-66516",
+          "package": "org.apache.tika:tika-core",
+          "installed_version": "2.7.0",
+          "fixed_version": "3.2.2"
+        },
+        {
+          "id": "CVE-2025-66516",
+          "package": "org.apache.tika:tika-parser-pdf-module",
+          "installed_version": "2.7.0",
+          "fixed_version": "3.2.2"
+        }
+      ]
+    },
+    {
+      "component": "ragflow-mysql",
+      "image": "mysql:8.0.39",
+      "digest": "mysql@sha256:ccb8f749bb5e59f9f8f03bf7282c7ef27a93a1814a24f0a8a926fb4e19b7fb97",
+      "high": 140,
+      "critical": 4,
+      "findings_sha256": "5593678f9e8fee15cb1bd2882e55945233d08b3ed1a0db1b595028714633c1ad",
+      "review": "RAGFlow v0.26.4 官方 Compose 固定版本。四个 Critical 都位于启动阶段 gosu 的内嵌 Go 标准库；正式进程降权为 mysql，MySQL 只在 RAGFlow 私网，不向公网开放。版本替换必须随 RAGFlow 独立升级任务验证数据迁移和完整知识链。",
+      "critical_findings": [
+        {
+          "id": "CVE-2023-24538",
+          "package": "stdlib",
+          "installed_version": "v1.18.2",
+          "fixed_version": "1.19.8, 1.20.3",
+          "path": "/usr/local/bin/gosu"
+        },
+        {
+          "id": "CVE-2023-24540",
+          "package": "stdlib",
+          "installed_version": "v1.18.2",
+          "fixed_version": "1.19.9, 1.20.4",
+          "path": "/usr/local/bin/gosu"
+        },
+        {
+          "id": "CVE-2024-24790",
+          "package": "stdlib",
+          "installed_version": "v1.18.2",
+          "fixed_version": "1.21.11, 1.22.4",
+          "path": "/usr/local/bin/gosu"
+        },
+        {
+          "id": "CVE-2025-68121",
+          "package": "stdlib",
+          "installed_version": "v1.18.2",
+          "fixed_version": "1.24.13, 1.25.7, 1.26.0-rc.3",
+          "path": "/usr/local/bin/gosu"
+        }
+      ]
+    },
+    {
+      "component": "ragflow-minio",
+      "image": "pgsty/minio:RELEASE.2026-03-25T00-00-00Z",
+      "digest": "pgsty/minio@sha256:a72bf37c235a83a73890d2a46c5b36801fed61c335175e0396070bf84a8bbb98",
+      "high": 32,
+      "critical": 0,
+      "findings_sha256": "4de4b3b7a47dd0abf1dbea4b2248fceaa99f0906d4b16f823ba45732f8f0ce1c",
+      "review": "RAGFlow v0.26.4 官方 Compose 固定对象存储镜像；没有可修复 Critical。MinIO 只在 RAGFlow 私网，平台不直连其 API。"
+    },
+    {
+      "component": "ragflow-valkey",
+      "image": "valkey/valkey:8",
+      "digest": "valkey/valkey@sha256:3e31dd49b6b742e614975e8ab7b1b19809d00ecac7657c6b34bff23582a433cd",
+      "high": 0,
+      "critical": 0,
+      "findings_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "review": "RAGFlow v0.26.4 官方 Compose 兼容主版本，扫描无可修复 High/Critical；只在 RAGFlow 私网并启用密码。"
+    }
+  ]
+}

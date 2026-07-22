@@ -14,3 +14,10 @@ applied employee default-model migration contains repository-owned static SQL an
 its two Semgrep SQLAlchemy findings were manually reviewed in S10-08. The gate verifies the exact SHA-256 recorded
 in `semgrep-reviewed-static-sql.sha256`, excludes only that file from the clean pass, then rescans it and requires
 the exact reviewed rule and line set. Any content or finding drift fails closed.
+
+The same gate scans every runtime third-party image recorded in `third-party-images.json`. RAGFlow and its
+officially pinned dependencies cannot be made into private derivative images under the project's zero-intrusion
+rule. Their reviewed residual findings are therefore constrained by the exact upstream image digest, normalized
+fixed High/Critical finding count and SHA-256, plus the private-network controls described in the baseline. A new
+upstream image, vulnerability database result, package version, severity, or fix changes the normalized digest and
+fails closed until the supported upstream release and production path are reviewed again.

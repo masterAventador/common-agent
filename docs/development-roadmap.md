@@ -2247,3 +2247,27 @@ S10-07I 已完成可选员工或模型的工作流 AI 对话节点；下一步�
   进程均已关闭。五份失败 Trace/截图已移入系统废纸篓，可恢复；固定 32 GiB 栈、稳定服务、镜像与
   Volume 保留复用
 - 遗留：无；下一任务 S10-08 生产安全、性能与最终验收
+
+### S10-08 生产安全、性能与最终验收
+
+- 状态：🚧 实现中
+- 日期：2026-07-22
+- 已完成安全基线：业务 API/Web 基础镜像分别升级并固定为 Python 3.12.13 slim bookworm 与
+  Nginx 1.30.4 alpine 3.24，两个正式候选镜像的可修复 High/Critical 和 Secret 均为 0；前端依赖
+  安装改为冻结锁文件、精确版本例外和一年时效门禁，当前 422 个包审计为 0；生产 Web 的健康、
+  HTML 与 immutable 静态资源响应头已从真实只读/非 root 容器验证。E2E 动态 URL 断言改为结构化
+  pathname/searchParams，避免正则转义形成误放行
+- 源码与供应链门禁：统一 `scripts/security-scan.sh` 执行既有凭据治理、Semgrep 默认 SAST、
+  Trivy 源码/Secret/IaC、生产 Compose 契约及业务镜像扫描；唯一静态 SQL 例外同时锁定文件
+  SHA-256、Semgrep 规则和两处行号，任一内容或发现漂移都关闭失败。故障注入证明 SAST 例外漂移、
+  业务镜像漏洞和未知动作都不会被吞掉
+- 第三方镜像审阅：RAGFlow `v0.26.4` 经 GitHub 正式 release API 核实为 2026-07-07 发布的当前
+  最新稳定版，其官方 Compose 仍固定 Elasticsearch 8.11.3、MySQL 8.0.39、当前 MinIO 和 Valkey。
+  在不修改上游源码/site-packages 的零侵入边界下，对平台 MySQL 与 RAGFlow 五个运行镜像建立官方
+  digest、规范化可修复 High/Critical 明细摘要和实际暴露面基线；真实 Trivy 逐镜像复扫分别为
+  `19/1`、`75/5`、`27/3`、`140/4`、`32/0`、`0/0`，全部与精确基线一致，新增、消失、升级、
+  降级或漏洞库漂移都会阻断并要求重新审阅。已知 Critical 均位于未运行的 LiteLLM Proxy/npm、
+  不接受上传文档包的 NLTK 下载器、未启用 attachment pipeline 的 Tika 或启动后不驻留的 gosu；
+  生产仍只经私网 TLS Edge 使用 RAGFlow，MySQL/Elasticsearch/MinIO/Valkey 不向公网开放
+- 当前下一步：补齐权限与输入攻击矩阵，再执行并发、容量、SSE 长连接、故障恢复、SLO/告警及新
+  租户正式浏览器全链、审计、备份和回滚终验；S10-08 尚未完成，不以本阶段扫描结果冒充最终交付

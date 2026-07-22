@@ -14,6 +14,7 @@ fail() {
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/common-agent-security-scan-test.XXXXXX")"
 TEST_BIN="${TEST_ROOT}/bin"
 TEST_LOG="${TEST_ROOT}/calls.log"
+TEST_THIRD_PARTY_BASELINE="${TEST_ROOT}/third-party-images.json"
 mkdir -p "${TEST_BIN}"
 trap 'rm -rf "${TEST_ROOT}"' EXIT INT TERM
 
@@ -48,9 +49,46 @@ printf 'trivy %s\n' "$*" >>"${COMMON_AGENT_SECURITY_SCAN_TEST_LOG}"
 if [[ -n "${COMMON_AGENT_SECURITY_SCAN_FAIL_ON:-}" && "$*" == *"${COMMON_AGENT_SECURITY_SCAN_FAIL_ON}"* ]]; then
   exit 42
 fi
+output_file=""
+previous=""
+for argument in "$@"; do
+  if [[ "${previous}" == "--output" ]]; then
+    output_file="${argument}"
+    break
+  fi
+  previous="${argument}"
+done
+if [[ -n "${output_file}" ]]; then
+  severity="HIGH"
+  if [[ "${COMMON_AGENT_SECURITY_SCAN_TAMPER:-}" == "1" ]]; then
+    severity="CRITICAL"
+  fi
+  cat >"${output_file}" <<JSON
+{"ArtifactName":"vendor/example:1","Metadata":{"RepoDigests":["vendor/example@sha256:test"]},"Results":[{"Vulnerabilities":[{"VulnerabilityID":"CVE-TEST-0001","PkgName":"test-package","InstalledVersion":"1.0.0","FixedVersion":"1.0.1","Severity":"${severity}"}]}]}
+JSON
+fi
 EOF
 
 chmod +x "${TEST_BIN}/semgrep" "${TEST_BIN}/trivy"
+
+canonical_findings="${TEST_ROOT}/canonical-findings.json"
+printf '%s\n' '[{"fixed_version":"1.0.1","id":"CVE-TEST-0001","installed_version":"1.0.0","package":"test-package","severity":"HIGH"}]' >"${canonical_findings}"
+findings_sha256="$(shasum -a 256 "${canonical_findings}" | awk '{print $1}')"
+cat >"${TEST_THIRD_PARTY_BASELINE}" <<JSON
+{
+  "schema_version": 1,
+  "images": [
+    {
+      "component": "test-component",
+      "image": "vendor/example:1",
+      "digest": "vendor/example@sha256:test",
+      "high": 1,
+      "critical": 0,
+      "findings_sha256": "${findings_sha256}"
+    }
+  ]
+}
+JSON
 
 PATH="${TEST_BIN}:${PATH}" \
   COMMON_AGENT_SECURITY_SCAN_TEST_LOG="${TEST_LOG}" \
@@ -95,6 +133,32 @@ fi
 if "${SECURITY_SCAN}" images common-agent-api:test >/dev/null 2>&1; then
   fail "镜像门禁错误接受缺失的 Web 镜像参数"
 fi
+
+: >"${TEST_LOG}"
+PATH="${TEST_BIN}:${PATH}" \
+  COMMON_AGENT_SECURITY_SCAN_TEST_LOG="${TEST_LOG}" \
+  COMMON_AGENT_SECURITY_THIRD_PARTY_BASELINE="${TEST_THIRD_PARTY_BASELINE}" \
+  "${SECURITY_SCAN}" third-party
+
+[[ "$(grep -c '^trivy image ' "${TEST_LOG}")" -eq 1 ]] || fail "第三方镜像门禁没有逐个扫描基线镜像"
+grep -Fq -- '--format json --output' "${TEST_LOG}" || fail "第三方镜像门禁没有生成结构化扫描报告"
+grep -Fq 'vendor/example:1' "${TEST_LOG}" || fail "第三方镜像门禁遗漏基线镜像"
+
+if PATH="${TEST_BIN}:${PATH}" \
+  COMMON_AGENT_SECURITY_SCAN_TEST_LOG="${TEST_LOG}" \
+  COMMON_AGENT_SECURITY_THIRD_PARTY_BASELINE="${TEST_THIRD_PARTY_BASELINE}" \
+  COMMON_AGENT_SECURITY_SCAN_TAMPER=1 \
+  "${SECURITY_SCAN}" third-party >/dev/null 2>&1; then
+  fail "第三方漏洞结果漂移被错误放行"
+fi
+
+: >"${TEST_LOG}"
+PATH="${TEST_BIN}:${PATH}" \
+  COMMON_AGENT_SECURITY_SCAN_TEST_LOG="${TEST_LOG}" \
+  COMMON_AGENT_SECURITY_THIRD_PARTY_BASELINE="${TEST_THIRD_PARTY_BASELINE}" \
+  "${SECURITY_SCAN}" all common-agent-api:test common-agent-web:test
+
+[[ "$(grep -c '^trivy image ' "${TEST_LOG}")" -eq 3 ]] || fail "完整安全门禁没有覆盖业务与第三方镜像"
 
 if "${SECURITY_SCAN}" unknown >/dev/null 2>&1; then
   fail "安全扫描入口错误接受未知动作"
