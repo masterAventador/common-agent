@@ -280,6 +280,40 @@ class _BlockingGraph:
             self.closed.set()
 
 
+class _CloseCountingIterator:
+    def __init__(self) -> None:
+        self.waiting = asyncio.Event()
+        self.close_count = 0
+
+    def __aiter__(self) -> _CloseCountingIterator:
+        return self
+
+    async def __anext__(self) -> tuple[AIMessageChunk, dict[str, object]]:
+        self.waiting.set()
+        await asyncio.Event().wait()
+        raise StopAsyncIteration
+
+    async def aclose(self) -> None:
+        self.close_count += 1
+        if self.close_count > 1:
+            raise RuntimeError("iterator closed more than once")
+
+
+class _CloseCountingGraph:
+    def __init__(self) -> None:
+        self.iterator = _CloseCountingIterator()
+
+    def astream(
+        self,
+        input_data: Mapping[str, object],
+        config: Mapping[str, object],
+        *,
+        stream_mode: str,
+    ) -> AsyncIterator[tuple[AIMessageChunk, dict[str, object]]]:
+        del input_data, config, stream_mode
+        return self.iterator
+
+
 def test_pre_requested_stop_does_not_create_or_call_an_agent() -> None:
     builder_calls = 0
     token = RuntimeStopToken()
@@ -332,6 +366,26 @@ def test_stop_signal_closes_active_deep_agent_stream_and_emits_one_stopped_termi
         else [RuntimeEventKind.DELTA, RuntimeEventKind.STOPPED]
     )
     assert events[-1].error_code is None
+
+
+def test_stop_closes_a_non_idempotent_agent_iterator_exactly_once() -> None:
+    graph = _CloseCountingGraph()
+    token = RuntimeStopToken()
+    runtime = DeepAgentsEmployeeRuntime(
+        _Gateway(_ToolBindingFakeChatModel(messages=iter(["unused"]))),
+        agent_builder=lambda **kwargs: graph,
+    )
+
+    async def exercise() -> list[RuntimeEvent]:
+        collector = asyncio.create_task(_collect(runtime.stream(runtime_request(), stop=token)))
+        await asyncio.wait_for(graph.iterator.waiting.wait(), timeout=1)
+        token.request_stop()
+        return await asyncio.wait_for(collector, timeout=1)
+
+    events = asyncio.run(exercise())
+
+    assert [event.kind for event in events] == [RuntimeEventKind.STOPPED]
+    assert graph.iterator.close_count == 1
 
 
 async def _collect(stream: AsyncIterator[RuntimeEvent]) -> list[RuntimeEvent]:

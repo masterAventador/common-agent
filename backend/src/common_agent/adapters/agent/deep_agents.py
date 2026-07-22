@@ -238,6 +238,7 @@ class DeepAgentsEmployeeRuntime:
         stop_task: asyncio.Task[None] | None = None
         emitted_delta = False
         pending_text = ""
+        upstream_closed = False
         try:
             while True:
                 next_task = asyncio.create_task(_next_item(upstream))
@@ -252,6 +253,7 @@ class DeepAgentsEmployeeRuntime:
                     next_task = None
                     await _discard_task(stop_task)
                     stop_task = None
+                    upstream_closed = True
                     await _close_iterator(upstream)
                     yield emitter.stop()
                     return
@@ -284,7 +286,8 @@ class DeepAgentsEmployeeRuntime:
         finally:
             await _discard_task(next_task)
             await _discard_task(stop_task)
-            await _close_iterator(upstream)
+            if not upstream_closed:
+                await _close_iterator(upstream)
 
 
 def _history_messages(request: EmployeeRuntimeRequest) -> list[HumanMessage | AIMessage]:
