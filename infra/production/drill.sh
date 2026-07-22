@@ -20,6 +20,7 @@ else
 fi
 export COMMON_AGENT_PRODUCTION_STATE_ROOT="${STATE_ROOT}"
 export COMMON_AGENT_RAGFLOW_EDGE_MODE=local-shared-network
+WORKER_LOAD_STATE="${STATE_ROOT}/worker-load.json"
 
 cleanup() {
   "${MANAGER}" down >/dev/null 2>&1 || true
@@ -149,6 +150,152 @@ run_formal_sse_capacity_test() {
       --frozen python "${SCRIPT_DIR}/sse_load_test.py"
 }
 
+run_worker_load_test() {
+  env \
+    COMMON_AGENT_PERFORMANCE_BASE_URL='https://127.0.0.1:18443' \
+    COMMON_AGENT_PERFORMANCE_HOST='common-agent.test' \
+    COMMON_AGENT_PERFORMANCE_EMAIL='production-drill@example.com' \
+    COMMON_AGENT_PERFORMANCE_PASSWORD='Production-Drill-2026!' \
+    COMMON_AGENT_PERFORMANCE_CA_FILE="${STATE_ROOT}/tls/ca.crt" \
+    COMMON_AGENT_WORKER_LOAD_STATE="${WORKER_LOAD_STATE}" \
+    COMMON_AGENT_WORKER_CAPACITY_TASKS=24 \
+    COMMON_AGENT_WORKER_RECOVERY_TASKS=8 \
+    COMMON_AGENT_WORKER_WRITE_CONCURRENCY=12 \
+    COMMON_AGENT_WORKER_ENQUEUE_P95_MS=1000 \
+    COMMON_AGENT_WORKER_DRAIN_TIMEOUT_SECONDS=120 \
+    COMMON_AGENT_WORKER_RECOVERY_TIMEOUT_SECONDS=300 \
+    "${REPOSITORY_ROOT}/scripts/uv.sh" run --project "${REPOSITORY_ROOT}/backend" \
+      --frozen python "${SCRIPT_DIR}/worker_load_test.py" "$@"
+}
+
+active_worker_container() {
+  local active_slot
+  active_slot="$(sed -n 's/^active_slot=//p' "${STATE_ROOT}/deployment.env")"
+  [[ "${active_slot}" == "blue" || "${active_slot}" == "green" ]] || \
+    fail "Worker 容量演练缺少有效 active slot"
+  printf 'common-agent-production-worker-%s\n' "${active_slot}"
+}
+
+worker_task_aggregate_ids() {
+  local aggregate_ids phase="$1"
+  aggregate_ids="$(run_worker_load_test aggregate-ids "${phase}")"
+  grep -Eq \
+    "^'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'(,'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')*$" \
+    <<<"${aggregate_ids}" || fail "Worker 容量演练任务标识非法"
+  printf '%s\n' "${aggregate_ids}"
+}
+
+production_mysql_scalar() {
+  local query="$1"
+  docker --context "${DOCKER_CONTEXT_NAME}" exec \
+    common-agent-production-platform-mysql sh -ec \
+    'MYSQL_PWD="${MYSQL_ROOT_PASSWORD}" mysql --protocol=socket -uroot \
+      --batch --skip-column-names common_agent --execute="$1"' sh "${query}"
+}
+
+worker_task_count() {
+  local aggregate_ids phase="$1" state="$2"
+  case "${state}" in
+    pending|running|retry_wait|succeeded|failed|cancelled) ;;
+    *) fail "Worker 容量演练任务状态非法：${state}" ;;
+  esac
+  aggregate_ids="$(worker_task_aggregate_ids "${phase}")"
+  production_mysql_scalar \
+    "SELECT COUNT(*) FROM durable_tasks WHERE aggregate_id IN (${aggregate_ids}) AND state = '${state}'"
+}
+
+worker_task_diagnostics() {
+  local aggregate_ids phase="$1"
+  aggregate_ids="$(worker_task_aggregate_ids "${phase}")"
+  production_mysql_scalar \
+    "SELECT aggregate_id, state, attempts, COALESCE(error_code, '-'), COALESCE(TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(6), lease_until), -1) AS lease_seconds_remaining FROM durable_tasks WHERE aggregate_id IN (${aggregate_ids}) ORDER BY aggregate_id"
+}
+
+wait_for_worker_health() {
+  local container="$1" deadline status
+  deadline=$((SECONDS + 90))
+  while ((SECONDS < deadline)); do
+    status="$(docker --context "${DOCKER_CONTEXT_NAME}" inspect --format \
+      '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+      "${container}" 2>/dev/null || true)"
+    if [[ "${status}" == "healthy" ]]; then
+      return
+    fi
+    [[ "${status}" != "exited" && "${status}" != "dead" ]] || \
+      fail "Worker 在恢复健康前退出：${container}"
+    sleep 1
+  done
+  fail "Worker 未在 90 秒内恢复健康：${container}"
+}
+
+assert_worker_tasks_succeeded() {
+  local aggregate_ids expected="$2" max_attempts phase="$1" summary
+  local active failed succeeded total
+  aggregate_ids="$(worker_task_aggregate_ids "${phase}")"
+  summary="$(production_mysql_scalar \
+    "SELECT COUNT(*), SUM(state = 'succeeded'), SUM(state IN ('pending','running','retry_wait')), SUM(state = 'failed'), MAX(attempts) FROM durable_tasks WHERE aggregate_id IN (${aggregate_ids})")"
+  IFS=$'\t' read -r total succeeded active failed max_attempts <<<"${summary}"
+  [[ "${total}" == "${expected}" && "${succeeded}" == "${expected}" ]] || \
+    fail "Worker 任务未全部成功：${summary}"
+  [[ "${active}" == "0" && "${failed}" == "0" ]] || \
+    fail "Worker 任务仍有积压或失败：${summary}"
+  if [[ "${phase}" == "recovery" && "${max_attempts}" -lt 2 ]]; then
+    fail "Worker 崩溃后没有任务通过过期租约接管：${summary}"
+  fi
+}
+
+wait_for_running_recovery_task() {
+  local deadline running
+  deadline=$((SECONDS + 30))
+  while ((SECONDS < deadline)); do
+    running="$(worker_task_count recovery running)"
+    if [[ "${running}" -ge 1 ]]; then
+      printf '%s\n' "${running}"
+      return
+    fi
+    sleep 0.2
+  done
+  fail "Worker 未在 30 秒内领取故障恢复任务"
+}
+
+run_formal_worker_capacity_and_recovery_test() {
+  local pending worker_container
+  worker_container="$(active_worker_container)"
+
+  docker --context "${DOCKER_CONTEXT_NAME}" stop --time 0 "${worker_container}" >/dev/null
+  run_worker_load_test submit capacity
+  pending="$(worker_task_count capacity pending)"
+  [[ "${pending}" == "24" ]] || fail "并发写入未形成 24 条持久积压：${pending}"
+  docker --context "${DOCKER_CONTEXT_NAME}" start "${worker_container}" >/dev/null
+  if ! run_worker_load_test await capacity; then
+    echo "Worker 正常排空失败时任务状态：" >&2
+    worker_task_diagnostics capacity >&2 || true
+    return 1
+  fi
+  wait_for_worker_health "${worker_container}"
+  assert_worker_tasks_succeeded capacity 24
+  run_worker_load_test cleanup capacity
+
+  docker --context "${DOCKER_CONTEXT_NAME}" stop --time 0 "${worker_container}" >/dev/null
+  run_worker_load_test submit recovery
+  pending="$(worker_task_count recovery pending)"
+  [[ "${pending}" == "8" ]] || fail "故障恢复未形成 8 条持久积压：${pending}"
+  docker --context "${DOCKER_CONTEXT_NAME}" start "${worker_container}" >/dev/null
+  wait_for_running_recovery_task >/dev/null
+  docker --context "${DOCKER_CONTEXT_NAME}" stop --time 0 "${worker_container}" >/dev/null
+  [[ "$(worker_task_count recovery running)" -ge 1 ]] || \
+    fail "强制停止后运行中任务没有保留租约"
+  docker --context "${DOCKER_CONTEXT_NAME}" start "${worker_container}" >/dev/null
+  if ! run_worker_load_test await recovery; then
+    echo "Worker 崩溃接管失败时任务状态：" >&2
+    worker_task_diagnostics recovery >&2 || true
+    return 1
+  fi
+  wait_for_worker_health "${worker_container}"
+  assert_worker_tasks_succeeded recovery 8
+  run_worker_load_test cleanup recovery
+}
+
 verify_untrusted_host_is_rejected() {
   local status
   status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
@@ -245,6 +392,7 @@ verify_untrusted_host_is_rejected
 verify_path_traversal_is_rejected
 run_formal_capacity_test
 run_formal_sse_capacity_test
+run_formal_worker_capacity_and_recovery_test
 verify_forwarded_for_spoof_is_rate_limited
 exercise_failure_and_rollback
 

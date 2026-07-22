@@ -14,6 +14,7 @@ import ssl
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -71,9 +72,7 @@ class SseLoadSettings:
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> SseLoadSettings:
-        base_url = _required(environment, "COMMON_AGENT_PERFORMANCE_BASE_URL").rstrip(
-            "/"
-        )
+        base_url = _required(environment, "COMMON_AGENT_PERFORMANCE_BASE_URL").rstrip("/")
         parsed = urlsplit(base_url)
         if parsed.scheme != "https":
             raise ValueError("COMMON_AGENT_PERFORMANCE_BASE_URL must use HTTPS")
@@ -85,13 +84,9 @@ class SseLoadSettings:
             or parsed.fragment
             or parsed.path not in {"", "/"}
         ):
-            raise ValueError(
-                "COMMON_AGENT_PERFORMANCE_BASE_URL must be an HTTPS origin"
-            )
+            raise ValueError("COMMON_AGENT_PERFORMANCE_BASE_URL must be an HTTPS origin")
         public_host = _required(environment, "COMMON_AGENT_PERFORMANCE_HOST")
-        if not re.fullmatch(
-            r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", public_host
-        ):
+        if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", public_host):
             raise ValueError("COMMON_AGENT_PERFORMANCE_HOST must be a valid hostname")
         ca_value = environment.get("COMMON_AGENT_PERFORMANCE_CA_FILE", "").strip()
         ca_file = Path(ca_value).expanduser().resolve() if ca_value else None
@@ -162,9 +157,7 @@ class SseLoadSettings:
         return f"https://{self.public_host}{suffix}"
 
     def ssl_context(self) -> ssl.SSLContext:
-        return ssl.create_default_context(
-            cafile=str(self.ca_file) if self.ca_file else None
-        )
+        return ssl.create_default_context(cafile=str(self.ca_file) if self.ca_file else None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,24 +181,22 @@ class _Fixture:
 
 class _ResolvedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, settings: SseLoadSettings) -> None:
+        tls_context = settings.ssl_context()
         super().__init__(
             settings.public_host,
             settings.port,
             timeout=settings.handshake_timeout_seconds,
-            context=settings.ssl_context(),
+            context=tls_context,
         )
         self._connect_host = settings.connect_host
+        self._tls_context = tls_context
 
     def connect(self) -> None:
         raw_socket = socket.create_connection(
             (self._connect_host, self.port),
             self.timeout,
-            self.source_address,
         )
-        if self._tunnel_host:
-            self.sock = raw_socket
-            self._tunnel()
-        self.sock = self._context.wrap_socket(raw_socket, server_hostname=self.host)
+        self.sock = self._tls_context.wrap_socket(raw_socket, server_hostname=self.host)
 
 
 def extract_session_cookie(set_cookie_headers: Sequence[str]) -> str:
@@ -323,9 +314,7 @@ def _json_request(
         response = connection.getresponse()
         raw_body = response.read()
         set_cookie_headers = [
-            value
-            for name, value in response.getheaders()
-            if name.lower() == "set-cookie"
+            value for name, value in response.getheaders() if name.lower() == "set-cookie"
         ]
         if response.status != expected_status:
             preview = raw_body.decode("utf-8", errors="replace")[:300]
@@ -420,23 +409,23 @@ def _create_fixture(settings: SseLoadSettings) -> _Fixture:
 
 
 def _delete_fixture(settings: SseLoadSettings, fixture: _Fixture) -> None:
-    common = {
-        "session_cookie": fixture.session_cookie,
-        "csrf_token": fixture.csrf_token,
-        "tenant_id": fixture.tenant_id,
-        "expected_status": 204,
-    }
     _json_request(
         settings,
         "DELETE",
         f"/api/v1/conversations/{fixture.conversation_id}",
-        **common,
+        session_cookie=fixture.session_cookie,
+        csrf_token=fixture.csrf_token,
+        tenant_id=fixture.tenant_id,
+        expected_status=204,
     )
     _json_request(
         settings,
         "DELETE",
         f"/api/v1/employees/{fixture.employee_id}",
-        **common,
+        session_cookie=fixture.session_cookie,
+        csrf_token=fixture.csrf_token,
+        tenant_id=fixture.tenant_id,
+        expected_status=204,
     )
 
 
@@ -461,7 +450,7 @@ async def _hold_sse_stream(
         )
         query = urlencode({"after_sequence": 0, "tenant_id": fixture.tenant_id})
         path = f"/api/v1/conversations/{fixture.conversation_id}/events?{query}"
-        request = (
+        handshake_request = (
             f"GET {path} HTTP/1.1\r\n"
             f"Host: {settings.public_host}\r\n"
             "Accept: text/event-stream\r\n"
@@ -469,7 +458,7 @@ async def _hold_sse_stream(
             f"Cookie: {fixture.session_cookie}\r\n"
             "Connection: keep-alive\r\n\r\n"
         )
-        writer.write(request.encode("ascii"))
+        writer.writelines((handshake_request.encode("ascii"),))
         await writer.drain()
         status_line = await asyncio.wait_for(
             reader.readline(), timeout=settings.handshake_timeout_seconds
@@ -477,8 +466,7 @@ async def _hold_sse_stream(
         parts = status_line.decode("ascii", errors="replace").strip().split(" ", 2)
         if len(parts) < 2 or parts[1] != "200":
             raise SseLoadFailure(
-                "SSE handshake returned "
-                + status_line.decode("ascii", errors="replace").strip()
+                "SSE handshake returned " + status_line.decode("ascii", errors="replace").strip()
             )
         response_headers: dict[str, str] = {}
         while True:
@@ -490,11 +478,7 @@ async def _hold_sse_stream(
             name, separator, value = line.decode("latin-1").partition(":")
             if separator:
                 response_headers[name.strip().lower()] = value.strip()
-        if (
-            not response_headers.get("content-type", "")
-            .lower()
-            .startswith("text/event-stream")
-        ):
+        if not response_headers.get("content-type", "").lower().startswith("text/event-stream"):
             raise SseLoadFailure("SSE handshake did not return text/event-stream")
         if not handshake.done():
             handshake.set_result((time.monotonic() - started_at) * 1000)
@@ -520,20 +504,14 @@ async def _hold_sse_stream(
         return True
     finally:
         if not handshake.done():
-            handshake.set_exception(
-                SseLoadFailure("SSE handshake ended without a response")
-            )
+            handshake.set_exception(SseLoadFailure("SSE handshake ended without a response"))
         if writer is not None:
             writer.close()
-            try:
+            with suppress(ConnectionError, ssl.SSLError):
                 await writer.wait_closed()
-            except (ConnectionError, ssl.SSLError):
-                pass
 
 
-async def _run_streams(
-    settings: SseLoadSettings, fixture: _Fixture
-) -> tuple[int, int, int, float]:
+async def _run_streams(settings: SseLoadSettings, fixture: _Fixture) -> tuple[int, int, int, float]:
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()
     tls_context = settings.ssl_context()
@@ -552,9 +530,7 @@ async def _run_streams(
         for index, handshake in enumerate(handshakes)
     ]
     try:
-        ramp_duration = (
-            settings.connections - 1
-        ) / settings.ramp_connections_per_second
+        ramp_duration = (settings.connections - 1) / settings.ramp_connections_per_second
         done, _ = await asyncio.wait(
             handshakes,
             timeout=ramp_duration + settings.handshake_timeout_seconds,

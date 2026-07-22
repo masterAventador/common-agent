@@ -150,6 +150,83 @@ def test_stream_runner_reuses_one_tls_context_for_the_capacity_batch(
     assert len({id(context) for context in contexts}) == 1
 
 
+def test_sse_handshake_writes_an_http_request_to_the_network_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = MODULE.SseLoadSettings.from_environment(valid_environment())
+    fixture = MODULE._Fixture("cookie", "csrf", "tenant", "employee", "conversation")
+
+    class Reader:
+        def __init__(self) -> None:
+            self.lines = iter(
+                (
+                    b"HTTP/1.1 200 OK\r\n",
+                    b"Content-Type: text/event-stream\r\n",
+                    b"\r\n",
+                )
+            )
+
+        async def readline(self) -> bytes:
+            return next(self.lines)
+
+        async def read(self, _size: int) -> bytes:
+            await asyncio.Event().wait()
+            return b""
+
+    class Writer:
+        def __init__(self) -> None:
+            self.chunks: list[bytes] = []
+            self.closed = False
+
+        def writelines(self, chunks: tuple[bytes, ...]) -> None:
+            self.chunks.extend(chunks)
+
+        async def drain(self) -> None:
+            return None
+
+        def close(self) -> None:
+            self.closed = True
+
+        async def wait_closed(self) -> None:
+            return None
+
+    writer = Writer()
+
+    async def open_connection(*_args: object, **_kwargs: object) -> tuple[Reader, Writer]:
+        return Reader(), writer
+
+    monkeypatch.setattr(MODULE.asyncio, "open_connection", open_connection)
+
+    async def exercise() -> tuple[bool, float]:
+        loop = asyncio.get_running_loop()
+        handshake: asyncio.Future[float] = loop.create_future()
+        stop = asyncio.Event()
+        stop.set()
+        disconnected = await MODULE._hold_sse_stream(
+            settings,
+            fixture,
+            handshake,
+            stop,
+            settings.ssl_context(),
+            0,
+        )
+        return disconnected, handshake.result()
+
+    disconnected, handshake_ms = asyncio.run(exercise())
+
+    request = b"".join(writer.chunks)
+    assert disconnected is False
+    assert handshake_ms >= 0
+    assert request.startswith(
+        b"GET /api/v1/conversations/conversation/events?after_sequence=0&tenant_id=tenant "
+        b"HTTP/1.1\r\n"
+    )
+    assert b"Host: common-agent.test\r\n" in request
+    assert b"Accept: text/event-stream\r\n" in request
+    assert b"Cookie: cookie\r\n" in request
+    assert writer.closed is True
+
+
 def test_result_rejects_partial_capacity_disconnects_latency_and_leaks() -> None:
     healthy = MODULE.SseLoadResult(
         requested_connections=128,

@@ -2328,7 +2328,40 @@ S10-07I 已完成可选员工或模型的工作流 AI 对话节点；下一步�
   套件分别 4/4、2/2，通过来源头限流、绿槽切换、active API 故障注入、蓝槽代码回滚和回滚后健康
   验证。一次中间复验曾捕获 `/auth/session` 可重试 `internal_error` 500，trace 证明 Cookie 与页面资源
   正常，随后完整复跑未复现；该观察保留给后续故障恢复/SLO 阶段，不据单次重试宣称稳定性完成
-- 清理：最终演练退出码为 0，退出后无 `common-agent-production-*` 容器和生产 MySQL Volume，临时
-  TLS、配置、凭据和状态目录由 trap 删除，按需启动的 RAGFlow 已恢复原停止状态
-- 当前下一步：执行并发写入、Worker 容量、故障恢复、SLO/告警及新
-  租户正式浏览器全链、审计、备份和回滚终验；S10-08 尚未完成，不以本阶段扫描结果冒充最终交付
+- Worker 容量与恢复 RED/GREEN：先增加正式 Worker 压测的设置、0600 状态、SQL 观察标识、结果阈值
+  和消息终态测试，首次因 `worker_load_test.py` 不存在收集失败；再把生产静态契约改为必须调用该入口，
+  首次按预期因演练未接线失败。最小实现后 5 项 Worker 回归、与 SSE 合并 12 项回归、Ruff、Mypy、
+  Bash 语法、ShellCheck 和生产静态契约全绿。压测没有新增测试专用任务类型，全部使用正式
+  `/api/v1/conversation-turns`、生产 Cookie/CSRF、真实租户模型、MySQL 持久队列、独立 Worker 和百炼
+- SAST 收口：接手电脑首次缺少 Semgrep/Trivy，按持续门禁安装后，当前 Semgrep 默认规则把
+  `asyncio.StreamWriter.write()` 的 SSE 网络握手误识别为用户输入写文件并关闭失败；没有新增例外，
+  改用等价 `writelines()` 明确网络字节序列语义。新增真实 reader/writer 握手回归随即捕获局部字符串
+  一度遮蔽握手 Future 的错误，修正为独立命名后 13 项 SSE/Worker 回归与严格 Mypy 全绿；最终 Secret、
+  Semgrep、Trivy 依赖/Secret/IaC 和生产契约完整源码门禁通过，依赖 High/Critical 为 0
+- 并发写入与正常排空：先以 `SIGKILL` 等价的零等待停止关闭 Worker，再用 12 路并发提交 24 个通用
+  会话首轮；最终轮 24/24 均返回 202，写入 p95 `144.50 ms`，数据库精确确认 24 条 `pending`，证明
+  API 接受路径不依赖进程内后台任务。重新启动单个正式 Worker 后 24/24 在 `9.31 s` 内完成、0 失败，
+  数据库中对应任务全部 `succeeded` 且无 pending/running/retry_wait，低于固定 120 秒排空阈值
+- 崩溃接管：关闭 Worker 后再持久提交 8 条长回复任务，数据库确认 8 条 pending；启动 Worker 并观察
+  到 running 租约后立即强制终止，数据库仍保留至少一条 running/lease，随后启动全新 Worker。
+  8/8 最终由正式消息接口验证 completed、0 失败，总恢复 `70.28 s`，包含固定 60 秒租约到期；数据库
+  `MAX(attempts) >= 2` 证明至少一条已领取任务由新进程接管，不把剩余未领取任务完成冒充崩溃恢复
+- 恢复尾延迟闭环：SAST 调整后的最终生产复验中，原 180 秒门禁真实得到 8 条完成 7 条、0 失败并
+  阻断提交；没有靠原样重跑掩盖。配置核对证明 60 秒 Worker 租约之外，百炼单次超时为 60 秒且客户端
+  最多重试 2 次，原阈值无法覆盖一次完整上游尝试边界。恢复门禁据此固定为 300 秒，并在任何超时时
+  先输出每条任务的 aggregate、state、attempts、error_code 和剩余租约，再清理隔离栈。未缩减同一
+  工作负载的最终复验在 `70.28 s` 完成 8/8，证明新上界覆盖尾延迟且没有放宽完成/失败条件
+- 本轮完整生产证据：同一隔离双节点最终演练中 Chromium 基础/攻击套件分别 4/4、2/2；k6
+  1,500/1,500、错误与丢迭代 0、p95 `8.21 ms`、p99 `8.99 ms`；SSE 128/128 保持 360 秒、意外断连
+  0、握手 p95 `22.86 ms`、关闭后 in-flight 0。Worker 两阶段通过后，来源限流、绿槽切换、active API
+  故障注入、蓝槽代码回滚与回滚后验证继续全绿，演练最终退出码 0
+- 工程门禁：最后代码变更后后端权威全量 `746 passed, 13 skipped in 151.49s`，跳过项均为需显式
+  外部条件且本轮生产演练已单独覆盖的 RAGFlow/百炼链；严格 Mypy 312 个源/测试/压测文件、Ruff 与
+  332 个既有 Python 文件格式通过。前端 28 个文件 142 项测试、ESLint、TypeScript、生产 Build 与
+  六路由包体预算通过；OpenAPI/生成 DTO/事件 Schema、CI、冻结锁文件、全仓 ShellCheck/Bash 语法、
+  Secret 与生产静态契约均通过
+- 清理：退出后无 `common-agent-production-*` 容器和生产 MySQL Volume、无临时状态目录或无头浏览器/
+  压测进程；TLS、配置、凭据由 trap 删除，按需启动的 RAGFlow 恢复原停止状态，稳定平台 MySQL 保持
+  原停止状态
+- 当前下一步：定义并验证 SLO/资源预算与告警，随后执行新租户正式浏览器模型→知识库→员工→会话
+  →工作流全链及审计、备份和回滚终验；S10-08 尚未完成，不以本阶段结果冒充最终交付

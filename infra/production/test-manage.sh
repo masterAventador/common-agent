@@ -9,6 +9,7 @@ DRILL="${SCRIPT_DIR}/drill.sh"
 COMPOSE_FILE="${SCRIPT_DIR}/compose.yaml"
 LOAD_TEST="${SCRIPT_DIR}/load-test.js"
 SSE_LOAD_TEST="${SCRIPT_DIR}/sse_load_test.py"
+WORKER_LOAD_TEST="${SCRIPT_DIR}/worker_load_test.py"
 
 fail() {
   echo "$1" >&2
@@ -20,6 +21,7 @@ fail() {
 [[ -f "${COMPOSE_FILE}" ]] || fail "缺少双槽生产 Compose"
 [[ -f "${LOAD_TEST}" ]] || fail "缺少生产 TLS Edge 容量压测入口"
 [[ -f "${SSE_LOAD_TEST}" ]] || fail "缺少生产 SSE 长连接压测入口"
+[[ -f "${WORKER_LOAD_TEST}" ]] || fail "缺少生产 Worker 容量与故障恢复压测入口"
 [[ -f "${SCRIPT_DIR}/ragflow-node.local.compose.yaml" ]] || fail "缺少本地双节点网络覆盖层"
 [[ -f "${REPOSITORY_ROOT}/backend/Dockerfile" ]] || fail "缺少后端生产镜像"
 [[ -f "${REPOSITORY_ROOT}/frontend/Dockerfile" ]] || fail "缺少前端生产镜像"
@@ -121,6 +123,7 @@ grep -Fq 'production-security-attacks.spec.ts' "${DRILL}" || \
   fail "生产演练没有从 TLS Edge 验证权限与输入攻击矩阵"
 grep -Fq 'k6 run' "${DRILL}" || fail "生产演练没有执行正式容量压测"
 grep -Fq 'sse_load_test.py' "${DRILL}" || fail "生产演练没有执行 SSE 长连接压测"
+grep -Fq 'worker_load_test.py' "${DRILL}" || fail "生产演练没有执行 Worker 容量压测"
 for drill_sse_contract in \
   'COMMON_AGENT_SSE_CONNECTIONS=128' \
   'COMMON_AGENT_SSE_DURATION_SECONDS=360' \
@@ -129,6 +132,22 @@ for drill_sse_contract in \
   grep -Fq "${drill_sse_contract}" "${DRILL}" || \
     fail "生产演练缺少 SSE 长连接目标：${drill_sse_contract}"
 done
+for drill_worker_contract in \
+  'COMMON_AGENT_WORKER_CAPACITY_TASKS=24' \
+  'COMMON_AGENT_WORKER_RECOVERY_TASKS=8' \
+  'COMMON_AGENT_WORKER_WRITE_CONCURRENCY=12' \
+  'COMMON_AGENT_WORKER_ENQUEUE_P95_MS=1000' \
+  'COMMON_AGENT_WORKER_DRAIN_TIMEOUT_SECONDS=120' \
+  'COMMON_AGENT_WORKER_RECOVERY_TIMEOUT_SECONDS=300' \
+  'durable_tasks' \
+  'stop --time 0' \
+  'aggregate-ids' \
+  'MAX(attempts)'; do
+  grep -Fq "${drill_worker_contract}" "${DRILL}" || \
+    fail "生产演练缺少 Worker 容量/恢复目标：${drill_worker_contract}"
+done
+grep -Fq 'worker_task_diagnostics' "${DRILL}" || \
+  fail "生产演练没有在 Worker 超时前保留任务状态诊断"
 for capacity_contract in \
   'constant-arrival-rate' \
   'rate<0.001' \
@@ -149,6 +168,19 @@ for sse_contract in \
   'requests_in_flight'; do
   grep -Fq "${sse_contract}" "${SSE_LOAD_TEST}" || \
     fail "生产 SSE 长连接压测缺少关闭失败契约：${sse_contract}"
+done
+for worker_contract in \
+  'COMMON_AGENT_WORKER_CAPACITY_TASKS' \
+  'COMMON_AGENT_WORKER_RECOVERY_TASKS' \
+  'COMMON_AGENT_WORKER_WRITE_CONCURRENCY' \
+  'COMMON_AGENT_WORKER_ENQUEUE_P95_MS' \
+  'COMMON_AGENT_WORKER_DRAIN_TIMEOUT_SECONDS' \
+  'COMMON_AGENT_WORKER_RECOVERY_TIMEOUT_SECONDS' \
+  'conversation-turns' \
+  'completed_tasks' \
+  'aggregate_ids'; do
+  grep -Fq "${worker_contract}" "${WORKER_LOAD_TEST}" || \
+    fail "生产 Worker 压测缺少关闭失败契约：${worker_contract}"
 done
 grep -Fq 'verify_untrusted_host_is_rejected' "${DRILL}" || \
   fail "生产演练没有从 TLS Edge 验证伪造 Host 拒绝"
