@@ -5,6 +5,7 @@ import asyncio
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.adapters.model.langchain import LangChainChatModelProvider
 from common_agent.bootstrap.settings import ModelSettings
+from common_agent.lifecycle import run_cleanups
 
 
 class BailianChatModelResolver:
@@ -41,7 +42,7 @@ class BailianChatModelResolver:
             self._closed = True
             models = tuple(self._models.values())
             self._models.clear()
-        await asyncio.gather(*(model.aclose() for model in models))
+        await run_cleanups(*(model.aclose for model in models))
 
 
 __all__ = ["BailianChatModelResolver"]
