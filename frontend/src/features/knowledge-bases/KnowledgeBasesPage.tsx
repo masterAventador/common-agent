@@ -119,9 +119,11 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
     enabled: Boolean(activeId),
     refetchInterval: (query) => {
       const current = query.state.data;
-      return current?.some(
-        (document) => document.parsing_status === "uploaded" || document.parsing_status === "parsing",
-      )
+      return uploadBusy ||
+        current?.some(
+          (document) =>
+            document.parsing_status === "uploaded" || document.parsing_status === "parsing",
+        )
         ? 2_000
         : false;
     },

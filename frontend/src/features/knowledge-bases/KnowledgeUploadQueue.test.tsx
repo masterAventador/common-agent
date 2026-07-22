@@ -174,4 +174,67 @@ describe("KnowledgeUploadQueue", () => {
     );
     expect(knowledgeApi.uploadKnowledgeDocument).toHaveBeenCalledTimes(3);
   });
+
+  it("shows a terminal failure when a refreshed retry fails again immediately", async () => {
+    const retryRefresh = deferred<void>();
+    const changed = vi
+      .fn<() => void | Promise<void>>()
+      .mockResolvedValueOnce(undefined)
+      .mockReturnValueOnce(retryRefresh.promise);
+    knowledgeApi.uploadKnowledgeDocument.mockResolvedValueOnce(
+      parsingDocument("doc-fast-failure", "fast-failure.txt"),
+    );
+    knowledgeApi.retryKnowledgeDocument.mockResolvedValueOnce(
+      parsingDocument("doc-fast-failure", "fast-failure.txt"),
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <KnowledgeUploadQueue
+        knowledgeBaseId="kb-1"
+        documents={[]}
+        onDocumentsChanged={changed}
+      />,
+    );
+
+    await user.upload(
+      screen.getByLabelText("选择或拖拽文档"),
+      new File(["content"], "fast-failure.txt", { type: "text/plain" }),
+    );
+    await user.click(screen.getByRole("button", { name: "开始上传" }));
+    await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+    const failedDocument = {
+      ...parsingDocument("doc-fast-failure", "fast-failure.txt"),
+      parsing_status: "failed" as const,
+      error_code: "document_parsing_failed",
+    };
+    rerender(
+      <KnowledgeUploadQueue
+        knowledgeBaseId="kb-1"
+        documents={[failedDocument]}
+        onDocumentsChanged={changed}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "重试 fast-failure.txt" }));
+    await waitFor(() => expect(changed).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("解析中")).toBeInTheDocument();
+
+    rerender(
+      <KnowledgeUploadQueue
+        knowledgeBaseId="kb-1"
+        documents={[{ ...failedDocument }]}
+        onDocumentsChanged={changed}
+      />,
+    );
+    retryRefresh.resolve();
+    rerender(
+      <KnowledgeUploadQueue
+        knowledgeBaseId="kb-1"
+        documents={[{ ...failedDocument }]}
+        onDocumentsChanged={changed}
+      />,
+    );
+
+    expect(await screen.findByText("失败")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试 fast-failure.txt" })).toBeEnabled();
+  });
 });

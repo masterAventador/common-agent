@@ -19,6 +19,7 @@ import {
 const { Text } = Typography;
 const ACCEPTED_DOCUMENTS =
   ".txt,.md,.markdown,.pdf,.docx,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const RETRY_STALE_FAILURE_SAMPLES = 1;
 
 const statusPresentation: Record<KnowledgeUploadStatus, { color: string; label: string }> = {
   waiting: { color: "default", label: "等待上传" },
@@ -47,7 +48,9 @@ export function KnowledgeUploadQueue({
   const [rejected, setRejected] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const busy = items.some((item) => item.status === "waiting" || item.status === "uploading");
+  const busy = items.some(
+    (item) => item.status === "waiting" || item.status === "uploading" || item.retrying,
+  );
   const waiting = items.some((item) => item.status === "waiting");
   const settled = items.filter(
     (item) => item.status === "completed" || item.status === "failed",
@@ -77,11 +80,17 @@ export function KnowledgeUploadQueue({
         if (!item.documentId || item.status === "uploading") return item;
         const document = documents.find((value) => value.id === item.documentId);
         if (!document) return item;
-        if (item.retrying && document.parsing_status === "failed") return item;
+        if (
+          item.retrying &&
+          document.parsing_status === "failed" &&
+          (item.retryFailureSamples ?? 0) < RETRY_STALE_FAILURE_SAMPLES
+        ) {
+          return { ...item, retryFailureSamples: (item.retryFailureSamples ?? 0) + 1 };
+        }
         const status = statusFromDocument(document);
         const error = status === "failed" ? document.error_code ?? "文档解析失败" : undefined;
         if (status === item.status && error === item.error && !item.retrying) return item;
-        return { ...item, status, error, retrying: false };
+        return { ...item, status, error, retrying: false, retryFailureSamples: undefined };
       }),
     );
   }, [documents]);
@@ -114,6 +123,7 @@ export function KnowledgeUploadQueue({
                   documentId: document.id,
                   status: statusFromDocument(document),
                   retrying: Boolean(item.documentId),
+                  retryFailureSamples: 0,
                 }
               : value,
           ),
@@ -123,7 +133,13 @@ export function KnowledgeUploadQueue({
         setItems((current) =>
           current.map((value) =>
             value.id === item.id
-              ? { ...value, status: "failed", error: getErrorMessage(error), retrying: false }
+              ? {
+                  ...value,
+                  status: "failed",
+                  error: getErrorMessage(error),
+                  retrying: false,
+                  retryFailureSamples: undefined,
+                }
               : value,
           ),
         );
@@ -156,7 +172,12 @@ export function KnowledgeUploadQueue({
                       setItems((current) =>
                         current.map((value) =>
                           value.id === item.id
-                            ? { ...value, status: "waiting", error: undefined }
+                            ? {
+                                ...value,
+                                status: "waiting",
+                                error: undefined,
+                                retryFailureSamples: 0,
+                              }
                             : value,
                         ),
                       );

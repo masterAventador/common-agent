@@ -20,6 +20,7 @@ export interface KnowledgeUploadItem {
   documentId?: string;
   error?: string;
   retrying?: boolean;
+  retryFailureSamples?: number;
 }
 
 export interface KnowledgeUploadSelection {
