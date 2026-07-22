@@ -335,6 +335,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/external-mcp-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List External Mcp Sources */
+        get: operations["list_external_mcp_sources_api_v1_external_mcp_sources_get"];
+        put?: never;
+        /** Create External Mcp Source */
+        post: operations["create_external_mcp_source_api_v1_external_mcp_sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/external-mcp-sources/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get External Mcp Source */
+        get: operations["get_external_mcp_source_api_v1_external_mcp_sources__source_id__get"];
+        /** Update External Mcp Source */
+        put: operations["update_external_mcp_source_api_v1_external_mcp_sources__source_id__put"];
+        post?: never;
+        /** Delete External Mcp Source */
+        delete: operations["delete_external_mcp_source_api_v1_external_mcp_sources__source_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/external-mcp-sources/{source_id}/capabilities/{capability_id}/test-call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test External Mcp Capability */
+        post: operations["test_external_mcp_capability_api_v1_external_mcp_sources__source_id__capabilities__capability_id__test_call_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/external-mcp-sources/{source_id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync External Mcp Source */
+        post: operations["sync_external_mcp_source_api_v1_external_mcp_sources__source_id__sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/knowledge-bases": {
         parameters: {
             query?: never;
@@ -737,6 +808,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tool-collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Tool Collection */
+        post: operations["create_tool_collection_api_v1_tool_collections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tool-collections/{collection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Tool Collection */
+        put: operations["update_tool_collection_api_v1_tool_collections__collection_id__put"];
+        post?: never;
+        /** Delete Tool Collection */
+        delete: operations["delete_tool_collection_api_v1_tool_collections__collection_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflow-runs": {
         parameters: {
             query?: never;
@@ -908,7 +1014,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "tool.grants.updated" | "tool.credentials.updated" | "mcp.source.created" | "mcp.source.updated" | "mcp.source.discovered" | "tool.capability.created" | "tool.capability.updated" | "tool.capabilities.imported" | "tool.called" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
+        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "tool.grants.updated" | "tool.credentials.updated" | "mcp.source.created" | "mcp.source.updated" | "mcp.source.discovered" | "tool.capability.created" | "tool.capability.updated" | "tool.capabilities.imported" | "tool.collection.created" | "tool.collection.updated" | "tool.called" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
         /** AuditEventResponse */
         AuditEventResponse: {
             action: components["schemas"]["AuditAction"];
@@ -991,7 +1097,7 @@ export interface components {
          * AuditResourceType
          * @enum {string}
          */
-        AuditResourceType: "user" | "session" | "tenant" | "employee" | "model_configuration" | "knowledge_base" | "knowledge_document" | "conversation" | "workflow" | "workflow_run" | "mcp_source" | "tool_capability";
+        AuditResourceType: "user" | "session" | "tenant" | "employee" | "model_configuration" | "knowledge_base" | "knowledge_document" | "conversation" | "workflow" | "workflow_run" | "mcp_source" | "tool_capability" | "tool_collection";
         /** AuthPolicyResponse */
         AuthPolicyResponse: {
             /** Registration Available */
@@ -1366,6 +1472,64 @@ export interface components {
             request_id: string;
             /** Retryable */
             retryable: boolean;
+        };
+        /** ExternalMcpSourceBody */
+        ExternalMcpSourceBody: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Endpoint Url */
+            endpoint_url: string;
+            /** Name */
+            name: string;
+        };
+        /** ExternalMcpSourceListResponse */
+        ExternalMcpSourceListResponse: {
+            /** Items */
+            items: components["schemas"]["ExternalMcpSourceResponse"][];
+        };
+        /** ExternalMcpSourceResponse */
+        ExternalMcpSourceResponse: {
+            /** Capabilities */
+            capabilities: components["schemas"]["ToolCapabilityResponse"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Endpoint Url */
+            endpoint_url: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            status: components["schemas"]["McpSourceStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ExternalMcpSyncResponse */
+        ExternalMcpSyncResponse: {
+            /** Added */
+            added: number;
+            /** Reactivated */
+            reactivated: number;
+            /** Removed */
+            removed: number;
+            /** Schema Changed */
+            schema_changed: number;
+            source: components["schemas"]["ExternalMcpSourceResponse"];
+            /** Updated */
+            updated: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2162,6 +2326,18 @@ export interface components {
             collections: components["schemas"]["ToolCollectionResponse"][];
             /** Sources */
             sources: components["schemas"]["McpSourceResponse"][];
+        };
+        /** ToolCollectionBody */
+        ToolCollectionBody: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
+            /** Source Ids */
+            source_ids: string[];
         };
         /** ToolCollectionResponse */
         ToolCollectionResponse: {
@@ -4215,6 +4391,519 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_external_mcp_sources_api_v1_external_mcp_sources_get: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalMcpSourceListResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_external_mcp_source_api_v1_external_mcp_sources_post: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalMcpSourceBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalMcpSourceResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_external_mcp_source_api_v1_external_mcp_sources__source_id__get: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalMcpSourceResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_external_mcp_source_api_v1_external_mcp_sources__source_id__put: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalMcpSourceBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalMcpSourceResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_external_mcp_source_api_v1_external_mcp_sources__source_id__delete: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_external_mcp_capability_api_v1_external_mcp_sources__source_id__capabilities__capability_id__test_call_post: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                source_id: string;
+                capability_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedHttpTestCallBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedHttpTestCallResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    sync_external_mcp_source_api_v1_external_mcp_sources__source_id__sync_post: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalMcpSyncResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6546,6 +7235,214 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_tool_collection_api_v1_tool_collections_post: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolCollectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolCollectionResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_tool_collection_api_v1_tool_collections__collection_id__put: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                collection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolCollectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolCollectionResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_tool_collection_api_v1_tool_collections__collection_id__delete: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                collection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

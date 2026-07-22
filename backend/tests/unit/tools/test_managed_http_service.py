@@ -64,6 +64,7 @@ class _Repository:
         self.source_in_use = False
         self.capability_in_use = False
         self.write_conflict = False
+        self.cleared_credentials: list[UUID] = []
 
     async def list_sources(self) -> tuple[ManagedHttpRuntimeSnapshot, ...]:
         snapshots = [
@@ -112,6 +113,9 @@ class _Repository:
         if self.write_conflict:
             raise ManagedHttpRepositoryConflict
         self.sources[source.id] = source
+
+    async def clear_credential(self, source_id: UUID) -> None:
+        self.cleared_credentials.append(source_id)
 
     async def delete_source(self, source_id: UUID) -> bool:
         if self.source_in_use:
@@ -217,6 +221,7 @@ def test_service_crud_preserves_stable_ids_and_builds_runtime_snapshot() -> None
         assert updated.source.id == created.source.id
         assert updated.source.created_at == created.source.created_at
         assert updated.source.status is McpSourceStatus.DISABLED
+        assert repository.cleared_credentials == [created.source.id]
 
         await service.delete_capability(created.source.id, added.capability.id)
         await service.delete_source(created.source.id)

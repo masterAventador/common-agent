@@ -3,8 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from common_agent.tools.models import McpSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +68,20 @@ class ManagedMcpToolClient(Protocol):
     ) -> McpToolCallResponse: ...
 
 
+@runtime_checkable
+class ExternalMcpToolClient(Protocol):
+    async def list_tools(self, source: McpSource) -> Sequence[McpToolDescriptor]: ...
+
+    async def call_tool(
+        self,
+        source: McpSource,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolCallResponse: ...
+
+
 __all__ = [
+    "ExternalMcpToolClient",
     "ManagedMcpToolClient",
     "McpToolCallError",
     "McpToolCallResponse",

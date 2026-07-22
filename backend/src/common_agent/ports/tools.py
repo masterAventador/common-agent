@@ -7,6 +7,7 @@ from uuid import UUID
 
 from common_agent.tools.models import (
     ToolCatalog,
+    ToolCollection,
     ToolGrantSelection,
     ToolGrantSnapshot,
     ToolGrantTarget,
@@ -28,8 +29,31 @@ class ToolRuntimeResolution:
     missing_capability_ids: tuple[UUID, ...] = ()
 
 
+class ToolRepositoryConflict(Exception):
+    """Raised when a concurrent tool catalog mutation violates a constraint."""
+
+
 class ToolRepository(Protocol):
     async def catalog(self) -> ToolCatalog: ...
+
+    async def get_collection(self, collection_id: UUID) -> ToolCollection | None: ...
+
+    async def collection_name_exists(
+        self,
+        name: str,
+        excluding: UUID | None = None,
+    ) -> bool: ...
+
+    async def selectable_source_ids(
+        self,
+        source_ids: tuple[UUID, ...],
+    ) -> tuple[UUID, ...]: ...
+
+    async def add_collection(self, collection: ToolCollection) -> None: ...
+
+    async def update_collection(self, collection: ToolCollection) -> None: ...
+
+    async def delete_collection(self, collection_id: UUID) -> None: ...
 
     async def target_exists(self, target_type: ToolGrantTargetType, target_id: UUID) -> bool: ...
 
@@ -73,6 +97,7 @@ class ToolUnitOfWorkFactory(Protocol):
 __all__ = [
     "ToolGrantResolution",
     "ToolRepository",
+    "ToolRepositoryConflict",
     "ToolRuntimeResolution",
     "ToolUnitOfWork",
     "ToolUnitOfWorkFactory",

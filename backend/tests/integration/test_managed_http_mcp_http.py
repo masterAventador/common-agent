@@ -199,8 +199,9 @@ def test_managed_http_mcp_crud_discovery_and_real_call_use_formal_api_mysql_and_
                 },
             )
             assert created.status_code == 201
-            source_id = UUID(created.json()["id"])
-            assert created.json()["capabilities"] == []
+            created_payload = created.json()
+            source_id = UUID(created_payload["id"])
+            assert created_payload["capabilities"] == []
 
             credential = client.put(
                 f"/api/v1/mcp-sources/{source_id}/credentials",
@@ -289,6 +290,23 @@ def test_managed_http_mcp_crud_discovery_and_real_call_use_formal_api_mysql_and_
                 f"/api/v1/managed-mcp-sources/{source_id}/capabilities/{capability_id}"
             )
             assert deleted_capability.status_code == 204
+
+            endpoint_changed = client.put(
+                f"/api/v1/managed-mcp-sources/{source_id}",
+                json={
+                    "name": created_payload["name"],
+                    "description": created_payload["description"],
+                    "base_url": "https://business-v2.example/api",
+                    "enabled": True,
+                },
+            )
+            assert endpoint_changed.status_code == 200
+            credential_after_change = client.get(
+                f"/api/v1/mcp-sources/{source_id}/credentials"
+            )
+            assert credential_after_change.status_code == 200
+            assert credential_after_change.json()["configured"] is False
+
             deleted_source = client.delete(f"/api/v1/managed-mcp-sources/{source_id}")
             assert deleted_source.status_code == 204
             assert client.get(f"/api/v1/managed-mcp-sources/{source_id}").status_code == 404

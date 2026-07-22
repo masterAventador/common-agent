@@ -8,6 +8,10 @@ from fastapi import APIRouter, File, Request, Response, UploadFile, status
 from common_agent.api.audit import mark_audit_resource
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.schemas.tools import (
+    ExternalMcpSourceBody,
+    ExternalMcpSourceListResponse,
+    ExternalMcpSourceResponse,
+    ExternalMcpSyncResponse,
     ManagedHttpCapabilityBody,
     ManagedHttpCapabilityResponse,
     ManagedHttpDiscoveredToolResponse,
@@ -23,8 +27,13 @@ from common_agent.api.schemas.tools import (
     McpCredentialSummaryResponse,
     McpCredentialUpdateBody,
     ToolCatalogResponse,
+    ToolCollectionBody,
+    ToolCollectionResponse,
     ToolGrantResponse,
     ToolGrantSelectionBody,
+    external_mcp_source_command,
+    external_mcp_source_response,
+    external_mcp_sync_response,
     managed_http_capability_command,
     managed_http_capability_response,
     managed_http_openapi_preview_response,
@@ -33,25 +42,29 @@ from common_agent.api.schemas.tools import (
     mcp_credential_command,
     mcp_credential_summary_response,
     tool_catalog_response,
+    tool_collection_response,
     tool_grant_response,
     tool_grant_selection,
 )
 from common_agent.audit import AuditResourceType
 from common_agent.ports.mcp import ManagedMcpToolClient, McpToolCallError
 from common_agent.ports.openapi import ManagedHttpOpenApiParserPort
-from common_agent.tools import (
+from common_agent.tools.credential_service import (
     McpCredentialSourceNotFound,
     PlatformCredentialNotAllowed,
-    ToolCapabilityUnavailable,
-    ToolCollectionNotFound,
     ToolCredentialService,
     ToolCredentialServiceError,
-    ToolGrantTargetNotFound,
-    ToolService,
-    ToolServiceError,
-    ToolValidationError,
 )
 from common_agent.tools.credentials import ToolCredentialValidationError
+from common_agent.tools.external_mcp import ExternalMcpValidationError
+from common_agent.tools.external_mcp_service import (
+    ExternalMcpCapabilityNotFound,
+    ExternalMcpConflict,
+    ExternalMcpService,
+    ExternalMcpServiceError,
+    ExternalMcpSourceNotFound,
+    ExternalMcpSyncFailed,
+)
 from common_agent.tools.managed_http import ManagedHttpValidationError
 from common_agent.tools.managed_http_service import (
     ManagedHttpCapabilityNotFound,
@@ -60,10 +73,20 @@ from common_agent.tools.managed_http_service import (
     ManagedHttpServiceError,
     ManagedHttpSourceNotFound,
 )
-from common_agent.tools.models import normalize_input_schema
+from common_agent.tools.models import ToolValidationError, normalize_input_schema
 from common_agent.tools.openapi_import import (
     OPENAPI_MAX_FILE_BYTES,
     OpenApiDocumentError,
+)
+from common_agent.tools.service import (
+    ToolCapabilityUnavailable,
+    ToolCollectionConflict,
+    ToolCollectionNotFound,
+    ToolCollectionResourceNotFound,
+    ToolCollectionSourceUnavailable,
+    ToolGrantTargetNotFound,
+    ToolService,
+    ToolServiceError,
 )
 
 router = APIRouter(tags=["tools"])
@@ -104,6 +127,13 @@ def _managed_openapi_parser(request: Request) -> ManagedHttpOpenApiParserPort:
     return parser
 
 
+def _external_service(request: Request) -> ExternalMcpService:
+    service = getattr(request.app.state, "external_mcp", None)
+    if not isinstance(service, ExternalMcpService):
+        raise AppError("external_mcp_service_unavailable", "外部 MCP 服务暂时不可用", 503, True)
+    return service
+
+
 def _error(error: Exception) -> AppError:
     if isinstance(error, OpenApiDocumentError):
         status_code = {
@@ -111,6 +141,26 @@ def _error(error: Exception) -> AppError:
             "openapi_media_type_unsupported": 415,
         }.get(error.code, 422)
         return AppError(error.code, error.message, status_code, False)
+    if isinstance(
+        error,
+        (
+            ExternalMcpSourceNotFound,
+            ExternalMcpCapabilityNotFound,
+            ToolCollectionResourceNotFound,
+        ),
+    ):
+        return AppError(error.code, error.message, 404, error.retryable)
+    if isinstance(error, ExternalMcpSyncFailed):
+        status_code = 504 if error.code == "tool_timeout" else 502
+        return AppError(error.code, error.message, status_code, error.retryable)
+    if isinstance(error, (ExternalMcpConflict, ToolCollectionConflict)):
+        return AppError(error.code, error.message, 409, error.retryable)
+    if isinstance(error, ToolCollectionSourceUnavailable):
+        return AppError(error.code, error.message, 409, error.retryable)
+    if isinstance(error, ExternalMcpServiceError):
+        return AppError(error.code, error.message, 409, error.retryable)
+    if isinstance(error, ExternalMcpValidationError):
+        return AppError("validation_error", "请求参数不合法", 422, False)
     if isinstance(error, (ManagedHttpSourceNotFound, ManagedHttpCapabilityNotFound)):
         return AppError(error.code, error.message, 404, error.retryable)
     if isinstance(error, ManagedHttpConflict):
@@ -174,6 +224,209 @@ def _mcp_error(error: McpToolCallError) -> AppError:
         statuses.get(error.code, 502),
         error.retryable,
     )
+
+
+@router.get(
+    "/api/v1/external-mcp-sources",
+    response_model=ExternalMcpSourceListResponse,
+    responses={503: {"model": ErrorEnvelope}},
+)
+async def list_external_mcp_sources(request: Request) -> ExternalMcpSourceListResponse:
+    snapshots = await _external_service(request).list_sources()
+    return ExternalMcpSourceListResponse(
+        items=[external_mcp_source_response(value) for value in snapshots]
+    )
+
+
+@router.post(
+    "/api/v1/external-mcp-sources",
+    response_model=ExternalMcpSourceResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"model": ErrorEnvelope}, 422: {"model": ErrorEnvelope}},
+)
+async def create_external_mcp_source(
+    request: Request,
+    body: ExternalMcpSourceBody,
+) -> ExternalMcpSourceResponse:
+    try:
+        snapshot = await _external_service(request).create_source(
+            external_mcp_source_command(body)
+        )
+    except (ExternalMcpServiceError, ExternalMcpValidationError, ToolValidationError) as error:
+        raise _error(error) from error
+    mark_audit_resource(request, AuditResourceType.MCP_SOURCE, snapshot.source.id)
+    return external_mcp_source_response(snapshot)
+
+
+@router.get(
+    "/api/v1/external-mcp-sources/{source_id}",
+    response_model=ExternalMcpSourceResponse,
+    responses={404: {"model": ErrorEnvelope}},
+)
+async def get_external_mcp_source(
+    request: Request,
+    source_id: UUID,
+) -> ExternalMcpSourceResponse:
+    try:
+        snapshot = await _external_service(request).snapshot(source_id)
+    except ExternalMcpServiceError as error:
+        raise _error(error) from error
+    return external_mcp_source_response(snapshot)
+
+
+@router.put(
+    "/api/v1/external-mcp-sources/{source_id}",
+    response_model=ExternalMcpSourceResponse,
+    responses={
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+    },
+)
+async def update_external_mcp_source(
+    request: Request,
+    source_id: UUID,
+    body: ExternalMcpSourceBody,
+) -> ExternalMcpSourceResponse:
+    try:
+        snapshot = await _external_service(request).update_source(
+            source_id,
+            external_mcp_source_command(body),
+        )
+    except (ExternalMcpServiceError, ExternalMcpValidationError, ToolValidationError) as error:
+        raise _error(error) from error
+    mark_audit_resource(request, AuditResourceType.MCP_SOURCE, source_id)
+    return external_mcp_source_response(snapshot)
+
+
+@router.delete(
+    "/api/v1/external-mcp-sources/{source_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={404: {"model": ErrorEnvelope}, 409: {"model": ErrorEnvelope}},
+)
+async def delete_external_mcp_source(request: Request, source_id: UUID) -> Response:
+    try:
+        await _external_service(request).delete_source(source_id)
+    except ExternalMcpServiceError as error:
+        raise _error(error) from error
+    mark_audit_resource(request, AuditResourceType.MCP_SOURCE, source_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/api/v1/external-mcp-sources/{source_id}/sync",
+    response_model=ExternalMcpSyncResponse,
+    responses={
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        502: {"model": ErrorEnvelope},
+        504: {"model": ErrorEnvelope},
+    },
+)
+async def sync_external_mcp_source(
+    request: Request,
+    source_id: UUID,
+) -> ExternalMcpSyncResponse:
+    try:
+        result = await _external_service(request).sync_source(source_id)
+    except ExternalMcpServiceError as error:
+        raise _error(error) from error
+    mark_audit_resource(request, AuditResourceType.MCP_SOURCE, source_id)
+    return external_mcp_sync_response(result)
+
+
+@router.post(
+    "/api/v1/external-mcp-sources/{source_id}/capabilities/{capability_id}/test-call",
+    response_model=ManagedHttpTestCallResponse,
+    responses={
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        502: {"model": ErrorEnvelope},
+        504: {"model": ErrorEnvelope},
+    },
+)
+async def test_external_mcp_capability(
+    request: Request,
+    source_id: UUID,
+    capability_id: UUID,
+    body: ManagedHttpTestCallBody,
+) -> ManagedHttpTestCallResponse:
+    try:
+        result = await _external_service(request).call_capability(
+            source_id,
+            capability_id,
+            body.arguments,
+        )
+    except ExternalMcpServiceError as error:
+        raise _error(error) from error
+    except McpToolCallError as error:
+        raise _mcp_error(error) from error
+    mark_audit_resource(request, AuditResourceType.TOOL_CAPABILITY, capability_id)
+    return ManagedHttpTestCallResponse(capability_id=capability_id, output=result.output)
+
+
+@router.post(
+    "/api/v1/tool-collections",
+    response_model=ToolCollectionResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"model": ErrorEnvelope}, 422: {"model": ErrorEnvelope}},
+)
+async def create_tool_collection(
+    request: Request,
+    body: ToolCollectionBody,
+) -> ToolCollectionResponse:
+    try:
+        collection = await _service(request).create_collection(
+            name=body.name,
+            description=body.description,
+            source_ids=tuple(body.source_ids),
+        )
+    except (ToolServiceError, ToolValidationError) as error:
+        raise _error(error) from error
+    mark_audit_resource(request, AuditResourceType.TOOL_COLLECTION, collection.id)
+    return tool_collection_response(collection)
+
+
+@router.put(
+    "/api/v1/tool-collections/{collection_id}",
+    response_model=ToolCollectionResponse,
+    responses={
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+    },
+)
+async def update_tool_collection(
+    request: Request,
+    collection_id: UUID,
+    body: ToolCollectionBody,
+) -> ToolCollectionResponse:
+    try:
+        collection = await _service(request).update_collection(
+            collection_id,
+            name=body.name,
+            description=body.description,
+            source_ids=tuple(body.source_ids),
+        )
+    except (ToolServiceError, ToolValidationError) as error:
+        raise _error(error) from error
+    mark_audit_resource(request, AuditResourceType.TOOL_COLLECTION, collection_id)
+    return tool_collection_response(collection)
+
+
+@router.delete(
+    "/api/v1/tool-collections/{collection_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={404: {"model": ErrorEnvelope}, 409: {"model": ErrorEnvelope}},
+)
+async def delete_tool_collection(request: Request, collection_id: UUID) -> Response:
+    try:
+        await _service(request).delete_collection(collection_id)
+    except ToolServiceError as error:
+        raise _error(error) from error
+    mark_audit_resource(request, AuditResourceType.TOOL_COLLECTION, collection_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

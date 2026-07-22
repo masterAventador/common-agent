@@ -4,6 +4,7 @@ import asyncio
 import socket
 import ssl
 from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from ipaddress import (
     IPv4Address,
@@ -204,11 +205,19 @@ class _GuardedNetworkBackend(httpcore.AsyncNetworkBackend):
 
 
 class _CoreResponseStream(httpx.AsyncByteStream):
-    def __init__(self, stream: AsyncIterable[bytes]) -> None:
+    def __init__(self, stream: AsyncIterable[bytes], maximum_bytes: int) -> None:
         self._stream = stream
+        self._maximum_bytes = maximum_bytes
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
+        consumed = 0
         async for chunk in self._stream:
+            consumed += len(chunk)
+            if consumed > self._maximum_bytes:
+                raise OutboundSecurityError(
+                    "tool_egress_response_too_large",
+                    "MCP 出站响应过大",
+                )
             yield chunk
 
     async def aclose(self) -> None:
@@ -225,7 +234,10 @@ class _PinnedAsyncTransport(httpx.AsyncBaseTransport):
         origin: _Origin,
         ssl_context: ssl.SSLContext,
         maximum_connections: int,
+        maximum_response_bytes: int,
     ) -> None:
+        self._origin = origin
+        self._maximum_response_bytes = maximum_response_bytes
         self._pool = httpcore.AsyncConnectionPool(
             ssl_context=ssl_context,
             max_connections=maximum_connections,
@@ -238,6 +250,11 @@ class _PinnedAsyncTransport(httpx.AsyncBaseTransport):
         )
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if _origin(str(request.url), endpoint=False) != self._origin:
+            raise OutboundSecurityError(
+                "tool_egress_origin_blocked",
+                "MCP 出站目标来源不允许",
+            )
         if not isinstance(request.stream, httpx.AsyncByteStream):
             raise RuntimeError("MCP 出站请求体必须是异步字节流")
         response = await self._pool.handle_async_request(
@@ -256,10 +273,18 @@ class _PinnedAsyncTransport(httpx.AsyncBaseTransport):
         )
         if not isinstance(response.stream, AsyncIterable):
             raise RuntimeError("MCP 出站响应体必须是异步字节流")
+        if 300 <= response.status < 400:
+            closer = getattr(response.stream, "aclose", None)
+            if closer is not None:
+                await closer()
+            raise OutboundSecurityError(
+                "tool_egress_redirect_blocked",
+                "MCP 出站响应重定向被阻止",
+            )
         return httpx.Response(
             status_code=response.status,
             headers=response.headers,
-            stream=_CoreResponseStream(response.stream),
+            stream=_CoreResponseStream(response.stream, self._maximum_response_bytes),
             extensions=response.extensions,
         )
 
@@ -335,6 +360,7 @@ class SafeOutboundHttpClient:
                         origin=self._origin,
                         ssl_context=self._ssl_context,
                         maximum_connections=1,
+                        maximum_response_bytes=self._maximum_response_bytes,
                     )
                     async with httpx.AsyncClient(
                         transport=transport,
@@ -383,6 +409,55 @@ class SafeOutboundHttpClient:
                 retryable=True,
             ) from None
         except (httpcore.NetworkError, httpcore.ProtocolError):
+            raise OutboundSecurityError(
+                "tool_egress_unavailable",
+                "MCP 出站目标暂时不可用",
+                retryable=True,
+            ) from None
+
+    @asynccontextmanager
+    async def stream_client(
+        self,
+        *,
+        headers: Mapping[str, str] | None = None,
+    ) -> AsyncIterator[httpx.AsyncClient]:
+        """Yield a cookie-isolated official-MCP-compatible client for one bounded session."""
+        if self._closed:
+            raise RuntimeError("MCP 出站客户端已经关闭")
+        safe_headers = _request_headers(headers or {})
+        try:
+            async with asyncio.timeout(self._call_timeout_seconds), self._semaphore:
+                transport = _PinnedAsyncTransport(
+                    policy=self._policy,
+                    origin=self._origin,
+                    ssl_context=self._ssl_context,
+                    maximum_connections=1,
+                    maximum_response_bytes=self._maximum_response_bytes,
+                )
+                client: httpx.AsyncClient
+
+                async def clear_response_cookies(response: httpx.Response) -> None:
+                    del response
+                    client.cookies.clear()
+
+                async with httpx.AsyncClient(
+                    transport=transport,
+                    follow_redirects=False,
+                    timeout=self._timeout,
+                    headers=safe_headers,
+                    trust_env=False,
+                    event_hooks={"response": [clear_response_cookies]},
+                ) as client:
+                    yield client
+        except OutboundSecurityError:
+            raise
+        except (TimeoutError, httpcore.TimeoutException, httpx.TimeoutException):
+            raise OutboundSecurityError(
+                "tool_egress_timeout",
+                "MCP 出站调用超时",
+                retryable=True,
+            ) from None
+        except (httpcore.NetworkError, httpcore.ProtocolError, httpx.NetworkError):
             raise OutboundSecurityError(
                 "tool_egress_unavailable",
                 "MCP 出站目标暂时不可用",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AbstractAsyncContextManager
+from dataclasses import replace
 from types import TracebackType
 from uuid import UUID, uuid4
 
@@ -28,6 +29,8 @@ from common_agent.tools.models import (
 from common_agent.tools.service import (
     ToolCapabilityUnavailable,
     ToolCollectionNotFound,
+    ToolCollectionResourceNotFound,
+    ToolCollectionSourceUnavailable,
     ToolGrantTargetNotFound,
     ToolService,
 )
@@ -50,6 +53,13 @@ class _Repository(ToolRepository):
             input_schema={"type": "object"},
         )
         self.capabilities = [self.first]
+        self.external_source = McpSource.create(
+            name="外部支付",
+            source_type=McpSourceType.EXTERNAL,
+            endpoint_url="https://mcp.partner.example/mcp",
+            status=McpSourceStatus.DRAFT,
+        )
+        self.sources = [self.source, self.external_source]
         self.collection = ToolCollection.create(
             name="业务工具集",
             source_ids=(self.source.id,),
@@ -58,10 +68,42 @@ class _Repository(ToolRepository):
 
     async def catalog(self) -> ToolCatalog:
         return ToolCatalog(
-            sources=(self.source,),
+            sources=tuple(self.sources),
             capabilities=tuple(self.capabilities),
             collections=(self.collection,),
         )
+
+    async def get_collection(self, collection_id: UUID) -> ToolCollection | None:
+        return self.collection if self.collection.id == collection_id else None
+
+    async def collection_name_exists(
+        self,
+        name: str,
+        excluding: UUID | None = None,
+    ) -> bool:
+        return self.collection.name == name and self.collection.id != excluding
+
+    async def selectable_source_ids(self, source_ids: tuple[UUID, ...]) -> tuple[UUID, ...]:
+        known = {
+            source.id
+            for source in self.sources
+            if source.source_type is not McpSourceType.PLATFORM
+        }
+        return tuple(source_id for source_id in source_ids if source_id in known)
+
+    async def add_collection(self, collection: ToolCollection) -> None:
+        self.collection = collection
+
+    async def update_collection(self, collection: ToolCollection) -> None:
+        self.collection = collection
+
+    async def delete_collection(self, collection_id: UUID) -> None:
+        if self.collection.id == collection_id:
+            self.collection = replace(
+                self.collection,
+                id=uuid4(),
+                name="deleted-placeholder",
+            )
 
     async def target_exists(self, target_type: ToolGrantTargetType, target_id: UUID) -> bool:
         expected = (
@@ -205,5 +247,57 @@ def test_conversation_grants_and_invalid_selection_fail_closed() -> None:
                 repository.employee_id,
                 ToolGrantSelection(capability_ids=(uuid4(),)),
             )
+
+    asyncio.run(exercise())
+
+
+def test_collection_management_aggregates_multiple_sources_without_rewriting_saved_grants() -> None:
+    repository = _Repository()
+    service = ToolService(lambda: _UnitOfWork(repository))
+
+    async def exercise() -> None:
+        saved = await service.replace_employee_grants(
+            repository.employee_id,
+            ToolGrantSelection(capability_ids=(repository.first.id,)),
+        )
+        collection = await service.create_collection(
+            name="订单与支付",
+            description="聚合平台托管与外部 MCP",
+            source_ids=(repository.source.id, repository.external_source.id),
+        )
+        assert collection.source_ids == (
+            repository.source.id,
+            repository.external_source.id,
+        )
+
+        updated = await service.update_collection(
+            collection.id,
+            name="核心业务工具",
+            description="只保留外部支付来源",
+            source_ids=(repository.external_source.id,),
+        )
+        assert updated.id == collection.id
+        assert updated.created_at == collection.created_at
+        assert updated.source_ids == (repository.external_source.id,)
+        assert await service.employee_grants(repository.employee_id) == saved
+
+        with pytest.raises(ToolCollectionSourceUnavailable):
+            await service.update_collection(
+                collection.id,
+                name="非法来源",
+                description="",
+                source_ids=(uuid4(),),
+            )
+
+        missing_id = uuid4()
+        with pytest.raises(ToolCollectionResourceNotFound):
+            await service.update_collection(
+                missing_id,
+                name="不存在",
+                description="",
+                source_ids=(repository.source.id,),
+            )
+        with pytest.raises(ToolCollectionResourceNotFound):
+            await service.delete_collection(missing_id)
 
     asyncio.run(exercise())

@@ -24,6 +24,7 @@ from common_agent.audit import (
 )
 from common_agent.observability import current_observation_context
 from common_agent.ports.mcp import (
+    ExternalMcpToolClient,
     ManagedMcpToolClient,
     McpToolCallError,
     McpToolClient,
@@ -64,11 +65,13 @@ class PlatformMcpToolRegistry:
         mcp: McpToolClient,
         *,
         managed_mcp: ManagedMcpToolClient | None = None,
+        external_mcp: ExternalMcpToolClient | None = None,
         audit: AuditService | None = None,
     ) -> None:
         self._tools = tools
         self._mcp = mcp
         self._managed_mcp = managed_mcp
+        self._external_mcp = external_mcp
         self._audit = audit
 
     async def resolve(
@@ -103,12 +106,26 @@ class PlatformMcpToolRegistry:
                     tool.name: tool
                     for tool in await self._managed_mcp.list_tools(source_id)
                 }
+        external_descriptors: dict[UUID, dict[str, McpToolDescriptor]] = {}
+        external_sources = {
+            item.source.id: item.source
+            for item in capabilities
+            if item.source.source_type is McpSourceType.EXTERNAL
+        }
+        if external_sources:
+            if self._external_mcp is None:
+                raise RuntimeCapabilityUnavailable
+            for source_id, source in external_sources.items():
+                external_descriptors[source_id] = {
+                    tool.name: tool for tool in await self._external_mcp.list_tools(source)
+                }
         return tuple(
             self._tool(
                 item,
                 target,
                 platform_descriptors,
                 managed_descriptors,
+                external_descriptors,
             )
             for item in capabilities
         )
@@ -119,6 +136,7 @@ class PlatformMcpToolRegistry:
         target: ToolGrantTarget,
         platform_descriptors: dict[str, McpToolDescriptor],
         managed_descriptors: dict[UUID, dict[str, McpToolDescriptor]],
+        external_descriptors: dict[UUID, dict[str, McpToolDescriptor]],
     ) -> BaseTool:
         source = item.source
         capability = item.capability
@@ -126,6 +144,8 @@ class PlatformMcpToolRegistry:
             descriptor = platform_descriptors.get(capability.remote_name)
         elif source.source_type is McpSourceType.MANAGED_HTTP:
             descriptor = managed_descriptors.get(source.id, {}).get(capability.remote_name)
+        elif source.source_type is McpSourceType.EXTERNAL:
+            descriptor = external_descriptors.get(source.id, {}).get(capability.remote_name)
         else:
             raise RuntimeCapabilityUnavailable
         if descriptor is None:
@@ -133,8 +153,8 @@ class PlatformMcpToolRegistry:
         _, fingerprint = normalize_input_schema(descriptor.input_schema)
         if fingerprint != capability.schema_fingerprint:
             raise RuntimeCapabilityUnavailable
-        if source.source_type is McpSourceType.MANAGED_HTTP:
-            return self._managed_tool(item, target, descriptor)
+        if source.source_type in {McpSourceType.MANAGED_HTTP, McpSourceType.EXTERNAL}:
+            return self._remote_tool(item, target, descriptor)
         if descriptor.name != CURRENT_TIME_TOOL_NAME:
             raise RuntimeCapabilityUnavailable
 
@@ -187,7 +207,7 @@ class PlatformMcpToolRegistry:
             },
         )
 
-    def _managed_tool(
+    def _remote_tool(
         self,
         item: ToolRuntimeCapability,
         target: ToolGrantTarget,
@@ -196,7 +216,7 @@ class PlatformMcpToolRegistry:
         source = item.source
         capability = item.capability
 
-        async def call_managed(**arguments: object) -> str:
+        async def call_remote(**arguments: object) -> str:
             await self._record(capability.id, AuditOutcome.STARTED)
             try:
                 current = await self._tools.authorized_runtime_capabilities(
@@ -206,19 +226,28 @@ class PlatformMcpToolRegistry:
                 if (
                     len(current) != 1
                     or current[0].source.id != source.id
-                    or current[0].source.source_type is not McpSourceType.MANAGED_HTTP
+                    or current[0].source.source_type is not source.source_type
                     or current[0].capability.remote_name != descriptor.name
                     or current[0].capability.schema_fingerprint
                     != capability.schema_fingerprint
                 ):
                     raise ToolCapabilityUnavailable
-                if self._managed_mcp is None:
-                    raise ToolCapabilityUnavailable
-                result = await self._managed_mcp.call_tool(
-                    source.id,
-                    descriptor.name,
-                    arguments,
-                )
+                if source.source_type is McpSourceType.MANAGED_HTTP:
+                    if self._managed_mcp is None:
+                        raise ToolCapabilityUnavailable
+                    result = await self._managed_mcp.call_tool(
+                        source.id,
+                        descriptor.name,
+                        arguments,
+                    )
+                else:
+                    if self._external_mcp is None:
+                        raise ToolCapabilityUnavailable
+                    result = await self._external_mcp.call_tool(
+                        current[0].source,
+                        descriptor.name,
+                        arguments,
+                    )
                 output = result.output
             except ToolCapabilityUnavailable:
                 await self._record(
@@ -245,7 +274,7 @@ class PlatformMcpToolRegistry:
             return json.dumps(output, ensure_ascii=False, separators=(",", ":"))
 
         return StructuredTool.from_function(
-            coroutine=call_managed,
+            coroutine=call_remote,
             name=f"{capability.remote_name[:80]}__{capability.id.hex[:12]}",
             description=descriptor.description,
             args_schema=descriptor.input_schema,

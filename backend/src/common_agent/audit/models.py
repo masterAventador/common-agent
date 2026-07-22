@@ -30,6 +30,8 @@ class AuditAction(StrEnum):
     TOOL_CAPABILITY_CREATED = "tool.capability.created"
     TOOL_CAPABILITY_UPDATED = "tool.capability.updated"
     TOOL_CAPABILITIES_IMPORTED = "tool.capabilities.imported"
+    TOOL_COLLECTION_CREATED = "tool.collection.created"
+    TOOL_COLLECTION_UPDATED = "tool.collection.updated"
     TOOL_CALLED = "tool.called"
     MODEL_CONFIGURATION_CREATED = "model.configuration.created"
     MODEL_CONFIGURATION_UPDATED = "model.configuration.updated"
@@ -66,6 +68,7 @@ class AuditResourceType(StrEnum):
     WORKFLOW_RUN = "workflow_run"
     MCP_SOURCE = "mcp_source"
     TOOL_CAPABILITY = "tool_capability"
+    TOOL_COLLECTION = "tool_collection"
 
 
 @dataclass(frozen=True, slots=True)

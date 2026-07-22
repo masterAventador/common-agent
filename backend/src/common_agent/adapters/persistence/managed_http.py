@@ -6,7 +6,7 @@ from types import TracebackType
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import exists, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from common_agent.adapters.persistence.models import (
     ConversationToolGrantRow,
     EmployeeToolGrantRow,
     ManagedHttpCapabilityRow,
+    McpSourceCredentialRow,
     McpSourceRow,
     ToolCapabilityRow,
     ToolCollectionSourceRow,
@@ -169,6 +170,14 @@ class SqlAlchemyManagedHttpRepository:
             await self._session.flush()
         except IntegrityError:
             raise ManagedHttpRepositoryConflict from None
+
+    async def clear_credential(self, source_id: UUID) -> None:
+        await self._session.execute(
+            delete(McpSourceCredentialRow).where(
+                McpSourceCredentialRow.tenant_id == self._tenant_id,
+                McpSourceCredentialRow.source_id == str(source_id),
+            )
+        )
 
     async def delete_source(self, source_id: UUID) -> bool:
         row = await self._session.scalar(

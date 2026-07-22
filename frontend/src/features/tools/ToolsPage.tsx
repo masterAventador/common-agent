@@ -35,6 +35,7 @@ import {
   discoverManagedMcpSource,
   fetchManagedMcpSources,
   fetchMcpCredential,
+  testExternalMcpCapability,
   testManagedMcpCapability,
   updateManagedMcpCapability,
   updateManagedMcpSource,
@@ -44,9 +45,13 @@ import {
   type ManagedMcpParameterBinding,
   type ManagedMcpSource,
   type ManagedMcpSourceInput,
+  type ExternalMcpSource,
+  type ToolCapability,
 } from "../../api/tools";
 import { ResourceDeleteButton } from "../../components/ResourceDeleteButton";
+import { ExternalMcpSection } from "./ExternalMcpSection";
 import { OpenApiImportModal } from "./OpenApiImportModal";
+import { ToolCollectionsSection } from "./ToolCollectionsSection";
 
 const { Paragraph, Text, Title } = Typography;
 const queryKey = ["managed-mcp-sources"] as const;
@@ -70,7 +75,10 @@ type CredentialForm = {
   bearer_token?: string;
   headers?: Array<{ name: string; value: string }>;
 };
-type TestCallEditor = { source: ManagedMcpSource; capability: ManagedMcpCapability };
+type CredentialTarget = { id: string; name: string };
+type TestCallEditor =
+  | { kind: "managed"; source: ManagedMcpSource; capability: ManagedMcpCapability }
+  | { kind: "external"; source: ExternalMcpSource; capability: ToolCapability };
 
 function sourceValues(source?: ManagedMcpSource): ManagedMcpSourceInput {
   return source
@@ -176,7 +184,7 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
   const queryClient = useQueryClient();
   const [sourceEditor, setSourceEditor] = useState<SourceEditor>();
   const [capabilityEditor, setCapabilityEditor] = useState<CapabilityEditor>();
-  const [credentialSource, setCredentialSource] = useState<ManagedMcpSource>();
+  const [credentialSource, setCredentialSource] = useState<CredentialTarget>();
   const [openApiSource, setOpenApiSource] = useState<ManagedMcpSource>();
   const [testEditor, setTestEditor] = useState<TestCallEditor>();
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string }>();
@@ -228,9 +236,17 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
       sourceEditor?.mode === "edit"
         ? updateManagedMcpSource(sourceEditor.source.id, values)
         : createManagedMcpSource(values),
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
+      const endpointChanged =
+        sourceEditor?.mode === "edit" && sourceEditor.source.base_url !== saved.base_url;
       setSourceEditor(undefined);
       sourceForm.resetFields();
+      if (endpointChanged) {
+        setNotice({
+          type: "success",
+          text: `${saved.name} Base URL 已变更；为防止旧凭据泄漏，原鉴权已清除，请重新配置。`,
+        });
+      }
       await resetSources();
     },
   });
@@ -311,11 +327,17 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("调用参数必须是 JSON 对象");
       }
-      return testManagedMcpCapability(
-        testEditor.source.id,
-        testEditor.capability.id,
-        parsed as Record<string, unknown>,
-      );
+      return testEditor.kind === "managed"
+        ? testManagedMcpCapability(
+            testEditor.source.id,
+            testEditor.capability.id,
+            parsed as Record<string, unknown>,
+          )
+        : testExternalMcpCapability(
+            testEditor.source.id,
+            testEditor.capability.id,
+            parsed as Record<string, unknown>,
+          );
     },
     onSuccess: (result) => setTestResult(result.output),
   });
@@ -345,7 +367,9 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
             onOpenApi={() => setOpenApiSource(source)}
             onAddCapability={() => setCapabilityEditor({ source })}
             onEditCapability={(capability) => setCapabilityEditor({ source, capability })}
-            onTestCapability={(capability) => openTestEditor({ source, capability })}
+            onTestCapability={(capability) =>
+              openTestEditor({ kind: "managed", source, capability })
+            }
             onDeleteCapability={(capability) =>
               deleteCapability.mutateAsync({
                 sourceId: source.id,
@@ -410,6 +434,16 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
       ) : (
         <Card><Empty description="还没有托管 MCP 来源" /></Card>
       )}
+
+      <ExternalMcpSection
+        readOnly={readOnly}
+        onCredential={setCredentialSource}
+        onTestCapability={(source, capability) =>
+          openTestEditor({ kind: "external", source, capability })
+        }
+      />
+
+      <ToolCollectionsSection readOnly={readOnly} />
 
       <Modal
         open={Boolean(sourceEditor)}

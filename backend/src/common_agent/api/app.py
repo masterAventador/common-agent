@@ -20,7 +20,12 @@ from common_agent.adapters.demo import (
     DemoWorkflowModel,
 )
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
-from common_agent.adapters.mcp import ManagedHttpMcpRuntime, PlatformMcpRuntime
+from common_agent.adapters.mcp import (
+    ExternalMcpRuntime,
+    ManagedHttpMcpRuntime,
+    PlatformMcpRuntime,
+    SafeExternalMcpHttpClientFactory,
+)
 from common_agent.adapters.mcp.managed_http_executor import (
     ManagedHttpRequestExecutor,
     SafeManagedHttpClientFactory,
@@ -38,6 +43,7 @@ from common_agent.adapters.persistence import (
     SqlAlchemyAuditStore,
     SqlAlchemyAuthStore,
     SqlAlchemyEventJournal,
+    SqlAlchemyExternalMcpUnitOfWorkFactory,
     SqlAlchemyKnowledgeOwnershipStore,
     SqlAlchemyManagedHttpUnitOfWorkFactory,
     SqlAlchemyPlatformToolSeeder,
@@ -120,8 +126,10 @@ from common_agent.tenancy import (
     current_tenant,
 )
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
-from common_agent.tools import ToolCredentialService, ToolService
+from common_agent.tools.credential_service import ToolCredentialService
+from common_agent.tools.external_mcp_service import ExternalMcpService
 from common_agent.tools.managed_http_service import ManagedHttpService
+from common_agent.tools.service import ToolService
 from common_agent.workflows.ai_targets import (
     StaticWorkflowModelResolver,
     WorkflowAiTargetExecutor,
@@ -191,6 +199,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 active_key_id=credential_settings.active_key_id,
             ),
             tenant_id_provider=tenant_id_provider,
+        )
+        external_mcp_runtime = ExternalMcpRuntime(
+            app.state.tool_credentials,
+            SafeExternalMcpHttpClientFactory(app.state.tool_egress_settings),
+        )
+        app.state.external_mcp_runtime = external_mcp_runtime
+        app.state.external_mcp = ExternalMcpService(
+            SqlAlchemyExternalMcpUnitOfWorkFactory(database, tenant_id_provider),
+            external_mcp_runtime,
         )
         app.state.managed_http = ManagedHttpService(
             SqlAlchemyManagedHttpUnitOfWorkFactory(database, tenant_id_provider)
@@ -318,6 +335,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         app.state.tools,
                         platform_mcp,
                         managed_mcp=app.state.managed_mcp,
+                        external_mcp=external_mcp_runtime,
                         audit=app.state.audit,
                     ),
                 ),
@@ -375,6 +393,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.tool_credentials = None
         app.state.managed_http = None
         app.state.managed_mcp = None
+        app.state.external_mcp = None
+        app.state.external_mcp_runtime = None
         app.state.conversations = None
         app.state.conversation_events = None
         app.state.employees = None
@@ -437,6 +457,8 @@ def create_app() -> FastAPI:
     app.state.tool_credentials = None
     app.state.managed_http = None
     app.state.managed_mcp = None
+    app.state.external_mcp = None
+    app.state.external_mcp_runtime = None
     app.state.managed_openapi_parser = ManagedHttpOpenApiParser()
     app.state.ragflow_settings = (
         RagFlowSettings.from_env() if integration_mode.mode == "real" else None

@@ -163,3 +163,21 @@ def test_redirect_response_size_and_total_timeout_fail_closed_without_url_leak()
             await client.aclose()
 
         asyncio.run(exercise())
+
+
+def test_stream_client_keeps_fixed_origin_and_does_not_replay_response_cookies() -> None:
+    resolver = CountingResolver()
+    with local_server() as port:
+        client = _client(port, resolver)
+
+        async def exercise() -> None:
+            async with client.stream_client(headers={"X-MCP-Key": "secret"}) as streaming:
+                first = await streaming.get(f"http://localhost:{port}/set-cookie")
+                assert first.status_code == 200
+                second = await streaming.get(f"http://localhost:{port}/check-cookie")
+                assert second.text == "clean"
+                with pytest.raises(OutboundSecurityError, match="来源"):
+                    await streaming.get(f"http://127.0.0.1:{port}/ok")
+            await client.aclose()
+
+        asyncio.run(exercise())

@@ -30,9 +30,9 @@ from common_agent.tools import (
     ToolGrantSelection,
     ToolGrantTarget,
     ToolGrantTargetType,
-    ToolService,
     current_time_capability_id,
 )
+from common_agent.tools.service import ToolService
 from tests.support.conversations import delete_conversations
 from tests.support.employees import (
     DEFAULT_TEST_MODEL_CONFIGURATION_ID,

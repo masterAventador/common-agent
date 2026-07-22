@@ -23,6 +23,13 @@ export type ManagedMcpOpenApiPreview =
 export type McpCredentialSummary =
   components["schemas"]["McpCredentialSummaryResponse"];
 export type McpCredentialUpdate = components["schemas"]["McpCredentialUpdateBody"];
+export type ExternalMcpSource = components["schemas"]["ExternalMcpSourceResponse"];
+export type ExternalMcpSourceInput = components["schemas"]["ExternalMcpSourceBody"];
+export type ExternalMcpSync = components["schemas"]["ExternalMcpSyncResponse"];
+export type ToolCapability = components["schemas"]["ToolCapabilityResponse"];
+export type ToolCatalog = components["schemas"]["ToolCatalogResponse"];
+export type ToolCollection = components["schemas"]["ToolCollectionResponse"];
+export type ToolCollectionInput = components["schemas"]["ToolCollectionBody"];
 
 const jsonObjectSchema = z.record(z.string(), z.unknown());
 const parameterLocationSchema = z.enum(["path", "query", "header", "cookie", "body"]);
@@ -98,6 +105,62 @@ const credentialSchema = z.strictObject({
     })
     .nullable(),
   updated_at: z.iso.datetime({ offset: true }).nullable(),
+});
+const toolCapabilitySchema = z.strictObject({
+  id: z.uuid(),
+  source_id: z.uuid(),
+  remote_name: z.string().min(1).max(128),
+  display_name: z.string().min(1).max(128),
+  description: z.string().max(1_000),
+  input_schema: jsonObjectSchema,
+  schema_fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  status: z.enum(["active", "unavailable", "disabled"]),
+  created_at: z.iso.datetime({ offset: true }),
+  updated_at: z.iso.datetime({ offset: true }),
+});
+const externalMcpSourceSchema = z.strictObject({
+  id: z.uuid(),
+  name: z.string().min(1).max(128),
+  description: z.string().max(1_000),
+  endpoint_url: z.url({ protocol: /^https?$/ }),
+  status: z.enum(["draft", "ready", "unavailable", "disabled"]),
+  capabilities: z.array(toolCapabilitySchema).max(500),
+  created_at: z.iso.datetime({ offset: true }),
+  updated_at: z.iso.datetime({ offset: true }),
+});
+const externalMcpSourceListSchema = z.strictObject({
+  items: z.array(externalMcpSourceSchema),
+});
+const externalMcpSyncSchema = z.strictObject({
+  source: externalMcpSourceSchema,
+  added: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+  schema_changed: z.number().int().nonnegative(),
+  removed: z.number().int().nonnegative(),
+  reactivated: z.number().int().nonnegative(),
+});
+const catalogSourceSchema = z.strictObject({
+  id: z.uuid(),
+  name: z.string().min(1).max(128),
+  description: z.string().max(1_000),
+  source_type: z.enum(["platform", "managed_http", "external"]),
+  endpoint_url: z.string().nullable(),
+  status: z.enum(["draft", "ready", "unavailable", "disabled"]),
+  created_at: z.iso.datetime({ offset: true }),
+  updated_at: z.iso.datetime({ offset: true }),
+});
+const toolCollectionSchema = z.strictObject({
+  id: z.uuid(),
+  name: z.string().min(1).max(128),
+  description: z.string().max(1_000),
+  source_ids: z.array(z.uuid()).min(1).max(100),
+  created_at: z.iso.datetime({ offset: true }),
+  updated_at: z.iso.datetime({ offset: true }),
+});
+const toolCatalogSchema = z.strictObject({
+  sources: z.array(catalogSourceSchema),
+  capabilities: z.array(toolCapabilitySchema),
+  collections: z.array(toolCollectionSchema),
 });
 const openApiDraftSchema = capabilityInputSchema.extend({
   operation_key: z.string().min(1).max(2_064),
@@ -293,6 +356,120 @@ export async function updateMcpCredential(
       input,
     );
     return credentialSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function fetchExternalMcpSources(): Promise<ExternalMcpSource[]> {
+  try {
+    const response = await apiClient.get<unknown>("/external-mcp-sources");
+    return externalMcpSourceListSchema.parse(response.data).items;
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function createExternalMcpSource(
+  input: ExternalMcpSourceInput,
+): Promise<ExternalMcpSource> {
+  try {
+    const response = await apiClient.post<unknown>("/external-mcp-sources", input);
+    return externalMcpSourceSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function updateExternalMcpSource(
+  sourceId: string,
+  input: ExternalMcpSourceInput,
+): Promise<ExternalMcpSource> {
+  try {
+    const response = await apiClient.put<unknown>(
+      `/external-mcp-sources/${encodeURIComponent(sourceId)}`,
+      input,
+    );
+    return externalMcpSourceSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function deleteExternalMcpSource(sourceId: string): Promise<void> {
+  try {
+    await apiClient.delete(`/external-mcp-sources/${encodeURIComponent(sourceId)}`);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function syncExternalMcpSource(sourceId: string): Promise<ExternalMcpSync> {
+  try {
+    const response = await apiClient.post<unknown>(
+      `/external-mcp-sources/${encodeURIComponent(sourceId)}/sync`,
+    );
+    return externalMcpSyncSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function testExternalMcpCapability(
+  sourceId: string,
+  capabilityId: string,
+  argumentsValue: Record<string, unknown>,
+): Promise<ManagedMcpTestCall> {
+  try {
+    const response = await apiClient.post<unknown>(
+      `/external-mcp-sources/${encodeURIComponent(sourceId)}/capabilities/` +
+        `${encodeURIComponent(capabilityId)}/test-call`,
+      { arguments: argumentsValue },
+    );
+    return testCallSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function fetchToolCatalog(): Promise<ToolCatalog> {
+  try {
+    const response = await apiClient.get<unknown>("/tool-catalog");
+    return toolCatalogSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function createToolCollection(
+  input: ToolCollectionInput,
+): Promise<ToolCollection> {
+  try {
+    const response = await apiClient.post<unknown>("/tool-collections", input);
+    return toolCollectionSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function updateToolCollection(
+  collectionId: string,
+  input: ToolCollectionInput,
+): Promise<ToolCollection> {
+  try {
+    const response = await apiClient.put<unknown>(
+      `/tool-collections/${encodeURIComponent(collectionId)}`,
+      input,
+    );
+    return toolCollectionSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function deleteToolCollection(collectionId: string): Promise<void> {
+  try {
+    await apiClient.delete(`/tool-collections/${encodeURIComponent(collectionId)}`);
   } catch (error) {
     throw toApiClientError(error);
   }

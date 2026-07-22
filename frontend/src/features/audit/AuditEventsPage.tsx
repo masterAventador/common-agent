@@ -46,6 +46,8 @@ const actionLabels: Record<AuditAction, string> = {
   "tool.capability.created": "工具能力创建",
   "tool.capability.updated": "工具能力更新",
   "tool.capabilities.imported": "OpenAPI 工具能力批量导入",
+  "tool.collection.created": "业务工具集创建",
+  "tool.collection.updated": "业务工具集更新",
   "tool.called": "工具调用",
   "model.configuration.created": "模型配置创建",
   "model.configuration.updated": "模型配置更新",

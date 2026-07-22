@@ -130,6 +130,12 @@ vi.mock("../api/modelConfigurations", () => ({
 
 vi.mock("../api/tools", () => ({
   fetchManagedMcpSources: vi.fn().mockResolvedValue([]),
+  fetchExternalMcpSources: vi.fn().mockResolvedValue([]),
+  fetchToolCatalog: vi.fn().mockResolvedValue({
+    sources: [],
+    capabilities: [],
+    collections: [],
+  }),
   createManagedMcpSource: vi.fn(),
   updateManagedMcpSource: vi.fn(),
   deleteManagedMcpSource: vi.fn(),
@@ -140,6 +146,14 @@ vi.mock("../api/tools", () => ({
   testManagedMcpCapability: vi.fn(),
   fetchMcpCredential: vi.fn(),
   updateMcpCredential: vi.fn(),
+  createExternalMcpSource: vi.fn(),
+  updateExternalMcpSource: vi.fn(),
+  deleteExternalMcpSource: vi.fn(),
+  syncExternalMcpSource: vi.fn(),
+  testExternalMcpCapability: vi.fn(),
+  createToolCollection: vi.fn(),
+  updateToolCollection: vi.fn(),
+  deleteToolCollection: vi.fn(),
 }));
 
 vi.mock("../api/audit", async (importOriginal) => ({

@@ -68,7 +68,7 @@ from common_agent.models.base import TextStreamingModel
 from common_agent.observability import configure_json_logging
 from common_agent.tasks import TaskKind, TaskWorker, TaskWorkerPool
 from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant, current_tenant
-from common_agent.tools import ToolService
+from common_agent.tools.service import ToolService
 from common_agent.workflows.ai_targets import (
     StaticWorkflowModelResolver,
     WorkflowAiTargetExecutor,

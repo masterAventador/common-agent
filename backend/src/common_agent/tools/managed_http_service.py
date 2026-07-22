@@ -84,6 +84,8 @@ class ManagedHttpService:
                 if await unit_of_work.managed_http.source_name_exists(source.name, source.id):
                     raise ManagedHttpConflict
                 await unit_of_work.managed_http.update_source(source)
+                if source.endpoint_url != snapshot.source.endpoint_url:
+                    await unit_of_work.managed_http.clear_credential(source.id)
                 await unit_of_work.commit()
         except ManagedHttpRepositoryConflict:
             raise ManagedHttpConflict from None

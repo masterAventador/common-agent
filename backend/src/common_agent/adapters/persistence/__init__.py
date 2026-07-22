@@ -2,6 +2,9 @@ from common_agent.adapters.persistence.audit import SqlAlchemyAuditStore
 from common_agent.adapters.persistence.auth import SqlAlchemyAuthStore
 from common_agent.adapters.persistence.database import Database, DatabaseStartupError
 from common_agent.adapters.persistence.events import SqlAlchemyEventJournal
+from common_agent.adapters.persistence.external_mcp import (
+    SqlAlchemyExternalMcpUnitOfWorkFactory,
+)
 from common_agent.adapters.persistence.knowledge_ownership import (
     SqlAlchemyKnowledgeOwnershipStore,
 )
@@ -24,6 +27,7 @@ __all__ = [
     "SqlAlchemyAuditStore",
     "SqlAlchemyAuthStore",
     "SqlAlchemyEventJournal",
+    "SqlAlchemyExternalMcpUnitOfWorkFactory",
     "SqlAlchemyKnowledgeOwnershipStore",
     "SqlAlchemyManagedHttpUnitOfWorkFactory",
     "SqlAlchemyPlatformToolSeeder",

@@ -14,13 +14,15 @@ from common_agent.adapters.security import (
 )
 from common_agent.bootstrap import ToolEgressSettings
 from common_agent.ports.mcp import McpToolCallError
-from common_agent.tools.credentials import McpCredential, McpCredentialKind
+from common_agent.tools.credentials import McpCredential
 from common_agent.tools.managed_http import (
     ManagedHttpCapability,
     ManagedHttpValidationError,
     build_managed_http_request,
 )
 from common_agent.tools.models import McpSource
+
+from .outbound import credential_headers, egress_error_code
 
 
 class ManagedHttpCredentialResolver(Protocol):
@@ -101,7 +103,7 @@ class ManagedHttpRequestExecutor:
             credential = await self._credentials.resolve(source.id)
         except Exception:
             raise McpToolCallError("tool_source_unavailable") from None
-        headers = _credential_headers(outbound.headers, credential)
+        headers = credential_headers(outbound.headers, credential)
         client = self._clients.create(endpoint_url, capability.timeout_seconds)
         try:
             response = await client.request(
@@ -111,7 +113,7 @@ class ManagedHttpRequestExecutor:
                 content=outbound.body,
             )
         except OutboundSecurityError as error:
-            raise McpToolCallError(_egress_error_code(error), retryable=error.retryable) from None
+            raise McpToolCallError(egress_error_code(error), retryable=error.retryable) from None
         except Exception:
             raise McpToolCallError("tool_source_unavailable", retryable=True) from None
         finally:
@@ -129,38 +131,6 @@ class ManagedHttpRequestExecutor:
         if isinstance(selected, dict):
             return cast(dict[str, object], selected)
         return {"result": selected}
-
-
-def _credential_headers(
-    request_headers: Mapping[str, str],
-    credential: McpCredential | None,
-) -> dict[str, str]:
-    headers = dict(request_headers)
-    if credential is None:
-        return headers
-    if credential.kind is McpCredentialKind.BEARER:
-        if credential.bearer_token is None:
-            raise McpToolCallError("tool_source_unavailable")
-        _replace_header(headers, "Authorization", f"Bearer {credential.bearer_token}")
-        return headers
-    for name, value in credential.headers.items():
-        _replace_header(headers, name, value)
-    return headers
-
-
-def _replace_header(headers: dict[str, str], name: str, value: str) -> None:
-    existing = next((key for key in headers if key.lower() == name.lower()), None)
-    if existing is not None:
-        del headers[existing]
-    headers[name] = value
-
-
-def _egress_error_code(error: OutboundSecurityError) -> str:
-    if error.code == "tool_egress_timeout":
-        return "tool_timeout"
-    if error.code == "tool_egress_response_too_large":
-        return "tool_response_too_large"
-    return "tool_source_unavailable"
 
 
 def _json_pointer(payload: object, pointer: str | None) -> object:

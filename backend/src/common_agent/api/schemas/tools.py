@@ -12,6 +12,11 @@ from common_agent.tools.credentials import (
     McpCredentialKind,
     McpCredentialSummary,
 )
+from common_agent.tools.external_mcp import (
+    ExternalMcpSnapshot,
+    ExternalMcpSourceCommand,
+    ExternalMcpSyncResult,
+)
 from common_agent.tools.managed_http import (
     MANAGED_HTTP_PARAMETER_MAX_ITEMS,
     MANAGED_HTTP_PATH_MAX_LENGTH,
@@ -31,6 +36,7 @@ from common_agent.tools.models import (
     McpSourceType,
     ToolCapabilityStatus,
     ToolCatalog,
+    ToolCollection,
     ToolGrantSelection,
     ToolGrantSnapshot,
     ToolGrantTargetType,
@@ -156,6 +162,22 @@ class ManagedHttpSourceBody(BaseModel):
     enabled: bool = True
 
 
+class ExternalMcpSourceBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=1_000)
+    endpoint_url: str = Field(min_length=1, max_length=2_048)
+
+
+class ToolCollectionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=1_000)
+    source_ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
 class ManagedHttpParameterBindingBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -221,6 +243,36 @@ class ManagedHttpSourceListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[ManagedHttpSourceResponse]
+
+
+class ExternalMcpSourceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    name: str
+    description: str
+    endpoint_url: str
+    status: McpSourceStatus
+    capabilities: list[ToolCapabilityResponse]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExternalMcpSourceListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ExternalMcpSourceResponse]
+
+
+class ExternalMcpSyncResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: ExternalMcpSourceResponse
+    added: int = Field(ge=0)
+    updated: int = Field(ge=0)
+    schema_changed: int = Field(ge=0)
+    removed: int = Field(ge=0)
+    reactivated: int = Field(ge=0)
 
 
 class ManagedHttpDiscoveredToolResponse(BaseModel):
@@ -290,17 +342,18 @@ def tool_catalog_response(catalog: ToolCatalog) -> ToolCatalogResponse:
         capabilities=[
             ToolCapabilityResponse.model_validate(value) for value in catalog.capabilities
         ],
-        collections=[
-            ToolCollectionResponse(
-                id=value.id,
-                name=value.name,
-                description=value.description,
-                source_ids=list(value.source_ids),
-                created_at=value.created_at,
-                updated_at=value.updated_at,
-            )
-            for value in catalog.collections
-        ],
+        collections=[tool_collection_response(value) for value in catalog.collections],
+    )
+
+
+def tool_collection_response(value: ToolCollection) -> ToolCollectionResponse:
+    return ToolCollectionResponse(
+        id=value.id,
+        name=value.name,
+        description=value.description,
+        source_ids=list(value.source_ids),
+        created_at=value.created_at,
+        updated_at=value.updated_at,
     )
 
 
@@ -358,6 +411,55 @@ def managed_http_source_command(body: ManagedHttpSourceBody) -> ManagedHttpSourc
         description=body.description,
         base_url=body.base_url,
         enabled=body.enabled,
+    )
+
+
+def external_mcp_source_command(body: ExternalMcpSourceBody) -> ExternalMcpSourceCommand:
+    return ExternalMcpSourceCommand(
+        name=body.name,
+        description=body.description,
+        endpoint_url=body.endpoint_url,
+    )
+
+
+def external_mcp_source_response(snapshot: ExternalMcpSnapshot) -> ExternalMcpSourceResponse:
+    source = snapshot.source
+    if source.endpoint_url is None:
+        raise ValueError("外部 MCP 来源缺少端点")
+    return ExternalMcpSourceResponse(
+        id=source.id,
+        name=source.name,
+        description=source.description,
+        endpoint_url=source.endpoint_url,
+        status=source.status,
+        capabilities=[
+            ToolCapabilityResponse(
+                id=item.id,
+                source_id=item.source_id,
+                remote_name=item.remote_name,
+                display_name=item.display_name,
+                description=item.description,
+                input_schema=item.input_schema,
+                schema_fingerprint=item.schema_fingerprint,
+                status=item.status,
+                created_at=item.created_at,
+                updated_at=item.updated_at,
+            )
+            for item in snapshot.capabilities
+        ],
+        created_at=source.created_at,
+        updated_at=source.updated_at,
+    )
+
+
+def external_mcp_sync_response(result: ExternalMcpSyncResult) -> ExternalMcpSyncResponse:
+    return ExternalMcpSyncResponse(
+        source=external_mcp_source_response(result),
+        added=result.added,
+        updated=result.updated,
+        schema_changed=result.schema_changed,
+        removed=result.removed,
+        reactivated=result.reactivated,
     )
 
 
@@ -474,6 +576,10 @@ def managed_http_openapi_draft_response(
 
 
 __all__ = [
+    "ExternalMcpSourceBody",
+    "ExternalMcpSourceListResponse",
+    "ExternalMcpSourceResponse",
+    "ExternalMcpSyncResponse",
     "ManagedHttpCapabilityBody",
     "ManagedHttpCapabilityResponse",
     "ManagedHttpDiscoveredToolResponse",
@@ -494,9 +600,13 @@ __all__ = [
     "McpSourceResponse",
     "ToolCapabilityResponse",
     "ToolCatalogResponse",
+    "ToolCollectionBody",
     "ToolCollectionResponse",
     "ToolGrantResponse",
     "ToolGrantSelectionBody",
+    "external_mcp_source_command",
+    "external_mcp_source_response",
+    "external_mcp_sync_response",
     "managed_http_capability_command",
     "managed_http_capability_response",
     "managed_http_openapi_preview_response",
@@ -505,6 +615,7 @@ __all__ = [
     "mcp_credential_command",
     "mcp_credential_summary_response",
     "tool_catalog_response",
+    "tool_collection_response",
     "tool_grant_response",
     "tool_grant_selection",
 ]

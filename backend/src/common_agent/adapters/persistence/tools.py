@@ -8,6 +8,7 @@ from typing import cast
 from uuid import UUID
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from common_agent.adapters.persistence.database import Database
@@ -30,6 +31,7 @@ from common_agent.adapters.persistence.timestamps import (
 from common_agent.ports.tools import (
     ToolGrantResolution,
     ToolRepository,
+    ToolRepositoryConflict,
     ToolRuntimeResolution,
 )
 from common_agent.tenancy.context import current_tenant
@@ -109,6 +111,157 @@ class SqlAlchemyToolRepository:
                 for row in collections
             ),
         )
+
+    async def get_collection(self, collection_id: UUID) -> ToolCollection | None:
+        row = await self._session.scalar(
+            select(ToolCollectionRow).where(
+                ToolCollectionRow.tenant_id == self._tenant_id,
+                ToolCollectionRow.id == str(collection_id),
+            )
+        )
+        if row is None:
+            return None
+        source_ids = tuple(
+            UUID(value)
+            for value in await self._session.scalars(
+                select(ToolCollectionSourceRow.source_id)
+                .where(
+                    ToolCollectionSourceRow.tenant_id == self._tenant_id,
+                    ToolCollectionSourceRow.collection_id == str(collection_id),
+                )
+                .order_by(ToolCollectionSourceRow.source_id)
+            )
+        )
+        return _collection_to_domain(row, source_ids)
+
+    async def collection_name_exists(
+        self,
+        name: str,
+        excluding: UUID | None = None,
+    ) -> bool:
+        statement = select(ToolCollectionRow.id).where(
+            ToolCollectionRow.tenant_id == self._tenant_id,
+            ToolCollectionRow.name == name,
+        )
+        if excluding is not None:
+            statement = statement.where(ToolCollectionRow.id != str(excluding))
+        return await self._session.scalar(statement) is not None
+
+    async def selectable_source_ids(
+        self,
+        source_ids: tuple[UUID, ...],
+    ) -> tuple[UUID, ...]:
+        requested = {str(value) for value in source_ids}
+        if not requested:
+            return ()
+        found = set(
+            await self._session.scalars(
+                select(McpSourceRow.id).where(
+                    McpSourceRow.tenant_id == self._tenant_id,
+                    McpSourceRow.id.in_(requested),
+                    McpSourceRow.source_type.in_(
+                        (
+                            McpSourceType.MANAGED_HTTP.value,
+                            McpSourceType.EXTERNAL.value,
+                        )
+                    ),
+                )
+            )
+        )
+        return tuple(value for value in source_ids if str(value) in found)
+
+    async def add_collection(self, collection: ToolCollection) -> None:
+        self._session.add(
+            ToolCollectionRow(
+                id=str(collection.id),
+                tenant_id=self._tenant_id,
+                name=collection.name,
+                description=collection.description,
+                created_at=to_database_datetime(collection.created_at),
+                updated_at=to_database_datetime(collection.updated_at),
+            )
+        )
+        self._session.add_all(
+            [
+                ToolCollectionSourceRow(
+                    tenant_id=self._tenant_id,
+                    collection_id=str(collection.id),
+                    source_id=str(source_id),
+                    created_at=to_database_datetime(collection.created_at),
+                )
+                for source_id in collection.source_ids
+            ]
+        )
+        await self._flush_catalog()
+
+    async def update_collection(self, collection: ToolCollection) -> None:
+        row = await self._session.scalar(
+            select(ToolCollectionRow)
+            .where(
+                ToolCollectionRow.tenant_id == self._tenant_id,
+                ToolCollectionRow.id == str(collection.id),
+            )
+            .with_for_update()
+        )
+        if row is None:
+            raise ToolRepositoryConflict
+        row.name = collection.name
+        row.description = collection.description
+        row.updated_at = to_database_datetime(collection.updated_at)
+        await self._session.execute(
+            delete(ToolCollectionSourceRow).where(
+                ToolCollectionSourceRow.tenant_id == self._tenant_id,
+                ToolCollectionSourceRow.collection_id == str(collection.id),
+            )
+        )
+        self._session.add_all(
+            [
+                ToolCollectionSourceRow(
+                    tenant_id=self._tenant_id,
+                    collection_id=str(collection.id),
+                    source_id=str(source_id),
+                    created_at=to_database_datetime(collection.updated_at),
+                )
+                for source_id in collection.source_ids
+            ]
+        )
+        await self._flush_catalog()
+
+    async def delete_collection(self, collection_id: UUID) -> None:
+        row = await self._session.scalar(
+            select(ToolCollectionRow)
+            .where(
+                ToolCollectionRow.tenant_id == self._tenant_id,
+                ToolCollectionRow.id == str(collection_id),
+            )
+            .with_for_update()
+        )
+        if row is None:
+            raise ToolRepositoryConflict
+        for selection_row in (
+            EmployeeToolCollectionSelectionRow,
+            ConversationToolCollectionSelectionRow,
+        ):
+            await self._session.execute(
+                delete(selection_row).where(
+                    selection_row.tenant_id == self._tenant_id,
+                    selection_row.collection_id == str(collection_id),
+                )
+            )
+        await self._session.execute(
+            delete(ToolCollectionSourceRow).where(
+                ToolCollectionSourceRow.tenant_id == self._tenant_id,
+                ToolCollectionSourceRow.collection_id == str(collection_id),
+            )
+        )
+        await self._session.delete(row)
+        await self._flush_catalog()
+
+    async def _flush_catalog(self) -> None:
+        try:
+            await self._session.flush()
+        except IntegrityError:
+            raise ToolRepositoryConflict from None
 
     async def target_exists(self, target_type: ToolGrantTargetType, target_id: UUID) -> bool:
         if target_type is ToolGrantTargetType.EMPLOYEE:

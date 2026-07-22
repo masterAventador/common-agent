@@ -28,12 +28,12 @@ from common_agent.tools import (
     McpSourceStatus,
     McpSourceType,
     ToolCapability,
-    ToolCapabilityUnavailable,
     ToolGrantTarget,
     ToolGrantTargetType,
     ToolRuntimeCapability,
     platform_tool_catalog_seed,
 )
+from common_agent.tools.service import ToolCapabilityUnavailable
 
 _TENANT_ID = UUID("10000000-0000-4000-8000-000000000001")
 _USER_ID = UUID("20000000-0000-4000-8000-000000000001")
@@ -261,5 +261,79 @@ def test_managed_http_tool_is_namespaced_and_rechecks_exact_grant() -> None:
             directory.capability.source.id,
             "orders.get",
             {"order_id": "A-100"},
+        )
+    ]
+
+
+class _ExternalDirectory(_ManagedDirectory):
+    def __init__(self, target: ToolGrantTarget) -> None:
+        super().__init__(target)
+        source = McpSource.create(
+            name="合作方订单",
+            source_type=McpSourceType.EXTERNAL,
+            endpoint_url="https://mcp.partner.example/mcp",
+            status=McpSourceStatus.READY,
+        )
+        capability = ToolCapability.create(
+            source_id=source.id,
+            remote_name="orders.get",
+            display_name="查询合作方订单",
+            description="按编号查询合作方订单。",
+            input_schema=self.capability.capability.input_schema,
+        )
+        self.capability = ToolRuntimeCapability(source, capability)
+
+
+class _ExternalMcp:
+    def __init__(self, capability: ToolRuntimeCapability) -> None:
+        self.capability = capability
+        self.calls: list[tuple[McpSource, str, dict[str, object]]] = []
+
+    async def list_tools(self, source: McpSource) -> tuple[McpToolDescriptor, ...]:
+        assert source == self.capability.source
+        capability = self.capability.capability
+        return (
+            McpToolDescriptor(
+                name=capability.remote_name,
+                display_name=capability.display_name,
+                description=capability.description,
+                input_schema=capability.input_schema,
+            ),
+        )
+
+    async def call_tool(
+        self,
+        source: McpSource,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolCallResponse:
+        self.calls.append((source, name, dict(arguments)))
+        return McpToolCallResponse(output={"id": arguments["order_id"]})
+
+
+def test_external_mcp_tool_rechecks_exact_grant_and_uses_current_source_snapshot() -> None:
+    target = ToolGrantTarget(ToolGrantTargetType.EMPLOYEE, uuid4())
+    directory = _ExternalDirectory(target)
+    external_mcp = _ExternalMcp(directory.capability)
+    registry = PlatformMcpToolRegistry(
+        directory,
+        PlatformMcpRuntime(clock=lambda: _NOW),
+        external_mcp=external_mcp,
+    )
+
+    async def exercise() -> str:
+        tools = await registry.resolve(
+            (directory.capability.capability.id,),
+            target=target,
+        )
+        assert tools[0].name.startswith("orders.get__")
+        return cast(str, await tools[0].ainvoke({"order_id": "P-100"}))
+
+    assert asyncio.run(exercise()) == '{"id":"P-100"}'
+    assert external_mcp.calls == [
+        (
+            directory.capability.source,
+            "orders.get",
+            {"order_id": "P-100"},
         )
     ]

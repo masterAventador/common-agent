@@ -2,18 +2,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient } from "./client";
 import {
+  createExternalMcpSource,
   createManagedMcpSource,
+  createToolCollection,
+  deleteExternalMcpSource,
   deleteManagedMcpCapability,
   deleteManagedMcpSource,
+  deleteToolCollection,
   discoverManagedMcpSource,
+  fetchExternalMcpSources,
   fetchManagedMcpSources,
   fetchMcpCredential,
+  fetchToolCatalog,
   importManagedMcpOpenApi,
   parseManagedMcpSource,
   previewManagedMcpOpenApi,
+  syncExternalMcpSource,
+  testExternalMcpCapability,
   testManagedMcpCapability,
+  updateExternalMcpSource,
   updateManagedMcpCapability,
   updateMcpCredential,
+  updateToolCollection,
 } from "./tools";
 
 vi.mock("./client", () => ({
@@ -59,6 +69,39 @@ const source = {
   capabilities: [capability],
   created_at: "2026-07-22T02:00:00Z",
   updated_at: "2026-07-22T02:00:00Z",
+};
+
+const externalCapability = {
+  id: "30000000-0000-4000-8000-000000000003",
+  source_id: "40000000-0000-4000-8000-000000000004",
+  remote_name: "partners.lookup",
+  display_name: "查询合作方",
+  description: "按编号查询合作方。",
+  input_schema: { type: "object", properties: {}, additionalProperties: false },
+  schema_fingerprint: "b".repeat(64),
+  status: "active" as const,
+  created_at: "2026-07-22T04:00:00Z",
+  updated_at: "2026-07-22T04:00:00Z",
+};
+
+const externalSource = {
+  id: externalCapability.source_id,
+  name: "合作方 MCP",
+  description: "第三方 Streamable HTTP 服务",
+  endpoint_url: "https://mcp.partner.example/mcp",
+  status: "ready" as const,
+  capabilities: [externalCapability],
+  created_at: "2026-07-22T04:00:00Z",
+  updated_at: "2026-07-22T04:00:00Z",
+};
+
+const collection = {
+  id: "50000000-0000-4000-8000-000000000005",
+  name: "订单与合作方",
+  description: "聚合两个 MCP 来源",
+  source_ids: [source.id, externalSource.id],
+  created_at: "2026-07-22T05:00:00Z",
+  updated_at: "2026-07-22T05:00:00Z",
 };
 
 describe("managed MCP API boundary", () => {
@@ -216,5 +259,115 @@ describe("managed MCP API boundary", () => {
       `/managed-mcp-sources/${source.id}/openapi/import`,
       { capabilities: [expect.objectContaining({ remote_name: capability.remote_name })] },
     );
+  });
+});
+
+describe("external MCP and tool collection API boundary", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("uses explicit external sync and stable catalog endpoints", async () => {
+    const sync = {
+      source: externalSource,
+      added: 1,
+      updated: 0,
+      schema_changed: 0,
+      removed: 0,
+      reactivated: 0,
+    };
+    const catalog = {
+      sources: [
+        {
+          id: source.id,
+          name: source.name,
+          description: source.description,
+          source_type: "managed_http",
+          endpoint_url: source.base_url,
+          status: "ready",
+          created_at: source.created_at,
+          updated_at: source.updated_at,
+        },
+        {
+          id: externalSource.id,
+          name: externalSource.name,
+          description: externalSource.description,
+          source_type: "external",
+          endpoint_url: externalSource.endpoint_url,
+          status: "ready",
+          created_at: externalSource.created_at,
+          updated_at: externalSource.updated_at,
+        },
+      ],
+      capabilities: [externalCapability],
+      collections: [collection],
+    };
+    vi.mocked(apiClient.get)
+      .mockResolvedValueOnce({ data: { items: [externalSource] } })
+      .mockResolvedValueOnce({ data: catalog });
+    vi.mocked(apiClient.post)
+      .mockResolvedValueOnce({ data: externalSource })
+      .mockResolvedValueOnce({ data: sync })
+      .mockResolvedValueOnce({
+        data: { capability_id: externalCapability.id, output: { id: "P-1" } },
+      })
+      .mockResolvedValueOnce({ data: collection });
+    vi.mocked(apiClient.put)
+      .mockResolvedValueOnce({ data: externalSource })
+      .mockResolvedValueOnce({ data: collection });
+    vi.mocked(apiClient.delete).mockResolvedValue({ data: undefined });
+
+    const sourceInput = {
+      name: externalSource.name,
+      description: externalSource.description,
+      endpoint_url: externalSource.endpoint_url,
+    };
+    const collectionInput = {
+      name: collection.name,
+      description: collection.description,
+      source_ids: collection.source_ids,
+    };
+    await expect(fetchExternalMcpSources()).resolves.toEqual([externalSource]);
+    await expect(createExternalMcpSource(sourceInput)).resolves.toEqual(externalSource);
+    await expect(updateExternalMcpSource(externalSource.id, sourceInput)).resolves.toEqual(
+      externalSource,
+    );
+    await expect(syncExternalMcpSource(externalSource.id)).resolves.toEqual(sync);
+    await expect(
+      testExternalMcpCapability(externalSource.id, externalCapability.id, { id: "P-1" }),
+    ).resolves.toEqual({ capability_id: externalCapability.id, output: { id: "P-1" } });
+    await expect(fetchToolCatalog()).resolves.toEqual(catalog);
+    await expect(createToolCollection(collectionInput)).resolves.toEqual(collection);
+    await expect(updateToolCollection(collection.id, collectionInput)).resolves.toEqual(
+      collection,
+    );
+    await deleteToolCollection(collection.id);
+    await deleteExternalMcpSource(externalSource.id);
+
+    expect(apiClient.post).toHaveBeenNthCalledWith(
+      2,
+      `/external-mcp-sources/${externalSource.id}/sync`,
+    );
+    expect(apiClient.post).toHaveBeenNthCalledWith(
+      3,
+      `/external-mcp-sources/${externalSource.id}/capabilities/${externalCapability.id}/test-call`,
+      { arguments: { id: "P-1" } },
+    );
+    expect(apiClient.get).toHaveBeenNthCalledWith(2, "/tool-catalog");
+    expect(apiClient.delete).toHaveBeenNthCalledWith(
+      1,
+      `/tool-collections/${collection.id}`,
+    );
+  });
+
+  it("rejects leaked external credentials and unknown catalog fields", async () => {
+    vi.mocked(apiClient.get)
+      .mockResolvedValueOnce({
+        data: { items: [{ ...externalSource, bearer_token: "secret" }] },
+      })
+      .mockResolvedValueOnce({
+        data: { sources: [], capabilities: [], collections: [], unexpected: true },
+      });
+
+    await expect(fetchExternalMcpSources()).rejects.toBeDefined();
+    await expect(fetchToolCatalog()).rejects.toBeDefined();
   });
 });
