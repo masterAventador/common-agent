@@ -28,6 +28,8 @@ http {
     listen 9443 ssl;
     server_name {{PUBLIC_DOMAIN}};
     if ($host != "{{PUBLIC_DOMAIN}}") { return 421; }
+    # 在 Nginx 规范化 URI 前拒绝原始或编码点段，避免穿越路径落入 SPA fallback。
+    if ($request_uri ~* "^/[^?]*(?:\.\.|%2e%2e|\.%2e|%2e\.)(?:/|%2f|\?|$)") { return 400; }
     # 20 MiB 文档加 multipart 边界；更大请求在进入应用前拒绝。
     client_max_body_size 24m;
     ssl_certificate /run/secrets/edge-cert;

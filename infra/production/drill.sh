@@ -129,6 +129,21 @@ verify_untrusted_host_is_rejected() {
   [[ "${status}" == "421" ]] || fail "伪造 Host 被生产 Edge 错误接受：${status}"
 }
 
+verify_path_traversal_is_rejected() {
+  local body result status
+  result="$(curl --silent --show-error --path-as-is \
+    --write-out $'\n%{http_code}' \
+    --noproxy '*' \
+    --cacert "${STATE_ROOT}/tls/ca.crt" \
+    --resolve 'common-agent.test:18443:127.0.0.1' \
+    'https://common-agent.test:18443/api/v1/%2e%2e/%2e%2e/etc/passwd')"
+  status="${result##*$'\n'}"
+  body="${result%$'\n'*}"
+  [[ "${status}" == "400" || "${status}" == "404" ]] || \
+    fail "路径穿越请求被生产 Edge 错误接受：${status}"
+  [[ "${body}" != *'root:x:'* ]] || fail "路径穿越响应泄漏了系统文件内容"
+}
+
 verify_forwarded_for_spoof_is_rate_limited() {
   local attempt status
   for attempt in 1 2 3 4 5; do
@@ -196,6 +211,7 @@ write_runtime_configuration
 "${MANAGER}" verify
 run_formal_page_smoke
 verify_untrusted_host_is_rejected
+verify_path_traversal_is_rejected
 verify_forwarded_for_spoof_is_rate_limited
 exercise_failure_and_rollback
 

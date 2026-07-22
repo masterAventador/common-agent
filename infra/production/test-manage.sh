@@ -89,6 +89,9 @@ grep -Fq 'server_name {{PUBLIC_DOMAIN}}' "${SCRIPT_DIR}/edge.conf.template" || \
   fail "TLS 边缘入口没有绑定正式域名"
 grep -Fq '$host != "{{PUBLIC_DOMAIN}}"' "${SCRIPT_DIR}/edge.conf.template" || \
   fail "TLS 边缘入口没有拒绝伪造 Host"
+grep -Fq '$request_uri ~* "^/[^?]*(?:\.\.|%2e%2e|\.%2e|%2e\.)' \
+  "${SCRIPT_DIR}/edge.conf.template" || \
+  fail "TLS 边缘入口没有在 URI 规范化前拒绝路径穿越点段"
 grep -Fq -- '--header=Host: ${COMMON_AGENT_PUBLIC_DOMAIN:' "${COMPOSE_FILE}" || \
   fail "TLS Edge 健康检查没有使用正式域名"
 for security_header in \
@@ -110,6 +113,10 @@ grep -Fq 'production-security-headers.spec.ts' "${DRILL}" || \
   fail "生产演练没有从正式浏览器验证安全响应头与页面兼容性"
 grep -Fq 'verify_untrusted_host_is_rejected' "${DRILL}" || \
   fail "生产演练没有从 TLS Edge 验证伪造 Host 拒绝"
+grep -Fq 'verify_path_traversal_is_rejected' "${DRILL}" || \
+  fail "生产演练没有保留原始 URI 验证路径穿越拒绝"
+grep -Fq -- '--path-as-is' "${DRILL}" || \
+  fail "路径穿越验收会被 HTTP 客户端预先规范化"
 grep -Fq "COMMON_AGENT_E2E_FRONTEND_URL='https://common-agent.test:18443'" "${DRILL}" || \
   fail "生产浏览器没有使用正式域名入口"
 grep -Fq "COMMON_AGENT_E2E_API_HOST_HEADER='common-agent.test'" "${DRILL}" || \
