@@ -368,6 +368,102 @@ def test_ragflow_gets_retry_candidate_by_id_instead_of_first_document_page() -> 
     assert len(requests) == 1
 
 
+def test_ragflow_lists_every_document_page_without_hiding_older_items() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.url.path == "/api/v1/datasets/kb-1/documents"
+        assert request.url.params["page_size"] == "100"
+        page = int(request.url.params["page"])
+        start = (page - 1) * 100
+        docs = [
+            {
+                "id": f"doc-{index:03d}",
+                "dataset_id": "kb-1",
+                "name": f"document-{index:03d}.txt",
+                "run": "DONE",
+                "size": 128,
+            }
+            for index in range(start, min(start + 100, 101))
+        ]
+        return httpx.Response(
+            200,
+            json={"code": 0, "data": {"total": 101, "docs": docs}},
+        )
+
+    async def scenario() -> tuple[KnowledgeDocument, ...]:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://ragflow") as client:
+            service = RagFlowKnowledgeService(
+                base_url="http://ragflow",
+                api_key="test-key",
+                expected_version="v0.26.4",
+                client=client,
+            )
+            return await service.list_documents("kb-1")
+
+    documents = _run(scenario())
+    assert len(documents) == 101
+    assert documents[-1].id == "doc-100"
+    assert [request.url.params["page"] for request in requests] == ["1", "2"]
+
+
+@pytest.mark.parametrize(
+    "second_page",
+    [
+        {"total": 102, "docs": []},
+        {
+            "total": 101,
+            "docs": [
+                {
+                    "id": "doc-000",
+                    "dataset_id": "kb-1",
+                    "name": "duplicate.txt",
+                    "run": "DONE",
+                    "size": 128,
+                }
+            ],
+        },
+        {"total": 101, "docs": []},
+    ],
+)
+def test_ragflow_document_pagination_rejects_unstable_or_repeated_pages(
+    second_page: dict[str, object],
+) -> None:
+    first_page = {
+        "total": 101,
+        "docs": [
+            {
+                "id": f"doc-{index:03d}",
+                "dataset_id": "kb-1",
+                "name": f"document-{index:03d}.txt",
+                "run": "DONE",
+                "size": 128,
+            }
+            for index in range(100)
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = first_page if request.url.params["page"] == "1" else second_page
+        return httpx.Response(200, json={"code": 0, "data": payload})
+
+    async def scenario() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://ragflow") as client:
+            service = RagFlowKnowledgeService(
+                base_url="http://ragflow",
+                api_key="test-key",
+                expected_version="v0.26.4",
+                client=client,
+            )
+            with pytest.raises(KnowledgeProviderResponseInvalid):
+                await service.list_documents("kb-1")
+
+    _run(scenario())
+
+
 def test_ragflow_dataset_pagination_translates_opaque_cursor_and_server_search() -> None:
     requests: list[httpx.Request] = []
 

@@ -72,6 +72,7 @@ class _RagFlowDocument(BaseModel):
 class _RagFlowDocumentList(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
+    total: int = Field(ge=0)
     docs: list[_RagFlowDocument]
 
 
@@ -319,14 +320,40 @@ class RagFlowKnowledgeService:
         )
 
     async def list_documents(self, knowledge_base_id: str) -> tuple[KnowledgeDocument, ...]:
-        data = await self._request(
-            "GET",
-            f"/api/v1/datasets/{knowledge_base_id}/documents",
-            dataset_scoped=True,
-            params={"page": 1, "page_size": 100, "orderby": "create_time", "desc": "true"},
-        )
-        payload = _validate(_DOCUMENT_LIST_ADAPTER, data)
-        return tuple(self._document(item, knowledge_base_id) for item in payload.docs)
+        page = 1
+        expected_total: int | None = None
+        collected: list[_RagFlowDocument] = []
+        document_ids: set[str] = set()
+        while expected_total is None or len(collected) < expected_total:
+            data = await self._request(
+                "GET",
+                f"/api/v1/datasets/{knowledge_base_id}/documents",
+                dataset_scoped=True,
+                params={
+                    "page": page,
+                    "page_size": 100,
+                    "orderby": "create_time",
+                    "desc": "true",
+                },
+            )
+            payload = _validate(_DOCUMENT_LIST_ADAPTER, data)
+            if expected_total is None:
+                expected_total = payload.total
+            if payload.total != expected_total:
+                raise KnowledgeProviderResponseInvalid()
+            for item in payload.docs:
+                if item.id in document_ids:
+                    raise KnowledgeProviderResponseInvalid()
+                document_ids.add(item.id)
+                collected.append(item)
+            if len(collected) > expected_total:
+                raise KnowledgeProviderResponseInvalid()
+            if len(collected) == expected_total:
+                break
+            if len(payload.docs) < 100:
+                raise KnowledgeProviderResponseInvalid()
+            page += 1
+        return tuple(self._document(item, knowledge_base_id) for item in collected)
 
     async def get_document(
         self,

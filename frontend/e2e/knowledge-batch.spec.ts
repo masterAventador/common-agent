@@ -18,6 +18,8 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const corpusDirectory = path.join(repositoryRoot, "test-data/knowledge-base/corpus");
 const knowledgeBaseName = requiredEnvironment("COMMON_AGENT_E2E_BATCH_KNOWLEDGE_NAME");
 const employeeName = requiredEnvironment("COMMON_AGENT_E2E_BATCH_EMPLOYEE_NAME");
+const ragflowBaseURL = requiredEnvironment("RAGFLOW_BASE_URL");
+const ragflowApiKey = requiredEnvironment("RAGFLOW_API_KEY");
 
 test("batch-drags the full corpus, retries parsing, and answers a cross-document question", async ({
   page,
@@ -190,8 +192,53 @@ test("batch-drags the full corpus, retries parsing, and answers a cross-document
   await expect(
     citations.getByText("04-pilot-acceptance.docx", { exact: true }).first(),
   ).toBeVisible();
+
+  await seedUnparsedDocuments(page, uploaded.knowledge_base_id, 87);
+  const completeDocumentList = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(
+        `/api/v1/knowledge-bases/${uploaded.knowledge_base_id}/documents`,
+      ) && response.request().method() === "GET",
+  );
+  await page.getByRole("link", { name: "知识库" }).click();
+  const documentListResponse = await completeDocumentList;
+  expect(documentListResponse.status()).toBe(200);
+  const listedDocuments = (await documentListResponse.json()) as { name: string }[];
+  expect(listedDocuments).toHaveLength(101);
+  await expect(page.getByRole("cell", { name: "s10-07m-page-086.txt" })).toBeVisible();
   expect(directRagFlowRequests).toEqual([]);
 });
+
+async function seedUnparsedDocuments(
+  page: Page,
+  knowledgeBaseId: string,
+  count: number,
+): Promise<void> {
+  for (let offset = 0; offset < count; offset += 10) {
+    const responses = await Promise.all(
+      Array.from({ length: Math.min(10, count - offset) }, async (_, relativeIndex) => {
+        const index = offset + relativeIndex;
+        return page.request.post(
+          `${ragflowBaseURL}/api/v1/datasets/${knowledgeBaseId}/documents`,
+          {
+            headers: { Authorization: `Bearer ${ragflowApiKey}` },
+            multipart: {
+              file: {
+                name: `s10-07m-page-${index.toString().padStart(3, "0")}.txt`,
+                mimeType: "text/plain",
+                buffer: Buffer.from(`分页可见性验收文档 ${index}`),
+              },
+            },
+          },
+        );
+      }),
+    );
+    for (const response of responses) {
+      expect(response.status()).toBe(200);
+      expect((await response.json()) as { code: number }).toMatchObject({ code: 0 });
+    }
+  }
+}
 
 async function dropFiles(page: Page, paths: string[]): Promise<void> {
   const files = paths.map((filePath) => ({
