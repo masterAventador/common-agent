@@ -102,9 +102,11 @@ run_formal_page_smoke() {
   [[ -n "${auth_token}" ]] || fail "浏览器验收缺少管理员引导 token"
   (
     cd "${REPOSITORY_ROOT}/frontend"
-    COMMON_AGENT_E2E_FRONTEND_URL='https://127.0.0.1:18443' \
+    COMMON_AGENT_E2E_FRONTEND_URL='https://common-agent.test:18443' \
     COMMON_AGENT_E2E_API_URL='https://127.0.0.1:18443/api/v1' \
+    COMMON_AGENT_E2E_API_HOST_HEADER='common-agent.test' \
     COMMON_AGENT_E2E_TRUSTED_ORIGIN='https://common-agent.test:18443' \
+    COMMON_AGENT_E2E_HOST_RESOLVER_RULES='MAP common-agent.test 127.0.0.1' \
     COMMON_AGENT_E2E_IGNORE_HTTPS_ERRORS=true \
     COMMON_AGENT_E2E_AUTH_BOOTSTRAP_TOKEN="${auth_token}" \
     COMMON_AGENT_E2E_AUTH_EMAIL='production-drill@example.com' \
@@ -114,6 +116,17 @@ run_formal_page_smoke() {
         production-request-limits.spec.ts \
         production-security-headers.spec.ts
   )
+}
+
+verify_untrusted_host_is_rejected() {
+  local status
+  status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    --noproxy '*' \
+    --cacert "${STATE_ROOT}/tls/ca.crt" \
+    --resolve 'common-agent.test:18443:127.0.0.1' \
+    --header 'Host: attacker.example' \
+    'https://common-agent.test:18443/')"
+  [[ "${status}" == "421" ]] || fail "伪造 Host 被生产 Edge 错误接受：${status}"
 }
 
 verify_forwarded_for_spoof_is_rate_limited() {
@@ -182,6 +195,7 @@ write_runtime_configuration
 "${MANAGER}" rollout
 "${MANAGER}" verify
 run_formal_page_smoke
+verify_untrusted_host_is_rejected
 verify_forwarded_for_spoof_is_rate_limited
 exercise_failure_and_rollback
 

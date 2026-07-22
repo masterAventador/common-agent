@@ -226,6 +226,7 @@ services:
         - --quiet
         - --spider
         - --no-check-certificate
+        - "--header=Host: ${COMMON_AGENT_PUBLIC_DOMAIN:?COMMON_AGENT_PUBLIC_DOMAIN is required}"
         - https://127.0.0.1:9443/edge-health
       interval: 10s
       timeout: 3s

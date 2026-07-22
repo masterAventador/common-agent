@@ -26,6 +26,8 @@ http {
 
   server {
     listen 9443 ssl;
+    server_name {{PUBLIC_DOMAIN}};
+    if ($host != "{{PUBLIC_DOMAIN}}") { return 421; }
     # 20 MiB 文档加 multipart 边界；更大请求在进入应用前拒绝。
     client_max_body_size 24m;
     ssl_certificate /run/secrets/edge-cert;

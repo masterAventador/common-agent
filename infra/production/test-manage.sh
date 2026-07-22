@@ -85,6 +85,12 @@ grep -Fq 'ssl_protocols TLSv1.2 TLSv1.3' "${SCRIPT_DIR}/edge.conf.template" || \
   fail "TLS 边缘入口没有固定安全协议"
 grep -Fq 'client_max_body_size 24m' "${SCRIPT_DIR}/edge.conf.template" || \
   fail "TLS 边缘入口没有为 20 MiB 文档保留有界 multipart 空间"
+grep -Fq 'server_name {{PUBLIC_DOMAIN}}' "${SCRIPT_DIR}/edge.conf.template" || \
+  fail "TLS 边缘入口没有绑定正式域名"
+grep -Fq '$host != "{{PUBLIC_DOMAIN}}"' "${SCRIPT_DIR}/edge.conf.template" || \
+  fail "TLS 边缘入口没有拒绝伪造 Host"
+grep -Fq -- '--header=Host: ${COMMON_AGENT_PUBLIC_DOMAIN:' "${COMPOSE_FILE}" || \
+  fail "TLS Edge 健康检查没有使用正式域名"
 for security_header in \
   'Strict-Transport-Security' \
   'Content-Security-Policy' \
@@ -102,6 +108,14 @@ grep -Fq 'production-request-limits.spec.ts' "${DRILL}" || \
   fail "生产演练没有从正式浏览器与 TLS Edge 验证请求体边界"
 grep -Fq 'production-security-headers.spec.ts' "${DRILL}" || \
   fail "生产演练没有从正式浏览器验证安全响应头与页面兼容性"
+grep -Fq 'verify_untrusted_host_is_rejected' "${DRILL}" || \
+  fail "生产演练没有从 TLS Edge 验证伪造 Host 拒绝"
+grep -Fq "COMMON_AGENT_E2E_FRONTEND_URL='https://common-agent.test:18443'" "${DRILL}" || \
+  fail "生产浏览器没有使用正式域名入口"
+grep -Fq "COMMON_AGENT_E2E_API_HOST_HEADER='common-agent.test'" "${DRILL}" || \
+  fail "生产 API 验收没有通过 loopback 发送正式 Host"
+grep -Fq '"--proxy-server=direct://"' "${REPOSITORY_ROOT}/frontend/playwright.config.ts" || \
+  fail "生产浏览器本地域名映射没有显式绕过系统代理"
 grep -Fq 'verify_forwarded_for_spoof_is_rate_limited' "${DRILL}" || \
   fail "生产演练没有从正式 TLS Edge 验证伪造来源头"
 grep -Fq 'X-Forwarded-For: 203.0.113.${attempt}' "${DRILL}" || \

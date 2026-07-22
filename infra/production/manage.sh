@@ -36,6 +36,19 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "缺少生产发布工具：$1"
 }
 
+validate_public_domain() {
+  [[ "${PUBLIC_DOMAIN}" =~ ^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$ ]] || \
+    fail "生产域名格式无效：${PUBLIC_DOMAIN}"
+  [[ "${PUBLIC_DOMAIN}" != *..* ]] || fail "生产域名不能包含空标签：${PUBLIC_DOMAIN}"
+  local label
+  local -a labels=()
+  IFS='.' read -r -a labels <<<"${PUBLIC_DOMAIN}"
+  for label in "${labels[@]}"; do
+    [[ "${#label}" -le 63 && "${label}" != -* && "${label}" != *- ]] || \
+      fail "生产域名标签无效：${PUBLIC_DOMAIN}"
+  done
+}
+
 docker_cli() {
   docker --context "${DOCKER_CONTEXT_NAME}" "$@"
 }
@@ -178,6 +191,7 @@ compose_loaded_release() {
   COMMON_AGENT_EDGE_KEY="${TLS_ROOT}/edge.key" \
   COMMON_AGENT_HTTPS_BIND="${HTTPS_BIND}" \
   COMMON_AGENT_HTTPS_PORT="${HTTPS_PORT}" \
+  COMMON_AGENT_PUBLIC_DOMAIN="${PUBLIC_DOMAIN}" \
     docker_cli compose --project-name common-agent-production -f "${COMPOSE_FILE}" "$@"
 }
 
@@ -193,7 +207,11 @@ ragflow_compose() {
 render_edge_config() {
   local slot="$1"
   [[ "${slot}" == "blue" || "${slot}" == "green" ]] || fail "非法 edge slot"
-  sed "s/{{ACTIVE_SLOT}}/${slot}/g" "${SCRIPT_DIR}/edge.conf.template" >"${EDGE_CONFIG}"
+  validate_public_domain
+  sed \
+    -e "s/{{ACTIVE_SLOT}}/${slot}/g" \
+    -e "s/{{PUBLIC_DOMAIN}}/${PUBLIC_DOMAIN}/g" \
+    "${SCRIPT_DIR}/edge.conf.template" >"${EDGE_CONFIG}"
   cp "${SCRIPT_DIR}/web.conf.template" "${WEB_CONFIG}"
   chmod 644 "${EDGE_CONFIG}" "${WEB_CONFIG}"
 }
@@ -305,6 +323,7 @@ build_release() {
 init_tls() {
   local release_id
   guard_docker_context
+  validate_public_domain
   prepare_state_root
   release_id="$(candidate_release_id)"
   load_release "${release_id}"
@@ -350,6 +369,7 @@ preflight() {
   require_command openssl
   require_command git
   guard_docker_context
+  validate_public_domain
   prepare_state_root
   require_config_file
   require_secret_file

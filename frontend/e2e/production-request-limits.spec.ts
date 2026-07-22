@@ -1,12 +1,12 @@
 import { Buffer } from "node:buffer";
 
-import { expect, test, platformWriteHeaders } from "./fixtures/auth";
+import { expect, platformApiUrl, platformWriteHeaders, test } from "./fixtures/auth";
 
 const MEBIBYTE = 1024 * 1024;
 const DOCUMENT_LIMIT_BYTES = 20 * MEBIBYTE;
 const EDGE_BODY_LIMIT_BYTES = 24 * MEBIBYTE;
 const missingKnowledgeBasePath =
-  "/api/v1/knowledge-bases/missing-production-request-limit/documents";
+  platformApiUrl("/knowledge-bases/missing-production-request-limit/documents");
 
 test("enforces document and edge body limits through the production TLS entry", async ({
   page,

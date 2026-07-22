@@ -1,6 +1,6 @@
 import type { APIResponse } from "@playwright/test";
 
-import { expect, test } from "./fixtures/auth";
+import { expect, platformApiUrl, platformWriteHeaders, test } from "./fixtures/auth";
 
 function expectSecurityHeaders(response: APIResponse): void {
   const headers = response.headers();
@@ -27,7 +27,9 @@ test("serves browser security headers without breaking the production React entr
   expectSecurityHeaders(navigation!);
   await expect(page.getByRole("heading", { name: "AI 会话" })).toBeVisible();
 
-  const apiResponse = await page.request.get("/api/v1/system/health");
+  const apiResponse = await page.request.get(platformApiUrl("/system/health"), {
+    headers: await platformWriteHeaders(page),
+  });
   expect(apiResponse.status()).toBe(200);
   expectSecurityHeaders(apiResponse);
   expect(pageErrors).toEqual([]);

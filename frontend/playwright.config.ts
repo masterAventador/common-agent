@@ -1,6 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const hostResolverRules = process.env.COMMON_AGENT_E2E_HOST_RESOLVER_RULES?.trim();
+const localDomainArgs = hostResolverRules
+  ? [
+      "--proxy-server=direct://",
+      "--proxy-bypass-list=*",
+      `--host-resolver-rules=${hostResolverRules}`,
+    ]
+  : [];
 
 export default defineConfig({
   testDir: "./e2e",
@@ -24,7 +31,7 @@ export default defineConfig({
       args: [
         "--headless",
         "--no-startup-window",
-        ...(hostResolverRules ? [`--host-resolver-rules=${hostResolverRules}`] : []),
+        ...localDomainArgs,
       ],
     },
     screenshot: "only-on-failure",
