@@ -4,7 +4,7 @@ from types import TracebackType
 from typing import Protocol
 from uuid import UUID
 
-from common_agent.domain.model_configuration import ModelConfiguration
+from common_agent.domain.model_configuration import ModelConfiguration, ModelProvider
 from common_agent.pagination import PageAnchor, PageSlice
 
 
@@ -25,6 +25,12 @@ class ModelConfigurationRepository(Protocol):
     async def get(self, model_configuration_id: UUID) -> ModelConfiguration | None: ...
 
     async def get_by_identifier(self, model_identifier: str) -> ModelConfiguration | None: ...
+
+    async def streaming_breaks_tool_calls(
+        self,
+        provider: ModelProvider,
+        model_identifier: str,
+    ) -> bool: ...
 
     async def add(self, configuration: ModelConfiguration) -> None: ...
 

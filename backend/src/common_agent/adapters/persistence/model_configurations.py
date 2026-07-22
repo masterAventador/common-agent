@@ -6,7 +6,7 @@ from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import Select, and_, delete, func, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from common_agent.adapters.persistence.models import (
     MessageRow,
     ModelConfigurationReferenceRow,
     ModelConfigurationRow,
+    ModelToolStreamingCapabilityRow,
 )
 from common_agent.adapters.persistence.timestamps import (
     from_database_datetime,
@@ -45,7 +46,7 @@ class SqlAlchemyModelConfigurationRepository:
         after: PageAnchor | None,
         enabled_only: bool,
     ) -> PageSlice[ModelConfiguration]:
-        statement = select(ModelConfigurationRow).where(
+        statement = _select_with_streaming_compatibility().where(
             ModelConfigurationRow.tenant_id == self._tenant_id
         )
         if enabled_only:
@@ -72,35 +73,63 @@ class SqlAlchemyModelConfigurationRepository:
                 )
             )
         rows = tuple(
-            await self._session.scalars(
-                statement.order_by(
-                    ModelConfigurationRow.created_at.desc(),
-                    ModelConfigurationRow.id.desc(),
-                ).limit(limit + 1)
-            )
+            (
+                await self._session.execute(
+                    statement.order_by(
+                        ModelConfigurationRow.created_at.desc(),
+                        ModelConfigurationRow.id.desc(),
+                    ).limit(limit + 1)
+                )
+            ).all()
         )
         return PageSlice(
-            items=tuple(_to_domain(row) for row in rows[:limit]),
+            items=tuple(
+                _to_domain(row, streaming_breaks_tool_calls=bool(compatibility))
+                for row, compatibility in rows[:limit]
+            ),
             has_more=len(rows) > limit,
         )
 
     async def get(self, model_configuration_id: UUID) -> ModelConfiguration | None:
-        row = await self._session.scalar(
-            select(ModelConfigurationRow).where(
-                ModelConfigurationRow.id == str(model_configuration_id),
-                ModelConfigurationRow.tenant_id == self._tenant_id,
+        result = (
+            await self._session.execute(
+                _select_with_streaming_compatibility().where(
+                    ModelConfigurationRow.id == str(model_configuration_id),
+                    ModelConfigurationRow.tenant_id == self._tenant_id,
+                )
             )
-        )
-        return None if row is None else _to_domain(row)
+        ).one_or_none()
+        if result is None:
+            return None
+        row, compatibility = result
+        return _to_domain(row, streaming_breaks_tool_calls=bool(compatibility))
 
     async def get_by_identifier(self, model_identifier: str) -> ModelConfiguration | None:
-        row = await self._session.scalar(
-            select(ModelConfigurationRow).where(
-                ModelConfigurationRow.model_identifier == model_identifier,
-                ModelConfigurationRow.tenant_id == self._tenant_id,
+        result = (
+            await self._session.execute(
+                _select_with_streaming_compatibility().where(
+                    ModelConfigurationRow.model_identifier == model_identifier,
+                    ModelConfigurationRow.tenant_id == self._tenant_id,
+                )
+            )
+        ).one_or_none()
+        if result is None:
+            return None
+        row, compatibility = result
+        return _to_domain(row, streaming_breaks_tool_calls=bool(compatibility))
+
+    async def streaming_breaks_tool_calls(
+        self,
+        provider: ModelProvider,
+        model_identifier: str,
+    ) -> bool:
+        value = await self._session.scalar(
+            select(ModelToolStreamingCapabilityRow.streaming_breaks_tool_calls).where(
+                ModelToolStreamingCapabilityRow.provider == provider.value,
+                ModelToolStreamingCapabilityRow.model_identifier == model_identifier,
             )
         )
-        return None if row is None else _to_domain(row)
+        return bool(value)
 
     async def add(self, configuration: ModelConfiguration) -> None:
         self._session.add(
@@ -256,13 +285,32 @@ def _to_values(configuration: ModelConfiguration) -> dict[str, object]:
     }
 
 
-def _to_domain(row: ModelConfigurationRow) -> ModelConfiguration:
+def _select_with_streaming_compatibility() -> Select[tuple[ModelConfigurationRow, bool]]:
+    return select(
+        ModelConfigurationRow,
+        ModelToolStreamingCapabilityRow.streaming_breaks_tool_calls,
+    ).outerjoin(
+        ModelToolStreamingCapabilityRow,
+        and_(
+            ModelToolStreamingCapabilityRow.provider == ModelConfigurationRow.provider,
+            ModelToolStreamingCapabilityRow.model_identifier
+            == ModelConfigurationRow.model_identifier,
+        ),
+    )
+
+
+def _to_domain(
+    row: ModelConfigurationRow,
+    *,
+    streaming_breaks_tool_calls: bool = False,
+) -> ModelConfiguration:
     return ModelConfiguration(
         id=UUID(row.id),
         display_name=row.display_name,
         provider=ModelProvider(row.provider),
         model_identifier=row.model_identifier,
         enabled=row.enabled,
+        streaming_breaks_tool_calls=streaming_breaks_tool_calls,
         created_at=from_database_datetime(row.created_at),
         updated_at=from_database_datetime(row.updated_at),
     )

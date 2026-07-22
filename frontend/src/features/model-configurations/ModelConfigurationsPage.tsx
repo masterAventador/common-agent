@@ -78,7 +78,11 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
     form.setFieldsValue(
       editor.mode === "edit"
         ? formValues(editor.item)
-        : { display_name: "", model_identifier: "", enabled: true },
+        : {
+            display_name: "",
+            model_identifier: "",
+            enabled: true,
+          },
     );
   }, [editor, form]);
 
@@ -230,6 +234,12 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
                 <Text>阿里百炼</Text>
                 <Text type="secondary">模型标识</Text>
                 <Text code>{item.model_identifier}</Text>
+                <Text type="secondary">工具调用流</Text>
+                <Tag color={item.streaming_breaks_tool_calls ? "warning" : "success"}>
+                  {item.streaming_breaks_tool_calls
+                    ? "工具调用自动非流式"
+                    : "正常流式"}
+                </Tag>
               </div>
               <Flex gap={8} justify="flex-end" wrap>
                 <Button

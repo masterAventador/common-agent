@@ -2804,6 +2804,10 @@
             "title": "Provider",
             "type": "string"
           },
+          "streaming_breaks_tool_calls": {
+            "title": "Streaming Breaks Tool Calls",
+            "type": "boolean"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -2816,6 +2820,7 @@
           "provider",
           "model_identifier",
           "enabled",
+          "streaming_breaks_tool_calls",
           "created_at",
           "updated_at"
         ],

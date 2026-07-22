@@ -415,14 +415,16 @@ ModelConfiguration
 ├── provider: bailian
 ├── model_identifier
 ├── enabled
+├── streaming_breaks_tool_calls: bool（平台目录派生，只读）
 ├── created_at
 └── updated_at
 
 ModelToolStreamingCapability
 ├── provider: bailian
 ├── model_identifier
-├── disable_streaming_when_tools: bool
+├── streaming_breaks_tool_calls: bool
 ├── evidence_revision
+├── observed_at
 └── updated_at
 ```
 
@@ -438,7 +440,9 @@ ModelToolStreamingCapability
 
 工具流兼容记录是平台维护的模型能力事实，不由普通租户配置随意开启。解析模型时按
 `provider + model_identifier` 合并；未登记默认保持正常流式，只有可复现 Trace 和回归证据才能写入
-禁流标记。数据库读取失败不能把所有模型静默切成另一模式，调用应按稳定错误或已有安全默认收敛。
+禁流标记。兼容表没有 `tenant_id`，租户模型配置增删改 DTO 也不接受该字段；模型列表和详情只返回
+当前目录联表派生出的只读结果。数据库读取失败不能把所有模型静默切成另一模式，调用应按稳定错误
+收敛，不能靠进程缓存或租户输入猜测兼容性。
 
 ### 4.3 会话与消息
 
@@ -507,8 +511,10 @@ Employee、助手占位消息 ID/序号、员工系统指令、按持久化序�
 拼接无类型字典猜测来源。
 
 `DeepAgentsEmployeeRuntime` 每轮按请求模型标识从 `BailianChatModelResolver` 取得对应
-`ChatOpenAI`；解析器按模型标识有界复用适配器并在运行时关闭时统一释放客户端。模型配置停用不
-中断已有员工，员工改选或新建时则由 `EmployeeService` 关闭失败。
+`ChatOpenAI`；解析器按“模型标识 + 工具流兼容模式”分别复用适配器并在运行时关闭时统一释放客户端。
+只有本轮存在授权工具且模型目录已标记时才使用 LangChain 公开的 `disable_streaming=tool_calling`
+能力；适配器构造时不固定 `streaming=True`，普通平台文本流在调用处显式请求流式，以免覆盖工具调用
+的公开非流式降级。模型配置停用不中断已有员工，员工改选或新建时则由 `EmployeeService` 关闭失败。
 
 历史最多 100 条且总计 400,000 字符；知识上下文最多 20 段且总计 120,000 字符。未绑定知识
 库时上下文必须为空；已绑定但检索零命中仍保留 `knowledge_base_id` 并允许空上下文，不能把这

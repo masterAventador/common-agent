@@ -32,6 +32,7 @@ class BailianChatModelAdapter:
         self,
         settings: ModelSettings,
         *,
+        disable_streaming_for_tool_calls: bool = False,
         http_async_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._owns_async_client = http_async_client is None
@@ -45,6 +46,7 @@ class BailianChatModelAdapter:
         )
         self._chat_model = _create_chat_model(
             settings,
+            disable_streaming_for_tool_calls=disable_streaming_for_tool_calls,
             http_async_client=active_async_client,
             http_client=httpx.Client(event_hooks={"request": [_inject_trace_context]}),
         )
@@ -68,6 +70,7 @@ class BailianChatModelAdapter:
             async for chunk in self._chat_model.astream(
                 _langchain_messages(request),
                 extra_headers=outbound_trace_headers(),
+                stream=True,
             ):
                 text = _text_content(chunk.content)
                 if text:
@@ -128,6 +131,7 @@ def _langchain_messages(request: ModelRequest) -> tuple[BaseMessage, ...]:
 def _create_chat_model(
     settings: ModelSettings,
     *,
+    disable_streaming_for_tool_calls: bool,
     http_async_client: httpx.AsyncClient,
     http_client: httpx.Client,
 ) -> ChatOpenAI:
@@ -138,7 +142,9 @@ def _create_chat_model(
         timeout=settings.timeout_seconds,
         stream_chunk_timeout=settings.stream_chunk_timeout_seconds,
         max_retries=settings.max_retries,
-        streaming=True,
+        disable_streaming=(
+            "tool_calling" if disable_streaming_for_tool_calls else False
+        ),
         stream_usage=False,
         use_responses_api=False,
         http_client=http_client,

@@ -72,6 +72,7 @@ class ModelConfigurationResponse(BaseModel):
     provider: Literal["bailian"]
     model_identifier: str
     enabled: bool
+    streaming_breaks_tool_calls: bool
     created_at: datetime
     updated_at: datetime
 

@@ -708,6 +708,39 @@ class ModelConfigurationRow(PersistenceBase):
     updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
 
 
+class ModelToolStreamingCapabilityRow(PersistenceBase):
+    __tablename__ = "model_tool_streaming_capabilities"
+    __table_args__ = (
+        CheckConstraint(
+            "provider = 'bailian'",
+            name="ck_model_tool_streaming_capabilities_provider",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(model_identifier) BETWEEN 1 AND "
+            f"{MODEL_IDENTIFIER_MAX_LENGTH} AND model_identifier = TRIM(model_identifier)",
+            name="ck_model_tool_streaming_capabilities_identifier",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(evidence_revision) BETWEEN 1 AND 128 "
+            "AND evidence_revision = TRIM(evidence_revision)",
+            name="ck_model_tool_streaming_capabilities_evidence_revision",
+        ),
+        CheckConstraint(
+            "updated_at >= observed_at",
+            name="ck_model_tool_streaming_capabilities_timestamps",
+        ),
+    )
+
+    provider: Mapped[str] = mapped_column(String(16), primary_key=True)
+    model_identifier: Mapped[str] = mapped_column(
+        String(MODEL_IDENTIFIER_MAX_LENGTH), primary_key=True
+    )
+    streaming_breaks_tool_calls: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    evidence_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
 class ModelConfigurationReferenceRow(PersistenceBase):
     __tablename__ = "model_configuration_references"
     __table_args__ = (

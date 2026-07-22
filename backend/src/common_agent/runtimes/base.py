@@ -105,6 +105,7 @@ class EmployeeRuntimeRequest:
     knowledge_base_id: str | None
     knowledge_context: tuple[RuntimeKnowledgeChunk, ...] = field(repr=False)
     allowed_workflow_ids: tuple[UUID, ...]
+    streaming_breaks_tool_calls: bool = False
     allowed_tool_capability_ids: tuple[UUID, ...] = ()
     tool_grant_target: ToolGrantTarget | None = None
     workflow_run_id: UUID | None = None
@@ -137,6 +138,11 @@ class EmployeeRuntimeRequest:
             knowledge_base_id=knowledge_base_id,
         )
         workflow_ids = _workflow_ids(self.allowed_workflow_ids)
+        if not isinstance(self.streaming_breaks_tool_calls, bool):
+            raise RuntimeValidationError(
+                "streaming_breaks_tool_calls",
+                "必须是布尔值",
+            )
         capability_ids = _capability_ids(self.allowed_tool_capability_ids)
         if capability_ids and self.tool_grant_target is None:
             raise RuntimeValidationError(

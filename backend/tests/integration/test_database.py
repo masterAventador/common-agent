@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from common_agent.adapters.persistence.database import Database, DatabaseStartupError
 from tests.support.settings import TEST_DATABASE_URL
 
-HEAD_REVISION = "20260722_0025"
+HEAD_REVISION = "20260723_0026"
 
 
 def _database_url() -> str:
@@ -152,6 +152,61 @@ def test_tool_catalog_and_exact_grants_have_tenant_scoped_relational_tables() ->
     assert not {"username", "password", "token", "header_values"} & columns[
         "mcp_source_credentials"
     ]
+
+
+def test_model_tool_streaming_compatibility_is_platform_managed_and_evidence_backed() -> None:
+    async def exercise() -> tuple[set[str], set[str], tuple[object, ...]]:
+        database = Database(_database_url())
+        await database.start()
+        try:
+            async with database.session() as session:
+                column_result = await session.execute(
+                    text(
+                        "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() "
+                        "AND TABLE_NAME = 'model_tool_streaming_capabilities'"
+                    )
+                )
+                seed_result = await session.execute(
+                    text(
+                        "SELECT provider, model_identifier, streaming_breaks_tool_calls, "
+                        "evidence_revision FROM model_tool_streaming_capabilities "
+                        "WHERE provider = 'bailian' AND model_identifier = 'deepseek-v4-pro'"
+                    )
+                )
+                configuration_column_result = await session.execute(
+                    text(
+                        "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() "
+                        "AND TABLE_NAME = 'model_configurations'"
+                    )
+                )
+                return (
+                    {str(row[0]) for row in column_result.all()},
+                    {str(row[0]) for row in configuration_column_result.all()},
+                    tuple(seed_result.one()),
+                )
+        finally:
+            await database.stop()
+
+    columns, configuration_columns, seed = asyncio.run(exercise())
+
+    assert columns == {
+        "provider",
+        "model_identifier",
+        "streaming_breaks_tool_calls",
+        "evidence_revision",
+        "observed_at",
+        "updated_at",
+    }
+    assert "tenant_id" not in columns
+    assert "streaming_breaks_tool_calls" not in configuration_columns
+    assert seed == (
+        "bailian",
+        "deepseek-v4-pro",
+        1,
+        "bailian-real-trace-2026-07-23",
+    )
 
 
 def test_mysql_session_rolls_back_failed_transaction() -> None:

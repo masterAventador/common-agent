@@ -6,6 +6,8 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
+from langchain_core.messages import HumanMessage
+from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
@@ -172,6 +174,75 @@ def test_adapter_uses_chat_openai_and_streams_incremental_text() -> None:
         {"role": "assistant", "content": "历史回答"},
         {"role": "user", "content": "测试"},
     ]
+
+
+def test_flagged_adapter_disables_only_requests_that_bind_tools() -> None:
+    payloads: list[dict[str, object]] = []
+
+    @tool
+    def current_time(utc_offset: str) -> str:
+        """获取当前时间。"""
+
+        return utc_offset
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        payloads.append(payload)
+        if payload.get("stream") is True:
+            return _sse("普通流式回答")
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-tool-compatibility",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "qwen-plus",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call-current-time",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "current_time",
+                                        "arguments": '{"utc_offset":"+08:00"}',
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            },
+        )
+
+    async def exercise() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            adapter = BailianChatModelAdapter(
+                _settings(),
+                disable_streaming_for_tool_calls=True,
+                http_async_client=client,
+            )
+            plain = [event async for event in adapter.stream(_request("普通回答"))]
+            bound = adapter.langchain_chat_model.bind_tools([current_time])
+            tool_chunks = [
+                chunk
+                async for chunk in bound.astream([HumanMessage(content="查询当前时间")])
+            ]
+
+            assert plain[-1] == ModelStreamCompleted()
+            assert len(tool_chunks) == 1
+            assert tool_chunks[0].tool_calls[0]["name"] == "current_time"
+
+    asyncio.run(exercise())
+
+    assert [payload.get("stream") for payload in payloads] == [True, False]
+    assert "tools" not in payloads[0]
+    assert payloads[1]["tools"]
 
 
 def test_adapter_retries_only_to_configured_limit_before_success() -> None:

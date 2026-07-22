@@ -85,10 +85,15 @@ class _Gateway:
 class _ModelResolver:
     def __init__(self, models: Mapping[str, _Gateway]) -> None:
         self.models = dict(models)
-        self.requested_identifiers: list[str] = []
+        self.requests: list[tuple[str, bool]] = []
 
-    async def resolve(self, model_identifier: str) -> _Gateway:
-        self.requested_identifiers.append(model_identifier)
+    async def resolve(
+        self,
+        model_identifier: str,
+        *,
+        disable_streaming_for_tool_calls: bool = False,
+    ) -> _Gateway:
+        self.requests.append((model_identifier, disable_streaming_for_tool_calls))
         return self.models[model_identifier]
 
     async def aclose(self) -> None:
@@ -244,10 +249,51 @@ def test_runtime_resolves_the_employee_model_identifier_before_building_agent() 
 
     events = asyncio.run(exercise())
 
-    assert resolver.requested_identifiers == ["qwen-turbo"]
+    assert resolver.requests == [("qwen-turbo", False)]
     assert captured["model"] is selected.langchain_chat_model
     assert "".join(event.delta or "" for event in events) == "模型选择成功"
     assert selected.closed is True
+
+
+@pytest.mark.parametrize(
+    ("streaming_breaks", "allowed_workflows", "expected_disable"),
+    [
+        (False, (WORKFLOW_ID,), False),
+        (True, (), False),
+        (True, (WORKFLOW_ID,), True),
+    ],
+)
+def test_runtime_disables_provider_streaming_only_when_flagged_model_binds_tools(
+    streaming_breaks: bool,
+    allowed_workflows: tuple[UUID, ...],
+    expected_disable: bool,
+) -> None:
+    selected = _Gateway(_ToolBindingFakeChatModel(messages=iter(["unused"])))
+    resolver = _ModelResolver({"deepseek-v4-pro": selected})
+    runtime = DeepAgentsEmployeeRuntime(
+        resolver,
+        tools=DeepAgentToolRegistry({WORKFLOW_ID: allowed_workflow}),
+        agent_builder=lambda **kwargs: _CapturingGraph(chunks=("兼容策略生效",)),
+    )
+
+    async def exercise() -> None:
+        events = [
+            event
+            async for event in runtime.stream(
+                runtime_request(
+                    model_identifier="deepseek-v4-pro",
+                    allowed_workflow_ids=allowed_workflows,
+                    streaming_breaks_tool_calls=streaming_breaks,
+                ),
+                stop=RuntimeStopToken(),
+            )
+        ]
+        assert events[-1].kind is RuntimeEventKind.COMPLETED
+        await runtime.aclose()
+
+    asyncio.run(exercise())
+
+    assert resolver.requests == [("deepseek-v4-pro", expected_disable)]
 
 
 def test_official_create_deep_agent_streams_without_shell_or_local_filesystem() -> None:

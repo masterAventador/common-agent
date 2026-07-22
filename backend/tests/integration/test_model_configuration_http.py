@@ -42,6 +42,7 @@ def test_model_configuration_crud_uses_formal_uvicorn_mysql_and_survives_restart
                 "provider": "bailian",
                 "model_identifier": "qwen-turbo",
                 "enabled": True,
+                "streaming_breaks_tool_calls": False,
                 "created_at": payload["created_at"],
                 "updated_at": payload["updated_at"],
             }
@@ -50,17 +51,24 @@ def test_model_configuration_crud_uses_formal_uvicorn_mysql_and_survives_restart
             assert listed.status_code == 200
             assert configuration_id in {item["id"] for item in listed.json()["items"]}
 
+            user_managed_compatibility = client.post(
+                "/api/v1/model-configurations",
+                json={**_body(display_name="非法兼容开关"), "streaming_breaks_tool_calls": True},
+            )
+            assert user_managed_compatibility.status_code == 422
+
             updated = client.put(
                 f"/api/v1/model-configurations/{configuration_id}",
                 json=_body(
-                    display_name="Qwen Max",
-                    model_identifier="qwen-max-latest",
+                    display_name="DeepSeek V4 Pro",
+                    model_identifier="deepseek-v4-pro",
                     enabled=False,
                 ),
             )
             assert updated.status_code == 200
-            assert updated.json()["display_name"] == "Qwen Max"
+            assert updated.json()["display_name"] == "DeepSeek V4 Pro"
             assert updated.json()["enabled"] is False
+            assert updated.json()["streaming_breaks_tool_calls"] is True
 
             enabled_only = client.get(
                 "/api/v1/model-configurations",
@@ -88,8 +96,9 @@ def test_model_configuration_crud_uses_formal_uvicorn_mysql_and_survives_restart
         ):
             restored = client.get(f"/api/v1/model-configurations/{configuration_id}")
             assert restored.status_code == 200
-            assert restored.json()["model_identifier"] == "qwen-max-latest"
+            assert restored.json()["model_identifier"] == "deepseek-v4-pro"
             assert restored.json()["enabled"] is False
+            assert restored.json()["streaming_breaks_tool_calls"] is True
             assert (
                 client.delete(f"/api/v1/model-configurations/{configuration_id}").status_code == 204
             )

@@ -45,6 +45,30 @@ def test_bailian_model_resolver_caches_each_identifier_and_closes_as_one_resourc
     asyncio.run(exercise())
 
 
+def test_bailian_model_resolver_isolates_tool_streaming_compatibility_variants() -> None:
+    async def exercise() -> None:
+        resolver = BailianChatModelResolver(_settings())
+
+        streaming = await resolver.resolve("deepseek-v4-pro")
+        downgraded = await resolver.resolve(
+            "deepseek-v4-pro",
+            disable_streaming_for_tool_calls=True,
+        )
+        repeated = await resolver.resolve(
+            "deepseek-v4-pro",
+            disable_streaming_for_tool_calls=True,
+        )
+
+        assert streaming is not downgraded
+        assert repeated is downgraded
+        assert streaming.langchain_chat_model.disable_streaming is False
+        assert downgraded.langchain_chat_model.disable_streaming == "tool_calling"
+
+        await resolver.aclose()
+
+    asyncio.run(exercise())
+
+
 def test_bailian_model_resolver_finishes_all_closes_when_one_model_close_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -63,7 +87,11 @@ def test_bailian_model_resolver_finishes_all_closes_when_one_model_close_fails(
     first_error = RuntimeError("first model close failed")
     first = ClosingModel(error=first_error)
     second = ClosingModel()
-    monkeypatch.setattr(resolver_module, "BailianChatModelAdapter", lambda _: second)
+    monkeypatch.setattr(
+        resolver_module,
+        "BailianChatModelAdapter",
+        lambda _, **kwargs: second,
+    )
 
     async def exercise() -> None:
         resolver = BailianChatModelResolver(

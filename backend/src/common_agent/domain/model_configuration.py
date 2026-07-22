@@ -50,6 +50,7 @@ class ModelConfiguration:
     enabled: bool
     created_at: datetime
     updated_at: datetime
+    streaming_breaks_tool_calls: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, UUID):
@@ -61,6 +62,11 @@ class ModelConfiguration:
             model_identifier=self.model_identifier,
             enabled=self.enabled,
         )
+        if not isinstance(self.streaming_breaks_tool_calls, bool):
+            raise ModelConfigurationValidationError(
+                "streaming_breaks_tool_calls",
+                "必须是布尔值",
+            )
         _utc_timestamp("created_at", self.created_at)
         _utc_timestamp("updated_at", self.updated_at)
         if self.updated_at < self.created_at:
@@ -75,6 +81,7 @@ class ModelConfiguration:
         configuration: ModelConfigurationInput,
         model_configuration_id: UUID | None = None,
         now: datetime | None = None,
+        streaming_breaks_tool_calls: bool = False,
     ) -> ModelConfiguration:
         created_at = now or datetime.now(UTC)
         return cls(
@@ -85,6 +92,7 @@ class ModelConfiguration:
             enabled=configuration.enabled,
             created_at=created_at,
             updated_at=created_at,
+            streaming_breaks_tool_calls=streaming_breaks_tool_calls,
         )
 
     def reconfigure(
@@ -92,12 +100,14 @@ class ModelConfiguration:
         configuration: ModelConfigurationInput,
         *,
         updated_at: datetime | None = None,
+        streaming_breaks_tool_calls: bool = False,
     ) -> ModelConfiguration:
         return replace(
             self,
             display_name=configuration.display_name,
             model_identifier=configuration.model_identifier,
             enabled=configuration.enabled,
+            streaming_breaks_tool_calls=streaming_breaks_tool_calls,
             updated_at=updated_at or datetime.now(UTC),
         )
 

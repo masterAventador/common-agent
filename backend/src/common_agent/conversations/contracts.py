@@ -93,6 +93,7 @@ class ConversationExecutionTarget:
     subject_id: UUID
     model_configuration_id: UUID
     model_identifier: str
+    streaming_breaks_tool_calls: bool
     system_instruction: str
     knowledge_base_id: str | None
     allowed_workflow_ids: tuple[UUID, ...]

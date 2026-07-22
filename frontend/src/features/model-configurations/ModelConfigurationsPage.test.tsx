@@ -24,6 +24,7 @@ const modelConfiguration = {
   provider: "bailian" as const,
   model_identifier: "qwen-plus",
   enabled: true,
+  streaming_breaks_tool_calls: true,
   created_at: "2026-07-22T02:00:00Z",
   updated_at: "2026-07-22T02:00:00Z",
 };
@@ -64,6 +65,7 @@ describe("ModelConfigurationsPage", () => {
     expect(screen.getByText("qwen-plus")).toBeInTheDocument();
     expect(screen.getByText("阿里百炼")).toBeInTheDocument();
     expect(screen.getByText("启用")).toBeInTheDocument();
+    expect(screen.getByText("工具调用自动非流式")).toBeInTheDocument();
     expect(screen.queryByText("模型目录")).not.toBeInTheDocument();
   });
 

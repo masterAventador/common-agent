@@ -181,13 +181,18 @@ class _Observer(WorkflowExecutionObserver):
         self.summaries.append(summary)
 
 
-def _model_configuration(*, enabled: bool = True) -> ModelConfiguration:
+def _model_configuration(
+    *,
+    enabled: bool = True,
+    streaming_breaks_tool_calls: bool = False,
+) -> ModelConfiguration:
     return ModelConfiguration.create(
         configuration=ModelConfigurationInput(
             display_name="工作流测试模型",
             model_identifier="qwen-max",
             enabled=enabled,
-        )
+        ),
+        streaming_breaks_tool_calls=streaming_breaks_tool_calls,
     )
 
 
@@ -251,7 +256,7 @@ def test_model_target_resolves_selected_enabled_configuration_and_records_snapsh
 
 def test_employee_target_inherits_current_employee_configuration_for_deep_agent_runtime() -> None:
     async def exercise() -> None:
-        configuration = _model_configuration()
+        configuration = _model_configuration(streaming_breaks_tool_calls=True)
         employee = _employee(configuration, knowledge_base_id="kb-valid")
         runtime = _Runtime()
         observer = _Observer()
@@ -286,6 +291,7 @@ def test_employee_target_inherits_current_employee_configuration_for_deep_agent_
         assert result.output == "数字员工回答"
         assert request.employee_id == employee.id
         assert request.model_identifier == "qwen-max"
+        assert request.streaming_breaks_tool_calls is True
         assert request.allowed_workflow_ids == employee.allowed_workflow_ids
         assert "只使用可验证的信息回答" in request.system_instruction
         assert "补充节点约束" in request.system_instruction

@@ -66,7 +66,9 @@
   RAGFlow 失效失败和刷新摘要恢复；设置 `COMMON_AGENT_E2E_SUITE=model-configurations` 时通过
   生产 preview、正式 API/MySQL 和真实百炼验收模型创建、验证、刷新、停用与引用安全删除；设置
   `COMMON_AGENT_E2E_SUITE=generic-chat-models` 时从模型管理页创建配置，再从空白通用会话首次
-  发送原子建会话、逐轮切换真实百炼模型并验证刷新恢复；`managed-tools` 使用生产 preview、正式
+  发送原子建会话、逐轮切换真实百炼模型并验证刷新恢复；`tool-authorizations` 从模型管理页创建
+  平台已登记的 DeepSeek 兼容模型，再从通用和员工会话经真实 Deep Agents/百炼/MCP 验证工具调用
+  自动走供应商非流式路径、平台 SSE 与工具事件仍完整；`managed-tools` 使用生产 preview、正式
   API/MySQL、官方 MCP SDK 和本机真实业务 HTTP 服务，验证托管来源、Bearer、OpenAPI 文件预览、
   编辑与原子导入、发现、测试调用和删除闭环。各套件
   都负责唯一测试数据、预置测试 Seed、本轮

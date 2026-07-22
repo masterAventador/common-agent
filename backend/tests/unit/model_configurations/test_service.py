@@ -10,6 +10,7 @@ import pytest
 from common_agent.domain.model_configuration import (
     ModelConfiguration,
     ModelConfigurationInput,
+    ModelProvider,
 )
 from common_agent.model_configurations.service import (
     ModelConfigurationInUse,
@@ -50,6 +51,7 @@ class FakeRepository:
         self.page_results: list[PageSlice[ModelConfiguration]] = []
         self.last_after: PageAnchor | None = None
         self.last_enabled_only = False
+        self.streaming_compatibilities: set[tuple[ModelProvider, str]] = set()
 
     async def page(
         self,
@@ -74,6 +76,13 @@ class FakeRepository:
             (item for item in self.items.values() if item.model_identifier == model_identifier),
             None,
         )
+
+    async def streaming_breaks_tool_calls(
+        self,
+        provider: ModelProvider,
+        model_identifier: str,
+    ) -> bool:
+        return (provider, model_identifier) in self.streaming_compatibilities
 
     async def add(self, configuration: ModelConfiguration) -> None:
         self.items[configuration.id] = configuration
@@ -140,12 +149,15 @@ def _service() -> tuple[
 def test_model_configuration_service_crud_and_verification() -> None:
     async def exercise() -> None:
         service, repository, unit_of_work, verifier = _service()
+        repository.streaming_compatibilities.add((ModelProvider.BAILIAN, "qwen-plus"))
 
         created = await service.create(_input())
+        assert created.streaming_breaks_tool_calls is True
         assert await service.get(created.id) == created
 
         updated = await service.update(created.id, _input(enabled=False))
         assert updated.enabled is False
+        assert updated.streaming_breaks_tool_calls is True
         verification = await service.verify(created.id)
         assert verification.status == "available"
         assert verification.model_identifier == "qwen-plus"

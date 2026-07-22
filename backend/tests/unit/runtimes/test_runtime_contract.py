@@ -81,7 +81,7 @@ def _request(**overrides: object) -> EmployeeRuntimeRequest:
 
 
 def test_request_keeps_chat_history_instruction_knowledge_and_capabilities_separate() -> None:
-    request = _request()
+    request = _request(streaming_breaks_tool_calls=True)
 
     assert request.conversation_id == _CONVERSATION_ID
     assert request.employee_id == _EMPLOYEE_ID
@@ -94,6 +94,7 @@ def test_request_keeps_chat_history_instruction_knowledge_and_capabilities_separ
     assert request.knowledge_base_id == "kb-1"
     assert request.knowledge_context[0].chunk_id == "chunk-1"
     assert request.allowed_workflow_ids == (_WORKFLOW_ID,)
+    assert request.streaming_breaks_tool_calls is True
 
 
 def test_runtime_request_repr_does_not_expose_prompt_history_or_knowledge_content() -> None:
@@ -124,6 +125,7 @@ def test_runtime_request_repr_does_not_expose_prompt_history_or_knowledge_conten
         {"assistant_sequence_number": 3},
         {"allowed_workflow_ids": (_WORKFLOW_ID, _WORKFLOW_ID)},
         {"allowed_workflow_ids": ("not-a-uuid",)},
+        {"streaming_breaks_tool_calls": 1},
     ],
 )
 def test_request_rejects_invalid_identity_instruction_history_or_capabilities(

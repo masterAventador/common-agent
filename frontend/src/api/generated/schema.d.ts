@@ -2074,6 +2074,8 @@ export interface components {
              * @constant
              */
             provider: "bailian";
+            /** Streaming Breaks Tool Calls */
+            streaming_breaks_tool_calls: boolean;
             /**
              * Updated At
              * Format: date-time

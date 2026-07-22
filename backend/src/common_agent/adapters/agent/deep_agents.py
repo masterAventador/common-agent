@@ -150,8 +150,14 @@ class _StaticModelResolver:
     def __init__(self, model: LangChainChatModelProvider) -> None:
         self._model = model
 
-    async def resolve(self, model_identifier: str) -> LangChainChatModelProvider:
+    async def resolve(
+        self,
+        model_identifier: str,
+        *,
+        disable_streaming_for_tool_calls: bool = False,
+    ) -> LangChainChatModelProvider:
         del model_identifier
+        del disable_streaming_for_tool_calls
         return self._model
 
     async def aclose(self) -> None:
@@ -206,7 +212,6 @@ class DeepAgentsEmployeeRuntime:
         finished_tool_calls: set[str] = set()
         tool_metadata: dict[str, _ToolMetadata] = {}
         try:
-            model = await self._models.resolve(request.model_identifier)
             allowed_tools = await self._tools.resolve(
                 request.allowed_workflow_ids,
                 tool_capability_ids=request.allowed_tool_capability_ids,
@@ -219,6 +224,12 @@ class DeepAgentsEmployeeRuntime:
                         conversation_id=request.conversation_id,
                         assistant_message_id=request.assistant_message_id,
                     )
+                ),
+            )
+            model = await self._models.resolve(
+                request.model_identifier,
+                disable_streaming_for_tool_calls=(
+                    request.streaming_breaks_tool_calls and bool(allowed_tools)
                 ),
             )
             tool_metadata = _resolved_tool_metadata(allowed_tools)

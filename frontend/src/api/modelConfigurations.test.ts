@@ -28,6 +28,7 @@ const model = {
   provider: "bailian" as const,
   model_identifier: "qwen-plus",
   enabled: true,
+  streaming_breaks_tool_calls: false,
   created_at: "2026-07-22T02:00:00Z",
   updated_at: "2026-07-22T02:00:00Z",
 };

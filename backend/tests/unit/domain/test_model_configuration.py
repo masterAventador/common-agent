@@ -22,12 +22,14 @@ def test_model_configuration_normalizes_user_managed_bailian_fields() -> None:
         ),
         model_configuration_id=UUID("10000000-0000-4000-8000-000000000018"),
         now=now,
+        streaming_breaks_tool_calls=True,
     )
 
     assert configuration.display_name == "Qwen Plus"
     assert configuration.model_identifier == "qwen-plus"
     assert configuration.provider is ModelProvider.BAILIAN
     assert configuration.enabled is True
+    assert configuration.streaming_breaks_tool_calls is True
     assert configuration.created_at == now
     assert configuration.updated_at == now
 
@@ -41,6 +43,7 @@ def test_model_configuration_reconfigure_preserves_identity_and_creation() -> No
             enabled=True,
         ),
         now=now,
+        streaming_breaks_tool_calls=True,
     )
 
     updated = existing.reconfigure(
@@ -50,6 +53,7 @@ def test_model_configuration_reconfigure_preserves_identity_and_creation() -> No
             enabled=False,
         ),
         updated_at=now + timedelta(seconds=1),
+        streaming_breaks_tool_calls=False,
     )
 
     assert updated.id == existing.id
@@ -59,6 +63,7 @@ def test_model_configuration_reconfigure_preserves_identity_and_creation() -> No
     assert updated.display_name == "Qwen Max"
     assert updated.model_identifier == "qwen-max-latest"
     assert updated.enabled is False
+    assert updated.streaming_breaks_tool_calls is False
 
 
 @pytest.mark.parametrize(
@@ -108,6 +113,7 @@ def test_model_configuration_input_rejects_invalid_field_types_and_lengths(
         {"created_at": datetime(2026, 7, 22)},
         {"created_at": datetime(2026, 7, 22, tzinfo=timezone(timedelta(hours=8)))},
         {"updated_at": datetime(2026, 7, 21, tzinfo=UTC)},
+        {"streaming_breaks_tool_calls": 1},
     ],
 )
 def test_model_configuration_rejects_invalid_identity_provider_or_timestamps(

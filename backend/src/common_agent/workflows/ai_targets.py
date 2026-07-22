@@ -201,6 +201,7 @@ class WorkflowAiTargetExecutor:
             assistant_message_id=assistant_message_id,
             assistant_sequence_number=2,
             model_identifier=model_configuration.model_identifier,
+            streaming_breaks_tool_calls=model_configuration.streaming_breaks_tool_calls,
             system_instruction=(
                 f"{employee.system_prompt}\n\n当前工作流节点指令:\n{config.prompt}"
             ),

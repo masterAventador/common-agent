@@ -20,6 +20,11 @@ class LangChainChatModelProvider(TextStreamingModel, Protocol):
 
 
 class LangChainChatModelResolver(Protocol):
-    async def resolve(self, model_identifier: str) -> LangChainChatModelProvider: ...
+    async def resolve(
+        self,
+        model_identifier: str,
+        *,
+        disable_streaming_for_tool_calls: bool = False,
+    ) -> LangChainChatModelProvider: ...
 
     async def aclose(self) -> None: ...

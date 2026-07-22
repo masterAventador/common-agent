@@ -21,6 +21,7 @@ const modelConfigurationSchema = z.strictObject({
   provider: z.literal("bailian"),
   model_identifier: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
   enabled: z.boolean(),
+  streaming_breaks_tool_calls: z.boolean(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });

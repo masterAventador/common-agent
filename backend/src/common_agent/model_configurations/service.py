@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from common_agent.application.resource_locks import (
     ResourceMutationGuard,
@@ -11,6 +11,7 @@ from common_agent.application.resource_locks import (
 from common_agent.domain.model_configuration import (
     ModelConfiguration,
     ModelConfigurationInput,
+    ModelProvider,
 )
 from common_agent.pagination import (
     CursorPage,
@@ -114,11 +115,22 @@ class ModelConfigurationService:
         return result
 
     async def create(self, value: ModelConfigurationInput) -> ModelConfiguration:
-        candidate = ModelConfiguration.create(configuration=value)
+        candidate_id = uuid4()
         async with (
-            self._guard.hold(model_configuration_resource(candidate.id)),
+            self._guard.hold(model_configuration_resource(candidate_id)),
             self._unit_of_work_factory() as unit_of_work,
         ):
+            streaming_breaks_tool_calls = (
+                await unit_of_work.model_configurations.streaming_breaks_tool_calls(
+                    ModelProvider.BAILIAN,
+                    value.model_identifier,
+                )
+            )
+            candidate = ModelConfiguration.create(
+                configuration=value,
+                model_configuration_id=candidate_id,
+                streaming_breaks_tool_calls=streaming_breaks_tool_calls,
+            )
             await unit_of_work.model_configurations.add(candidate)
             await unit_of_work.commit()
         return candidate
@@ -135,7 +147,16 @@ class ModelConfigurationService:
             current = await unit_of_work.model_configurations.get(model_configuration_id)
             if current is None:
                 raise ModelConfigurationNotFound
-            updated = current.reconfigure(value)
+            streaming_breaks_tool_calls = (
+                await unit_of_work.model_configurations.streaming_breaks_tool_calls(
+                    current.provider,
+                    value.model_identifier,
+                )
+            )
+            updated = current.reconfigure(
+                value,
+                streaming_breaks_tool_calls=streaming_breaks_tool_calls,
+            )
             if not await unit_of_work.model_configurations.update(updated):
                 raise ModelConfigurationNotFound
             await unit_of_work.commit()

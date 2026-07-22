@@ -12,6 +12,7 @@ function requiredEnvironment(name: string): string {
 
 const employeeName = requiredEnvironment("COMMON_AGENT_E2E_TOOL_EMPLOYEE_NAME");
 const genericPrefix = requiredEnvironment("COMMON_AGENT_E2E_TOOL_GENERIC_PREFIX");
+const modelName = requiredEnvironment("COMMON_AGENT_E2E_TOOL_MODEL_NAME");
 
 async function selectCurrentTime(page: Page, scope: Locator): Promise<void> {
   await scope.getByRole("combobox", { name: "单项工具能力" }).click();
@@ -39,8 +40,39 @@ test("authorizes and calls current time from generic and employee chats", async 
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
+  await page.goto("/model-configurations");
+  await page.getByRole("button", { name: "创建模型" }).click();
+  const modelDialog = page.getByRole("dialog", { name: "创建模型" });
+  await modelDialog.getByRole("textbox", { name: "显示名称" }).fill(modelName);
+  await modelDialog
+    .getByRole("textbox", { name: "百炼模型标识" })
+    .fill("deepseek-v4-pro");
+  const modelResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/model-configurations") &&
+      response.request().method() === "POST",
+  );
+  await modelDialog.getByRole("button", { name: "确认创建" }).click();
+  const createdModelResponse = await modelResponse;
+  expect(createdModelResponse.status()).toBe(201);
+  const model = (await createdModelResponse.json()) as {
+    id: string;
+    streaming_breaks_tool_calls: boolean;
+  };
+  expect(model.streaming_breaks_tool_calls).toBe(true);
+  const modelCard = page.locator(".model-configuration-card", { hasText: modelName });
+  await expect(modelCard).toContainText("deepseek-v4-pro");
+  await expect(modelCard).toContainText("工具调用自动非流式");
+
   await page.goto("/chat");
   await expect(page.getByRole("heading", { name: "通用 AI" })).toBeVisible();
+  await page.getByRole("combobox", { name: "选择模型" }).click();
+  const genericModelOption = page
+    .locator(".ant-select-dropdown:visible .ant-select-item-option")
+    .filter({ hasText: modelName })
+    .first();
+  await expect(genericModelOption).toBeVisible();
+  await genericModelOption.click();
   const genericPanel = page.getByRole("region", { name: "数字员工信息" });
   await selectCurrentTime(page, genericPanel);
   const genericPrompt =
@@ -57,10 +89,12 @@ test("authorizes and calls current time from generic and employee chats", async 
   expect(acceptedGenericTurn.status()).toBe(202);
   const genericBody = acceptedGenericTurn.request().postDataJSON() as {
     employee_id: string | null;
+    model_configuration_id: string;
     tool_collection_ids: string[];
     tool_capability_ids: string[];
   };
   expect(genericBody.employee_id).toBeNull();
+  expect(genericBody.model_configuration_id).toBe(model.id);
   expect(genericBody.tool_collection_ids).toEqual([]);
   expect(genericBody.tool_capability_ids).toHaveLength(1);
   const genericTurn = (await acceptedGenericTurn.json()) as {
@@ -86,7 +120,7 @@ test("authorizes and calls current time from generic and employee chats", async 
   await createDialog
     .getByRole("textbox", { name: "系统指令" })
     .fill("必须调用用户要求且已授权的工具，再依据工具结果回答；禁止猜测工具结果。");
-  await selectEmployeeDefaultModel(page, createDialog);
+  await selectEmployeeDefaultModel(page, createDialog, modelName);
   const employeeResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/v1/employees") &&
@@ -95,7 +129,11 @@ test("authorizes and calls current time from generic and employee chats", async 
   await createDialog.getByRole("button", { name: "确认创建" }).click();
   const createdEmployeeResponse = await employeeResponse;
   expect(createdEmployeeResponse.status()).toBe(201);
-  const employee = (await createdEmployeeResponse.json()) as { id: string };
+  const employee = (await createdEmployeeResponse.json()) as {
+    id: string;
+    default_model_configuration_id: string;
+  };
+  expect(employee.default_model_configuration_id).toBe(model.id);
 
   const employeeCard = page.locator(".employee-card", { hasText: employeeName });
   await employeeCard.getByRole("button", { name: `编辑 ${employeeName}` }).click();

@@ -50,7 +50,7 @@ class ConversationExecutionTargetResolver:
             employee=employee,
             requested_id=model_configuration_id,
         )
-        model_identifier = await self._model_identifier(
+        model_identifier, streaming_breaks_tool_calls = await self._model_runtime(
             selected_id,
             employee=employee,
         )
@@ -64,6 +64,7 @@ class ConversationExecutionTargetResolver:
             employee=employee,
             model_configuration_id=selected_id,
             model_identifier=model_identifier,
+            streaming_breaks_tool_calls=streaming_breaks_tool_calls,
             tool_grant_target=grant_target,
             allowed_tool_capability_ids=capability_ids,
         )
@@ -81,11 +82,15 @@ class ConversationExecutionTargetResolver:
             employee=employee,
             initial_tool_grants=None,
         )
+        streaming_breaks_tool_calls = await self._streaming_breaks_tool_calls(
+            message.model_configuration_id
+        )
         return _target(
             conversation,
             employee=employee,
             model_configuration_id=message.model_configuration_id,
             model_identifier=message.model_identifier,
+            streaming_breaks_tool_calls=streaming_breaks_tool_calls,
             tool_grant_target=grant_target,
             allowed_tool_capability_ids=capability_ids,
         )
@@ -133,24 +138,33 @@ class ConversationExecutionTargetResolver:
             raise RuntimeError("employee conversation is missing employee_id")
         return await self._employees.get(conversation.employee_id)
 
-    async def _model_identifier(
+    async def _model_runtime(
         self,
         model_configuration_id: UUID,
         *,
         employee: Employee | None,
-    ) -> str:
+    ) -> tuple[str, bool]:
         if self._model_configurations is None:
             if employee is not None and (
                 model_configuration_id == employee.default_model_configuration_id
             ):
-                return employee.default_model_identifier
+                return employee.default_model_identifier, False
             raise RuntimeError("model configuration directory is not configured")
         configuration = await self._model_configurations.get(model_configuration_id)
         if not configuration.enabled and (
             employee is None or model_configuration_id != employee.default_model_configuration_id
         ):
             raise ConversationModelDisabled
-        return configuration.model_identifier
+        return configuration.model_identifier, configuration.streaming_breaks_tool_calls
+
+    async def _streaming_breaks_tool_calls(
+        self,
+        model_configuration_id: UUID,
+    ) -> bool:
+        if self._model_configurations is None:
+            return False
+        configuration = await self._model_configurations.get(model_configuration_id)
+        return configuration.streaming_breaks_tool_calls
 
     async def _tool_grants(
         self,
@@ -200,6 +214,7 @@ def _target(
     employee: Employee | None,
     model_configuration_id: UUID,
     model_identifier: str,
+    streaming_breaks_tool_calls: bool,
     tool_grant_target: ToolGrantTarget,
     allowed_tool_capability_ids: tuple[UUID, ...],
 ) -> ConversationExecutionTarget:
@@ -208,6 +223,7 @@ def _target(
             subject_id=conversation.id,
             model_configuration_id=model_configuration_id,
             model_identifier=model_identifier,
+            streaming_breaks_tool_calls=streaming_breaks_tool_calls,
             system_instruction=GENERIC_SYSTEM_INSTRUCTION,
             knowledge_base_id=None,
             allowed_workflow_ids=(),
@@ -218,6 +234,7 @@ def _target(
         subject_id=employee.id,
         model_configuration_id=model_configuration_id,
         model_identifier=model_identifier,
+        streaming_breaks_tool_calls=streaming_breaks_tool_calls,
         system_instruction=employee.system_prompt,
         knowledge_base_id=employee.knowledge_base_id,
         allowed_workflow_ids=employee.allowed_workflow_ids,

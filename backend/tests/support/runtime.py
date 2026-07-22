@@ -24,6 +24,7 @@ def runtime_request(
     knowledge_context: tuple[RuntimeKnowledgeChunk, ...] | None = None,
     system_instruction: str = "直接回答问题,不使用工具。",
     model_identifier: str = "qwen-plus",
+    streaming_breaks_tool_calls: bool = False,
     allowed_tool_capability_ids: tuple[UUID, ...] = (),
     tool_grant_target: ToolGrantTarget | None = None,
 ) -> EmployeeRuntimeRequest:
@@ -63,6 +64,7 @@ def runtime_request(
         assistant_message_id=ASSISTANT_MESSAGE_ID,
         assistant_sequence_number=4,
         model_identifier=model_identifier,
+        streaming_breaks_tool_calls=streaming_breaks_tool_calls,
         system_instruction=system_instruction,
         history=history,
         knowledge_base_id=knowledge_base_id,
