@@ -30,6 +30,7 @@ _BOUNDARIES = (
                 "dashscope",
                 "deepagents",
                 "httpx",
+                "httpcore",
                 "langchain",
                 "langchain_core",
                 "langchain_openai",

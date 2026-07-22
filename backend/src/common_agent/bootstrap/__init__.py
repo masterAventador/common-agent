@@ -10,6 +10,8 @@ from common_agent.bootstrap.settings import (
     ProxySettings,
     RagFlowSettings,
     RuntimeEnvironmentSettings,
+    ToolCredentialSettings,
+    ToolEgressSettings,
     WorkerSettings,
 )
 
@@ -25,5 +27,7 @@ __all__ = [
     "ProxySettings",
     "RagFlowSettings",
     "RuntimeEnvironmentSettings",
+    "ToolCredentialSettings",
+    "ToolEgressSettings",
     "WorkerSettings",
 ]

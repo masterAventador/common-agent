@@ -194,7 +194,9 @@ Employee/Conversation exact grants
 ```
 
 - `mcp_sources` 保存租户、类型、显示信息、连接状态和稳定来源 ID；托管来源保存固定 Base URL，外部
-  来源保存 Streamable HTTP URL。认证值只通过独立加密凭据引用，不放入可回显配置 JSON；
+  来源保存 Streamable HTTP URL。`mcp_source_credentials` 只保存类型、密钥 ID、12 字节随机 nonce、
+  AES-256-GCM 密文、非秘密 Header 名称和时间戳，并用租户 ID、来源 ID 和格式版本作为 AAD；密文
+  调换到其他租户或来源记录后无法解密；
 - `tool_capabilities` 保存稳定 UUID、来源、远端名称、显示名、描述、输入 Schema、状态和 Schema
   fingerprint；托管 HTTP 能力另存 method/path/参数位置/超时/响应映射。远端改名视为新能力，旧能力
   标记不可用并保留历史引用；
@@ -204,11 +206,18 @@ Employee/Conversation exact grants
   当前可用叶子 UUID，任何发现、同步或新增能力都不得写授权表；
 - 平台原生、托管和外部能力统一通过 MCP `tools/list` / `tools/call` 语义执行，再转换成平台自有结果
   与持久事件；Deep Agents 看不到来源类型，业务系统也不需要实现平台私有工具协议；
-- V2 托管 HTTP 鉴权只允许 none、Bearer 和自定义 Header。可逆凭据以独立主密钥认证加密落库，
-  API 只返回掩码；用户名/密码代登录、OAuth 与 stdio MCP 不建立兼容字段；
-- 托管/外部网络访问固定 origin，执行 host/CIDR 许可、DNS/地址与重定向复核、`trust_env=False`、
-  超时、并发、响应大小和内容类型限制；业务内网通过运维配置显式放行，Header/路径参数不能覆盖
-  Host、Authorization 或其他受保护字段；
+- V2 托管 HTTP 鉴权只允许 none、Bearer 和自定义 Header。可逆凭据使用独立多版本主密钥环认证
+  加密，只有活动密钥写新密文、旧密钥只用于解密；API 只返回固定长度掩码，更新显式区分
+  `keep/replace/clear`，不会把掩码当作数据回传或猜测用户意图。用户名/密码代登录、OAuth 与 stdio
+  MCP 不建立 DTO、数据库字段或前端选项；
+- 托管/外部网络访问固定 origin。运维配置只接受精确主机与规范 CIDR，私网必须命中显式 CIDR，
+  loopback 还需独立开关，link-local/metadata、multicast 和 unspecified 永不放行；明文 HTTP 另有精确
+  主机许可。自定义 HTTP transport 在每次 TCP 建连前重新解析全部地址、全部校验后直接连接已验证
+  IP，同时保留原主机用于 Host/TLS SNI，不修改进程全局 DNS；连接池禁用 keepalive，系统代理和
+  自动重定向均不启用；总调用、连接、读取、响应大小与并发均有平台上限；
+- 工具参数和自定义凭据不能覆盖 Host、连接/分帧或代理 Header，自定义 Header 也不能伪装 Bearer
+  `Authorization`；响应正文和 Header 不进入对象 `repr`，安全异常只返回稳定分类，不带 URL 查询、
+  DNS 地址、凭据或上游正文；
 - 工具调用默认不自动重试有副作用的 `tools/call`。调用结果未知、能力失效、软失败、协议错误和
   响应超限分别映射稳定错误；每次调用在 Worker 中再次检查租户与授权，并写固定元数据审计和会话
   工具事件，不保存凭据或默认保存完整参数/结果；

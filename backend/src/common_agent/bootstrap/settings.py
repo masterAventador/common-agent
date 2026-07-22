@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from ipaddress import IPv4Network, IPv6Network, ip_network
 from math import isfinite
 from pathlib import Path
+from types import MappingProxyType
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -287,6 +292,156 @@ class AuditSettings:
                 default=1_000_000,
                 minimum=100,
                 maximum=10_000_000,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCredentialSettings:
+    keys: Mapping[str, bytes] = field(repr=False)
+    active_key_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "keys", MappingProxyType(dict(self.keys)))
+
+    @classmethod
+    def from_env(cls) -> ToolCredentialSettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> ToolCredentialSettings:
+        runtime = RuntimeEnvironmentSettings.from_mapping(values)
+        configured = values.get("COMMON_AGENT_TOOL_CREDENTIAL_KEYS", "").strip()
+        if not configured:
+            if runtime.environment == "production":
+                raise ConfigurationError(
+                    "COMMON_AGENT_TOOL_CREDENTIAL_KEYS is required in production"
+                )
+            key_id = "local-dev-v1"
+            key = hashlib.sha256(b"common-agent local MCP credential development key v1").digest()
+            return cls(keys={key_id: key}, active_key_id=key_id)
+
+        parsed: dict[str, bytes] = {}
+        try:
+            for item in configured.split(","):
+                key_id, separator, encoded = item.strip().partition(":")
+                if not separator or not key_id or key_id in parsed:
+                    raise ValueError
+                decoded = base64.b64decode(encoded, altchars=b"-_", validate=True)
+                if len(decoded) != 32:
+                    raise ValueError
+                parsed[key_id] = decoded
+        except (ValueError, binascii.Error):
+            raise ConfigurationError(
+                "COMMON_AGENT_TOOL_CREDENTIAL_KEYS must contain unique id:base64-32-byte entries"
+            ) from None
+        active = values.get("COMMON_AGENT_TOOL_CREDENTIAL_ACTIVE_KEY_ID", "").strip()
+        if not active:
+            if len(parsed) != 1:
+                raise ConfigurationError(
+                    "COMMON_AGENT_TOOL_CREDENTIAL_ACTIVE_KEY_ID is required for a multi-key keyring"
+                )
+            active = next(iter(parsed))
+        if active not in parsed:
+            raise ConfigurationError(
+                "COMMON_AGENT_TOOL_CREDENTIAL_ACTIVE_KEY_ID must identify a configured key"
+            )
+        return cls(keys=parsed, active_key_id=active)
+
+
+@dataclass(frozen=True, slots=True)
+class ToolEgressSettings:
+    allowed_hosts: tuple[str, ...]
+    allowed_cidrs: tuple[IPv4Network | IPv6Network, ...]
+    http_allowed_hosts: tuple[str, ...]
+    allow_loopback: bool
+    connect_timeout_seconds: float
+    read_timeout_seconds: float
+    call_timeout_seconds: float
+    maximum_response_bytes: int
+    maximum_concurrency: int
+
+    @classmethod
+    def from_env(cls) -> ToolEgressSettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> ToolEgressSettings:
+        runtime = RuntimeEnvironmentSettings.from_mapping(values)
+        local = runtime.environment == "local"
+        allowed_hosts = _exact_hosts(
+            values.get(
+                "COMMON_AGENT_TOOL_EGRESS_ALLOWED_HOSTS",
+                "localhost" if local else "",
+            ),
+            "COMMON_AGENT_TOOL_EGRESS_ALLOWED_HOSTS",
+        )
+        allowed_cidrs = _tool_egress_cidrs(
+            values.get(
+                "COMMON_AGENT_TOOL_EGRESS_ALLOWED_CIDRS",
+                "127.0.0.0/8,::1/128" if local else "",
+            )
+        )
+        http_allowed_hosts = _exact_hosts(
+            values.get(
+                "COMMON_AGENT_TOOL_EGRESS_HTTP_ALLOWED_HOSTS",
+                "localhost" if local else "",
+            ),
+            "COMMON_AGENT_TOOL_EGRESS_HTTP_ALLOWED_HOSTS",
+        )
+        if not set(http_allowed_hosts).issubset(allowed_hosts):
+            raise ConfigurationError(
+                "COMMON_AGENT_TOOL_EGRESS_HTTP_ALLOWED_HOSTS must be a subset of "
+                "COMMON_AGENT_TOOL_EGRESS_ALLOWED_HOSTS"
+            )
+        connect_timeout = _bounded_float(
+            values,
+            "COMMON_AGENT_TOOL_EGRESS_CONNECT_TIMEOUT_SECONDS",
+            default=5.0,
+            maximum=30.0,
+        )
+        read_timeout = _bounded_float(
+            values,
+            "COMMON_AGENT_TOOL_EGRESS_READ_TIMEOUT_SECONDS",
+            default=30.0,
+            maximum=300.0,
+        )
+        call_timeout = _bounded_float(
+            values,
+            "COMMON_AGENT_TOOL_EGRESS_CALL_TIMEOUT_SECONDS",
+            default=60.0,
+            maximum=600.0,
+        )
+        if call_timeout < connect_timeout or call_timeout < read_timeout:
+            raise ConfigurationError(
+                "COMMON_AGENT_TOOL_EGRESS_CALL_TIMEOUT_SECONDS must not be shorter than "
+                "connect or read timeout"
+            )
+        return cls(
+            allowed_hosts=allowed_hosts,
+            allowed_cidrs=allowed_cidrs,
+            http_allowed_hosts=http_allowed_hosts,
+            allow_loopback=_strict_bool(
+                values,
+                "COMMON_AGENT_TOOL_EGRESS_ALLOW_LOOPBACK",
+                default=local,
+            ),
+            connect_timeout_seconds=connect_timeout,
+            read_timeout_seconds=read_timeout,
+            call_timeout_seconds=call_timeout,
+            maximum_response_bytes=_bounded_auth_int(
+                values,
+                "COMMON_AGENT_TOOL_EGRESS_MAX_RESPONSE_BYTES",
+                default=1_048_576,
+                minimum=1_024,
+                maximum=16_777_216,
+            ),
+            maximum_concurrency=_bounded_auth_int(
+                values,
+                "COMMON_AGENT_TOOL_EGRESS_MAX_CONCURRENCY",
+                default=16,
+                minimum=1,
+                maximum=256,
             ),
         )
 
@@ -639,6 +794,33 @@ def _strict_bool(values: Mapping[str, str], key: str, *, default: bool) -> bool:
     if raw_value == "false":
         return False
     raise ConfigurationError(f"{key} must be true or false")
+
+
+def _exact_hosts(configured: str, key: str) -> tuple[str, ...]:
+    hosts: set[str] = set()
+    for raw in configured.split(","):
+        host = raw.strip().lower().removeprefix("[").removesuffix("]").rstrip(".")
+        if not host:
+            continue
+        if any(character.isspace() for character in host) or any(
+            marker in host for marker in ("*", "/", "://")
+        ):
+            raise ConfigurationError(f"{key} must contain exact host names or IP addresses")
+        hosts.add(host)
+    return tuple(sorted(hosts))
+
+
+def _tool_egress_cidrs(configured: str) -> tuple[IPv4Network | IPv6Network, ...]:
+    networks: set[IPv4Network | IPv6Network] = set()
+    try:
+        for raw in configured.split(","):
+            if raw.strip():
+                networks.add(ip_network(raw.strip(), strict=True))
+    except ValueError:
+        raise ConfigurationError(
+            "COMMON_AGENT_TOOL_EGRESS_ALLOWED_CIDRS must contain canonical IPv4/IPv6 CIDRs"
+        ) from None
+    return tuple(sorted(networks, key=lambda value: (value.version, int(value.network_address))))
 
 
 def _is_bailian_host(host: str) -> bool:

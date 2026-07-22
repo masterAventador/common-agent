@@ -251,6 +251,13 @@ def _classify(
         ),
         (
             "PUT",
+            r"/api/v1/mcp-sources/[^/]+/credentials",
+            AuditAction.TOOL_CREDENTIALS_UPDATED,
+            AuditResourceType.MCP_SOURCE,
+            "source_id",
+        ),
+        (
+            "PUT",
             r"/api/v1/employees/[^/]+/tool-grants",
             AuditAction.TOOL_GRANTS_UPDATED,
             AuditResourceType.EMPLOYEE,

@@ -8,6 +8,9 @@ from common_agent.adapters.persistence.knowledge_ownership import (
 from common_agent.adapters.persistence.locks import MySqlNamedLockProvider
 from common_agent.adapters.persistence.tasks import SqlAlchemyTaskQueue
 from common_agent.adapters.persistence.tenancy import SqlAlchemyTenancyStore
+from common_agent.adapters.persistence.tool_credentials import (
+    SqlAlchemyToolCredentialUnitOfWorkFactory,
+)
 from common_agent.adapters.persistence.tools import SqlAlchemyToolUnitOfWorkFactory
 
 __all__ = [
@@ -20,5 +23,6 @@ __all__ = [
     "SqlAlchemyKnowledgeOwnershipStore",
     "SqlAlchemyTaskQueue",
     "SqlAlchemyTenancyStore",
+    "SqlAlchemyToolCredentialUnitOfWorkFactory",
     "SqlAlchemyToolUnitOfWorkFactory",
 ]

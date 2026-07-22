@@ -12,6 +12,8 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -56,6 +58,7 @@ from common_agent.domain.workflow_run import (
     WORKFLOW_RUN_INPUT_MAX_LENGTH,
     WORKFLOW_RUN_OUTPUT_MAX_LENGTH,
 )
+from common_agent.tools.credentials import MCP_CREDENTIAL_MAX_HEADER_COUNT
 from common_agent.tools.models import (
     MCP_SOURCE_DESCRIPTION_MAX_LENGTH,
     MCP_SOURCE_ENDPOINT_MAX_LENGTH,
@@ -1434,6 +1437,70 @@ class McpSourceRow(PersistenceBase):
         String(MCP_SOURCE_ENDPOINT_MAX_LENGTH), nullable=True
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
+class McpSourceCredentialRow(PersistenceBase):
+    __tablename__ = "mcp_source_credentials"
+    __table_args__ = (
+        CheckConstraint(
+            "credential_type IN ('bearer', 'custom_headers')",
+            name="ck_mcp_source_credentials_type",
+        ),
+        CheckConstraint("format_version = 1", name="ck_mcp_source_credentials_format"),
+        CheckConstraint(
+            "CHAR_LENGTH(key_id) BETWEEN 1 AND 64 AND key_id = TRIM(key_id)",
+            name="ck_mcp_source_credentials_key_id",
+        ),
+        CheckConstraint(
+            "OCTET_LENGTH(nonce) = 12",
+            name="ck_mcp_source_credentials_nonce",
+        ),
+        CheckConstraint(
+            "OCTET_LENGTH(ciphertext) BETWEEN 16 AND 65535",
+            name="ck_mcp_source_credentials_ciphertext",
+        ),
+        CheckConstraint(
+            f"JSON_TYPE(header_names) = 'ARRAY' AND "
+            f"JSON_LENGTH(header_names) <= {MCP_CREDENTIAL_MAX_HEADER_COUNT}",
+            name="ck_mcp_source_credentials_header_names",
+        ),
+        CheckConstraint(
+            "(credential_type = 'bearer' AND JSON_LENGTH(header_names) = 0) OR "
+            "(credential_type = 'custom_headers' AND "
+            f"JSON_LENGTH(header_names) BETWEEN 1 AND {MCP_CREDENTIAL_MAX_HEADER_COUNT})",
+            name="ck_mcp_source_credentials_shape",
+        ),
+        CheckConstraint(
+            "updated_at >= created_at",
+            name="ck_mcp_source_credentials_timestamps",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["mcp_sources.tenant_id", "mcp_sources.id"],
+            name="fk_mcp_source_credentials_source",
+            ondelete="CASCADE",
+        ),
+        Index("ix_mcp_source_credentials_key_id", "key_id", "tenant_id"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_mcp_source_credentials_tenant_id",
+        ),
+        primary_key=True,
+    )
+    source_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    credential_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    format_version: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    nonce: Mapped[bytes] = mapped_column(mysql.TINYBLOB, nullable=False)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary(65535), nullable=False)
+    header_names: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
 

@@ -405,6 +405,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp-sources/{source_id}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Mcp Source Credentials */
+        get: operations["get_mcp_source_credentials_api_v1_mcp_sources__source_id__credentials_get"];
+        /** Update Mcp Source Credentials */
+        put: operations["update_mcp_source_credentials_api_v1_mcp_sources__source_id__credentials_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/messages/{message_id}/retry": {
         parameters: {
             query?: never;
@@ -750,7 +768,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "tool.grants.updated" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
+        AuditAction: "auth.register" | "auth.login" | "auth.logout" | "auth.recovery.reset" | "auth.member.provisioned" | "tenant.created" | "employee.created" | "employee.configuration_and_bindings.updated" | "tool.grants.updated" | "tool.credentials.updated" | "model.configuration.created" | "model.configuration.updated" | "model.configuration.verified" | "knowledge.base.created" | "knowledge.document.uploaded" | "knowledge.document.retry_started" | "resource.deleted" | "conversation.reply.started" | "workflow.configuration.updated" | "workflow.run.started" | "workflow.run.stopped" | "security.permission.denied" | "security.request.denied";
         /** AuditEventResponse */
         AuditEventResponse: {
             action: components["schemas"]["AuditAction"];
@@ -833,7 +851,7 @@ export interface components {
          * AuditResourceType
          * @enum {string}
          */
-        AuditResourceType: "user" | "session" | "tenant" | "employee" | "model_configuration" | "knowledge_base" | "knowledge_document" | "conversation" | "workflow" | "workflow_run";
+        AuditResourceType: "user" | "session" | "tenant" | "employee" | "model_configuration" | "knowledge_base" | "knowledge_document" | "conversation" | "workflow" | "workflow_run" | "mcp_source";
         /** AuthPolicyResponse */
         AuthPolicyResponse: {
             /** Registration Available */
@@ -1303,6 +1321,50 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /** MaskedMcpCredentialResponse */
+        MaskedMcpCredentialResponse: {
+            /** Bearer Token */
+            bearer_token: string | null;
+            /** Headers */
+            headers: {
+                [key: string]: string;
+            };
+            kind: components["schemas"]["McpCredentialKind"];
+        };
+        /**
+         * McpCredentialAction
+         * @enum {string}
+         */
+        McpCredentialAction: "keep" | "replace" | "clear";
+        /**
+         * McpCredentialKind
+         * @enum {string}
+         */
+        McpCredentialKind: "bearer" | "custom_headers";
+        /** McpCredentialSummaryResponse */
+        McpCredentialSummaryResponse: {
+            /** Configured */
+            configured: boolean;
+            credential: components["schemas"]["MaskedMcpCredentialResponse"] | null;
+            /**
+             * Source Id
+             * Format: uuid
+             */
+            source_id: string;
+            /** Updated At */
+            updated_at: string | null;
+        };
+        /** McpCredentialUpdateBody */
+        McpCredentialUpdateBody: {
+            action: components["schemas"]["McpCredentialAction"];
+            /** Bearer Token */
+            bearer_token?: string | null;
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            } | null;
+            kind?: components["schemas"]["McpCredentialKind"] | null;
         };
         /** McpSourceResponse */
         McpSourceResponse: {
@@ -4248,6 +4310,161 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_mcp_source_credentials_api_v1_mcp_sources__source_id__credentials_get: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpCredentialSummaryResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_mcp_source_credentials_api_v1_mcp_sources__source_id__credentials_put: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpCredentialUpdateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpCredentialSummaryResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

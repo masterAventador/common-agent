@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from common_agent.adapters.persistence.database import Database, DatabaseStartupError
 from tests.support.settings import TEST_DATABASE_URL
 
-HEAD_REVISION = "20260722_0023"
+HEAD_REVISION = "20260722_0024"
 
 
 def _database_url() -> str:
@@ -91,6 +91,7 @@ def test_authentication_tables_are_migrated_with_server_side_secret_boundaries()
 def test_tool_catalog_and_exact_grants_have_tenant_scoped_relational_tables() -> None:
     expected = {
         "mcp_sources",
+        "mcp_source_credentials",
         "tool_capabilities",
         "tool_collections",
         "tool_collection_sources",
@@ -115,7 +116,7 @@ def test_tool_catalog_and_exact_grants_have_tenant_scoped_relational_tables() ->
                     text(
                         "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS "
                         "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN "
-                        "('mcp_sources', 'tool_capabilities')"
+                        "('mcp_sources', 'mcp_source_credentials', 'tool_capabilities')"
                     )
                 )
                 columns: dict[str, set[str]] = {}
@@ -138,6 +139,19 @@ def test_tool_catalog_and_exact_grants_have_tenant_scoped_relational_tables() ->
         "status",
     } <= columns["tool_capabilities"]
     assert not {"username", "password", "token", "headers"} & columns["mcp_sources"]
+    assert {
+        "tenant_id",
+        "source_id",
+        "credential_type",
+        "format_version",
+        "key_id",
+        "nonce",
+        "ciphertext",
+        "header_names",
+    } <= columns["mcp_source_credentials"]
+    assert not {"username", "password", "token", "header_values"} & columns[
+        "mcp_source_credentials"
+    ]
 
 
 def test_mysql_session_rolls_back_failed_transaction() -> None:

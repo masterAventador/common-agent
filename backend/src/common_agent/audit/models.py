@@ -23,6 +23,7 @@ class AuditAction(StrEnum):
     EMPLOYEE_CREATED = "employee.created"
     EMPLOYEE_CONFIGURATION_AND_BINDINGS_UPDATED = "employee.configuration_and_bindings.updated"
     TOOL_GRANTS_UPDATED = "tool.grants.updated"
+    TOOL_CREDENTIALS_UPDATED = "tool.credentials.updated"
     MODEL_CONFIGURATION_CREATED = "model.configuration.created"
     MODEL_CONFIGURATION_UPDATED = "model.configuration.updated"
     MODEL_CONFIGURATION_VERIFIED = "model.configuration.verified"
@@ -56,6 +57,7 @@ class AuditResourceType(StrEnum):
     CONVERSATION = "conversation"
     WORKFLOW = "workflow"
     WORKFLOW_RUN = "workflow_run"
+    MCP_SOURCE = "mcp_source"
 
 
 @dataclass(frozen=True, slots=True)

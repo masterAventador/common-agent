@@ -53,6 +53,24 @@ def test_openapi_exposes_tool_catalog_and_exact_grant_contracts() -> None:
     }
 
 
+def test_openapi_exposes_masked_mcp_credentials_without_account_login_fields() -> None:
+    schema = _schema()
+    path = schema["paths"]["/api/v1/mcp-sources/{source_id}/credentials"]
+
+    assert set(path) == {"get", "put"}
+    body = schema["components"]["schemas"]["McpCredentialUpdateBody"]
+    response = schema["components"]["schemas"]["McpCredentialSummaryResponse"]
+    serialized = json.dumps({"body": body, "response": response}, ensure_ascii=False)
+    assert "username" not in body["properties"]
+    assert "password" not in body["properties"]
+    assert "username" not in response["properties"]
+    assert "password" not in response["properties"]
+    assert "bearer_token" in serialized
+    assert "headers" in serialized
+    assert "ciphertext" not in serialized
+    assert "key_id" not in serialized
+
+
 def test_openapi_exposes_cookie_session_contract_without_session_tokens() -> None:
     schema = _schema()
     paths = schema["paths"]

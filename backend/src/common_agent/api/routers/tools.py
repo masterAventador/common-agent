@@ -7,22 +7,31 @@ from fastapi import APIRouter, Request
 from common_agent.api.audit import mark_audit_resource
 from common_agent.api.errors import AppError, ErrorEnvelope
 from common_agent.api.schemas.tools import (
+    McpCredentialSummaryResponse,
+    McpCredentialUpdateBody,
     ToolCatalogResponse,
     ToolGrantResponse,
     ToolGrantSelectionBody,
+    mcp_credential_command,
+    mcp_credential_summary_response,
     tool_catalog_response,
     tool_grant_response,
     tool_grant_selection,
 )
 from common_agent.audit import AuditResourceType
 from common_agent.tools import (
+    McpCredentialSourceNotFound,
+    PlatformCredentialNotAllowed,
     ToolCapabilityUnavailable,
     ToolCollectionNotFound,
+    ToolCredentialService,
+    ToolCredentialServiceError,
     ToolGrantTargetNotFound,
     ToolService,
     ToolServiceError,
     ToolValidationError,
 )
+from common_agent.tools.credentials import ToolCredentialValidationError
 
 router = APIRouter(tags=["tools"])
 
@@ -34,7 +43,22 @@ def _service(request: Request) -> ToolService:
     return service
 
 
+def _credential_service(request: Request) -> ToolCredentialService:
+    service = getattr(request.app.state, "tool_credentials", None)
+    if not isinstance(service, ToolCredentialService):
+        raise AppError("tool_credential_service_unavailable", "MCP 凭据服务暂时不可用", 503, True)
+    return service
+
+
 def _error(error: Exception) -> AppError:
+    if isinstance(error, McpCredentialSourceNotFound):
+        return AppError(error.code, error.message, 404, error.retryable)
+    if isinstance(error, PlatformCredentialNotAllowed):
+        return AppError(error.code, error.message, 409, error.retryable)
+    if isinstance(error, ToolCredentialValidationError):
+        return AppError("validation_error", "请求参数不合法", 422, False)
+    if isinstance(error, ToolCredentialServiceError):
+        return AppError(error.code, error.message, 409, error.retryable)
     if isinstance(error, ToolGrantTargetNotFound):
         return AppError(error.code, error.message, 404, error.retryable)
     if isinstance(error, (ToolCollectionNotFound, ToolCapabilityUnavailable)):
@@ -44,6 +68,48 @@ def _error(error: Exception) -> AppError:
     if isinstance(error, ToolServiceError):
         return AppError(error.code, error.message, 409, error.retryable)
     raise TypeError("unsupported tool application error")
+
+
+@router.get(
+    "/api/v1/mcp-sources/{source_id}/credentials",
+    response_model=McpCredentialSummaryResponse,
+    responses={404: {"model": ErrorEnvelope}, 503: {"model": ErrorEnvelope}},
+)
+async def get_mcp_source_credentials(
+    request: Request,
+    source_id: UUID,
+) -> McpCredentialSummaryResponse:
+    try:
+        summary = await _credential_service(request).get(source_id)
+    except ToolCredentialServiceError as error:
+        raise _error(error) from error
+    return mcp_credential_summary_response(summary)
+
+
+@router.put(
+    "/api/v1/mcp-sources/{source_id}/credentials",
+    response_model=McpCredentialSummaryResponse,
+    responses={
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def update_mcp_source_credentials(
+    request: Request,
+    source_id: UUID,
+    body: McpCredentialUpdateBody,
+) -> McpCredentialSummaryResponse:
+    try:
+        summary = await _credential_service(request).update(
+            source_id,
+            mcp_credential_command(body),
+        )
+    except (ToolCredentialServiceError, ToolCredentialValidationError) as error:
+        raise _error(error) from error
+    mark_audit_resource(request, AuditResourceType.MCP_SOURCE, source_id)
+    return mcp_credential_summary_response(summary)
 
 
 @router.get(

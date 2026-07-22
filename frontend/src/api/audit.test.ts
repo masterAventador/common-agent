@@ -74,6 +74,22 @@ describe("audit API", () => {
     });
   });
 
+  it("accepts metadata-only MCP credential audit events", async () => {
+    const credentialEvent = {
+      ...event,
+      action: "tool.credentials.updated",
+      resource_type: "mcp_source",
+    } as const;
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { items: [credentialEvent], next_cursor: null },
+    });
+
+    await expect(fetchAuditEvents()).resolves.toEqual({
+      items: [credentialEvent],
+      next_cursor: null,
+    });
+  });
+
   it("loads integrity and the explicit retention/capacity policy", async () => {
     vi.mocked(apiClient.get)
       .mockResolvedValueOnce({

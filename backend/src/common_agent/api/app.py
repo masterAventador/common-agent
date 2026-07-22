@@ -33,6 +33,7 @@ from common_agent.adapters.persistence import (
     SqlAlchemyKnowledgeOwnershipStore,
     SqlAlchemyTaskQueue,
     SqlAlchemyTenancyStore,
+    SqlAlchemyToolCredentialUnitOfWorkFactory,
     SqlAlchemyToolUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.conversations import (
@@ -47,6 +48,7 @@ from common_agent.adapters.persistence.model_configurations import (
 )
 from common_agent.adapters.persistence.resources import SqlAlchemyResourceDeletionStore
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
+from common_agent.adapters.security import AesGcmToolCredentialCipher
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.api.audit import audit_http_request
 from common_agent.api.authentication import enforce_request_security, require_authenticated
@@ -81,6 +83,8 @@ from common_agent.bootstrap import (
     IntegrationModeSettings,
     ModelSettings,
     RagFlowSettings,
+    ToolCredentialSettings,
+    ToolEgressSettings,
     WorkerSettings,
 )
 from common_agent.conversations import ConversationEventBroker, ConversationService
@@ -106,7 +110,7 @@ from common_agent.tenancy import (
     current_tenant,
 )
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
-from common_agent.tools import ToolService
+from common_agent.tools import ToolCredentialService, ToolService
 from common_agent.workflows.ai_targets import (
     StaticWorkflowModelResolver,
     WorkflowAiTargetExecutor,
@@ -162,6 +166,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return f"tenant:{current_tenant().tenant_id}:{key}"
 
         app.state.tools = ToolService(SqlAlchemyToolUnitOfWorkFactory(database, tenant_id_provider))
+        credential_settings: ToolCredentialSettings = app.state.tool_credential_settings
+        app.state.tool_credentials = ToolCredentialService(
+            SqlAlchemyToolCredentialUnitOfWorkFactory(database, tenant_id_provider),
+            cipher=AesGcmToolCredentialCipher(
+                keys=credential_settings.keys,
+                active_key_id=credential_settings.active_key_id,
+            ),
+            tenant_id_provider=tenant_id_provider,
+        )
 
         integration_mode: IntegrationModeSettings = app.state.integration_mode
         worker_settings: WorkerSettings = app.state.worker_settings
@@ -322,6 +335,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.audit = None
         app.state.tenancy = None
         app.state.tools = None
+        app.state.tool_credentials = None
         app.state.conversations = None
         app.state.conversation_events = None
         app.state.employees = None
@@ -374,11 +388,14 @@ def create_app() -> FastAPI:
     app.state.auth_settings = auth_settings
     app.state.audit_settings = audit_settings
     app.state.worker_settings = WorkerSettings.from_env()
+    app.state.tool_credential_settings = ToolCredentialSettings.from_env()
+    app.state.tool_egress_settings = ToolEgressSettings.from_env()
     app.state.audit = None
     app.state.cors_settings = cors
     app.state.authentication = None
     app.state.tenancy = None
     app.state.tools = None
+    app.state.tool_credentials = None
     app.state.ragflow_settings = (
         RagFlowSettings.from_env() if integration_mode.mode == "real" else None
     )

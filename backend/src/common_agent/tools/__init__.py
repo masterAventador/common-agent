@@ -1,3 +1,9 @@
+from common_agent.tools.credential_service import (
+    McpCredentialSourceNotFound,
+    PlatformCredentialNotAllowed,
+    ToolCredentialService,
+    ToolCredentialServiceError,
+)
 from common_agent.tools.models import (
     McpSource,
     McpSourceStatus,
@@ -24,9 +30,11 @@ from common_agent.tools.service import (
 )
 
 __all__ = [
+    "McpCredentialSourceNotFound",
     "McpSource",
     "McpSourceStatus",
     "McpSourceType",
+    "PlatformCredentialNotAllowed",
     "ToolCallErrorCode",
     "ToolCallRequest",
     "ToolCallResult",
@@ -37,6 +45,8 @@ __all__ = [
     "ToolCatalog",
     "ToolCollection",
     "ToolCollectionNotFound",
+    "ToolCredentialService",
+    "ToolCredentialServiceError",
     "ToolGrantSelection",
     "ToolGrantSnapshot",
     "ToolGrantTargetNotFound",
