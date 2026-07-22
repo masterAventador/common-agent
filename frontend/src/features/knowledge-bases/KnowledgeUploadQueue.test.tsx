@@ -46,12 +46,13 @@ describe("KnowledgeUploadQueue", () => {
       .mockReturnValueOnce(first.promise)
       .mockReturnValueOnce(second.promise)
       .mockReturnValueOnce(third.promise);
+    const changed = vi.fn();
     const user = userEvent.setup();
     render(
       <KnowledgeUploadQueue
         knowledgeBaseId="kb-1"
         documents={[]}
-        onDocumentsChanged={vi.fn()}
+        onDocumentsChanged={changed}
       />,
     );
     const files = ["one.txt", "two.md", "three.txt"].map(
@@ -70,6 +71,32 @@ describe("KnowledgeUploadQueue", () => {
     expect(knowledgeApi.uploadKnowledgeDocument.mock.calls[2]).toEqual(["kb-1", files[2]]);
     second.resolve(parsingDocument("doc-2", "two.md"));
     third.resolve(parsingDocument("doc-3", "three.txt"));
+    await waitFor(() => expect(screen.getAllByText("解析中")).toHaveLength(3));
+    await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not report a successful upload as failed when the list refresh fails", async () => {
+    knowledgeApi.uploadKnowledgeDocument.mockResolvedValueOnce(
+      parsingDocument("doc-uploaded", "uploaded.txt"),
+    );
+    const user = userEvent.setup();
+    render(
+      <KnowledgeUploadQueue
+        knowledgeBaseId="kb-1"
+        documents={[]}
+        onDocumentsChanged={vi.fn().mockRejectedValue(new Error("列表刷新失败"))}
+      />,
+    );
+
+    await user.upload(
+      screen.getByLabelText("选择或拖拽文档"),
+      new File(["content"], "uploaded.txt", { type: "text/plain" }),
+    );
+    await user.click(screen.getByRole("button", { name: "开始上传" }));
+
+    expect(await screen.findByText("解析中")).toBeInTheDocument();
+    expect(screen.queryByText("列表刷新失败")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重试 uploaded.txt" })).not.toBeInTheDocument();
   });
 
   it("supports drag and drop while rejecting unsupported, oversized and duplicate files", async () => {

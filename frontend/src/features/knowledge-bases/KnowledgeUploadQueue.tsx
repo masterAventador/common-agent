@@ -44,6 +44,7 @@ export function KnowledgeUploadQueue({
   onBusyChange?: (busy: boolean) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const batchRefreshPending = useRef(false);
   const [items, setItems] = useState<KnowledgeUploadItem[]>([]);
   const [rejected, setRejected] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
@@ -68,11 +69,28 @@ export function KnowledgeUploadQueue({
     [documents],
   );
 
+  const refreshWithoutChangingUploadStatus = useCallback(async () => {
+    try {
+      await onDocumentsChanged();
+    } catch {
+      return;
+    }
+  }, [onDocumentsChanged]);
+
   useEffect(() => onBusyChange?.(busy), [busy, onBusyChange]);
 
   useEffect(() => {
     if (running && !busy) setRunning(false);
   }, [busy, running]);
+
+  useEffect(() => {
+    const hasUploadWork = items.some(
+      (item) => item.status === "waiting" || item.status === "uploading",
+    );
+    if (hasUploadWork || !batchRefreshPending.current) return;
+    batchRefreshPending.current = false;
+    void refreshWithoutChangingUploadStatus();
+  }, [items, refreshWithoutChangingUploadStatus]);
 
   useEffect(() => {
     setItems((current) =>
@@ -111,24 +129,11 @@ export function KnowledgeUploadQueue({
     for (const item of selected) void runUpload(item);
 
     async function runUpload(item: KnowledgeUploadItem) {
+      let document: KnowledgeDocument;
       try {
-        const document = item.documentId
+        document = item.documentId
           ? await retryKnowledgeDocument(knowledgeBaseId, item.documentId)
           : await uploadKnowledgeDocument(knowledgeBaseId, item.file);
-        setItems((current) =>
-          current.map((value) =>
-            value.id === item.id
-              ? {
-                  ...value,
-                  documentId: document.id,
-                  status: statusFromDocument(document),
-                  retrying: Boolean(item.documentId),
-                  retryFailureSamples: 0,
-                }
-              : value,
-          ),
-        );
-        await onDocumentsChanged();
       } catch (error) {
         setItems((current) =>
           current.map((value) =>
@@ -143,9 +148,26 @@ export function KnowledgeUploadQueue({
               : value,
           ),
         );
+        return;
       }
+
+      if (!item.documentId) batchRefreshPending.current = true;
+      setItems((current) =>
+        current.map((value) =>
+          value.id === item.id
+            ? {
+                ...value,
+                documentId: document.id,
+                status: statusFromDocument(document),
+                retrying: Boolean(item.documentId),
+                retryFailureSamples: 0,
+              }
+            : value,
+        ),
+      );
+      if (item.documentId) await refreshWithoutChangingUploadStatus();
     }
-  }, [items, knowledgeBaseId, onDocumentsChanged, running]);
+  }, [items, knowledgeBaseId, refreshWithoutChangingUploadStatus, running]);
 
   const queueRows = useMemo(
     () =>
