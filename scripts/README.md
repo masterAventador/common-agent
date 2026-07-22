@@ -40,6 +40,14 @@
   复用本机入口的契约；
 - `test-frontend-bundle.sh`：对隔离构建 fixture 故障注入，证明前端分析器会拒绝超过 500,000
   bytes 的单 JS chunk、超过 1,500,000 bytes 的单路由首次 JS 图、缺失 manifest 或六路由入口；
+- `security-scan.sh`：本机权威安全门禁，`source` 使用现有凭据指纹门禁、Semgrep `p/default`、
+  Trivy 文件系统与生产 IaC 扫描，`images` 扫描指定 API/Web 业务镜像中已有修复版本的
+  High/Critical 漏洞和 Secret，`all` 串行执行两者；默认使用项目专属 Docker context，要求本机
+  已安装 Semgrep、Trivy、jq 与 shasum。已应用迁移中的固定 SQL 例外必须同时匹配精确文件指纹、
+  规则、路径和行号，禁止宽泛排除迁移目录；
+- `test-security-scan.sh`：以隔离假工具验证安全门禁的扫描范围、第三方源码和授权 Demo Key 例外、
+  已审阅静态 SQL 复扫、镜像前缀、参数校验与失败透传；可选 CI 只执行该无网络契约，真实扫描仍
+  由 S10-08 本机正式构建验收执行；
 - `generate-contracts.sh`：从正式 FastAPI 应用导出 OpenAPI 并生成前端 TypeScript 类型；
 - `check-contracts.sh`：在隔离临时目录重建契约并检查已提交文件无漂移；
 - `test-platform-e2e.sh`：复用健康的稳定基础设施，以无窗口 `chromium-headless-shell` 编排正式

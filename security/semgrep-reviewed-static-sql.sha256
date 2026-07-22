@@ -1,0 +1,2 @@
+# S10-08 人工审阅：该已应用迁移只拼接仓库内固定 SQL 常量，外部值使用命名参数。
+3b69caf83327864906b9b9f279b1a07acede479fc1dae83d95677f901db27c0d  backend/migrations/versions/20260722_0019_employee_default_models.py

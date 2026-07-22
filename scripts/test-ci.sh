@@ -53,6 +53,7 @@ for expected in \
   './scripts/test-ci.sh' \
   './scripts/test-coverage.sh' \
   './scripts/test-frontend-bundle.sh' \
+  './scripts/test-security-scan.sh' \
   './scripts/test-secrets.sh' \
   'pnpm test:e2e:loading' \
   "rg --files -g '*.sh' -g '!third_party/**' | xargs shellcheck"; do

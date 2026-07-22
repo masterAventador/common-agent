@@ -179,6 +179,7 @@ jobs:
           ./scripts/test-ci.sh
           ./scripts/test-coverage.sh
           ./scripts/test-frontend-bundle.sh
+          ./scripts/test-security-scan.sh
           ./scripts/test-secrets.sh
 
       - name: Check shell scripts
