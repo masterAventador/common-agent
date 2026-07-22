@@ -2,7 +2,19 @@ packages:
   - "."
 
 minimumReleaseAge: 10080
+minimumReleaseAgeIgnoreMissingTime: false
+minimumReleaseAgeExclude:
+  - "@rc-component/trigger@3.10.1"
+  - "@rc-component/virtual-list@1.4.0"
+  - "caniuse-lite@1.0.30001806"
+  - "electron-to-chromium@1.5.393"
+  - "lucide-react@1.25.0"
+  - "obug@2.1.4"
+  - "tldts-core@7.4.9"
+  - "tldts@7.4.9"
+  - "vite@8.1.5"
 trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 525600
 blockExoticSubdeps: true
 
 overrides:
