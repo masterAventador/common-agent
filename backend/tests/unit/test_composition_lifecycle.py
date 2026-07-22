@@ -8,7 +8,15 @@ from fastapi import FastAPI
 
 import common_agent.api.app as api_app
 import common_agent.worker_app as worker_app
-from common_agent.bootstrap import AuditSettings, AuthSettings
+from common_agent.bootstrap import (
+    AuditSettings,
+    AuthSettings,
+    DatabaseSettings,
+    IntegrationModeSettings,
+    ModelSettings,
+    RagFlowSettings,
+    WorkerSettings,
+)
 
 
 class _DatabaseProbe:
@@ -93,7 +101,7 @@ def test_api_closes_real_model_when_later_component_bootstrap_fails(
     app.state.worker_settings = object()
     app.state.ragflow_settings = _ragflow_settings()
     monkeypatch.setattr(api_app, "RagFlowKnowledgeService", lambda **_: knowledge)
-    monkeypatch.setattr(api_app.ModelSettings, "from_env", lambda: object())
+    monkeypatch.setattr(ModelSettings, "from_env", lambda: object())
     monkeypatch.setattr(api_app, "BailianChatModelAdapter", lambda _: model)
     monkeypatch.setattr(api_app, "KnowledgeBaseService", _raise_component_bootstrap_failure)
 
@@ -115,11 +123,11 @@ def test_worker_stops_started_database_when_settings_bootstrap_fails(
     database = _DatabaseProbe()
     monkeypatch.setattr(worker_app, "Database", lambda _: database)
     monkeypatch.setattr(
-        worker_app.DatabaseSettings,
+        DatabaseSettings,
         "from_env",
         lambda: SimpleNamespace(url="mysql+aiomysql://unused"),
     )
-    monkeypatch.setattr(worker_app.WorkerSettings, "from_env", _raise_bootstrap_failure)
+    monkeypatch.setattr(WorkerSettings, "from_env", _raise_bootstrap_failure)
 
     with pytest.raises(RuntimeError, match="bootstrap failed"):
         asyncio.run(worker_app.run_worker(asyncio.Event()))
@@ -135,20 +143,20 @@ def test_worker_closes_real_model_when_later_component_bootstrap_fails(
     model = _ClosableProbe()
     monkeypatch.setattr(worker_app, "Database", lambda _: database)
     monkeypatch.setattr(
-        worker_app.DatabaseSettings,
+        DatabaseSettings,
         "from_env",
         lambda: SimpleNamespace(url="mysql+aiomysql://unused"),
     )
-    monkeypatch.setattr(worker_app.WorkerSettings, "from_env", lambda: object())
+    monkeypatch.setattr(WorkerSettings, "from_env", lambda: object())
     monkeypatch.setattr(
-        worker_app.IntegrationModeSettings,
+        IntegrationModeSettings,
         "from_env",
         lambda: SimpleNamespace(mode="real"),
     )
-    monkeypatch.setattr(worker_app.AuditSettings, "from_env", lambda: object())
-    monkeypatch.setattr(worker_app.RagFlowSettings, "from_env", _ragflow_settings)
+    monkeypatch.setattr(AuditSettings, "from_env", lambda: object())
+    monkeypatch.setattr(RagFlowSettings, "from_env", _ragflow_settings)
     monkeypatch.setattr(worker_app, "RagFlowKnowledgeService", lambda **_: knowledge)
-    monkeypatch.setattr(worker_app.ModelSettings, "from_env", lambda: object())
+    monkeypatch.setattr(ModelSettings, "from_env", lambda: object())
     monkeypatch.setattr(worker_app, "BailianChatModelAdapter", lambda _: model)
     monkeypatch.setattr(worker_app, "KnowledgeBaseService", _raise_component_bootstrap_failure)
 
