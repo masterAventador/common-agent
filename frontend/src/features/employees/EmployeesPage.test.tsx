@@ -118,9 +118,26 @@ describe("EmployeesPage", () => {
     expect(await screen.findByRole("heading", { name: "数字员工" })).toBeInTheDocument();
     expect(screen.getByText("知识助理")).toBeInTheDocument();
     expect(screen.getByText("通用知识问答")).toBeInTheDocument();
-    expect(screen.getByText("通用产品手册")).toBeInTheDocument();
+    expect(await screen.findByText("通用产品手册")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "编辑 知识助理" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "与知识助理开始对话" })).toBeEnabled();
+  });
+
+  it("loads reference options only when employees or the editor need them", async () => {
+    employeeApi.fetchEmployees.mockResolvedValue({ items: [], next_cursor: null });
+    const user = userEvent.setup();
+
+    renderPage();
+
+    expect(await screen.findByText("还没有数字员工")).toBeInTheDocument();
+    expect(knowledgeApi.fetchKnowledgeBases).not.toHaveBeenCalled();
+    expect(workflowApi.fetchWorkflows).not.toHaveBeenCalled();
+    expect(modelApi.fetchModelConfigurations).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "创建数字员工" }));
+    await waitFor(() => expect(knowledgeApi.fetchKnowledgeBases).toHaveBeenCalledTimes(1));
+    expect(workflowApi.fetchWorkflows).toHaveBeenCalledTimes(1);
+    expect(modelApi.fetchModelConfigurations).toHaveBeenCalledTimes(1);
   });
 
   it("keeps search in the query key and loads the next employee cursor page", async () => {
@@ -239,7 +256,7 @@ describe("EmployeesPage", () => {
     renderPage();
 
     expect(await screen.findByText("知识助理")).toBeInTheDocument();
-    expect(screen.getByText("知识库选项加载失败")).toBeInTheDocument();
+    expect(await screen.findByText("知识库选项加载失败")).toBeInTheDocument();
     expect(screen.getByText("知识库服务暂时不可用")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "创建数字员工" }));
     expect(screen.getByRole("combobox", { name: "知识库" })).toBeDisabled();

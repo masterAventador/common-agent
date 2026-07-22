@@ -78,6 +78,8 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
     getNextPageParam: nextPageCursor,
     placeholderData: keepPreviousData,
   });
+  const items = useMemo(() => flattenCursorPages(employees.data), [employees.data]);
+  const referenceOptionsEnabled = Boolean(editor) || items.length > 0;
   const knowledgeBases = useInfiniteQuery({
     queryKey: ["knowledge-bases", knowledgeSearch],
     queryFn: ({ pageParam }) =>
@@ -85,6 +87,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextPageCursor,
     placeholderData: keepPreviousData,
+    enabled: referenceOptionsEnabled,
   });
   const workflows = useInfiniteQuery({
     queryKey: ["workflows", workflowSearch],
@@ -93,6 +96,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextPageCursor,
     placeholderData: keepPreviousData,
+    enabled: referenceOptionsEnabled,
   });
   const modelConfigurations = useInfiniteQuery({
     queryKey: ["model-configurations", "employee-options", modelSearch],
@@ -104,8 +108,8 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextPageCursor,
     placeholderData: keepPreviousData,
+    enabled: referenceOptionsEnabled,
   });
-  const items = useMemo(() => flattenCursorPages(employees.data), [employees.data]);
   const knowledgeItems = useMemo(
     () => flattenCursorPages(knowledgeBases.data),
     [knowledgeBases.data],
