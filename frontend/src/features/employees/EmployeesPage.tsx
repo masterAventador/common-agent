@@ -160,7 +160,8 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
         ? updateEmployee(editor.employee.id, normalizedValues)
         : createEmployee(normalizedValues);
     },
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
+      queryClient.setQueryData(["employee", saved.id], saved);
       setEditor(undefined);
       form.resetFields();
       await queryClient.resetQueries({ queryKey: ["employees"] });

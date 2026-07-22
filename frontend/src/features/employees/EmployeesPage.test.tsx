@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { PropsWithChildren } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -70,14 +69,13 @@ const employee = {
   updated_at: "2026-07-19T08:00:00Z",
 };
 
-function TestProviders({ children }: PropsWithChildren) {
-  const client = new QueryClient({
+function createTestClient() {
+  return new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
       mutations: { retry: false },
     },
   });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
 function LocationProbe() {
@@ -86,15 +84,18 @@ function LocationProbe() {
 }
 
 function renderPage() {
-  return render(
-    <MemoryRouter initialEntries={["/employees"]}>
-      <Routes>
-        <Route path="/employees" element={<EmployeesPage />} />
-        <Route path="/chat" element={<LocationProbe />} />
-      </Routes>
-    </MemoryRouter>,
-    { wrapper: TestProviders },
+  const client = createTestClient();
+  const result = render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/employees"]}>
+        <Routes>
+          <Route path="/employees" element={<EmployeesPage />} />
+          <Route path="/chat" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
+  return { ...result, client };
 }
 
 describe("EmployeesPage", () => {
@@ -224,7 +225,9 @@ describe("EmployeesPage", () => {
       .mockResolvedValue({ items: [updated], next_cursor: null });
     employeeApi.updateEmployee.mockResolvedValue(updated);
     const user = userEvent.setup();
-    renderPage();
+    const { client } = renderPage();
+    client.setQueryDefaults(["employee"], { gcTime: Infinity });
+    client.setQueryData(["employee", employee.id], employee);
 
     await screen.findByText("知识助理");
     await user.click(screen.getByRole("button", { name: "编辑 知识助理" }));
@@ -248,6 +251,7 @@ describe("EmployeesPage", () => {
       }),
     );
     expect(await screen.findByText("更新后的说明")).toBeInTheDocument();
+    expect(client.getQueryData(["employee", employee.id])).toEqual(updated);
   });
 
   it("keeps employees usable when the knowledge-base list is unavailable", async () => {
