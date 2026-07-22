@@ -2,8 +2,8 @@
 
 > 文档性质：V2 当前任务与执行结果的唯一台账
 > 建立日期：2026-07-22
-> 当前阶段：R2-05 评估语义检索、文档/切片读取和大结果边界
-> 当前下一步：审计 `v0.26.4` 真实检索与文档/切片读取调用路径，先建立结果规模和响应退化基准
+> 当前阶段：R2-06 私有补丁集的正确性、性能、升级冲突和安全回归
+> 当前下一步：汇总 R2-03～R2-05 补丁清单与基准，建立补丁集整体回归和上游冲突审计
 
 任务状态、执行顺序、TDD、生产同路径、失败矩阵、完成定义、安全、资源清理和提交规则统一见
 根目录 `CLAUDE.md`，本文件不复制长期规则。
@@ -98,7 +98,7 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
 | R2-02 | 创建私有 RAGFlow 镜像仓库、上游 remote 和版本化补丁分支 | R2-01 | ✅ 已完成 |
 | R2-03 | 移植删除定向校验、独立计数和延迟 JOIN 分页 | R2-02 | ✅ 已完成 |
 | R2-04 | 重做批量写入、独立 embedding 并发、Tika 启动与必要目录缓存 | R2-03 | ✅ 已完成 |
-| R2-05 | 评估并优化语义检索、文档/切片读取和大结果边界 | R2-04 | ⬜ 未开始 |
+| R2-05 | 评估并优化语义检索、文档/切片读取和大结果边界 | R2-04 | ✅ 已完成 |
 | R2-06 | 私有补丁集的正确性、性能、升级冲突和安全回归 | R2-05 | ⬜ 未开始 |
 | R2-07 | 推送私有仓库并把 common-agent submodule/镜像/脚本切到 fork 提交 | R2-06 | ⬜ 未开始 |
 | R2-08 | 真实知识链、备份恢复、资源与全新递归克隆验收 | R2-07 | ⬜ 未开始 |
@@ -725,3 +725,51 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
   embedding/rerank/defaults 均 ready，项目 Volume 保留。下一任务为 R2-05。
 - 提交：RAGFlow fork 提交 `32aa5fa7c`、`9c88b3073`、`8b02c52ec`、`e81ce4fdf`；common-agent
   本任务提交见 Git 历史。
+
+### R2-05 评估并优化语义检索、文档/切片读取和大结果边界
+
+- 状态：✅ 已完成
+- 日期：2026-07-23
+- 审计与取舍：`ragflow-deploy` 没有可直接移植的检索/读取补丁；逐段复核官方 `v0.26.4` 后确认其已
+  有约 64 条的有界 rerank 窗口、Elasticsearch 主查询不返回向量、超过 10k 的切片列表使用
+  `search_after`、页大小限制为 100，且单切片响应会移除向量/token 等运行字段。真实 12,016 条切片
+  深分页、单切片和带百炼 rerank 检索均正常，因此没有为制造改动而重写检索算法、复制旧版实现或给
+  已有读取路径再加第二套分页。审计发现的实际缺口是三个公开入口允许无上限正整数 `top_k`：官方
+  `/api/v1/retrieval` 以 `top_k=5001` 请求时把非法候选规模传入 Elasticsearch，返回业务码 100 和
+  `x_content_parse_exception/BadRequestError`，而不是稳定的输入错误。
+- RED/GREEN 与 fork 实现：先为共享候选池上限和三个 handler 接入写 RED，首次因常量/校验器不存在
+  失败；随后在现有分页工具模块增加与官方 dataset search 一致的 `REST_API_MAX_TOP_K=2048` 和共享
+  校验，应用到 REST retrieval、Dify retrieval、searchbot 请求值及 search 配置回退值。无效值在进入
+  embedding/rerank/Elasticsearch 前以明确业务错误返回；没有改变合法请求排序、阈值或响应结构。
+  补丁提交 `9140f309de9129dc7cd6c889f2e0335b3f384628` 已推送私有
+  `common-agent/v0.26.4-patches`，GitHub 远端 HEAD 与本地一致。
+- 基准可信度：新增的正式运行器绑定源码 commit、`official/patched` 源码形态和候选镜像 OCI
+  revision；凭据只从 0600 Token 文件或环境读取，不进命令参数/报告。每轮先经真实 API 创建 2 个
+  文档、解析 32 个真实切片并执行 `qwen3-rerank` 检索，再给真实文档精确附加 12,000 条无向量合成
+  切片，只用于验证页首、越过 10k 的第 110 页、超限页大小和单切片响应；最终按精确 ID 删除合成
+  数据并经 API 删除数据集。源码、镜像、密钥、参数、资源采样或清理任一漂移均关闭失败。
+- 正式结果：官方合法 `top_k=5/64/2048` 分别为 `0.550/0.830/0.811s`，候选为
+  `1.042/0.796/0.854s`，均返回 5 条且唯一标记命中；该请求包含外部 rerank 波动，只证明合法行为和
+  有界延迟，不把差值宣称为补丁性能收益。官方超大候选池在 `0.244s` 后暴露 Elasticsearch 异常；
+  候选 `top_k=2049` 在 `0.008s` 以业务码 102 和明确的 `<=2048` 信息提前拒绝，响应从 1,107 bytes
+  降到 68 bytes。官方/候选页首 100 条为 `0.046/0.027s`，第 110 页为 `0.290/0.164s`，单切片为
+  `0.008/0.007s` 且运行字段均未泄漏；读取算法未改，差值只作健康观测。
+- 资源与门禁：候选 VM 峰值 `8,750,456,832` bytes、Swap 为 0，API/ES 峰值分别为
+  `4,486,093,341/2,008,970,953` bytes，五个容器最终均运行、无重启、无 OOM。fork 完整 API 单元
+  回归 `249 passed`，改动文件 Ruff、内存语法编译和 diff 通过；common-agent 基准契约纳入后端全量
+  `933 passed, 15 skipped`，Ruff 与 Mypy（385 个源文件）通过。前端 30 个文件 `163 passed`，ESLint、
+  TypeScript、生产构建和七路由包体预算通过。OpenAPI/事件/生成 DTO、RAGFlow fork/官方栈、
+  platform/backup/production、CI/覆盖率/Bundle、安全入口及权威 Semgrep/Trivy、Secret、全仓
+  ShellCheck、V1 冻结哈希和 `git diff --check` 均通过。
+- 失败矩阵与边界：覆盖源码/commit/镜像 revision 不一致、缺失或非 0600 Token、非法规模和深页参数、
+  `top_k` 非正数/超过上限、searchbot 配置二次覆盖、官方 ES 大结果异常、标记未命中、页大小超过
+  100、深页不足、单切片字段泄漏、批量写/删部分失败、资源采样、服务断连/OOM 和异常后 API 恢复。
+  本任务没有修改官方 submodule、正式 Compose、检索排序算法或读取查询；私有依赖切换仍只在 R2-07
+  进行。
+- 清理与遗留：只保留 Git 忽略的官方报告
+  `.local/benchmarks/r2-05/official/baseline.json` 与候选报告
+  `.local/benchmarks/r2-05/9140f309d/final.json`；两轮各 12,000 条合成切片均精确删除，MySQL 中
+  `common-agent-r2-05-*` 数据集复核为 0。失败报告、临时 Semgrep/uv 文件、Dockerfile、Compose
+  override 和无容器引用的候选镜像均已删除。稳定栈恢复为 `infiniflow/ragflow:v0.26.4`，版本端点与
+  百炼 embedding/rerank/defaults 均 ready，项目 Volume 保留。下一任务为 R2-06。
+- 提交：RAGFlow fork 提交 `9140f309d`；common-agent 本任务提交见 Git 历史。
