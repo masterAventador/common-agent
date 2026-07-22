@@ -137,6 +137,8 @@ class WorkflowCatalog:
         configuration: WorkflowConfiguration,
     ) -> tuple[WorkflowValidationIssue, ...]:
         issues: list[WorkflowValidationIssue] = []
+        employees: dict[UUID, Employee | None] = {}
+        models: dict[UUID, ModelConfiguration | None] = {}
         for node in configuration.nodes:
             config = node.config
             if not isinstance(config, AiChatNodeConfig):
@@ -154,26 +156,35 @@ class WorkflowCatalog:
                 continue
             if self._ai_targets is None:
                 continue
-            try:
-                if isinstance(config.target, EmployeeAiChatTarget):
-                    employee = await self._ai_targets.get_employee(config.target.employee_id)
-                    model = await self._ai_targets.get_model_configuration(
-                        employee.default_model_configuration_id
+            if isinstance(config.target, EmployeeAiChatTarget):
+                employee_id = config.target.employee_id
+                if employee_id not in employees:
+                    try:
+                        employees[employee_id] = await self._ai_targets.get_employee(employee_id)
+                    except WorkflowEmployeeTargetNotFound:
+                        employees[employee_id] = None
+                employee = employees[employee_id]
+                if employee is None:
+                    issues.append(
+                        WorkflowValidationIssue(
+                            code=WorkflowValidationCode.EMPLOYEE_NOT_FOUND,
+                            message="AI 对话节点引用的数字员工不存在",
+                            node_id=node.id,
+                        )
                     )
-                else:
-                    model = await self._ai_targets.get_model_configuration(
-                        config.target.model_configuration_id
+                    continue
+                model_configuration_id = employee.default_model_configuration_id
+            else:
+                model_configuration_id = config.target.model_configuration_id
+            if model_configuration_id not in models:
+                try:
+                    models[model_configuration_id] = await self._ai_targets.get_model_configuration(
+                        model_configuration_id
                     )
-            except WorkflowEmployeeTargetNotFound:
-                issues.append(
-                    WorkflowValidationIssue(
-                        code=WorkflowValidationCode.EMPLOYEE_NOT_FOUND,
-                        message="AI 对话节点引用的数字员工不存在",
-                        node_id=node.id,
-                    )
-                )
-                continue
-            except ModelConfigurationNotFound:
+                except ModelConfigurationNotFound:
+                    models[model_configuration_id] = None
+            model = models[model_configuration_id]
+            if model is None:
                 issues.append(
                     WorkflowValidationIssue(
                         code=WorkflowValidationCode.MODEL_CONFIGURATION_NOT_FOUND,
