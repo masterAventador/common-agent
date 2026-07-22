@@ -125,7 +125,8 @@ infra/backup/manage.sh drill
 ## 项目文档
 
 - [产品范围](docs/product-scope.md)：只定义产品功能和边界；
-- [开发路线图](docs/development-roadmap.md)：任务状态、完成标准和验证证据的唯一核对源；
+- [V2 开发路线图](docs/development-roadmap-v2.md)：当前任务、状态和执行结果的唯一核对源；
+- [V1 历史路线图](docs/development-roadmap.md)：已冻结，只用于追溯旧决策和验收证据；
 - [工程结构](docs/project-structure.md)：目标目录和模块职责；
 - [后端架构](docs/backend-architecture.md)：领域、接口、数据和适配层；
 - [前端架构](docs/frontend-architecture.md)：路由、状态和交互约束；

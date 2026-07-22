@@ -1,7 +1,7 @@
 # 通用 Agent 中台工程结构
 
-> 状态：MVP 基线、租户隔离、审计、持久 Worker 与备份恢复结构已确认
-> 确认日期：2026-07-21
+> 状态：V1 结构已落地，V2 工具/MCP 与私有 RAGFlow 目标结构已确认
+> 确认日期：2026-07-22
 
 ## 1. 核心决策
 
@@ -13,9 +13,9 @@ common-agent/
 ├── backend/                    # FastAPI 与 Agent 编排
 ├── contracts/                  # OpenAPI、会话/工作流事件和公共样例
 ├── infra/                      # RAGFlow 等外部依赖的本地接入说明
-├── third_party/                # 项目实际消费源码的官方 Git submodule
+├── third_party/                # 项目实际消费源码的锁定 Git submodule
 ├── scripts/                    # 跨前后端生成与验证脚本
-├── docs/                       # 产品、架构和唯一开发路线图
+├── docs/                       # 产品、架构、冻结 V1 和当前 V2 路线图
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── README.md
@@ -70,6 +70,7 @@ backend/
 │       ├── tasks/               # 持久任务模型、队列端口、租约 Worker 与并发池
 │       ├── employees/           # 数字员工应用服务与启动 Seed
 │       ├── model_configurations/ # 租户模型配置应用服务与引用安全删除
+│       ├── tools/              # MCP 来源、能力、工具集、精确授权与调用协议
 │       ├── domain/              # 与第三方无关的会话和能力模型
 │       │   ├── conversation.py
 │       │   ├── employee.py
@@ -101,6 +102,7 @@ backend/
 │           ├── agent/           # Deep Agents 正式适配器
 │           ├── knowledge/       # RAGFlow 正式适配器
 │           ├── model/           # 阿里百炼转换与仅适配层可见的 LangChain 桥
+│           ├── mcp/             # MCP SDK、托管 HTTP 转换、外部连接与工具包装
 │           ├── workflow/        # LangGraph 编译、状态与节点框架转换
 │           └── persistence/     # MySQL 适配器，含业务事务、任务队列与事件日志
 ├── migrations/                  # 当前正式数据库迁移
@@ -171,6 +173,7 @@ frontend/
 │   │   ├── employees/           # 数字员工列表、编辑和知识库绑定
 │   │   ├── knowledge-bases/     # 知识库创建、文档上传和解析状态
 │   │   ├── model-configurations/ # 百炼模型配置、真实验证与引用阻断
+│   │   ├── tools/               # MCP、业务工具集、能力目录与 OpenAPI 导入
 │   │   └── workflows/           # 页面编排、设计器控制器、节点面板、画布、属性和运行
 │   ├── components/              # 真实跨功能复用的公共 UI
 │   ├── api/                     # Axios、SSE、Query Client 和生成契约
@@ -189,8 +192,8 @@ frontend/
 └── README.md
 ```
 
-业务区包含聊天工作台、数字员工、知识库、独立工作流设计器、模型管理，以及仅 Owner 可见的
-审计事件页；未认证或尚未选择工作区时由真实
+V2 业务区包含聊天工作台、数字员工、知识库、独立工作流设计器、模型管理、工具箱，以及仅 Owner
+可见的审计事件页；工具箱代码只随对应 V2 任务落地，不提前创建空入口。未认证或尚未选择工作区时由真实
 `auth` Provider 阻止业务路由挂载，工作区选择和成员配置复用全局壳层，不为其他未实现能力创建
 空目录或菜单。工作流画布使用成熟的 React 节点
 图库，不自行实现缩放、拖拽、连线和命中测试。
@@ -242,11 +245,12 @@ infra/backup/                   # 平台与 RAGFlow 的可恢复备份边界
 └── README.md                   # 密钥分离、调度和恢复 Runbook
 
 third_party/
-└── ragflow/                    # 官方 submodule；固定到 VERSION/UPSTREAM_COMMIT
+└── ragflow/                    # 当前官方 submodule；V2 切换到私有补丁仓库的锁定提交
 ```
 
-不复制或修改 RAGFlow 源码，也不让平台代码直连 RAGFlow 的内部依赖。管理脚本只读取
-`third_party/ragflow` 官方 submodule，且在 commit、tag、origin 或工作区完整性不匹配时关闭失败；
+不让平台代码直连 RAGFlow 的内部依赖。V2 只允许在独立私有 RAGFlow 仓库中维护基于精确官方
+`v0.26.4` 提交的版本化补丁；管理脚本只读取 `third_party/ragflow` 锁定 submodule，且在上游基线、
+fork commit、origin、镜像标签或工作区完整性不匹配时关闭失败；
 运行数据仍位于 `.local/dev/common-agent-dev/ragflow/`，稳定开发栈可以跨任务复用。普通 Python/npm
 包必须以实际安装使用的 `uv.lock`/`pnpm-lock.yaml` 为准，不能用旁路源码目录替代包管理器锁定。
 平台自有基础设施只有在路线图选用后才进入正式 Compose 和生产同路径验收。
@@ -266,7 +270,7 @@ third_party/
 ## 7. 禁止事项
 
 - 禁止在根目录混放前后端业务代码；
-- 禁止前端直连模型、RAGFlow、Deep Agents 或 LangGraph；
+- 禁止前端直连模型、RAGFlow、Deep Agents、LangGraph、MCP 或业务 HTTP；
 - 禁止前端以任务模型取代会话和消息；
 - 禁止前端自行解释和执行工作流图；节点图必须提交后端统一校验并由 LangGraph 执行；
 - 禁止复制前后端协议模型并分别维护；

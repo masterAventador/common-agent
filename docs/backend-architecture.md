@@ -1,7 +1,7 @@
 # 通用 Agent 中台后端架构
 
-> 状态：MVP 基线已完成，身份、租户/RBAC、不可篡改审计与持久 Worker 已落地
-> 确认日期：2026-07-21
+> 状态：V1 已落地，V2 工具/MCP 与私有 RAGFlow 目标架构已确认
+> 确认日期：2026-07-22
 > 运行范围：本机 FastAPI + 按需平台基础设施 + 本机 RAGFlow，外部只调用阿里百炼
 
 ## 1. 建设目标
@@ -17,6 +17,8 @@
 - 组织下的多工作区、成员角色与五类业务资源的租户隔离。
 - 固定元数据、租户隔离且不可原地篡改的审计与安全事件。
 - MySQL 持久任务/事件、独立 Worker、租约恢复与跨进程 SSE 续传。
+- 租户隔离的 MCP 来源、业务工具集、精确能力授权，以及通用 AI/数字员工工具调用。
+- 基于官方 `v0.26.4` 精确提交、由私有仓库和 submodule 锁定的 RAGFlow 性能补丁。
 
 普通聊天以 `Conversation` 和 `Message` 为主模型。只有用户或数字员工明确触发工作流时才创建 `WorkflowRun`。
 
@@ -34,6 +36,7 @@ React
        -> 独立 Worker
             -> RAGFlow（知识文档、解析和检索）
             -> Deep Agents + 阿里百炼（数字员工回复）
+            -> MCP Gateway（平台能力、托管 HTTP 与外部 MCP）
             -> LangGraph（独立工作流）
 ```
 
@@ -70,9 +73,10 @@ React
 - 第一版使用非 Sandbox 的 `StateBackend`；通过公开 Harness Profile 禁用默认通用子代理，
   从模型工具面排除 Todo、文件、Shell 和 `task` 全部内置工具，同时用 deny 规则拒绝所有
   文件读写，不能只依赖提示词声明安全边界；
-- 工具注册表只按本轮 `allowed_workflow_ids` 解析已注册能力；未知 ID、重复工具名或与 Deep
-  Agents 内置工具重名时 fail closed；
-- 知识检索与工作流触发通过显式工具进入平台应用服务；
+- 工具解析器按本轮精确工作流授权与工具能力授权生成唯一调用面；未知/跨租户/停用 ID、重复远端
+  名称或与 Deep Agents 保留工具重名时 fail closed；业务工具能力统一经 MCP 适配层，不能绕过
+  网关直连业务 HTTP；
+- 知识检索、工作流触发与 V2 工具调用通过显式受控能力进入平台应用服务；
 - 平台业务只依赖 `EmployeeRuntime`，Deep Agents 的消息、状态和事件在适配层转换；停止信号与
   上游下一事件竞速，停止或调用方取消时关闭上游异步流。
 
@@ -174,6 +178,53 @@ React
   或目录都会关闭失败。灾演先从正式 React 页面向隔离源写入真实 RAGFlow 文档与绑定，再停写
   备份并销毁源，恢复到另一套空环境，最后由同一正式页面验证文档、绑定和审计链。
 
+### 2.10 工具与 MCP
+
+平台自有 `tools/` 模块定义 MCP 来源、能力、工具集、来源关联、精确授权、调用请求/结果和稳定错误，
+不导入 MCP、LangChain、HTTP 客户端或供应商 SDK。`adapters/mcp/` 独占 MCP SDK、HTTP 转换、连接、
+工具 Schema 映射和最后一跳 `BaseTool` 包装。
+
+```text
+Employee/Conversation exact grants
+  -> ToolCapabilityResolver
+  -> MCP Tool Adapter
+       -> platform-native MCP（当前时间、工作流等平台能力）
+       -> managed MCP -> fixed business HTTP base_url + capability path
+       -> external MCP Streamable HTTP
+```
+
+- `mcp_sources` 保存租户、类型、显示信息、连接状态和稳定来源 ID；托管来源保存固定 Base URL，外部
+  来源保存 Streamable HTTP URL。认证值只通过独立加密凭据引用，不放入可回显配置 JSON；
+- `tool_capabilities` 保存稳定 UUID、来源、远端名称、显示名、描述、输入 Schema、状态和 Schema
+  fingerprint；托管 HTTP 能力另存 method/path/参数位置/超时/响应映射。远端改名视为新能力，旧能力
+  标记不可用并保留历史引用；
+- `tool_collections` 与来源关联只负责聚合目录；`employee_tool_grants`、`conversation_tool_grants`
+  才是运行时权限。选择父集合只在保存时展开为当前叶子 UUID，任何同步都不得写授权表；
+- 平台原生、托管和外部能力统一通过 MCP `tools/list` / `tools/call` 语义执行，再转换成平台自有结果
+  与持久事件；Deep Agents 看不到来源类型，业务系统也不需要实现平台私有工具协议；
+- V2 托管 HTTP 鉴权只允许 none、Bearer 和自定义 Header。可逆凭据以独立主密钥认证加密落库，
+  API 只返回掩码；用户名/密码代登录、OAuth 与 stdio MCP 不建立兼容字段；
+- 托管/外部网络访问固定 origin，执行 host/CIDR 许可、DNS/地址与重定向复核、`trust_env=False`、
+  超时、并发、响应大小和内容类型限制；业务内网通过运维配置显式放行，Header/路径参数不能覆盖
+  Host、Authorization 或其他受保护字段；
+- 工具调用默认不自动重试有副作用的 `tools/call`。调用结果未知、能力失效、软失败、协议错误和
+  响应超限分别映射稳定错误；每次调用在 Worker 中再次检查租户与授权，并写固定元数据审计和会话
+  工具事件，不保存凭据或默认保存完整参数/结果；
+- 模型兼容目录按 provider + model identifier 保存“绑定工具时禁用供应商流式调用”能力。只有真实
+  Trace 证明 tool-call chunk 无法关联时才登记；适配器用公开模型配置能力取得完整调用，外层平台
+  SSE、工具事件和纯文本模型流继续工作。
+
+### 2.11 私有 RAGFlow 补丁
+
+V2 允许 RAGFlow 成为第三方零侵入规则的唯一受控例外。补丁仓库从官方
+`v0.26.4@cb93883f3f8c975eecb2fed81210effeb3bdb06f` 建立，保留 `upstream` remote、官方基线、
+版本化 common-agent 分支、逐补丁测试/基准和回滚提交。平台仍只调用公开 RAGFlow API，不因维护
+fork 而直连其 MySQL、Elasticsearch、Valkey 或 MinIO。
+
+common-agent 的 `third_party/ragflow` 只锁定已经推送到私有远端的提交；基础设施同时校验上游基线、
+fork commit、submodule origin、镜像标签和干净工作树。写入、删除、列表/读取和检索补丁按测得瓶颈
+逐项进入，不能复制 HugAI 专用路由、全局关闭 ES refresh 或未经 32 GiB 正式栈验证的并发值。
+
 ## 3. 分层与依赖方向
 
 ```text
@@ -184,9 +235,10 @@ application --------------+
  |                         |
  +-> domain                |
  +-> models -------------->+ adapters/bailian
- +-> runtimes ------------>+ adapters/deep_agents
- +-> knowledge ----------->+ adapters/ragflow
- +-> workflows ----------->+ adapters/workflow/langgraph
++-> runtimes ------------>+ adapters/deep_agents
++-> knowledge ----------->+ adapters/ragflow
++-> tools --------------->+ adapters/mcp/http
++-> workflows ----------->+ adapters/workflow/langgraph
  +-> ports ---------------->+ adapters/mysql|redis|queue|object_store
 
 worker_app -> application/tasks/events -> adapters/mysql|ragflow|bailian|deep_agents|langgraph
@@ -219,6 +271,7 @@ worker_app -> application/tasks/events -> adapters/mysql|ragflow|bailian|deep_ag
 
 - `EmployeeService`：数字员工 CRUD、知识库绑定和工作流 allowlist 引用校验；
 - `KnowledgeBaseService`：RAGFlow 知识库与文档操作；
+- `ToolService`：MCP 来源、能力、工具集、精确授权、发现与调用；
 - `ConversationService`：创建会话、保存消息、自动检索、生成回复；
 - `WorkflowService`：校验、保存和运行工作流；
 - `ResourceDeletionService`：统一执行会话、员工、知识库和工作流的引用安全删除；
@@ -309,6 +362,8 @@ Employee
 ├── default_model_identifier: string
 ├── knowledge_base_id: string | null
 ├── allowed_workflow_ids: list[UUID]
+├── selected_tool_collection_ids: list[UUID]（仅选择快照）
+├── granted_tool_capability_ids: list[UUID]（关系表权威权限）
 ├── created_at
 └── updated_at
 ```
@@ -318,7 +373,8 @@ Employee
 
 `Employee` 是与具体业务无关的会话角色配置：只保存名称、说明、系统指令和平台能力引用，
 不保存行业字段、业务任务状态或 automation-tool 的业务模型。`allowed_workflow_ids` 只是对独立
-工作流公开能力的调用白名单，不内嵌工作流图；在 Wave 5 接入工作流前保持空列表。
+工作流公开能力的调用白名单，不内嵌工作流图。工具集合选择用于还原用户选择视图，真正调用权限
+来自租户内 `employee_tool_grants` 的稳定能力 UUID；保存父集合时展开一次，后续同步不自动增加。
 
 ### 4.2 模型配置
 
@@ -330,6 +386,13 @@ ModelConfiguration
 ├── model_identifier
 ├── enabled
 ├── created_at
+└── updated_at
+
+ModelToolStreamingCapability
+├── provider: bailian
+├── model_identifier
+├── disable_streaming_when_tools: bool
+├── evidence_revision
 └── updated_at
 ```
 
@@ -343,6 +406,10 @@ ModelConfiguration
 同时阻止跨租户引用和绕过应用层的删除。停用只影响后续新选择，不改写既有引用。测试调用允许在
 启用前执行，以便用户先验证再启用；它不持久化提示词或供应商正文，只审计固定动作与资源 ID。
 
+工具流兼容记录是平台维护的模型能力事实，不由普通租户配置随意开启。解析模型时按
+`provider + model_identifier` 合并；未登记默认保持正常流式，只有可复现 Trace 和回归证据才能写入
+禁流标记。数据库读取失败不能把所有模型静默切成另一模式，调用应按稳定错误或已有安全默认收敛。
+
 ### 4.3 会话与消息
 
 ```text
@@ -351,6 +418,7 @@ Conversation
 ├── source: generic | employee
 ├── employee_id: UUID | null
 ├── model_configuration_id: UUID | null
+├── granted_tool_capability_ids: list[UUID]（关系表）
 ├── title: string
 ├── created_at
 └── updated_at
@@ -389,6 +457,10 @@ Citation
 漂移的会话级模型。助手消息同时保存本轮实际模型配置 ID 和百炼模型标识快照，用户消息的两个
 字段必须为空；因此员工后续改默认模型或通用会话后续切模都不会改写历史事实。
 
+通用会话的工具授权由 `conversation_tool_grants` 保存；员工会话每轮从员工精确授权创建不可变
+执行快照。两种来源都默认空，工具集合关系不能在运行时动态扩展权限。历史工具调用通过持久会话
+事件保留状态，不把完整参数、结果或凭据塞入消息正文。
+
 平台 MySQL 使用 `conversations`、`messages`、`message_citations` 三张表。员工会话通过正式外键
 引用平台员工，通用会话通过复合外键引用模型配置，消息和引用使用级联子记录；角色/状态组合、错误码、长度、时间顺序、会话内
 消息序号及引用分数同时由领域模型和数据库约束。Repository 只更新标题或消息运行态等可变
@@ -400,7 +472,7 @@ Citation
 `EmployeeRuntime` 每次 `stream(request, stop=...)` 只生成同一会话中的一条助手回复，不创建
 任务实体，也不暴露旧任务模型的启动、审批、恢复或产物方法。请求显式携带 Conversation、
 Employee、助手占位消息 ID/序号、员工系统指令、按持久化序号排列的模型可见历史、知识库
-绑定/检索片段、员工解析后的模型标识和允许调用的工作流 ID；系统指令、历史正文与知识原文彼此分离，适配器不能靠
+绑定/检索片段、员工解析后的模型标识、允许调用的工作流 ID 和精确工具能力 ID；系统指令、历史正文与知识原文彼此分离，适配器不能靠
 拼接无类型字典猜测来源。
 
 `DeepAgentsEmployeeRuntime` 每轮按请求模型标识从 `BailianChatModelResolver` 取得对应
@@ -410,7 +482,8 @@ Employee、助手占位消息 ID/序号、员工系统指令、按持久化序�
 历史最多 100 条且总计 400,000 字符；知识上下文最多 20 段且总计 120,000 字符。未绑定知识
 库时上下文必须为空；已绑定但检索零命中仍保留 `knowledge_base_id` 并允许空上下文，不能把这
 两种情况混为一谈。所有片段必须来自当前绑定知识库且引用唯一；允许的工作流 UUID 也必须
-唯一并有数量上限。系统指令、历史正文、知识原文和模型增量从运行时对象 repr 排除。
+唯一并有数量上限；工具能力 ID 同样必须唯一、属于当前租户和本轮授权快照。系统指令、历史正文、
+知识原文、工具参数/结果和模型增量从运行时对象 repr 排除。
 
 运行时事件只包含 `delta/completed/failed/stopped`：序号在单次回复内从 1 单调递增，文本只
 存在于 delta，错误码只存在于 failed，并且只能产生一个终态。`RuntimeStopToken` 表示幂等的
@@ -495,7 +568,8 @@ WorkflowRun
   -> KnowledgeService.retrieve(question)
   -> 把历史消息、系统指令、知识片段和引用交给 EmployeeRuntime
   -> Deep Agents 调用阿里百炼
-  -> 如模型调用授权工作流工具，经同一个 WorkflowService 运行并等待持久化终态
+  -> 如模型调用授权能力，经统一解析器进入平台 MCP、托管 HTTP、外部 MCP 或 WorkflowService
+  -> 工具开始/完成/失败先形成持久事件，再把 MCP 结果交回模型继续生成
   -> 每个 Runtime delta/终态先写回助手消息和引用并提交 MySQL
   -> 再把 assistant.delta / assistant.completed 等平台事件追加到持久序列
 ```
@@ -562,6 +636,23 @@ GET    /api/v1/model-configurations/{model_configuration_id}
 PUT    /api/v1/model-configurations/{model_configuration_id}
 DELETE /api/v1/model-configurations/{model_configuration_id}
 POST   /api/v1/model-configurations/{model_configuration_id}/verify
+
+GET    /api/v1/mcp-sources
+POST   /api/v1/mcp-sources
+GET    /api/v1/mcp-sources/{source_id}
+PUT    /api/v1/mcp-sources/{source_id}
+DELETE /api/v1/mcp-sources/{source_id}
+POST   /api/v1/mcp-sources/{source_id}/refresh
+GET    /api/v1/mcp-sources/{source_id}/capabilities
+POST   /api/v1/mcp-sources/{source_id}/capabilities
+POST   /api/v1/mcp-sources/{source_id}/openapi/preview
+POST   /api/v1/mcp-sources/{source_id}/openapi/import
+GET    /api/v1/tool-collections
+POST   /api/v1/tool-collections
+GET    /api/v1/tool-collections/{collection_id}
+PUT    /api/v1/tool-collections/{collection_id}
+DELETE /api/v1/tool-collections/{collection_id}
+GET    /api/v1/tool-capabilities
 
 GET    /api/v1/employees
 POST   /api/v1/employees
@@ -632,7 +723,8 @@ GET    /api/v1/workflow-runs/{run_id}/events
 
 RAGFlow v0.26.4 数据集列表只走官方 `page/page_size/orderby/desc` 与 `ext.keywords` 能力；其页码
 和总数在 `RagflowKnowledgeService` 内转换为平台 opaque offset cursor，第三方分页类型不越过
-适配层。平台不修改 RAGFlow 源码，也不直连其 MySQL。创建或删除后客户端必须废弃旧页链；在同一
+适配层。平台运行时不热改 RAGFlow，也不直连其 MySQL；V2 性能修改只存在于 submodule 锁定的私有
+补丁仓库。创建或删除后客户端必须废弃旧页链；在同一
 页链内新增的更靠前记录不会插入后续 keyset 页，删除游标锚点也不会使读取失效。
 
 ### 7.3 日志、指标与追踪
@@ -664,6 +756,9 @@ assistant.delta
 assistant.completed
 assistant.failed
 assistant.stopped
+assistant.tool.started
+assistant.tool.completed
+assistant.tool.failed
 
 workflow.run.started
 workflow.node.started
@@ -674,9 +769,10 @@ workflow.run.failed
 workflow.run.stopped
 ```
 
-每个会话事件包含固定 `schema_version=1`、`conversation_id`、`message_id`、`turn_id`、会话内
+每个会话事件包含固定 `schema_version`、`conversation_id`、`message_id`、`turn_id`、会话内
 单调 `sequence`、时间和已持久化的消息快照；delta 事件额外包含本次文本增量，重试开始事件
-带 `retry=true`。SSE 的 `id` 与 payload sequence 一致，支持 `after_sequence` 和
+带 `retry=true`。工具事件额外包含稳定 `tool_call_id`、能力 UUID、显示名和安全状态，不包含
+凭据或默认包含完整参数/结果；新增事件必须提升并生成对应 Schema 版本。SSE 的 `id` 与 payload sequence 一致，支持 `after_sequence` 和
 `Last-Event-ID` 从 MySQL 持久序列跨 API/Worker 重启回放。无法续传时前端必须重新读取 MySQL 权威消息历史，不能猜测
 丢失内容。前端只消费平台事件，不解析 LangGraph 或 Deep Agents 原始事件。
 
@@ -755,9 +851,9 @@ completed/failed/stopped 都严格提交后发布。停止接口只接受活跃�
 互不冲突的项目专属 launchd 标签和日志。平台 MySQL 数据、上传临时文件、服务 Volume 映射和
 日志统一放在根目录 `.local/`；平台 MySQL 与 RAGFlow 使用不同的 Compose project、容器、网络和 Volume。
 
-RAGFlow 固定为官方 `v0.26.4` 及其 tag 提交
-`cb93883f3f8c975eecb2fed81210effeb3bdb06f`，以 `third_party/ragflow` 官方 Git submodule
-保存确切源码引用，并通过 `infra/ragflow/manage.sh` 运行未修改的官方 Compose。知识库新建、既有索引
+R2-07 切换前，RAGFlow 当前仍固定为官方 `v0.26.4` 及其 tag 提交
+`cb93883f3f8c975eecb2fed81210effeb3bdb06f`；切换后 `third_party/ragflow` 固定到以该提交为上游
+基线的私有补丁 revision，并由 `infra/ragflow/manage.sh` 同时验证 upstream/fork/image。知识库新建、既有索引
 重建和检索分别显式固定阿里百炼
 `text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible` 与
 `qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible`，不启动或兜底到本地
