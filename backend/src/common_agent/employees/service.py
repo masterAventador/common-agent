@@ -45,6 +45,8 @@ class EmployeeModelDisabled(EmployeeServiceError):
 class WorkflowDirectory(Protocol):
     async def get(self, workflow_id: UUID) -> object: ...
 
+    async def ensure_exist(self, workflow_ids: tuple[UUID, ...]) -> None: ...
+
 
 class ModelConfigurationDirectory(Protocol):
     async def get(self, model_configuration_id: UUID) -> ModelConfiguration: ...
@@ -206,8 +208,7 @@ class EmployeeService:
             await self._knowledge_bases.get_knowledge_base(knowledge_base_id)
 
     async def _validate_workflows(self, workflow_ids: tuple[UUID, ...]) -> None:
-        for workflow_id in workflow_ids:
-            await self._workflows.get(workflow_id)
+        await self._workflows.ensure_exist(workflow_ids)
 
     async def _validate_model_configuration(
         self,

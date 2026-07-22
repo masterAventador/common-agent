@@ -137,6 +137,17 @@ class SqlAlchemyWorkflowRepository:
         node_rows, edge_rows = await self._load_graph_rows((row.id,))
         return _to_domain(row, node_rows[row.id], edge_rows[row.id])
 
+    async def existing_ids(self, workflow_ids: tuple[UUID, ...]) -> frozenset[UUID]:
+        if not workflow_ids:
+            return frozenset()
+        values = await self._session.scalars(
+            select(WorkflowRow.id).where(
+                WorkflowRow.id.in_(tuple(str(workflow_id) for workflow_id in workflow_ids)),
+                WorkflowRow.tenant_id == self._tenant_id,
+            )
+        )
+        return frozenset(UUID(value) for value in values)
+
     async def add(self, workflow: WorkflowDefinition) -> None:
         self._session.add(WorkflowRow(tenant_id=self._tenant_id, **_workflow_values(workflow)))
         try:

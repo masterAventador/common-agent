@@ -4,7 +4,7 @@ import asyncio
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import event, text
@@ -179,6 +179,49 @@ def test_workflow_page_batches_graph_loading_without_n_plus_one_queries() -> Non
     assert item_count == 20
     assert statement_count == 3
     assert has_more is True
+
+
+def test_workflow_existence_check_uses_one_tenant_scoped_statement() -> None:
+    workflows = tuple(_workflow(f"existence-batch-{index}-{uuid4().hex}") for index in range(25))
+    missing_id = uuid4()
+
+    async def exercise() -> tuple[frozenset[UUID], int]:
+        async with _database() as database:
+            try:
+                async with database.session() as session:
+                    repository = SqlAlchemyWorkflowRepository(session)
+                    for workflow in workflows:
+                        await repository.add(workflow)
+                    await session.commit()
+
+                async with database.session() as session:
+                    statements: list[str] = []
+
+                    def record_statement(
+                        _connection: object,
+                        _cursor: object,
+                        statement: str,
+                        _parameters: object,
+                        _context: object,
+                        _executemany: object,
+                    ) -> None:
+                        statements.append(statement)
+
+                    bind = session.get_bind()
+                    event.listen(bind, "before_cursor_execute", record_statement)
+                    try:
+                        existing = await SqlAlchemyWorkflowRepository(session).existing_ids(
+                            (*(workflow.id for workflow in workflows), missing_id)
+                        )
+                    finally:
+                        event.remove(bind, "before_cursor_execute", record_statement)
+                    return existing, len(statements)
+            finally:
+                await delete_workflows(database, *(workflow.id for workflow in workflows))
+
+    existing, statement_count = asyncio.run(exercise())
+    assert existing == frozenset(workflow.id for workflow in workflows)
+    assert statement_count == 1
 
 
 def test_workflow_repository_rollback_does_not_persist_definition_or_graph() -> None:

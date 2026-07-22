@@ -94,6 +94,7 @@ def test_create_and_update_validate_workflow_allowlist_before_commit() -> None:
     assert created.allowed_workflow_ids == (first_id,)
     assert updated.allowed_workflow_ids == (second_id, first_id)
     assert workflows.requested_ids == [first_id, second_id, first_id]
+    assert workflows.request_batches == [(first_id,), (second_id, first_id)]
     assert units.commit_count == 2
 
 

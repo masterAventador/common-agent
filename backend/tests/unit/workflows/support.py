@@ -61,6 +61,9 @@ class WorkflowRepositoryProbe:
     async def get(self, workflow_id: UUID) -> WorkflowDefinition | None:
         return self.values.get(workflow_id)
 
+    async def existing_ids(self, workflow_ids: tuple[UUID, ...]) -> frozenset[UUID]:
+        return frozenset(workflow_id for workflow_id in workflow_ids if workflow_id in self.values)
+
     async def add(self, workflow: WorkflowDefinition) -> None:
         if workflow.id in self.values:
             raise WorkflowAlreadyExists

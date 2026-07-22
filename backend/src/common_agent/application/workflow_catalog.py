@@ -94,6 +94,14 @@ class WorkflowCatalog:
             raise WorkflowNotFound
         return workflow
 
+    async def ensure_exist(self, workflow_ids: tuple[UUID, ...]) -> None:
+        if not workflow_ids:
+            return
+        async with self._unit_of_work_factory() as unit_of_work:
+            existing = await unit_of_work.workflows.existing_ids(workflow_ids)
+        if existing != frozenset(workflow_ids):
+            raise WorkflowNotFound
+
     async def validate(
         self,
         configuration: WorkflowConfiguration,

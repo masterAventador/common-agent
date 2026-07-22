@@ -79,6 +79,9 @@ class WorkflowService:
     async def get(self, workflow_id: UUID) -> WorkflowDefinition:
         return await self._catalog.get(workflow_id)
 
+    async def ensure_exist(self, workflow_ids: tuple[UUID, ...]) -> None:
+        await self._catalog.ensure_exist(workflow_ids)
+
     async def validate(
         self,
         configuration: WorkflowConfiguration,

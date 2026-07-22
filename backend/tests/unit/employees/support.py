@@ -19,6 +19,7 @@ class WorkflowDirectoryProbe:
     def __init__(self) -> None:
         self.available_ids: set[UUID] = set()
         self.requested_ids: list[UUID] = []
+        self.request_batches: list[tuple[UUID, ...]] = []
 
     async def get(self, workflow_id: UUID) -> object:
         self.requested_ids.append(workflow_id)
@@ -27,6 +28,14 @@ class WorkflowDirectoryProbe:
 
             raise WorkflowNotFound
         return object()
+
+    async def ensure_exist(self, workflow_ids: tuple[UUID, ...]) -> None:
+        self.request_batches.append(workflow_ids)
+        self.requested_ids.extend(workflow_ids)
+        if any(workflow_id not in self.available_ids for workflow_id in workflow_ids):
+            from common_agent.application.workflow_service import WorkflowNotFound
+
+            raise WorkflowNotFound
 
 
 DEFAULT_MODEL_CONFIGURATION_ID = UUID("5eb782ad-4fd6-40a6-8668-a9b729340ec9")
