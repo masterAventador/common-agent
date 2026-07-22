@@ -124,6 +124,7 @@ export function useChatPageController() {
     (message) =>
       message.role === "assistant" && ["pending", "streaming"].includes(message.status),
   );
+  const isEmployeeConversation = selectedConversation?.source === "employee";
   const workflowRuns = useInfiniteQuery({
     queryKey: ["conversation-workflow-runs", selectedConversationId],
     queryFn: ({ pageParam }) =>
@@ -133,21 +134,21 @@ export function useChatPageController() {
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextPageCursor,
-    enabled: Boolean(selectedConversationId),
-    refetchInterval: activeMessage ? 1_000 : false,
+    enabled: Boolean(selectedConversationId && isEmployeeConversation),
+    refetchInterval: activeMessage && isEmployeeConversation ? 1_000 : false,
   });
+  const workflowRunItems = useMemo(
+    () => flattenCursorPages(workflowRuns.data),
+    [workflowRuns.data],
+  );
   const workflows = useInfiniteQuery({
     queryKey: ["workflows"],
     queryFn: ({ pageParam }) => fetchWorkflows({ limit: 100, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextPageCursor,
-    enabled: Boolean(selectedConversationId),
+    enabled: isEmployeeConversation && workflowRunItems.length > 0,
   });
   const workflowItems = useMemo(() => flattenCursorPages(workflows.data), [workflows.data]);
-  const workflowRunItems = useMemo(
-    () => flattenCursorPages(workflowRuns.data),
-    [workflowRuns.data],
-  );
   const workflowsById = useMemo(
     () => new Map(workflowItems.map((workflow) => [workflow.id, workflow])),
     [workflowItems],

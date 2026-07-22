@@ -27,7 +27,17 @@ test("creates a generic conversation on first send and switches real Bailian mod
   const firstMarker = `COMMON_AGENT_GENERIC_TURBO_${Date.now()}`;
   const secondMarker = `COMMON_AGENT_GENERIC_PLUS_${Date.now()}`;
   const pageErrors: string[] = [];
+  const employeeWorkflowRequests: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (
+      request.method() === "GET" &&
+      ["/api/v1/workflow-runs", "/api/v1/workflows"].includes(pathname)
+    ) {
+      employeeWorkflowRequests.push(pathname);
+    }
+  });
 
   await page.goto("/model-configurations");
   await page.getByRole("button", { name: "创建模型" }).click();
@@ -139,5 +149,6 @@ test("creates a generic conversation on first send and switches real Bailian mod
   );
   await page.getByRole("button", { name: `确认删除模型 ${modelName}` }).click();
   expect((await deleteModelResponse).status()).toBe(204);
+  expect(employeeWorkflowRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 });

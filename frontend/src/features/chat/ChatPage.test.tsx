@@ -396,6 +396,20 @@ describe("ChatPage", () => {
     ).toHaveTextContent(alternateModelConfiguration.display_name);
   });
 
+  it("does not request employee workflow data for a restored generic conversation", async () => {
+    chatApi.fetchConversation.mockResolvedValue({
+      ...genericConversation,
+      employee_name: null,
+    });
+
+    renderGenericHistoryPage();
+
+    expect(await screen.findByRole("heading", { name: "通用 AI" })).toBeInTheDocument();
+    await waitFor(() => expect(chatApi.fetchConversationMessages).toHaveBeenCalled());
+    expect(workflowRunApi.fetchConversationWorkflowRuns).not.toHaveBeenCalled();
+    expect(workflowApi.fetchWorkflows).not.toHaveBeenCalled();
+  });
+
   it("loads the referenced employee directly and restores its current default model", async () => {
     const currentEmployee = {
       ...employee,
