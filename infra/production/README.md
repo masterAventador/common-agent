@@ -48,8 +48,10 @@ infra/production/manage.sh drill
 ```
 
 演练会依次构建两个不可变 release、向前迁移数据库、蓝绿切流、通过正式 Chromium 验收五个入口、
-执行权限与输入攻击矩阵，并通过 k6 从正式 TLS 域名持续运行 60 秒鉴权读容量基线，最后注入 active
-API 故障并回滚。k6 是后续容量和 SLO 复验的长期工具，macOS 本机缺少时直接执行 `brew install k6`。
+执行权限与输入攻击矩阵，并通过 k6 从正式 TLS 域名持续运行 60 秒鉴权读容量基线。随后 SSE 门禁
+以 16 路/秒爬升至 128 路并保持 360 秒，要求全部连接存活、握手 p95 低于 500 ms、无意外断连且
+关闭后无请求泄漏；最后注入 active API 故障并回滚。k6 是后续容量和 SLO 复验的长期工具，macOS
+本机缺少时直接执行 `brew install k6`。
 退出时停止生产演练与按需启动的 RAGFlow 容器，删除临时状态、凭据和演练 MySQL Volume，保留可
 复用的固定镜像与 RAGFlow 稳定数据。
 
@@ -140,5 +142,5 @@ infra/production/manage.sh verify
 infra/production/manage.sh down
 ```
 
-S10-08 将在采购规格与目标网络确定后补容器/SAST 扫描、攻击测试、并发与长连接压测、SLO、告警
-和最终新租户全链路验收；完成这些门禁前，本目录不能被解释为已经上线。
+S10-08 已完成容器/SAST 扫描、攻击测试、首轮读取容量与 SSE 长连接门禁；并发写入、Worker 容量、
+故障恢复、SLO、告警和最终新租户全链路仍待完成。全部门禁完成前，本目录不能被解释为已经上线。

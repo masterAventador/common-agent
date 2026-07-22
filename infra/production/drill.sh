@@ -123,13 +123,30 @@ run_formal_page_smoke() {
 run_formal_capacity_test() {
   command -v k6 >/dev/null 2>&1 || fail "生产容量压测缺少 k6，请先通过 Homebrew 安装"
   (
-    export COMMON_AGENT_PERFORMANCE_BASE_URL='https://common-agent.test:18443'
-    export COMMON_AGENT_PERFORMANCE_EMAIL='production-drill@example.com'
-    export COMMON_AGENT_PERFORMANCE_PASSWORD='Production-Drill-2026!'
     cd "${REPOSITORY_ROOT}"
-    k6 run --quiet --no-color --include-system-env-vars --insecure-skip-tls-verify \
-      "${SCRIPT_DIR}/load-test.js"
+    env \
+      COMMON_AGENT_PERFORMANCE_BASE_URL='https://common-agent.test:18443' \
+      COMMON_AGENT_PERFORMANCE_EMAIL='production-drill@example.com' \
+      COMMON_AGENT_PERFORMANCE_PASSWORD='Production-Drill-2026!' \
+      k6 run --quiet --no-color --include-system-env-vars --insecure-skip-tls-verify \
+        "${SCRIPT_DIR}/load-test.js"
   )
+}
+
+run_formal_sse_capacity_test() {
+  env \
+    COMMON_AGENT_PERFORMANCE_BASE_URL='https://127.0.0.1:18443' \
+    COMMON_AGENT_PERFORMANCE_HOST='common-agent.test' \
+    COMMON_AGENT_PERFORMANCE_EMAIL='production-drill@example.com' \
+    COMMON_AGENT_PERFORMANCE_PASSWORD='Production-Drill-2026!' \
+    COMMON_AGENT_PERFORMANCE_CA_FILE="${STATE_ROOT}/tls/ca.crt" \
+    COMMON_AGENT_SSE_CONNECTIONS=128 \
+    COMMON_AGENT_SSE_DURATION_SECONDS=360 \
+    COMMON_AGENT_SSE_RAMP_CONNECTIONS_PER_SECOND=16 \
+    COMMON_AGENT_SSE_HANDSHAKE_TIMEOUT_SECONDS=30 \
+    COMMON_AGENT_SSE_HANDSHAKE_P95_MS=500 \
+    "${REPOSITORY_ROOT}/scripts/uv.sh" run --project "${REPOSITORY_ROOT}/backend" \
+      --frozen python "${SCRIPT_DIR}/sse_load_test.py"
 }
 
 verify_untrusted_host_is_rejected() {
@@ -227,6 +244,7 @@ run_formal_page_smoke
 verify_untrusted_host_is_rejected
 verify_path_traversal_is_rejected
 run_formal_capacity_test
+run_formal_sse_capacity_test
 verify_forwarded_for_spoof_is_rate_limited
 exercise_failure_and_rollback
 

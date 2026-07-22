@@ -8,6 +8,7 @@ MANAGER="${SCRIPT_DIR}/manage.sh"
 DRILL="${SCRIPT_DIR}/drill.sh"
 COMPOSE_FILE="${SCRIPT_DIR}/compose.yaml"
 LOAD_TEST="${SCRIPT_DIR}/load-test.js"
+SSE_LOAD_TEST="${SCRIPT_DIR}/sse_load_test.py"
 
 fail() {
   echo "$1" >&2
@@ -18,6 +19,7 @@ fail() {
 [[ -x "${DRILL}" ]] || fail "缺少可执行的隔离生产发布演练"
 [[ -f "${COMPOSE_FILE}" ]] || fail "缺少双槽生产 Compose"
 [[ -f "${LOAD_TEST}" ]] || fail "缺少生产 TLS Edge 容量压测入口"
+[[ -f "${SSE_LOAD_TEST}" ]] || fail "缺少生产 SSE 长连接压测入口"
 [[ -f "${SCRIPT_DIR}/ragflow-node.local.compose.yaml" ]] || fail "缺少本地双节点网络覆盖层"
 [[ -f "${REPOSITORY_ROOT}/backend/Dockerfile" ]] || fail "缺少后端生产镜像"
 [[ -f "${REPOSITORY_ROOT}/frontend/Dockerfile" ]] || fail "缺少前端生产镜像"
@@ -108,6 +110,8 @@ for security_header in \
 done
 grep -Fq 'proxy_buffering off' "${SCRIPT_DIR}/web.conf.template" || \
   fail "前端代理没有关闭 SSE 缓冲"
+grep -Fq 'proxy_read_timeout 600s' "${SCRIPT_DIR}/web.conf.template" || \
+  fail "前端代理没有为生产 SSE 长连接保留完整验收窗口"
 grep -Fq 'backup-recovery' "${DRILL}" || fail "生产演练没有复用正式页面恢复验证"
 grep -Fq 'production-request-limits.spec.ts' "${DRILL}" || \
   fail "生产演练没有从正式浏览器与 TLS Edge 验证请求体边界"
@@ -116,6 +120,15 @@ grep -Fq 'production-security-headers.spec.ts' "${DRILL}" || \
 grep -Fq 'production-security-attacks.spec.ts' "${DRILL}" || \
   fail "生产演练没有从 TLS Edge 验证权限与输入攻击矩阵"
 grep -Fq 'k6 run' "${DRILL}" || fail "生产演练没有执行正式容量压测"
+grep -Fq 'sse_load_test.py' "${DRILL}" || fail "生产演练没有执行 SSE 长连接压测"
+for drill_sse_contract in \
+  'COMMON_AGENT_SSE_CONNECTIONS=128' \
+  'COMMON_AGENT_SSE_DURATION_SECONDS=360' \
+  'COMMON_AGENT_SSE_RAMP_CONNECTIONS_PER_SECOND=16' \
+  'COMMON_AGENT_SSE_HANDSHAKE_P95_MS=500'; do
+  grep -Fq "${drill_sse_contract}" "${DRILL}" || \
+    fail "生产演练缺少 SSE 长连接目标：${drill_sse_contract}"
+done
 for capacity_contract in \
   'constant-arrival-rate' \
   'rate<0.001' \
@@ -125,6 +138,17 @@ for capacity_contract in \
   'COMMON_AGENT_PERFORMANCE_BASE_URL'; do
   grep -Fq "${capacity_contract}" "${LOAD_TEST}" || \
     fail "生产容量压测缺少关闭失败契约：${capacity_contract}"
+done
+for sse_contract in \
+  'COMMON_AGENT_SSE_CONNECTIONS' \
+  'COMMON_AGENT_SSE_DURATION_SECONDS' \
+  'COMMON_AGENT_SSE_RAMP_CONNECTIONS_PER_SECOND' \
+  'COMMON_AGENT_SSE_HANDSHAKE_P95_MS' \
+  'text/event-stream' \
+  'unexpected_disconnects' \
+  'requests_in_flight'; do
+  grep -Fq "${sse_contract}" "${SSE_LOAD_TEST}" || \
+    fail "生产 SSE 长连接压测缺少关闭失败契约：${sse_contract}"
 done
 grep -Fq 'verify_untrusted_host_is_rejected' "${DRILL}" || \
   fail "生产演练没有从 TLS Edge 验证伪造 Host 拒绝"
