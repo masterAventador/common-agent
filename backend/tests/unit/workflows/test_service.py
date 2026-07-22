@@ -9,12 +9,13 @@ import pytest
 
 from common_agent.application.workflow_service import WorkflowNotFound, WorkflowService
 from common_agent.domain.employee import Employee
-from common_agent.domain.knowledge import KnowledgeServiceAvailability
+from common_agent.domain.knowledge import KnowledgeBaseSummary, KnowledgeServiceAvailability
 from common_agent.domain.model_configuration import ModelConfiguration, ModelConfigurationInput
 from common_agent.domain.workflow import (
     AiChatNodeConfig,
     EmployeeAiChatTarget,
     EndNodeConfig,
+    KnowledgeRetrievalNodeConfig,
     ModelAiChatTarget,
     StartNodeConfig,
     WorkflowConfiguration,
@@ -26,6 +27,7 @@ from common_agent.domain.workflow import (
 from common_agent.knowledge.base import KnowledgeServiceUnavailable
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.workflows.validator import WorkflowGraphInvalid, WorkflowValidationCode
+from tests.support.knowledge import KnowledgeProbe
 from tests.unit.workflows.support import (
     workflow_configuration,
     workflow_service_with_probes,
@@ -49,6 +51,31 @@ class _AiTargetDirectoryProbe:
     ) -> ModelConfiguration:
         self.model_requests.append(model_configuration_id)
         return self.model
+
+
+class _ConcurrentKnowledgeProbe(KnowledgeProbe):
+    def __init__(self) -> None:
+        super().__init__()
+        self.values = {
+            knowledge_base_id: KnowledgeBaseSummary(
+                id=knowledge_base_id,
+                name=knowledge_base_id,
+                description="",
+                document_count=0,
+                parsing_count=0,
+            )
+            for knowledge_base_id in ("kb-first", "kb-second")
+        }
+        self.started: set[str] = set()
+        self.all_started = asyncio.Event()
+
+    async def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBaseSummary:
+        self.requested_ids.append(knowledge_base_id)
+        self.started.add(knowledge_base_id)
+        if len(self.started) == len(self.values):
+            self.all_started.set()
+        await asyncio.wait_for(self.all_started.wait(), timeout=0.2)
+        return self.values[knowledge_base_id]
 
 
 def test_validate_accepts_valid_graph_without_knowledge_calls() -> None:
@@ -96,6 +123,52 @@ def test_validate_propagates_knowledge_outage_instead_of_marking_graph_valid() -
 
     assert knowledge.requested_ids == []
     assert units.units == []
+
+
+def test_validate_checks_independent_knowledge_references_concurrently() -> None:
+    _, units, _ = workflow_service_with_probes()
+    knowledge = _ConcurrentKnowledgeProbe()
+    service = WorkflowService(units, KnowledgeBaseService(knowledge))
+    nodes = (
+        WorkflowNode(
+            id="start",
+            type=WorkflowNodeType.START,
+            position=WorkflowNodePosition(x=0, y=0),
+            config=StartNodeConfig(),
+        ),
+        WorkflowNode(
+            id="first",
+            type=WorkflowNodeType.KNOWLEDGE_RETRIEVAL,
+            position=WorkflowNodePosition(x=200, y=0),
+            config=KnowledgeRetrievalNodeConfig(knowledge_base_id="kb-first"),
+        ),
+        WorkflowNode(
+            id="second",
+            type=WorkflowNodeType.KNOWLEDGE_RETRIEVAL,
+            position=WorkflowNodePosition(x=400, y=0),
+            config=KnowledgeRetrievalNodeConfig(knowledge_base_id="kb-second"),
+        ),
+        WorkflowNode(
+            id="end",
+            type=WorkflowNodeType.END,
+            position=WorkflowNodePosition(x=600, y=0),
+            config=EndNodeConfig(),
+        ),
+    )
+    configuration = WorkflowConfiguration(
+        name="并发知识引用校验",
+        description="不同知识库并发校验",
+        nodes=nodes,
+        edges=tuple(
+            WorkflowEdge(id=f"edge-{index}", source=source.id, target=target.id)
+            for index, (source, target) in enumerate(pairwise(nodes), start=1)
+        ),
+    )
+
+    issues = asyncio.run(service.validate(configuration))
+
+    assert issues == ()
+    assert knowledge.started == {"kb-first", "kb-second"}
 
 
 def test_validate_reuses_repeated_employee_and_model_target_lookups() -> None:

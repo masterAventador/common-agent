@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Protocol
 from uuid import UUID
 
@@ -38,6 +39,8 @@ from common_agent.workflows.validator import (
     WorkflowValidationIssue,
     validate_workflow_graph,
 )
+
+_REFERENCE_VALIDATION_CONCURRENCY = 8
 
 
 class WorkflowCatalog:
@@ -125,12 +128,17 @@ class WorkflowCatalog:
             if isinstance(config, KnowledgeRetrievalNodeConfig):
                 references.setdefault(config.knowledge_base_id, []).append(node.id)
 
-        issues: list[WorkflowValidationIssue] = []
-        for knowledge_base_id, node_ids in references.items():
+        semaphore = asyncio.Semaphore(_REFERENCE_VALIDATION_CONCURRENCY)
+
+        async def validate_knowledge_reference(
+            knowledge_base_id: str,
+            node_ids: list[str],
+        ) -> tuple[WorkflowValidationIssue, ...]:
             try:
-                await self._knowledge_bases.get_knowledge_base(knowledge_base_id)
+                async with semaphore:
+                    await self._knowledge_bases.get_knowledge_base(knowledge_base_id)
             except KnowledgeBaseNotFound:
-                issues.extend(
+                return tuple(
                     WorkflowValidationIssue(
                         code=WorkflowValidationCode.KNOWLEDGE_BASE_NOT_FOUND,
                         message="知识检索节点引用的知识库不存在或已失效",
@@ -138,6 +146,20 @@ class WorkflowCatalog:
                     )
                     for node_id in node_ids
                 )
+            return ()
+
+        validation_results = await asyncio.gather(
+            *(
+                validate_knowledge_reference(knowledge_base_id, node_ids)
+                for knowledge_base_id, node_ids in references.items()
+            ),
+            return_exceptions=True,
+        )
+        issues: list[WorkflowValidationIssue] = []
+        for result in validation_results:
+            if isinstance(result, BaseException):
+                raise result
+            issues.extend(result)
         issues.extend(await self._validate_ai_targets(configuration))
         return tuple(issues)
 
