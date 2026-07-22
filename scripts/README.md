@@ -30,6 +30,11 @@
   OOM 和健康状态；成功或失败均重置测试认证、停止本轮业务进程并保留脱敏报告用于核对；
 - `test-real-resource-soak.sh`：静态检查 soak 只能使用隔离测试库、显式 API/认证变量、受控状态
   初始化与清理，并保持 32 GiB、峰值、Swap、重启/OOM 和完整业务链门禁；
+- `ragflow-v0264-baseline.sh`：固定官方 `v0.26.4` submodule 和 0600 本地 Token，先经真实 API、
+  Worker、百炼 embedding/rerank 测量小规模写入解析、检索和删除，再向独立基准知识库分档写入
+  1k/10k/50k/100k/250k 合成目录行，测量正式列表、深分页、单删、`EXPLAIN ANALYZE` 与容器资源；
+  数据无论成功、失败或上游 OOM 都精确清理，稳定栈原本已运行时会在记录 OOM 后自动恢复；脱敏报告
+  写入 Git 忽略的 `.local/benchmarks/r2-01/`；
 - `test-ci.sh`：检查本机权威命令在 PR/main GitHub CI 可选镜像中的冻结安装、固定 Action、
   后端/前端/契约/Demo/基础设施门禁、缓存锁文件边界，以及 real 外部付费依赖不进入公共
   Runner 的隔离契约；项目验收不依赖 Hosted Runner、付费额度或远端执行结果；
