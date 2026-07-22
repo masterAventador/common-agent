@@ -15,6 +15,7 @@ function requiredEnvironment(name: string): string {
 const knowledgeBaseName = requiredEnvironment("COMMON_AGENT_E2E_MVP_KNOWLEDGE_NAME");
 const employeeName = requiredEnvironment("COMMON_AGENT_E2E_MVP_EMPLOYEE_NAME");
 const workflowName = requiredEnvironment("COMMON_AGENT_E2E_MVP_WORKFLOW_NAME");
+const modelName = process.env.COMMON_AGENT_E2E_MVP_MODEL_NAME?.trim();
 const fixtureDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 
 async function dragNodeTo(
@@ -69,6 +70,23 @@ test("completes the whole MVP through one isolated real user journey", async ({
     }
   });
 
+  if (modelName) {
+    await page.goto("/model-configurations");
+    await expect(page.getByRole("heading", { name: "模型管理" })).toBeVisible();
+    const modelCard = page.locator(".model-configuration-card").filter({ hasText: modelName });
+    await expect(modelCard).toContainText("qwen-plus");
+    const verifyModelResponse = page.waitForResponse(
+      (response) =>
+        /\/api\/v1\/model-configurations\/[0-9a-f-]{36}\/verify$/.test(
+          new URL(response.url()).pathname,
+        ) &&
+        response.request().method() === "POST",
+    );
+    await modelCard.getByRole("button", { name: `测试调用 ${modelName}` }).click();
+    expect((await verifyModelResponse).status()).toBe(200);
+    await expect(page.getByText("模型调用成功")).toBeVisible();
+  }
+
   await page.goto("/knowledge-bases");
   await expect(page.getByRole("heading", { name: "知识库" })).toBeVisible();
   await expect(page.getByText("后端正常")).toBeVisible();
@@ -119,7 +137,7 @@ test("completes the whole MVP through one isolated real user journey", async ({
   await employeeDialog
     .getByRole("textbox", { name: "系统指令" })
     .fill("只依据绑定知识库的可靠资料回答，并保留资料中的验收标记。");
-  await selectEmployeeDefaultModel(page, employeeDialog);
+  await selectEmployeeDefaultModel(page, employeeDialog, modelName);
   await employeeDialog.getByRole("combobox", { name: "知识库" }).click();
   await page.getByTitle(knowledgeBaseName).click();
   const employeeResponse = page.waitForResponse(
@@ -172,7 +190,7 @@ test("completes the whole MVP through one isolated real user journey", async ({
   await page
     .getByRole("textbox", { name: "节点提示词" })
     .fill("只依据工作流检索到的可靠知识，只输出用户要求的验收标记。");
-  await selectWorkflowAiTarget(page, "平台默认模型");
+  await selectWorkflowAiTarget(page, modelName || "平台默认模型");
   await dragNodeTo(page, "添加结束节点", { x: 720, y: 180 });
   await expect(page.locator(".react-flow__node")).toHaveCount(4);
   await connectNodes(page, "start-1", "knowledge_retrieval-1");

@@ -12,6 +12,7 @@ import re
 import socket
 import ssl
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
@@ -603,10 +604,35 @@ def run(settings: SseLoadSettings) -> SseLoadResult:
             print(f"SSE fixture cleanup also failed: {cleanup_error}", file=sys.stderr)
 
 
+def write_private_result(path: Path, result: SseLoadResult) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if path.is_symlink():
+        raise SseLoadFailure("SSE result must not be a symbolic link")
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            descriptor = -1
+            json.dump(asdict(result), stream, ensure_ascii=False, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        os.chmod(path, 0o600)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+
+
 def main() -> int:
     try:
         settings = SseLoadSettings.from_environment(os.environ)
         result = run(settings)
+        result_file = os.environ.get("COMMON_AGENT_SSE_RESULT_FILE", "").strip()
+        if result_file:
+            write_private_result(Path(result_file), result)
     except (OSError, ValueError, SseLoadFailure) as error:
         print(f"SSE capacity test failed: {error}", file=sys.stderr)
         return 1

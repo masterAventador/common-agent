@@ -47,8 +47,9 @@
 infra/production/manage.sh drill
 ```
 
-演练会依次构建两个不可变 release、向前迁移数据库、蓝绿切流、通过正式 Chromium 验收五个入口、
-执行权限与输入攻击矩阵，并通过 k6 从正式 TLS 域名持续运行 60 秒鉴权读容量基线。随后 SSE 门禁
+演练会依次构建两个不可变 release、向前迁移数据库、蓝绿切流、通过正式 Chromium 验收五个入口，
+再由首位 Owner 在新租户中从页面完成模型→知识库→员工→两轮会话→手工/员工工作流与审计链。
+然后执行权限与输入攻击矩阵，并通过 k6 从正式 TLS 域名持续运行 60 秒鉴权读容量基线。随后 SSE 门禁
 以 16 路/秒爬升至 128 路并保持 360 秒，要求全部连接存活、握手 p95 低于 500 ms、无意外断连且
 关闭后无请求泄漏。Worker 门禁会先停止独立 Worker，经正式 TLS/API 并发提交 24 个通用会话首轮，
 要求写入 p95 低于 1 秒且 MySQL 中形成完整持久积压；恢复 Worker 后必须在 120 秒内全部完成。随后
@@ -59,6 +60,37 @@ infra/production/manage.sh drill
 `brew install k6`。
 退出时停止生产演练与按需启动的 RAGFlow 容器，删除临时状态、凭据和演练 MySQL Volume，保留可
 复用的固定镜像与 RAGFlow 稳定数据。
+
+## SLO、资源预算与告警
+
+[`slo-policy.json`](slo-policy.json) 是版本化的机器可读策略。发布前门禁与上线后 30 天滚动
+报表采用同一口径：TLS Edge 可用性不低于 99.9%；25 次/秒鉴权读的错误率不高于 0.1%、
+p95/p99 不高于 500/1000 ms 且不丢迭代；128 路 SSE 必须全建立、保持 360 秒且零意外断连；
+24 个持久任务在 120 秒内排空，8 个崩溃任务在 300 秒内由新 Worker 接管。
+
+资源预算不以 Compose 允许的超卖上限冒充容量证据。正式压测每 5 秒采集 TLS 健康、Docker CPU、
+内存、重启和 OOM；8C16G 业务节点关闭失败于观测内存超过 12 GiB 或 CPU 超过 6 核，
+8C32G RAGFlow 节点关闭失败于 24 GiB 或 6 核。这些是 75% 预警线，保留操作系统、索引增长、
+短时尖峰与蓝绿窗口余量；任一容器重启或 OOM 直接视为 Critical。
+
+`resource_monitor.py` 把正式 TLS 健康与容器样本写入 0600 JSON；`slo_gate.py` 合并 k6、SSE、
+Worker 和资源证据，有任一活跃告警即返回非零。本地 drill 明确使用 `--runtime-only`，
+所以报告标记 `backup_status=not_evaluated`，不伪造备份新鲜度；最终验收必须另行通过
+`infra/backup/manage.sh drill`，以实际加密归档、空环境恢复和正式页面校验满足 24 小时 RPO、
+120 分钟 RTO 和 90 天恢复演练周期。`/api/v1/system/metrics` 仍只是单进程即时诊断面，不得替代这些
+外部保留的时序证据。
+
+告警响应固定如下：
+
+| 级别 | 代码 | 当班动作 |
+| --- | --- | --- |
+| Critical | `edge_availability_burn` / `api_error_budget_burn` | 立即停止发布，对比 Edge/API 健康与 5xx 稳定错误码；新 release 相关时执行代码回滚 |
+| Warning | `api_latency_breach` | 查询慢 SQL、外围延迟和 CPU/内存样本；连续两个窗口不恢复则升级 Critical |
+| Critical | `sse_capacity_breach` | 检查 Edge 读超时、API 订阅上限与 MySQL 事件日志，禁止继续放量 |
+| Critical | `worker_backlog_breach` / `worker_recovery_breach` | 查看 `durable_tasks` 的 state/attempts/lease/error_code，确认新 Worker 栅栏后再扩容，不手工改业务终态 |
+| Warning | `business_resource_pressure` / `ragflow_resource_pressure` | 停止并发提升，保留报告并按 API/Worker/索引/数据库拆分峰值；不盲目下调采购规格 |
+| Critical | `container_restart_or_oom` | 立即冻结发布，保留 inspect/宿主机日志，确认数据完整性后才恢复 |
+| Critical/Warning | `backup_rpo_breach` / `restore_drill_stale` | 立即补做并验证加密归档；恢复演练过期时在空环境重跑，禁止覆盖正式资源 |
 
 ## RAGFlow 节点
 
@@ -147,5 +179,6 @@ infra/production/manage.sh verify
 infra/production/manage.sh down
 ```
 
-S10-08 已完成容器/SAST 扫描、攻击测试、首轮读取容量、SSE 长连接、并发写入、Worker 容量与崩溃
-接管门禁；SLO、告警和最终新租户全链路仍待完成。全部门禁完成前，本目录不能被解释为已经上线。
+S10-08 已接入容器/SAST、攻击、读容量、SSE、并发写入、Worker 容量/崩溃接管、SLO/告警与
+新租户全链门禁；只有最终正式演练和备份恢复演练均实际通过后才能标记任务完成。本目录不能被
+解释为已经远程上线。

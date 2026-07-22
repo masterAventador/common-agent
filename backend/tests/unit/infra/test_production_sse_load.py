@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
+import stat
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -247,3 +249,17 @@ def test_result_rejects_partial_capacity_disconnects_latency_and_leaks() -> None
     for result in failures:
         with pytest.raises(MODULE.SseLoadFailure):
             MODULE.ensure_success(result, handshake_p95_limit_ms=500)
+
+
+def test_result_file_is_private_and_rejects_symbolic_link(tmp_path: Path) -> None:
+    output = tmp_path / "sse-result.json"
+    result = MODULE.SseLoadResult(128, 128, 128, 0, 42.5, 0)
+
+    MODULE.write_private_result(output, result)
+
+    assert json.loads(output.read_text(encoding="utf-8"))["alive_at_deadline"] == 128
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    output.unlink()
+    output.symlink_to(tmp_path / "target")
+    with pytest.raises(MODULE.SseLoadFailure, match="symbolic link"):
+        MODULE.write_private_result(output, result)

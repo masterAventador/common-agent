@@ -33,6 +33,7 @@ export const options = {
     "dropped_iterations{scenario:api_capacity}": ["count==0"],
   },
   noConnectionReuse: false,
+  summaryTrendStats: ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)"],
   hosts: { "common-agent.test": "127.0.0.1" },
   userAgent: "common-agent-production-capacity/1",
 };
@@ -85,6 +86,32 @@ export default function (authentication) {
     tags: { route: route.split("?", 1)[0] },
   });
   check(response, { "authenticated read returns 200": (result) => result.status === 200 });
+}
+
+export function handleSummary(data) {
+  const result = {
+    schema_version: 1,
+    requests_total: metricValue(data, "http_reqs", "count"),
+    failure_rate: metricValue(data, "http_req_failed", "rate"),
+    dropped_iterations: metricValue(data, "dropped_iterations", "count"),
+    p95_ms: metricValue(data, "http_req_duration", "p(95)"),
+    p99_ms: metricValue(data, "http_req_duration", "p(99)"),
+  };
+  const serialized = `${JSON.stringify(result)}\n`;
+  const output = { stdout: serialized };
+  const resultFile = __ENV.COMMON_AGENT_K6_RESULT_FILE?.trim();
+  if (resultFile) {
+    output[resultFile] = serialized;
+  }
+  return output;
+}
+
+function metricValue(data, metricName, valueName) {
+  const value = data.metrics?.[metricName]?.values?.[valueName];
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`k6 summary is missing ${metricName}.${valueName}`);
+  }
+  return value;
 }
 
 function requiredEnvironment(name) {

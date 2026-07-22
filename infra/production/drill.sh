@@ -21,8 +21,28 @@ fi
 export COMMON_AGENT_PRODUCTION_STATE_ROOT="${STATE_ROOT}"
 export COMMON_AGENT_RAGFLOW_EDGE_MODE=local-shared-network
 WORKER_LOAD_STATE="${STATE_ROOT}/worker-load.json"
+K6_RESULT="${STATE_ROOT}/k6-result.json"
+SSE_RESULT="${STATE_ROOT}/sse-result.json"
+RESOURCE_RESULT="${STATE_ROOT}/resource-result.json"
+RESOURCE_LOG="${STATE_ROOT}/resource-monitor.log"
+RESOURCE_STOP="${STATE_ROOT}/resource-monitor.stop"
+SLO_EVIDENCE="${STATE_ROOT}/slo-evidence.json"
+SLO_RESULT="${STATE_ROOT}/slo-result.json"
+RESOURCE_MONITOR_PID=""
+WORKER_RECOVERY_MAX_ATTEMPTS=0
+FINAL_ACCEPTANCE_SUFFIX="$(date -u +%Y%m%d%H%M%S)-$$"
+
+stop_resource_monitor() {
+  if [[ -z "${RESOURCE_MONITOR_PID}" ]]; then
+    return
+  fi
+  : >"${RESOURCE_STOP}"
+  wait "${RESOURCE_MONITOR_PID}"
+  RESOURCE_MONITOR_PID=""
+}
 
 cleanup() {
+  stop_resource_monitor >/dev/null 2>&1 || true
   "${MANAGER}" down >/dev/null 2>&1 || true
   docker --context "${DOCKER_CONTEXT_NAME}" volume rm \
     common-agent-production-platform-mysql-data >/dev/null 2>&1 || true
@@ -116,6 +136,13 @@ run_formal_page_smoke() {
       entry-loading.spec.ts \
       production-request-limits.spec.ts \
       production-security-headers.spec.ts
+    export COMMON_AGENT_E2E_MVP_MODEL_NAME='平台默认模型'
+    export COMMON_AGENT_E2E_MVP_KNOWLEDGE_NAME="production-final-knowledge-${FINAL_ACCEPTANCE_SUFFIX}"
+    export COMMON_AGENT_E2E_MVP_EMPLOYEE_NAME="production-final-employee-${FINAL_ACCEPTANCE_SUFFIX}"
+    export COMMON_AGENT_E2E_MVP_WORKFLOW_NAME="production-final-workflow-${FINAL_ACCEPTANCE_SUFFIX}"
+    export COMMON_AGENT_E2E_AUDIT_EMPLOYEE_NAME="production-final-audit-${FINAL_ACCEPTANCE_SUFFIX}"
+    pnpm exec playwright test mvp-acceptance.spec.ts
+    pnpm exec playwright test audit.spec.ts
     # 有状态攻击会创建额外租户，必须在基础页面套件之后独立执行。
     pnpm exec playwright test production-security-attacks.spec.ts
   )
@@ -129,9 +156,11 @@ run_formal_capacity_test() {
       COMMON_AGENT_PERFORMANCE_BASE_URL='https://common-agent.test:18443' \
       COMMON_AGENT_PERFORMANCE_EMAIL='production-drill@example.com' \
       COMMON_AGENT_PERFORMANCE_PASSWORD='Production-Drill-2026!' \
+      COMMON_AGENT_K6_RESULT_FILE="${K6_RESULT}" \
       k6 run --quiet --no-color --include-system-env-vars --insecure-skip-tls-verify \
         "${SCRIPT_DIR}/load-test.js"
   )
+  [[ -s "${K6_RESULT}" ]] || fail "k6 未生成机器可读 SLO 证据"
 }
 
 run_formal_sse_capacity_test() {
@@ -146,6 +175,7 @@ run_formal_sse_capacity_test() {
     COMMON_AGENT_SSE_RAMP_CONNECTIONS_PER_SECOND=16 \
     COMMON_AGENT_SSE_HANDSHAKE_TIMEOUT_SECONDS=30 \
     COMMON_AGENT_SSE_HANDSHAKE_P95_MS=500 \
+    COMMON_AGENT_SSE_RESULT_FILE="${SSE_RESULT}" \
     "${REPOSITORY_ROOT}/scripts/uv.sh" run --project "${REPOSITORY_ROOT}/backend" \
       --frozen python "${SCRIPT_DIR}/sse_load_test.py"
 }
@@ -242,6 +272,9 @@ assert_worker_tasks_succeeded() {
   if [[ "${phase}" == "recovery" && "${max_attempts}" -lt 2 ]]; then
     fail "Worker 崩溃后没有任务通过过期租约接管：${summary}"
   fi
+  if [[ "${phase}" == "recovery" ]]; then
+    WORKER_RECOVERY_MAX_ATTEMPTS="${max_attempts}"
+  fi
 }
 
 wait_for_running_recovery_task() {
@@ -294,6 +327,49 @@ run_formal_worker_capacity_and_recovery_test() {
   wait_for_worker_health "${worker_container}"
   assert_worker_tasks_succeeded recovery 8
   run_worker_load_test cleanup recovery
+}
+
+start_resource_monitor() {
+  rm -f -- "${RESOURCE_STOP}" "${RESOURCE_RESULT}" "${RESOURCE_LOG}"
+  "${REPOSITORY_ROOT}/scripts/uv.sh" run --project "${REPOSITORY_ROOT}/backend" \
+    --frozen python "${SCRIPT_DIR}/resource_monitor.py" \
+    --docker-context "${DOCKER_CONTEXT_NAME}" \
+    --base-url 'https://127.0.0.1:18443' \
+    --public-host 'common-agent.test' \
+    --ca-file "${STATE_ROOT}/tls/ca.crt" \
+    --output "${RESOURCE_RESULT}" \
+    --stop-file "${RESOURCE_STOP}" \
+    --interval-seconds 5 \
+    --maximum-seconds 1200 \
+    >"${RESOURCE_LOG}" 2>&1 &
+  RESOURCE_MONITOR_PID=$!
+}
+
+run_runtime_slo_gate() {
+  [[ -f "${K6_RESULT}" && -f "${SSE_RESULT}" && -f "${WORKER_LOAD_STATE}" ]] || \
+    fail "SLO 门禁缺少性能证据"
+  [[ -f "${RESOURCE_RESULT}" && "${WORKER_RECOVERY_MAX_ATTEMPTS}" -ge 2 ]] || \
+    fail "SLO 门禁缺少资源或 Worker 接管证据"
+  umask 077
+  jq -n \
+    --slurpfile api "${K6_RESULT}" \
+    --slurpfile sse "${SSE_RESULT}" \
+    --slurpfile worker "${WORKER_LOAD_STATE}" \
+    --slurpfile resources "${RESOURCE_RESULT}" \
+    --argjson max_attempts "${WORKER_RECOVERY_MAX_ATTEMPTS}" \
+    '{
+      api: $api[0],
+      sse: $sse[0],
+      worker: {
+        capacity: $worker[0].phases.capacity.result,
+        recovery: ($worker[0].phases.recovery.result + {max_attempts: $max_attempts})
+      },
+      resources: $resources[0]
+    }' >"${SLO_EVIDENCE}"
+  chmod 600 "${SLO_EVIDENCE}"
+  "${REPOSITORY_ROOT}/scripts/uv.sh" run --project "${REPOSITORY_ROOT}/backend" \
+    --frozen python "${SCRIPT_DIR}/slo_gate.py" --runtime-only \
+    "${SCRIPT_DIR}/slo-policy.json" "${SLO_EVIDENCE}" "${SLO_RESULT}"
 }
 
 verify_untrusted_host_is_rejected() {
@@ -387,12 +463,15 @@ write_runtime_configuration
 "${MANAGER}" migrate
 "${MANAGER}" rollout
 "${MANAGER}" verify
+start_resource_monitor
 run_formal_page_smoke
 verify_untrusted_host_is_rejected
 verify_path_traversal_is_rejected
 run_formal_capacity_test
 run_formal_sse_capacity_test
 run_formal_worker_capacity_and_recovery_test
+stop_resource_monitor
+run_runtime_slo_gate
 verify_forwarded_for_spoof_is_rate_limited
 exercise_failure_and_rollback
 

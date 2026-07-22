@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "window": {
+    "reporting_days": 30,
+    "capacity_probe_seconds": 60,
+    "sse_hold_seconds": 360,
+    "resource_sample_interval_seconds": 5,
+    "resource_minimum_samples": 2
+  },
+  "slo": {
+    "availability_target": 0.999,
+    "api_failure_rate_max": 0.001,
+    "api_p95_ms_max": 500,
+    "api_p99_ms_max": 1000,
+    "api_dropped_iterations_max": 0,
+    "sse_connections_min": 128,
+    "sse_handshake_p95_ms_max": 500,
+    "worker_enqueue_p95_ms_max": 1000,
+    "worker_capacity_tasks_min": 24,
+    "worker_capacity_seconds_max": 120,
+    "worker_recovery_tasks_min": 8,
+    "worker_recovery_seconds_max": 300,
+    "worker_recovery_attempts_min": 2,
+    "backup_age_hours_max": 24,
+    "restore_drill_age_days_max": 90
+  },
+  "resource_budgets": {
+    "business_node_cpu_cores_max": 6.0,
+    "business_node_memory_bytes_max": 12884901888,
+    "ragflow_node_cpu_cores_max": 6.0,
+    "ragflow_node_memory_bytes_max": 25769803776
+  },
+  "alerts": [
+    {
+      "code": "edge_availability_burn",
+      "severity": "critical",
+      "condition": "TLS Edge health availability falls below 99.9% in the evaluation window",
+      "runbook": "README.md#slo资源预算与告警"
+    },
+    {
+      "code": "api_error_budget_burn",
+      "severity": "critical",
+      "condition": "authenticated API failure rate exceeds 0.1%",
+      "runbook": "README.md#slo资源预算与告警"
+    },
+    {
+      "code": "api_latency_breach",
+      "severity": "warning",
+      "condition": "authenticated API latency exceeds p95 500 ms or p99 1000 ms",
+      "runbook": "README.md#slo资源预算与告警"
+    },
+    {
+      "code": "sse_capacity_breach",
+      "severity": "critical",
+      "condition": "128 SSE streams do not all establish, survive, close cleanly, or meet handshake latency",
+      "runbook": "README.md#slo资源预算与告警"
+    },
+    {
+      "code": "worker_backlog_breach",
+      "severity": "critical",
+      "condition": "24 durable tasks are not accepted and drained without failures inside 120 seconds",
+      "runbook": "README.md#slo资源预算与告警"
+    },
+    {
+      "code": "worker_recovery_breach",
+      "severity": "critical",
+      "condition": "8 durable tasks are not recovered after a forced Worker crash inside 300 seconds",
+      "runbook": "README.md#slo资源预算与告警"
+    },
+    {
+      "code": "business_resource_pressure",
+      "severity": "warning",
+      "condition": "business-node observed memory exceeds 12 GiB or CPU exceeds 6 cores",
+      "runbook": "README.md#slo资源预算与告警"
+    },
+    {
+      "code": "ragflow_resource_pressure",
+      "severity": "warning",
+      "condition": "RAGFlow-node observed memory exceeds 24 GiB or CPU exceeds 6 cores",
+      "runbook": "README.md#slo资源预算与告警"
+    },
+    {
+      "code": "container_restart_or_oom",
+      "severity": "critical",
+      "condition": "a production or RAGFlow container reports a restart or OOM kill",
+      "runbook": "README.md#slo资源预算与告警"
+    },
+    {
+      "code": "backup_rpo_breach",
+      "severity": "critical",
+      "condition": "the newest verified backup is older than 24 hours",
+      "runbook": "README.md#slo资源预算与告警"
+    },
+    {
+      "code": "restore_drill_stale",
+      "severity": "warning",
+      "condition": "the last successful restore drill is older than 90 days",
+      "runbook": "README.md#slo资源预算与告警"
+    }
+  ]
+}
