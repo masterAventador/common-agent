@@ -36,6 +36,7 @@ from common_agent.runtimes.base import (
     EmployeeRuntime,
     EmployeeRuntimeRequest,
     RuntimeConversationMessage,
+    RuntimeEvent,
     RuntimeEventKind,
     RuntimeKnowledgeChunk,
 )
@@ -209,7 +210,15 @@ class WorkflowAiTargetExecutor:
             workflow_run_id=run_id,
         )
         fragments: list[str] = []
+        last_sequence = 0
         async for event in runtime.stream(request, stop=state.stop):
+            if (
+                not isinstance(event, RuntimeEvent)
+                or event.assistant_message_id != assistant_message_id
+                or event.sequence != last_sequence + 1
+            ):
+                raise WorkflowAiTargetExecutionFailed("runtime_response_invalid")
+            last_sequence = event.sequence
             if event.kind is RuntimeEventKind.DELTA:
                 if event.delta is None:
                     raise WorkflowAiTargetExecutionFailed("runtime_response_invalid")

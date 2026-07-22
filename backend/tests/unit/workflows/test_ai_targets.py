@@ -125,6 +125,48 @@ class _Runtime:
         pass
 
 
+class _InvalidRuntime:
+    def __init__(self, scenario: str) -> None:
+        self.scenario = scenario
+
+    async def stream(
+        self,
+        request: EmployeeRuntimeRequest,
+        *,
+        stop: RuntimeStopSignal,
+    ) -> AsyncIterator[RuntimeEvent]:
+        del stop
+        emitter = RuntimeEventEmitter(request.assistant_message_id)
+        first = emitter.delta("不应进入工作流结果")
+        if self.scenario == "foreign_message":
+            yield RuntimeEvent(
+                assistant_message_id=uuid4(),
+                sequence=first.sequence,
+                kind=first.kind,
+                delta=first.delta,
+            )
+            yield emitter.complete()
+            return
+        yield first
+        if self.scenario == "duplicate_sequence":
+            yield RuntimeEvent(
+                assistant_message_id=first.assistant_message_id,
+                sequence=first.sequence,
+                kind=first.kind,
+                delta="重复序号内容",
+            )
+            yield emitter.complete()
+            return
+        yield RuntimeEvent(
+            assistant_message_id=first.assistant_message_id,
+            sequence=3,
+            kind=RuntimeEventKind.COMPLETED,
+        )
+
+    async def aclose(self) -> None:
+        pass
+
+
 class _Observer(WorkflowExecutionObserver):
     def __init__(self) -> None:
         self.summaries: list[WorkflowAiTargetSummary] = []
@@ -323,6 +365,37 @@ def test_employee_target_propagates_runtime_failure_or_interruption(
                 _context(_Observer()),
             )
         assert captured.value.code == (expected_code or "model_stream_interrupted")
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ("foreign_message", "duplicate_sequence", "sequence_gap"),
+)
+def test_employee_target_rejects_runtime_events_outside_the_current_ordered_stream(
+    scenario: str,
+) -> None:
+    async def exercise() -> None:
+        configuration = _model_configuration()
+        employee = _employee(configuration)
+        executor = WorkflowAiTargetExecutor(
+            _Directory(employee, configuration),
+            _ModelResolver(_Model()),
+            KnowledgeBaseService(KnowledgeProbe()),
+            employee_runtime=_InvalidRuntime(scenario),
+        )
+
+        with pytest.raises(WorkflowAiTargetExecutionFailed) as captured:
+            await executor.execute(
+                AiChatNodeConfig(
+                    prompt="回答",
+                    target=EmployeeAiChatTarget(employee_id=employee.id),
+                ),
+                _context(_Observer()),
+            )
+
+        assert captured.value.code == "runtime_response_invalid"
 
     asyncio.run(exercise())
 
