@@ -75,6 +75,33 @@ describe("KnowledgeUploadQueue", () => {
     await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
   });
 
+  it("snapshots the browser FileList before resetting the file input", async () => {
+    render(
+      <KnowledgeUploadQueue
+        knowledgeBaseId="kb-1"
+        documents={[]}
+        onDocumentsChanged={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText("选择或拖拽文档") as HTMLInputElement;
+    const selected = [new File(["content"], "selected.txt", { type: "text/plain" })];
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      get: () => selected,
+    });
+    Object.defineProperty(input, "value", {
+      configurable: true,
+      get: () => "",
+      set: () => {
+        selected.length = 0;
+      },
+    });
+
+    fireEvent.change(input);
+
+    expect(await screen.findByText("selected.txt")).toBeInTheDocument();
+  });
+
   it("does not report a successful upload as failed when the list refresh fails", async () => {
     knowledgeApi.uploadKnowledgeDocument.mockResolvedValueOnce(
       parsingDocument("doc-uploaded", "uploaded.txt"),

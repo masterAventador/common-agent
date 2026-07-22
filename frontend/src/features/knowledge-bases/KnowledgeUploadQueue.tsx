@@ -261,8 +261,9 @@ export function KnowledgeUploadQueue({
           accept={ACCEPTED_DOCUMENTS}
           onClick={(event) => event.stopPropagation()}
           onChange={(event) => {
-            if (event.target.files) addFiles(event.target.files);
-            event.target.value = "";
+            const selectedFiles = Array.from(event.currentTarget.files ?? []);
+            event.currentTarget.value = "";
+            addFiles(selectedFiles);
           }}
         />
       </div>
