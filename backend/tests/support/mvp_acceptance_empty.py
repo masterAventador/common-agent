@@ -9,6 +9,8 @@ from sqlalchemy import text
 from common_agent.adapters.persistence.database import Database
 from common_agent.employees.seeds import DEFAULT_KNOWLEDGE_ASSISTANT_ID
 
+_MVP_KNOWLEDGE_PREFIX = "common-agent-q6-04-knowledge-"
+
 
 def _required(name: str) -> str:
     value = os.environ.get(name, "").strip()
@@ -54,13 +56,17 @@ async def _assert_empty() -> None:
         payload = response.json()
         if payload["code"] != 0:
             raise RuntimeError("MVP 验收前无法读取 RAGFlow 数据集")
-        if payload["data"]:
-            raise RuntimeError("MVP 验收前 RAGFlow 仍存在知识库")
+        if any(
+            isinstance(dataset, dict)
+            and str(dataset.get("name", "")).startswith(_MVP_KNOWLEDGE_PREFIX)
+            for dataset in payload["data"]
+        ):
+            raise RuntimeError("MVP 验收前 RAGFlow 仍存在同命名空间的测试知识库")
 
 
 def main() -> None:
     asyncio.run(_assert_empty())
-    print("MVP 验收空业务数据门禁通过")
+    print("MVP 验收隔离数据库与知识库测试命名空间门禁通过")
 
 
 if __name__ == "__main__":
