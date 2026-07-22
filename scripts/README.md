@@ -35,6 +35,12 @@
   1k/10k/50k/100k/250k 合成目录行，测量正式列表、深分页、单删、`EXPLAIN ANALYZE` 与容器资源；
   数据无论成功、失败或上游 OOM 都精确清理，稳定栈原本已运行时会在记录 OOM 后自动恢复；脱敏报告
   写入 Git 忽略的 `.local/benchmarks/r2-01/`；
+- `ragflow-v0264-write-benchmark.sh`：在提交、候选镜像 revision 和补丁源码一致的前提下验证真实
+  批量写入、独立 embedding 并发、目录根查询与删除后不可见，并记录官方基线加速比和资源边界；
+- `ragflow-v0264-retrieval-benchmark.sh`：验证合法 `top_k`、超过公共候选池边界的快速拒绝、12k
+  切片分页/单条读取、清理和基础容器资源；
+- `ragflow-v0264-patchset-check.sh`：读取 R2-06 三份最终提交报告，统一检查正确性、性能、SQL
+  扫描、清理与 Swap/重启/OOM 门禁，并输出补丁集汇总；
 - `test-ci.sh`：检查本机权威命令在 PR/main GitHub CI 可选镜像中的冻结安装、固定 Action、
   后端/前端/契约/Demo/基础设施门禁、缓存锁文件边界，以及 real 外部付费依赖不进入公共
   Runner 的隔离契约；项目验收不依赖 Hosted Runner、付费额度或远端执行结果；

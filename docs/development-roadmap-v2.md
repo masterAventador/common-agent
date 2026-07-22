@@ -2,8 +2,8 @@
 
 > 文档性质：V2 当前任务与执行结果的唯一台账
 > 建立日期：2026-07-22
-> 当前阶段：R2-06 私有补丁集的正确性、性能、升级冲突和安全回归
-> 当前下一步：汇总 R2-03～R2-05 补丁清单与基准，建立补丁集整体回归和上游冲突审计
+> 当前阶段：R2-07 推送私有仓库并切换 common-agent 的 fork 依赖
+> 当前下一步：把已回归的私有提交锁进 submodule、镜像构建与稳定栈脚本，并验证全新递归克隆
 
 任务状态、执行顺序、TDD、生产同路径、失败矩阵、完成定义、安全、资源清理和提交规则统一见
 根目录 `CLAUDE.md`，本文件不复制长期规则。
@@ -99,7 +99,7 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
 | R2-03 | 移植删除定向校验、独立计数和延迟 JOIN 分页 | R2-02 | ✅ 已完成 |
 | R2-04 | 重做批量写入、独立 embedding 并发、Tika 启动与必要目录缓存 | R2-03 | ✅ 已完成 |
 | R2-05 | 评估并优化语义检索、文档/切片读取和大结果边界 | R2-04 | ✅ 已完成 |
-| R2-06 | 私有补丁集的正确性、性能、升级冲突和安全回归 | R2-05 | ⬜ 未开始 |
+| R2-06 | 私有补丁集的正确性、性能、升级冲突和安全回归 | R2-05 | ✅ 已完成 |
 | R2-07 | 推送私有仓库并把 common-agent submodule/镜像/脚本切到 fork 提交 | R2-06 | ⬜ 未开始 |
 | R2-08 | 真实知识链、备份恢复、资源与全新递归克隆验收 | R2-07 | ⬜ 未开始 |
 
@@ -773,3 +773,51 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
   override 和无容器引用的候选镜像均已删除。稳定栈恢复为 `infiniflow/ragflow:v0.26.4`，版本端点与
   百炼 embedding/rerank/defaults 均 ready，项目 Volume 保留。下一任务为 R2-06。
 - 提交：RAGFlow fork 提交 `9140f309d`；common-agent 本任务提交见 Git 历史。
+
+### R2-06 私有补丁集的正确性、性能、升级冲突和安全回归
+
+- 状态：✅ 已完成
+- 日期：2026-07-23
+- RED/GREEN 与补丁锁定：先以缺失验证器、错误提交顺序、错误冲突集合、脏工作区和旧阶段报告建立
+  关闭失败契约，再新增 `patchset.env`、`verify-patchset.sh` 和三报告汇总门禁。最终补丁从官方
+  `cb93883f3f8c975eecb2fed81210effeb3bdb06f` 线性前进到
+  `9140f309de9129dc7cd6c889f2e0335b3f384628`，共 7 个按职责拆分的提交、无 merge commit，改动只在
+  `api/docker/rag/test`；本地工作区、私有远端 `common-agent/v0.26.4-patches` 和锁定 HEAD 一致且
+  均干净。CI 基础设施门禁已执行无网络 fixture，真实验证另行检查私有远端。
+- 升级冲突审计：抓取官方 `main@d19a036cdaa7da3eb6e0cf1dc0d905f4a87c1d0d`，它位于基线之后
+  364 个提交；`merge-tree` 对完整补丁集只产生
+  `api/apps/services/dataset_api_service.py` 一处已知人工合并点，因为上游已移除旧
+  `run_embedding` 调用，而本补丁仍在旧调用上增加 `calculate_total=False`。验证器把该精确冲突集
+  当成快照，冲突消失、新增或换路径都会失败；截至本次审计没有比 `v0.26.4` 更新的稳定 tag，未用
+  “零冲突”措辞掩盖后续升级工作。
+- 最终正确性与性能：三份报告均绑定最终 commit、候选镜像 OCI revision 和 `patched` 源码审计。
+  25 万文档第一页/深页/单删为 `0.076794/0.914179/0.034456s`，独立 count、页内详情和定向归属查询
+  分别累计读取 `250001/60/1` 行，纯文档深页 ID 工作为 `500010` 行；真实 8 文档 Worker 解析、带
+  rerank 检索、删除后列表/检索不可见均通过。128 chunks 最终写入解析 `16.737187s`、吞吐
+  `7.647641 chunks/s`，相对官方 `3.456390` 为 `2.212609x`；25 万目录下旧/新根查询从
+  `250013` 行降到 `3` 行。合法 `top_k=5/64/2048` 为
+  `0.571706/0.794550/0.965017s`，`2049` 在 `0.006005s` 以明确边界拒绝；12k 合成切片页首/深页为
+  `0.019260/0.158345s`，单条运行字段不泄漏，超限页大小被拒绝。
+- 测试与上游限制：候选镜像内覆盖全部改动点的 64 个定向 RAGFlow 单测通过，三组真实
+  API/Worker/MySQL/Elasticsearch/MinIO/百炼基准通过。尝试收集完整上游单测时，官方锁定的
+  `scholarly==1.7.11` 在镜像 Python 3.13 下因无效转义触发语法错误，排除最先暴露的三个文件后，
+  其他 Agent 用例导入同一包仍会失败；同样问题在未修改官方源码上可复现，故未热改依赖或把它误记为
+  补丁回归，以全部改动点测试和正式纵向基准作为本任务可归因门禁。
+- 安全回归：补丁生产源码 Semgrep `p/default` 的 5 条命中均由官方基线提交引入，本补丁新增为 0；
+  RAGFlow 全树 Trivy Secret 的 2 条命中位于未改动前端示例常量，新增为 0。官方和候选镜像使用相同
+  High/Critical、Secret、`ignore-unfixed` 规则归一化后都为 83 个既有指纹，集合完全相等，新增/移除
+  均为 0。common-agent 权威 Secret、Semgrep、Trivy 依赖与 IaC 门禁通过，Python 98 个包和前端依赖
+  审计均无已知漏洞。
+- 资源与全量门禁：三轮最终报告的 VM/API 最高峰值分别为 `8,851,447,808` 和
+  `4,490,388,308` bytes，Swap 始终为 0，五个基础容器最终均运行、重启 0、OOM=false。common-agent
+  补丁报告契约纳入后端全量 `941 passed, 15 skipped`，Ruff 与 Mypy（387 个源文件）通过；前端
+  30 个文件 `163 passed`，ESLint、TypeScript、生产构建、七路由包体预算和 OpenAPI 生成契约通过。
+  RAGFlow manage/fork/patchset、platform/backup/production、CI/覆盖率/Bundle/安全入口、全仓
+  ShellCheck、V1 冻结哈希和 `git diff --check` 均通过。
+- 清理、报告与阶段边界：最终报告保留在 Git 忽略的
+  `.local/benchmarks/r2-06/9140f309d/{list-delete,write,retrieval,summary}.json`；所有 R2 临时知识库和
+  文档复核为 0。候选容器、Dockerfile、Compose override、Trivy 临时报告和无容器引用的精确候选镜像
+  已删除；稳定栈已恢复 `infiniflow/ragflow:v0.26.4`，API 重启 0、OOM=false，百炼
+  embedding/rerank/defaults ready，项目 Volume 保留。官方 submodule、正式 Compose 和镜像依赖尚未
+  切换，下一任务 R2-07 才把已推送且已回归的 fork 提交作为 common-agent 正式依赖。
+- 提交：RAGFlow fork 最终补丁集 HEAD `9140f309d`；common-agent 本任务提交见 Git 历史。

@@ -23,12 +23,19 @@ infra/ragflow/fork.sh verify
 infra/ragflow/fork.sh verify-remote
 infra/ragflow/fork.sh status
 bash infra/ragflow/test-fork.sh
+bash infra/ragflow/test-patchset.sh
+infra/ragflow/verify-patchset.sh
 ```
 
 `verify-remote` 同时校验 GitHub 仓库仍为 private、默认分支仍为 `main`、官方与私有 tag 指向同一
 基线、私有 `main` 未漂移，以及远端补丁分支仍包含基线。补丁开发只在 `.local/ragflow-fork`
 完成并推送，不直接修改 `third_party/ragflow`；common-agent submodule、镜像和 Compose 的正式切换
 统一留到 R2-07，避免尚未完成回归的源码进入稳定栈。
+
+`patchset.env` 固定补丁基线、最终提交、有序提交栈、允许改动目录、升级审计目标以及已确认的冲突
+文件；`verify-patchset.sh` 同时检查本地与远端补丁头、线性历史、工作区洁净和 `merge-tree` 冲突集。
+当前对官方 `main` 快照的审计只允许 `api/apps/services/dataset_api_service.py` 一处已知人工合并点，
+任何提交顺序、远端提交或升级冲突集合漂移都会关闭失败。
 
 性能补丁候选必须让基准源码、预期 Git commit 和临时镜像 OCI revision 三者一致，并显式使用
 `patched` 源码审计模式；正式栈仍由 `manage.sh up` 恢复为官方镜像。基准运行器沿用 R2-01 的规模
@@ -46,6 +53,11 @@ COMMON_AGENT_R2_01_REPORT_PATH="$PWD/.local/benchmarks/candidate/baseline.json" 
 运行器会按源码模式分别记录官方 JOIN 查询或补丁后的独立计数、分页 ID、页内详情和定向删除
 `EXPLAIN ANALYZE`，并校验写入、检索、删除后不可见、资源采样和隔离数据清理。候选镜像如何构建与
 正式接入由对应补丁任务和 R2-07 统一固化，不允许仅靠环境变量把未提交源码变成项目依赖。
+
+R2-06 补丁集回归报告必须来自 `patchset.env` 固定的最终提交，分别覆盖 25 万行列表/定向删除、
+真实批量写入与 embedding 并发、合法和越界检索及 12k 切片读取。执行
+`scripts/ragflow-v0264-patchset-check.sh` 会统一校验性能阈值、SQL 扫描行数、删除后不可见、清理、
+五个基础容器存活以及 Swap/重启/OOM 边界，并生成 Git 忽略的汇总报告。
 
 ## 使用
 
@@ -67,6 +79,7 @@ infra/ragflow/manage.sh logs
 infra/ragflow/manage.sh stop
 infra/ragflow/manage.sh down
 bash infra/ragflow/test-manage.sh
+bash infra/ragflow/test-patchset.sh
 ```
 
 固定开发栈 Compose project name 为 `common-agent-dev`。普通开发和定向测试复用该栈，
