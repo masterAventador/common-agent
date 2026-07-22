@@ -53,6 +53,10 @@ grep -Fq 'e2e/generic-chat-models.spec.ts' "${RUNNER}" || \
   fail "E2E 入口没有执行通用会话逐轮模型切换正式页面用例"
 grep -Fq 'tests.support.generic_chat_models_e2e_cleanup' "${RUNNER}" || \
   fail "通用会话逐轮模型切换 E2E 没有登记精确业务数据清理器"
+grep -Fq 'e2e/tool-authorizations.spec.ts' "${RUNNER}" || \
+  fail "E2E 入口没有执行工具授权正式页面用例"
+grep -Fq 'tests.support.tool_authorizations_e2e_cleanup' "${RUNNER}" || \
+  fail "工具授权 E2E 没有登记精确业务数据清理器"
 grep -Fq 'tests.support.model_configuration_e2e_state cleanup' "${RUNNER}" || \
   fail "模型管理 E2E 没有登记精确引用与业务数据清理器"
 grep -Fq 'tests.support.audit_e2e_cleanup' "${RUNNER}" || \

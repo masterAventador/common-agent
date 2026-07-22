@@ -36,12 +36,19 @@ const workflowRunApi = vi.hoisted(() => ({
 const workflowApi = vi.hoisted(() => ({
   fetchWorkflows: vi.fn(),
 }));
+const toolApi = vi.hoisted(() => ({
+  fetchConversationToolGrants: vi.fn(),
+  fetchEmployeeToolGrants: vi.fn(),
+  fetchToolCatalog: vi.fn(),
+  replaceConversationToolGrants: vi.fn(),
+}));
 
 vi.mock("../../api/employees", () => employeeApi);
 vi.mock("../../api/conversations", () => chatApi);
 vi.mock("../../api/modelConfigurations", () => modelConfigurationApi);
 vi.mock("../../api/workflowRuns", () => workflowRunApi);
 vi.mock("../../api/workflows", () => workflowApi);
+vi.mock("../../api/tools", () => toolApi);
 
 const employee = {
   id: "6f3d43e0-6f6d-5a67-9f25-756a0b9ed2ab",
@@ -163,6 +170,43 @@ const employeeRun = {
   updated_at: "2026-07-20T02:00:03Z",
 };
 
+const toolCapability = {
+  id: "10000000-0000-4000-8000-000000000001",
+  source_id: "20000000-0000-4000-8000-000000000002",
+  remote_name: "current_time",
+  display_name: "当前时间",
+  description: "读取当前时间。",
+  input_schema: { type: "object", properties: {}, additionalProperties: false },
+  schema_fingerprint: "a".repeat(64),
+  status: "active",
+  created_at: "2026-07-22T02:00:00Z",
+  updated_at: "2026-07-22T02:00:00Z",
+};
+const toolCollection = {
+  id: "30000000-0000-4000-8000-000000000003",
+  name: "基础工具集",
+  description: "零费用工具",
+  source_ids: [toolCapability.source_id],
+  created_at: "2026-07-22T02:00:00Z",
+  updated_at: "2026-07-22T02:00:00Z",
+};
+const toolCatalog = {
+  sources: [
+    {
+      id: toolCapability.source_id,
+      name: "平台工具",
+      description: "零费用能力",
+      source_type: "platform",
+      endpoint_url: null,
+      status: "ready",
+      created_at: "2026-07-22T02:00:00Z",
+      updated_at: "2026-07-22T02:00:00Z",
+    },
+  ],
+  capabilities: [toolCapability],
+  collections: [toolCollection],
+};
+
 function TestProviders({ children }: PropsWithChildren) {
   const client = new QueryClient({
     defaultOptions: {
@@ -200,11 +244,11 @@ function renderGenericPage() {
   );
 }
 
-function renderGenericHistoryPage() {
+function renderGenericHistoryPage(readOnly = false) {
   return render(
     <MemoryRouter initialEntries={[`/chat?conversation_id=${genericConversation.id}`]}>
       <Routes>
-        <Route path="/chat" element={<ChatPage />} />
+        <Route path="/chat" element={<ChatPage readOnly={readOnly} />} />
       </Routes>
     </MemoryRouter>,
     { wrapper: TestProviders },
@@ -235,6 +279,25 @@ describe("ChatPage", () => {
         return { close: vi.fn() };
       },
     );
+    toolApi.fetchToolCatalog.mockResolvedValue(toolCatalog);
+    toolApi.fetchConversationToolGrants.mockResolvedValue({
+      target_type: "conversation",
+      target_id: genericConversation.id,
+      collection_ids: [],
+      capability_ids: [],
+    });
+    toolApi.fetchEmployeeToolGrants.mockResolvedValue({
+      target_type: "employee",
+      target_id: employee.id,
+      collection_ids: [],
+      capability_ids: [toolCapability.id],
+    });
+    toolApi.replaceConversationToolGrants.mockResolvedValue({
+      target_type: "conversation",
+      target_id: genericConversation.id,
+      collection_ids: [toolCollection.id],
+      capability_ids: [toolCapability.id],
+    });
   });
 
   it("closes chat when model configurations fail and recovers through the formal retry", async () => {
@@ -298,6 +361,8 @@ describe("ChatPage", () => {
 
     expect(await screen.findByRole("heading", { name: "通用 AI" })).toBeInTheDocument();
     expect(screen.getByTitle(modelConfiguration.display_name)).toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "业务工具集" }));
+    await user.click(await screen.findByTitle("基础工具集"));
     const input = screen.getByRole("textbox", { name: "消息输入" });
     expect(input).toBeEnabled();
     await user.type(input, "请介绍一下你自己");
@@ -309,9 +374,45 @@ describe("ChatPage", () => {
           employee_id: null,
           model_configuration_id: modelConfiguration.id,
           content: "请介绍一下你自己",
+          tool_collection_ids: [toolCollection.id],
+          tool_capability_ids: [],
         }),
       ),
     );
+  });
+
+  it("saves exact tools before continuing a generic conversation", async () => {
+    chatApi.fetchConversation.mockResolvedValue({
+      ...genericConversation,
+      employee_name: null,
+    });
+    const user = userEvent.setup();
+    renderGenericHistoryPage();
+
+    await user.click(await screen.findByRole("combobox", { name: "业务工具集" }));
+    await user.click(await screen.findByTitle("基础工具集"));
+    await user.click(screen.getByRole("button", { name: "保存会话工具" }));
+
+    await waitFor(() =>
+      expect(toolApi.replaceConversationToolGrants).toHaveBeenCalledWith(
+        genericConversation.id,
+        { collection_ids: [toolCollection.id], capability_ids: [] },
+      ),
+    );
+  });
+
+  it("keeps generic conversation tool grants read-only for viewers", async () => {
+    chatApi.fetchConversation.mockResolvedValue({
+      ...genericConversation,
+      employee_name: null,
+    });
+    renderGenericHistoryPage(true);
+
+    expect(
+      await screen.findByRole("combobox", { name: "单项工具能力" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存会话工具" })).toBeDisabled();
+    expect(toolApi.replaceConversationToolGrants).not.toHaveBeenCalled();
   });
 
   it("lets an employee conversation switch the current turn model without changing its default", async () => {
@@ -504,6 +605,81 @@ describe("ChatPage", () => {
     expect(within(employeeRegion).getByText("已绑定知识库")).toBeInTheDocument();
   });
 
+  it("renders replayed tool lifecycle events without arguments or results", async () => {
+    renderPage();
+    await waitFor(() => expect(chatApi.streamOptions).toBeDefined());
+    const toolCallId = "40000000-0000-4000-8000-000000000004";
+
+    act(() => {
+      chatApi.streamOptions?.onEvent({
+        schema_version: "2",
+        sequence: 1,
+        conversation_id: conversation.id,
+        turn_id: "50000000-0000-4000-8000-000000000005",
+        message_id: assistantMessage.id,
+        type: "assistant.tool.started",
+        delta: null,
+        retry: false,
+        tool_call: {
+          tool_call_id: toolCallId,
+          capability_id: toolCapability.id,
+          capability_name: toolCapability.remote_name,
+          error_code: null,
+        },
+        message: assistantMessage,
+        occurred_at: "2026-07-20T02:00:02Z",
+      });
+      chatApi.streamOptions?.onEvent({
+        schema_version: "2",
+        sequence: 2,
+        conversation_id: conversation.id,
+        turn_id: "50000000-0000-4000-8000-000000000005",
+        message_id: assistantMessage.id,
+        type: "assistant.tool.completed",
+        delta: null,
+        retry: false,
+        tool_call: {
+          tool_call_id: toolCallId,
+          capability_id: toolCapability.id,
+          capability_name: toolCapability.remote_name,
+          error_code: null,
+        },
+        message: assistantMessage,
+        occurred_at: "2026-07-20T02:00:03Z",
+      });
+    });
+
+    const lifecycle = await screen.findByLabelText("工具调用 1");
+    expect(within(lifecycle).getByText("当前时间")).toBeInTheDocument();
+    expect(within(lifecycle).getByText("已完成")).toBeInTheDocument();
+    expect(lifecycle).not.toHaveTextContent("arguments");
+    expect(lifecycle).not.toHaveTextContent("result");
+
+    act(() => {
+      chatApi.streamOptions?.onEvent({
+        schema_version: "2",
+        sequence: 3,
+        conversation_id: conversation.id,
+        turn_id: "50000000-0000-4000-8000-000000000005",
+        message_id: assistantMessage.id,
+        type: "assistant.tool.failed",
+        delta: null,
+        retry: false,
+        tool_call: {
+          tool_call_id: "60000000-0000-4000-8000-000000000006",
+          capability_id: toolCapability.id,
+          capability_name: toolCapability.remote_name,
+          error_code: "tool_timeout",
+        },
+        message: assistantMessage,
+        occurred_at: "2026-07-20T02:00:04Z",
+      });
+    });
+    const failedLifecycle = await screen.findByLabelText("工具调用 2");
+    expect(within(failedLifecycle).getByText("调用失败")).toBeInTheDocument();
+    expect(within(failedLifecycle).getByText("tool_timeout")).toBeInTheDocument();
+  });
+
   it("loads additional conversation workflow run pages", async () => {
     const secondRun = {
       ...employeeRun,
@@ -579,6 +755,8 @@ describe("ChatPage", () => {
         employee_id: employee.id,
         model_configuration_id: modelConfiguration.id,
         content: userMessage.content,
+        tool_collection_ids: [],
+        tool_capability_ids: [],
       }),
     );
   });

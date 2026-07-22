@@ -30,6 +30,8 @@ export type ToolCapability = components["schemas"]["ToolCapabilityResponse"];
 export type ToolCatalog = components["schemas"]["ToolCatalogResponse"];
 export type ToolCollection = components["schemas"]["ToolCollectionResponse"];
 export type ToolCollectionInput = components["schemas"]["ToolCollectionBody"];
+export type ToolGrant = components["schemas"]["ToolGrantResponse"];
+export type ToolGrantSelection = components["schemas"]["ToolGrantSelectionBody"];
 
 const jsonObjectSchema = z.record(z.string(), z.unknown());
 const parameterLocationSchema = z.enum(["path", "query", "header", "cookie", "body"]);
@@ -161,6 +163,19 @@ const toolCatalogSchema = z.strictObject({
   sources: z.array(catalogSourceSchema),
   capabilities: z.array(toolCapabilitySchema),
   collections: z.array(toolCollectionSchema),
+});
+const uniqueUuidList = (maximum: number) =>
+  z
+    .array(z.uuid())
+    .max(maximum)
+    .refine((items) => new Set(items).size === items.length);
+const toolGrantSelectionSchema = z.strictObject({
+  collection_ids: uniqueUuidList(100),
+  capability_ids: uniqueUuidList(500),
+});
+const toolGrantSchema = toolGrantSelectionSchema.extend({
+  target_type: z.enum(["employee", "conversation"]),
+  target_id: z.uuid(),
 });
 const openApiDraftSchema = capabilityInputSchema.extend({
   operation_key: z.string().min(1).max(2_064),
@@ -473,4 +488,59 @@ export async function deleteToolCollection(collectionId: string): Promise<void> 
   } catch (error) {
     throw toApiClientError(error);
   }
+}
+
+async function fetchToolGrants(
+  target: "employees" | "conversations",
+  targetId: string,
+): Promise<ToolGrant> {
+  try {
+    const response = await apiClient.get<unknown>(
+      `/${target}/${encodeURIComponent(targetId)}/tool-grants`,
+    );
+    return toolGrantSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+async function replaceToolGrants(
+  target: "employees" | "conversations",
+  targetId: string,
+  selection: ToolGrantSelection,
+): Promise<ToolGrant> {
+  try {
+    const input = toolGrantSelectionSchema.parse(selection);
+    const response = await apiClient.put<unknown>(
+      `/${target}/${encodeURIComponent(targetId)}/tool-grants`,
+      input,
+    );
+    return toolGrantSchema.parse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function fetchEmployeeToolGrants(employeeId: string): Promise<ToolGrant> {
+  return fetchToolGrants("employees", employeeId);
+}
+
+export async function replaceEmployeeToolGrants(
+  employeeId: string,
+  selection: ToolGrantSelection,
+): Promise<ToolGrant> {
+  return replaceToolGrants("employees", employeeId, selection);
+}
+
+export async function fetchConversationToolGrants(
+  conversationId: string,
+): Promise<ToolGrant> {
+  return fetchToolGrants("conversations", conversationId);
+}
+
+export async function replaceConversationToolGrants(
+  conversationId: string,
+  selection: ToolGrantSelection,
+): Promise<ToolGrant> {
+  return replaceToolGrants("conversations", conversationId, selection);
 }

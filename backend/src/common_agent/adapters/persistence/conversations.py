@@ -24,6 +24,7 @@ from common_agent.adapters.persistence.timestamps import (
     from_database_datetime,
     to_database_datetime,
 )
+from common_agent.adapters.persistence.tools import SqlAlchemyToolRepository
 from common_agent.conversations.contracts import ConversationHistoryItem
 from common_agent.domain.conversation import (
     Citation,
@@ -41,6 +42,7 @@ from common_agent.ports.conversations import (
     MessageRepository,
     MessageSequenceAlreadyExists,
 )
+from common_agent.ports.tools import ToolRepository
 from common_agent.tasks import TaskSubmission
 from common_agent.tenancy.context import current_tenant
 
@@ -318,6 +320,7 @@ class SqlAlchemyConversationUnitOfWork:
         self._conversations: ConversationRepository | None = None
         self._messages: MessageRepository | None = None
         self._tasks: TaskSubmission | None = None
+        self._tools: ToolRepository | None = None
 
     @property
     def conversations(self) -> ConversationRepository:
@@ -337,6 +340,12 @@ class SqlAlchemyConversationUnitOfWork:
             raise RuntimeError("会话事务尚未开始")
         return self._tasks
 
+    @property
+    def tools(self) -> ToolRepository:
+        if self._tools is None:
+            raise RuntimeError("会话事务尚未开始")
+        return self._tools
+
     async def __aenter__(self) -> SqlAlchemyConversationUnitOfWork:
         if self._context is not None:
             raise RuntimeError("会话事务不能重复进入")
@@ -347,6 +356,7 @@ class SqlAlchemyConversationUnitOfWork:
         self._conversations = SqlAlchemyConversationRepository(session, self._tenant_id)
         self._messages = SqlAlchemyMessageRepository(session, self._tenant_id)
         self._tasks = SqlAlchemyTaskSubmission(session)
+        self._tools = SqlAlchemyToolRepository(session, self._tenant_id)
         return self
 
     async def __aexit__(
@@ -361,6 +371,7 @@ class SqlAlchemyConversationUnitOfWork:
         self._conversations = None
         self._messages = None
         self._tasks = None
+        self._tools = None
         if context is None:
             raise RuntimeError("会话事务尚未开始")
         await context.__aexit__(exc_type, exc_value, traceback)

@@ -11,6 +11,8 @@ import {
   deleteToolCollection,
   discoverManagedMcpSource,
   fetchExternalMcpSources,
+  fetchConversationToolGrants,
+  fetchEmployeeToolGrants,
   fetchManagedMcpSources,
   fetchMcpCredential,
   fetchToolCatalog,
@@ -21,6 +23,8 @@ import {
   testExternalMcpCapability,
   testManagedMcpCapability,
   updateExternalMcpSource,
+  replaceConversationToolGrants,
+  replaceEmployeeToolGrants,
   updateManagedMcpCapability,
   updateMcpCredential,
   updateToolCollection,
@@ -369,5 +373,52 @@ describe("external MCP and tool collection API boundary", () => {
 
     await expect(fetchExternalMcpSources()).rejects.toBeDefined();
     await expect(fetchToolCatalog()).rejects.toBeDefined();
+  });
+
+  it("reads and replaces strict employee and conversation grant snapshots", async () => {
+    const employeeId = "60000000-0000-4000-8000-000000000006";
+    const conversationId = "70000000-0000-4000-8000-000000000007";
+    const selection = {
+      collection_ids: [collection.id],
+      capability_ids: [externalCapability.id],
+    };
+    const employeeGrant = {
+      target_type: "employee" as const,
+      target_id: employeeId,
+      ...selection,
+    };
+    const conversationGrant = {
+      target_type: "conversation" as const,
+      target_id: conversationId,
+      ...selection,
+    };
+    vi.mocked(apiClient.get)
+      .mockResolvedValueOnce({ data: employeeGrant })
+      .mockResolvedValueOnce({ data: conversationGrant });
+    vi.mocked(apiClient.put)
+      .mockResolvedValueOnce({ data: employeeGrant })
+      .mockResolvedValueOnce({ data: conversationGrant });
+
+    await expect(fetchEmployeeToolGrants(employeeId)).resolves.toEqual(employeeGrant);
+    await expect(replaceEmployeeToolGrants(employeeId, selection)).resolves.toEqual(
+      employeeGrant,
+    );
+    await expect(fetchConversationToolGrants(conversationId)).resolves.toEqual(
+      conversationGrant,
+    );
+    await expect(
+      replaceConversationToolGrants(conversationId, selection),
+    ).resolves.toEqual(conversationGrant);
+
+    expect(apiClient.put).toHaveBeenNthCalledWith(
+      1,
+      `/employees/${employeeId}/tool-grants`,
+      selection,
+    );
+    expect(apiClient.put).toHaveBeenNthCalledWith(
+      2,
+      `/conversations/${conversationId}/tool-grants`,
+      selection,
+    );
   });
 });

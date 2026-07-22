@@ -4,6 +4,7 @@ import { FileText, RotateCcw } from "lucide-react";
 import type { ConversationMessage } from "../../api/conversations";
 import type { WorkflowRun } from "../../api/workflowRuns";
 import type { Workflow } from "../../api/workflows";
+import type { ChatToolCallLifecycle } from "./useChatPageController";
 
 const { Text } = Typography;
 const workflowRunStatus: Record<
@@ -19,6 +20,8 @@ const workflowRunStatus: Record<
 
 export function MessageBubble({
   message,
+  toolCalls,
+  toolCapabilityNames,
   workflowRuns,
   workflows,
   retrying,
@@ -27,6 +30,8 @@ export function MessageBubble({
   onRetry,
 }: {
   message: ConversationMessage;
+  toolCalls: ChatToolCallLifecycle[];
+  toolCapabilityNames: Map<string, string>;
   workflowRuns: WorkflowRun[];
   workflows: Map<string, Workflow>;
   retrying: boolean;
@@ -72,10 +77,53 @@ export function MessageBubble({
         )}
         <CitationList message={message} />
         {isAssistant && (
+          <ToolCallLifecycle
+            calls={toolCalls}
+            capabilityNames={toolCapabilityNames}
+          />
+        )}
+        {isAssistant && (
           <WorkflowRunCards runs={workflowRuns} workflows={workflows} onOpen={onOpenWorkflowRun} />
         )}
       </div>
     </article>
+  );
+}
+
+function ToolCallLifecycle({
+  calls,
+  capabilityNames,
+}: {
+  calls: ChatToolCallLifecycle[];
+  capabilityNames: Map<string, string>;
+}) {
+  if (calls.length === 0) return null;
+  const statuses: Record<
+    ChatToolCallLifecycle["status"],
+    { color: string; label: string }
+  > = {
+    running: { color: "processing", label: "运行中" },
+    completed: { color: "success", label: "已完成" },
+    failed: { color: "error", label: "调用失败" },
+  };
+  return (
+    <div className="chat-tool-calls" aria-label={`工具调用 ${calls.length}`}>
+      <Text strong>工具调用</Text>
+      {calls.map((call) => {
+        const status = statuses[call.status];
+        return (
+          <Flex key={call.toolCallId} justify="space-between" align="center" gap={8}>
+            <Text>
+              {capabilityNames.get(call.capabilityId) ?? call.capabilityName}
+            </Text>
+            <Tag color={status.color}>{status.label}</Tag>
+            {call.status === "failed" && call.errorCode ? (
+              <Text type="danger">{call.errorCode}</Text>
+            ) : null}
+          </Flex>
+        );
+      })}
+    </div>
   );
 }
 

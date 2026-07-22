@@ -33,6 +33,7 @@ from common_agent.ports.conversations import (
     MessageSequenceAlreadyExists,
 )
 from common_agent.tasks import TaskRequest
+from common_agent.tools.models import ToolGrantSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +239,7 @@ class ConversationPersistence:
         content: str,
         model_configuration_id: UUID,
         model_identifier: str,
+        initial_tool_grants: ToolGrantSnapshot | None = None,
         task_request: TaskRequest | None = None,
         task_max_attempts: int = 3,
     ) -> PreparedTurn:
@@ -265,6 +267,8 @@ class ConversationPersistence:
         try:
             async with self._unit_of_work_factory() as unit_of_work:
                 await unit_of_work.conversations.add(conversation)
+                if initial_tool_grants is not None:
+                    await unit_of_work.tools.replace_grants(initial_tool_grants)
                 await unit_of_work.messages.add(user_message)
                 await unit_of_work.messages.add(assistant_message)
                 if task_request is not None:

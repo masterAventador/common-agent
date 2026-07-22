@@ -11,6 +11,7 @@ from common_agent.api.routers.conversations import ConversationEventResponse
 from common_agent.employees.seeds import DEFAULT_KNOWLEDGE_ASSISTANT_ID
 from common_agent.model_configurations.defaults import platform_default_model_configuration_id
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
+from common_agent.tools.platform import current_time_capability_id
 from tests.support.conversations import delete_conversations
 from tests.support.http import (
     assert_error_response,
@@ -116,6 +117,94 @@ def test_first_generic_turn_atomically_creates_conversation_messages_and_task() 
         assert_error_response(duplicate, status=409, code="conversation_request_conflict")
     finally:
         asyncio.run(_delete_conversation(conversation_id))
+
+
+def test_first_generic_turn_atomically_saves_exact_tool_grants() -> None:
+    conversation_id = uuid4()
+    capability_id = current_time_capability_id(DEFAULT_TENANT_ID)
+    try:
+        with (
+            running_api(TEST_DATABASE_URL) as api_url,
+            authenticated_client(base_url=api_url, timeout=10) as client,
+        ):
+            accepted = client.post(
+                "/api/v1/conversation-turns",
+                json={
+                    "conversation_id": str(conversation_id),
+                    "message_id": str(uuid4()),
+                    "employee_id": None,
+                    "model_configuration_id": str(
+                        platform_default_model_configuration_id(DEFAULT_TENANT_ID)
+                    ),
+                    "content": "请调用当前时间工具",
+                    "tool_collection_ids": [],
+                    "tool_capability_ids": [str(capability_id)],
+                },
+            )
+            grants = client.get(
+                f"/api/v1/conversations/{conversation_id}/tool-grants"
+            )
+
+        assert accepted.status_code == 202
+        assert grants.status_code == 200
+        assert grants.json()["collection_ids"] == []
+        assert grants.json()["capability_ids"] == [str(capability_id)]
+    finally:
+        asyncio.run(_delete_conversation(conversation_id))
+
+
+def test_first_turn_rejects_direct_tool_grants_for_employee_without_partial_data() -> None:
+    conversation_id = uuid4()
+    with (
+        running_api(TEST_DATABASE_URL) as api_url,
+        authenticated_client(base_url=api_url, timeout=10) as client,
+    ):
+        rejected = client.post(
+            "/api/v1/conversation-turns",
+            json={
+                "conversation_id": str(conversation_id),
+                "message_id": str(uuid4()),
+                "employee_id": str(DEFAULT_KNOWLEDGE_ASSISTANT_ID),
+                "model_configuration_id": str(
+                    platform_default_model_configuration_id(DEFAULT_TENANT_ID)
+                ),
+                "content": "员工会话必须继承员工授权",
+                "tool_collection_ids": [],
+                "tool_capability_ids": [
+                    str(current_time_capability_id(DEFAULT_TENANT_ID))
+                ],
+            },
+        )
+        missing = client.get(f"/api/v1/conversations/{conversation_id}/messages")
+
+    assert_error_response(rejected, status=422, code="validation_error")
+    assert_error_response(missing, status=404, code="conversation_not_found")
+
+
+def test_first_generic_turn_rejects_unavailable_tool_without_partial_data() -> None:
+    conversation_id = uuid4()
+    with (
+        running_api(TEST_DATABASE_URL) as api_url,
+        authenticated_client(base_url=api_url, timeout=10) as client,
+    ):
+        rejected = client.post(
+            "/api/v1/conversation-turns",
+            json={
+                "conversation_id": str(conversation_id),
+                "message_id": str(uuid4()),
+                "employee_id": None,
+                "model_configuration_id": str(
+                    platform_default_model_configuration_id(DEFAULT_TENANT_ID)
+                ),
+                "content": "不存在的工具不能进入任务",
+                "tool_collection_ids": [],
+                "tool_capability_ids": [str(uuid4())],
+            },
+        )
+        missing = client.get(f"/api/v1/conversations/{conversation_id}/messages")
+
+    assert_error_response(rejected, status=409, code="tool_capability_unavailable")
+    assert_error_response(missing, status=404, code="conversation_not_found")
 
 
 def test_first_turn_rejects_unknown_model_without_leaving_partial_conversation() -> None:

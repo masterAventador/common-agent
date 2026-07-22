@@ -22,11 +22,17 @@ const workflowApi = vi.hoisted(() => ({
 const modelApi = vi.hoisted(() => ({
   fetchModelConfigurations: vi.fn(),
 }));
+const toolApi = vi.hoisted(() => ({
+  fetchEmployeeToolGrants: vi.fn(),
+  fetchToolCatalog: vi.fn(),
+  replaceEmployeeToolGrants: vi.fn(),
+}));
 
 vi.mock("../../api/employees", () => employeeApi);
 vi.mock("../../api/knowledge", () => knowledgeApi);
 vi.mock("../../api/workflows", () => workflowApi);
 vi.mock("../../api/modelConfigurations", () => modelApi);
+vi.mock("../../api/tools", () => toolApi);
 
 const modelConfiguration = {
   id: "0d4f38a5-bfd1-496f-b99d-fd768a2f3c30",
@@ -69,6 +75,61 @@ const employee = {
   updated_at: "2026-07-19T08:00:00Z",
 };
 
+const toolCapability = {
+  id: "10000000-0000-4000-8000-000000000001",
+  source_id: "20000000-0000-4000-8000-000000000002",
+  remote_name: "current_time",
+  display_name: "当前时间",
+  description: "读取指定时区的当前时间。",
+  input_schema: { type: "object", properties: {}, additionalProperties: false },
+  schema_fingerprint: "a".repeat(64),
+  status: "active",
+  created_at: "2026-07-22T02:00:00Z",
+  updated_at: "2026-07-22T02:00:00Z",
+};
+const externalToolCapability = {
+  ...toolCapability,
+  id: "30000000-0000-4000-8000-000000000003",
+  source_id: "40000000-0000-4000-8000-000000000004",
+  remote_name: "partners.lookup",
+  display_name: "查询合作方",
+  schema_fingerprint: "b".repeat(64),
+};
+const toolCollection = {
+  id: "50000000-0000-4000-8000-000000000005",
+  name: "基础工具集",
+  description: "平台基础能力",
+  source_ids: [toolCapability.source_id],
+  created_at: "2026-07-22T02:00:00Z",
+  updated_at: "2026-07-22T02:00:00Z",
+};
+const toolCatalog = {
+  sources: [
+    {
+      id: toolCapability.source_id,
+      name: "平台工具",
+      description: "零费用能力",
+      source_type: "platform",
+      endpoint_url: null,
+      status: "ready",
+      created_at: "2026-07-22T02:00:00Z",
+      updated_at: "2026-07-22T02:00:00Z",
+    },
+    {
+      id: externalToolCapability.source_id,
+      name: "合作方 MCP",
+      description: "外部能力",
+      source_type: "external",
+      endpoint_url: "https://partner.example/mcp",
+      status: "ready",
+      created_at: "2026-07-22T02:00:00Z",
+      updated_at: "2026-07-22T02:00:00Z",
+    },
+  ],
+  capabilities: [toolCapability, externalToolCapability],
+  collections: [toolCollection],
+};
+
 function createTestClient() {
   return new QueryClient({
     defaultOptions: {
@@ -83,13 +144,13 @@ function LocationProbe() {
   return <div>{`${location.pathname}${location.search}`}</div>;
 }
 
-function renderPage() {
+function renderPage(readOnly = false) {
   const client = createTestClient();
   const result = render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/employees"]}>
         <Routes>
-          <Route path="/employees" element={<EmployeesPage />} />
+          <Route path="/employees" element={<EmployeesPage readOnly={readOnly} />} />
           <Route path="/chat" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>
@@ -110,6 +171,19 @@ describe("EmployeesPage", () => {
     modelApi.fetchModelConfigurations.mockResolvedValue({
       items: [modelConfiguration],
       next_cursor: null,
+    });
+    toolApi.fetchToolCatalog.mockResolvedValue(toolCatalog);
+    toolApi.fetchEmployeeToolGrants.mockResolvedValue({
+      target_type: "employee",
+      target_id: employee.id,
+      collection_ids: [],
+      capability_ids: [],
+    });
+    toolApi.replaceEmployeeToolGrants.mockResolvedValue({
+      target_type: "employee",
+      target_id: employee.id,
+      collection_ids: [toolCollection.id],
+      capability_ids: [toolCapability.id, externalToolCapability.id],
     });
   });
 
@@ -252,6 +326,34 @@ describe("EmployeesPage", () => {
     );
     expect(await screen.findByText("更新后的说明")).toBeInTheDocument();
     expect(client.getQueryData(["employee", employee.id])).toEqual(updated);
+  });
+
+  it("edits exact employee grants from collections and individual capabilities", async () => {
+    employeeApi.updateEmployee.mockResolvedValue(employee);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "编辑 知识助理" }));
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "业务工具集" }));
+    fireEvent.click(await screen.findByTitle("基础工具集"));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "单项工具能力" }));
+    fireEvent.click(await screen.findByTitle("查询合作方 · 合作方 MCP"));
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() =>
+      expect(toolApi.replaceEmployeeToolGrants).toHaveBeenCalledWith(employee.id, {
+        collection_ids: [toolCollection.id],
+        capability_ids: [externalToolCapability.id],
+      }),
+    );
+    expect(employeeApi.updateEmployee).toHaveBeenCalled();
+  });
+
+  it("keeps all employee mutation entry points disabled for viewers", async () => {
+    renderPage(true);
+
+    expect(await screen.findByRole("button", { name: "编辑 知识助理" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "创建数字员工" })).toBeDisabled();
   });
 
   it("keeps employees usable when the knowledge-base list is unavailable", async () => {

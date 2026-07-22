@@ -281,6 +281,8 @@ def test_openapi_exposes_conversation_send_stop_retry_and_sse_contracts() -> Non
         "message_id",
         "model_configuration_id",
     }
+    assert first_turn_body["properties"]["tool_collection_ids"]["maxItems"] == 100
+    assert first_turn_body["properties"]["tool_capability_ids"]["maxItems"] == 500
     conversation = schema["components"]["schemas"]["ConversationResponse"]
     assert {"source", "employee_id", "model_configuration_id"} <= set(conversation["required"])
     history = schema["components"]["schemas"]["ConversationHistoryItemResponse"]

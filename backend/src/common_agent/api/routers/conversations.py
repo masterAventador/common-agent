@@ -35,6 +35,8 @@ from common_agent.conversations.contracts import (
 from common_agent.domain.conversation import ConversationValidationError
 from common_agent.employees.service import EmployeeNotFound
 from common_agent.model_configurations.service import ModelConfigurationNotFound
+from common_agent.tools.models import ToolGrantSelection, ToolValidationError
+from common_agent.tools.service import ToolServiceError
 
 router = APIRouter(tags=["conversations"])
 router.include_router(event_router)
@@ -89,12 +91,18 @@ async def create_conversation_turn(
             employee_id=body.employee_id,
             model_configuration_id=body.model_configuration_id,
             content=body.content,
+            tool_selection=ToolGrantSelection(
+                collection_ids=tuple(body.tool_collection_ids),
+                capability_ids=tuple(body.tool_capability_ids),
+            ),
         )
     except (
         ConversationServiceError,
         ConversationValidationError,
         EmployeeNotFound,
         ModelConfigurationNotFound,
+        ToolServiceError,
+        ToolValidationError,
     ) as error:
         raise conversation_error(error) from error
     mark_audit_resource(request, AuditResourceType.CONVERSATION, accepted.conversation.id)

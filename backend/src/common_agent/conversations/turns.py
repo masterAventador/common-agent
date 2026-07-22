@@ -19,6 +19,7 @@ from common_agent.conversations.persistence import (
 from common_agent.conversations.runtime import ConversationRuntimeCoordinator
 from common_agent.conversations.targets import ConversationExecutionTargetResolver
 from common_agent.domain.conversation import CONVERSATION_TITLE_MAX_LENGTH, Conversation
+from common_agent.tools.models import ToolGrantSelection, ToolGrantSnapshot
 
 
 class ConversationTurnCoordinator:
@@ -79,6 +80,7 @@ class ConversationTurnCoordinator:
         employee_id: UUID | None,
         model_configuration_id: UUID,
         content: str,
+        tool_selection: ToolGrantSelection,
     ) -> ConversationTurnAccepted:
         self._runtime.ensure_open()
         async with self._locks.hold(conversation_id):
@@ -88,6 +90,10 @@ class ConversationTurnCoordinator:
                 model_configuration_id=model_configuration_id,
                 content=content,
             )
+            initial_tool_grants = await self._targets.new_conversation_grants(
+                conversation,
+                tool_selection,
+            )
             keys = self._targets.resource_keys(
                 conversation,
                 model_configuration_id=model_configuration_id,
@@ -96,7 +102,7 @@ class ConversationTurnCoordinator:
                 target = await self._targets.for_selection(
                     conversation,
                     model_configuration_id=model_configuration_id,
-                    new_conversation=True,
+                    initial_tool_grants=initial_tool_grants,
                 )
                 turn_id, prepared = await self._create(
                     conversation,
@@ -104,6 +110,7 @@ class ConversationTurnCoordinator:
                     content=content,
                     model_configuration_id=target.model_configuration_id,
                     model_identifier=target.model_identifier,
+                    initial_tool_grants=initial_tool_grants,
                 )
             await self._start_if_inline(turn_id, target, prepared, retry=False)
             return ConversationTurnAccepted(
@@ -176,6 +183,7 @@ class ConversationTurnCoordinator:
         content: str,
         model_configuration_id: UUID,
         model_identifier: str,
+        initial_tool_grants: ToolGrantSnapshot | None,
     ) -> tuple[UUID, PreparedTurn]:
         turn_id = uuid4()
         assistant_message_id = uuid4()
@@ -193,6 +201,7 @@ class ConversationTurnCoordinator:
             content=content,
             model_configuration_id=model_configuration_id,
             model_identifier=model_identifier,
+            initial_tool_grants=initial_tool_grants,
             task_request=task_request,
             task_max_attempts=self._durable.maximum_attempts,
         )

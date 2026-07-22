@@ -16,7 +16,13 @@ from common_agent.conversations.contracts import (
 )
 from common_agent.domain.conversation import Conversation, ConversationSource, Message
 from common_agent.domain.employee import Employee
-from common_agent.tools.models import ToolGrantTarget, ToolGrantTargetType
+from common_agent.tools.models import (
+    ToolGrantSelection,
+    ToolGrantSnapshot,
+    ToolGrantTarget,
+    ToolGrantTargetType,
+    ToolValidationError,
+)
 
 
 class ConversationExecutionTargetResolver:
@@ -36,7 +42,7 @@ class ConversationExecutionTargetResolver:
         conversation: Conversation,
         *,
         model_configuration_id: UUID | None,
-        new_conversation: bool = False,
+        initial_tool_grants: ToolGrantSnapshot | None = None,
     ) -> ConversationExecutionTarget:
         employee = await self._employee(conversation)
         selected_id = _selected_model_id(
@@ -51,7 +57,7 @@ class ConversationExecutionTargetResolver:
         grant_target, capability_ids = await self._tool_grants(
             conversation,
             employee=employee,
-            new_conversation=new_conversation,
+            initial_tool_grants=initial_tool_grants,
         )
         return _target(
             conversation,
@@ -73,7 +79,7 @@ class ConversationExecutionTargetResolver:
         grant_target, capability_ids = await self._tool_grants(
             conversation,
             employee=employee,
-            new_conversation=False,
+            initial_tool_grants=None,
         )
         return _target(
             conversation,
@@ -96,6 +102,29 @@ class ConversationExecutionTargetResolver:
         if model_configuration_id is not None:
             keys.append(model_configuration_resource(model_configuration_id))
         return tuple(keys)
+
+    async def new_conversation_grants(
+        self,
+        conversation: Conversation,
+        selection: ToolGrantSelection,
+    ) -> ToolGrantSnapshot | None:
+        if conversation.source is ConversationSource.EMPLOYEE:
+            if selection.collection_ids or selection.capability_ids:
+                raise ToolValidationError(
+                    "tool_selection",
+                    "数字员工会话不能覆盖员工工具授权",
+                )
+            return None
+        if self._tools is None:
+            if selection.collection_ids or selection.capability_ids:
+                raise ToolValidationError("tool_selection", "工具授权服务不可用")
+            return ToolGrantSnapshot(
+                target_type=ToolGrantTargetType.CONVERSATION,
+                target_id=conversation.id,
+                collection_ids=(),
+                capability_ids=(),
+            )
+        return await self._tools.prepare_conversation_grants(conversation.id, selection)
 
     async def _employee(self, conversation: Conversation) -> Employee | None:
         if conversation.source is ConversationSource.GENERIC:
@@ -128,7 +157,7 @@ class ConversationExecutionTargetResolver:
         conversation: Conversation,
         *,
         employee: Employee | None,
-        new_conversation: bool,
+        initial_tool_grants: ToolGrantSnapshot | None,
     ) -> tuple[ToolGrantTarget, tuple[UUID, ...]]:
         if employee is not None:
             target = ToolGrantTarget(ToolGrantTargetType.EMPLOYEE, employee.id)
@@ -137,7 +166,14 @@ class ConversationExecutionTargetResolver:
             snapshot = await self._tools.employee_grants(employee.id)
             return target, snapshot.capability_ids
         target = ToolGrantTarget(ToolGrantTargetType.CONVERSATION, conversation.id)
-        if self._tools is None or new_conversation:
+        if initial_tool_grants is not None:
+            if (
+                initial_tool_grants.target_type is not ToolGrantTargetType.CONVERSATION
+                or initial_tool_grants.target_id != conversation.id
+            ):
+                raise ToolValidationError("tool_selection", "会话工具授权目标不匹配")
+            return target, initial_tool_grants.capability_ids
+        if self._tools is None:
             return target, ()
         snapshot = await self._tools.conversation_grants(conversation.id)
         return target, snapshot.capability_ids

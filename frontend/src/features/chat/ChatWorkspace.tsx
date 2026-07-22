@@ -3,6 +3,7 @@ import { Bot, Send, Square } from "lucide-react";
 
 import type { Employee } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
+import { ToolGrantSelector } from "../tools/index";
 import { MessageBubble } from "./ChatMessages";
 import type { ChatPageController } from "./useChatPageController";
 
@@ -73,6 +74,8 @@ export function ChatWorkspace({
               <MessageBubble
                 key={message.id}
                 message={message}
+                toolCalls={controller.toolCallsByMessageId.get(message.id) ?? []}
+                toolCapabilityNames={controller.toolCapabilityNames}
                 workflowRuns={runsByMessageId.get(message.id) ?? []}
                 workflows={workflowsById}
                 retrying={retryMutation.isPending && retryMutation.variables === message.id}
@@ -157,13 +160,30 @@ export function ChatWorkspace({
       </main>
 
       <aside className="chat-employee-panel" role="region" aria-label="数字员工信息">
-        {employee ? <EmployeeDetails employee={employee} /> : <GenericAssistantDetails />}
+        {employee ? (
+          <EmployeeDetails
+            employee={employee}
+            toolGrantCount={controller.employeeToolGrants.data?.capability_ids.length}
+            toolGrantError={controller.employeeToolGrants.error}
+          />
+        ) : (
+          <GenericAssistantDetails controller={controller} readOnly={readOnly} />
+        )}
       </aside>
     </div>
   );
 }
 
-function GenericAssistantDetails() {
+function GenericAssistantDetails({
+  controller,
+  readOnly,
+}: {
+  controller: ChatPageController;
+  readOnly: boolean;
+}) {
+  const grantsPending = Boolean(
+    controller.selectedConversationId && controller.conversationToolGrants.isPending,
+  );
   return (
     <>
       <div className="chat-employee-avatar" aria-hidden="true">
@@ -175,12 +195,79 @@ function GenericAssistantDetails() {
         <Tag color="blue">模型可逐轮切换</Tag>
         <Tag>不检索知识库</Tag>
       </div>
+      <div className="chat-tool-grants">
+        <Text strong>会话工具授权</Text>
+        {controller.toolCatalog.isPending || grantsPending ? (
+          <Skeleton active paragraph={{ rows: 3 }} />
+        ) : controller.toolCatalog.isError ? (
+          <Alert
+            type="warning"
+            showIcon
+            title="工具目录暂不可用，对话仍可继续"
+            description={getErrorMessage(controller.toolCatalog.error)}
+            action={
+              <Button size="small" onClick={() => void controller.toolCatalog.refetch()}>
+                重试
+              </Button>
+            }
+          />
+        ) : controller.conversationToolGrants.isError ? (
+          <Alert
+            type="warning"
+            showIcon
+            title="会话工具授权加载失败"
+            description={getErrorMessage(controller.conversationToolGrants.error)}
+            action={
+              <Button
+                size="small"
+                onClick={() => void controller.conversationToolGrants.refetch()}
+              >
+                重试
+              </Button>
+            }
+          />
+        ) : controller.toolCatalog.data ? (
+          <>
+            <ToolGrantSelector
+              catalog={controller.toolCatalog.data}
+              value={controller.toolSelection}
+              disabled={readOnly || Boolean(controller.activeMessage)}
+              onChange={controller.setToolSelection}
+            />
+            {controller.selectedConversationId ? (
+              <Button
+                type="primary"
+                loading={controller.saveToolGrantsMutation.isPending}
+                disabled={readOnly || Boolean(controller.activeMessage)}
+                onClick={() =>
+                  controller.saveToolGrantsMutation.mutate(controller.toolSelection)
+                }
+              >
+                保存会话工具
+              </Button>
+            ) : (
+              <Text type="secondary">首条消息会将当前授权与会话原子保存。</Text>
+            )}
+            {controller.saveToolGrantsMutation.isSuccess ? (
+              <Text type="success">会话工具授权已保存</Text>
+            ) : null}
+          </>
+        ) : null}
+      </div>
       <Alert type="info" showIcon title="发送第一条消息时会自动创建并保存会话" />
     </>
   );
 }
 
-function EmployeeDetails({ employee }: { employee: Employee }) {
+function EmployeeDetails({
+  employee,
+  toolGrantCount,
+  toolGrantError,
+}: {
+  employee: Employee;
+  toolGrantCount?: number;
+  toolGrantError: Error | null;
+}) {
   return (
     <>
       <div className="chat-employee-avatar" aria-hidden="true">
@@ -191,7 +278,11 @@ function EmployeeDetails({ employee }: { employee: Employee }) {
       <div className="chat-employee-binding">
         {employee.knowledge_base_id ? <Tag color="blue">已绑定知识库</Tag> : <Tag>未绑定知识库</Tag>}
         <Tag>{employee.allowed_workflow_ids.length} 个工作流权限</Tag>
+        {toolGrantCount !== undefined ? <Tag>{toolGrantCount} 个工具权限</Tag> : null}
       </div>
+      {toolGrantError ? (
+        <Alert type="warning" showIcon title="数字员工工具权限暂不可用" />
+      ) : null}
       <div className="chat-system-prompt">
         <Text type="secondary">系统指令</Text>
         <Text>{employee.system_prompt}</Text>

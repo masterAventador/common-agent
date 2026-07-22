@@ -7,6 +7,7 @@ from uuid import UUID
 from common_agent.conversations.contracts import ConversationHistoryItem
 from common_agent.domain.conversation import Conversation, ConversationSource, Message
 from common_agent.pagination import PageAnchor, PageSlice
+from common_agent.ports.tools import ToolRepository
 from common_agent.tasks.ports import TaskSubmission
 
 
@@ -67,6 +68,9 @@ class ConversationUnitOfWork(Protocol):
 
     @property
     def tasks(self) -> TaskSubmission: ...
+
+    @property
+    def tools(self) -> ToolRepository: ...
 
     async def __aenter__(self) -> ConversationUnitOfWork: ...
 

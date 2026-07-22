@@ -28,6 +28,7 @@ from common_agent.pagination import CursorPage, ListPageRequest
 from common_agent.ports.conversations import ConversationUnitOfWorkFactory
 from common_agent.runtimes.base import EmployeeRuntime
 from common_agent.tasks import DurableTask, TaskExecutionContext, TaskQueue
+from common_agent.tools.models import ToolGrantSelection
 
 
 class ConversationService:
@@ -150,6 +151,7 @@ class ConversationService:
         employee_id: UUID | None,
         model_configuration_id: UUID,
         content: str,
+        tool_selection: ToolGrantSelection | None = None,
     ) -> ConversationTurnAccepted:
         return await self._turns.create_first(
             conversation_id=conversation_id,
@@ -157,6 +159,7 @@ class ConversationService:
             employee_id=employee_id,
             model_configuration_id=model_configuration_id,
             content=content,
+            tool_selection=tool_selection or ToolGrantSelection(),
         )
 
     async def stop(self, conversation_id: UUID) -> StopAccepted:

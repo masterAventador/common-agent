@@ -174,6 +174,24 @@ class ToolService:
             selection,
         )
 
+    async def prepare_conversation_grants(
+        self,
+        conversation_id: UUID,
+        selection: ToolGrantSelection,
+    ) -> ToolGrantSnapshot:
+        async with self._unit_of_work_factory() as unit_of_work:
+            resolved = await unit_of_work.tools.resolve(selection)
+        if resolved.missing_collection_ids:
+            raise ToolCollectionNotFound
+        if resolved.unavailable_capability_ids:
+            raise ToolCapabilityUnavailable
+        return ToolGrantSnapshot(
+            target_type=ToolGrantTargetType.CONVERSATION,
+            target_id=conversation_id,
+            collection_ids=selection.collection_ids,
+            capability_ids=resolved.capability_ids,
+        )
+
     async def authorized_runtime_capabilities(
         self,
         target: ToolGrantTarget,
@@ -204,16 +222,29 @@ class ToolService:
         async with self._unit_of_work_factory() as unit_of_work:
             if not await unit_of_work.tools.target_exists(target_type, target_id):
                 raise ToolGrantTargetNotFound
+            current = await unit_of_work.tools.grants(target_type, target_id)
             resolved = await unit_of_work.tools.resolve(selection)
             if resolved.missing_collection_ids:
                 raise ToolCollectionNotFound
-            if resolved.unavailable_capability_ids:
+            existing_capability_ids = set(current.capability_ids)
+            preserved_unavailable = tuple(
+                capability_id
+                for capability_id in selection.capability_ids
+                if capability_id in resolved.unavailable_capability_ids
+                and capability_id in existing_capability_ids
+            )
+            newly_unavailable = set(resolved.unavailable_capability_ids).difference(
+                preserved_unavailable
+            )
+            if newly_unavailable:
                 raise ToolCapabilityUnavailable
             snapshot = ToolGrantSnapshot(
                 target_type=target_type,
                 target_id=target_id,
                 collection_ids=selection.collection_ids,
-                capability_ids=resolved.capability_ids,
+                capability_ids=tuple(
+                    dict.fromkeys((*resolved.capability_ids, *preserved_unavailable))
+                ),
             )
             await unit_of_work.tools.replace_grants(snapshot)
             await unit_of_work.commit()

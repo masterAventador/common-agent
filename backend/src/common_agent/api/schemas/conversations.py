@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from common_agent.conversations.contracts import (
     ConversationHistoryItem,
@@ -24,6 +24,10 @@ from common_agent.domain.conversation import (
     Message,
     MessageRole,
     MessageStatus,
+)
+from common_agent.tools.models import (
+    TOOL_GRANT_CAPABILITY_MAX_ITEMS,
+    TOOL_GRANT_COLLECTION_MAX_ITEMS,
 )
 
 ConversationTitle = Annotated[
@@ -64,6 +68,22 @@ class CreateConversationTurnBody(BaseModel):
     employee_id: UUID | None = None
     model_configuration_id: UUID
     content: MessageContent
+    tool_collection_ids: list[UUID] = Field(
+        default_factory=list,
+        max_length=TOOL_GRANT_COLLECTION_MAX_ITEMS,
+    )
+    tool_capability_ids: list[UUID] = Field(
+        default_factory=list,
+        max_length=TOOL_GRANT_CAPABILITY_MAX_ITEMS,
+    )
+
+    @model_validator(mode="after")
+    def reject_employee_tool_override(self) -> CreateConversationTurnBody:
+        if self.employee_id is not None and (
+            self.tool_collection_ids or self.tool_capability_ids
+        ):
+            raise ValueError("数字员工会话必须使用员工授权,不能设置会话级工具")
+        return self
 
 
 class ConversationResponse(BaseModel):

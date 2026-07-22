@@ -2,6 +2,7 @@ import {
   keepPreviousData,
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import {
@@ -20,7 +21,7 @@ import {
   Typography,
 } from "antd";
 import { Bot, MessageSquare, Pencil, Plus, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -43,6 +44,13 @@ import {
   ResourceDeleteButton,
 } from "../../components/ResourceDeleteButton";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
+import {
+  fetchEmployeeToolGrants,
+  fetchToolCatalog,
+  replaceEmployeeToolGrants,
+  type ToolGrantSelection,
+} from "../../api/tools";
+import { explicitToolGrantSelection, ToolGrantSelector } from "../tools/index";
 
 const { Text, Title } = Typography;
 
@@ -68,6 +76,8 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
   const [knowledgeSearch, setKnowledgeSearch] = useState("");
   const [workflowSearch, setWorkflowSearch] = useState("");
   const [modelSearch, setModelSearch] = useState("");
+  const [toolSelectionOverride, setToolSelectionOverride] =
+    useState<ToolGrantSelection>();
   const [form] = Form.useForm<EmployeeConfigurationInput>();
 
   const employees = useInfiniteQuery({
@@ -110,6 +120,17 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
     placeholderData: keepPreviousData,
     enabled: referenceOptionsEnabled,
   });
+  const editedEmployeeId = editor?.mode === "edit" ? editor.employee.id : undefined;
+  const toolCatalog = useQuery({
+    queryKey: ["tool-catalog"],
+    queryFn: fetchToolCatalog,
+    enabled: Boolean(editedEmployeeId),
+  });
+  const toolGrants = useQuery({
+    queryKey: ["employee-tool-grants", editedEmployeeId],
+    queryFn: () => fetchEmployeeToolGrants(editedEmployeeId ?? ""),
+    enabled: Boolean(editedEmployeeId),
+  });
   const knowledgeItems = useMemo(
     () => flattenCursorPages(knowledgeBases.data),
     [knowledgeBases.data],
@@ -133,38 +154,35 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
     [modelItems],
   );
 
-  useEffect(() => {
-    if (!editor) return;
-    form.setFieldsValue(
-      editor.mode === "edit"
-        ? employeeFormValues(editor.employee)
-        : {
-            name: "",
-            description: "",
-            system_prompt: "",
-            default_model_configuration_id: undefined,
-            knowledge_base_id: null,
-            allowed_workflow_ids: [],
-          },
-    );
-  }, [editor, form]);
+  const toolSelection =
+    toolSelectionOverride ??
+    (toolCatalog.data && toolGrants.data
+      ? explicitToolGrantSelection(toolCatalog.data, toolGrants.data)
+      : { collection_ids: [], capability_ids: [] });
 
   const saveMutation = useMutation({
-    mutationFn: (values: EmployeeConfigurationInput) => {
+    mutationFn: async (values: EmployeeConfigurationInput) => {
       const normalizedValues = {
         ...values,
         knowledge_base_id: values.knowledge_base_id ?? null,
         allowed_workflow_ids: values.allowed_workflow_ids ?? [],
       };
-      return editor?.mode === "edit"
-        ? updateEmployee(editor.employee.id, normalizedValues)
-        : createEmployee(normalizedValues);
+      if (editor?.mode !== "edit") return createEmployee(normalizedValues);
+      if (!toolCatalog.data || !toolGrants.data) {
+        throw new Error("工具授权尚未加载完成");
+      }
+      await replaceEmployeeToolGrants(editor.employee.id, toolSelection);
+      return updateEmployee(editor.employee.id, normalizedValues);
     },
     onSuccess: async (saved) => {
       queryClient.setQueryData(["employee", saved.id], saved);
       setEditor(undefined);
+      setToolSelectionOverride(undefined);
       form.resetFields();
       await queryClient.resetQueries({ queryKey: ["employees"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["employee-tool-grants", saved.id],
+      });
     },
   });
 
@@ -182,8 +200,28 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
 
   const closeEditor = () => {
     setEditor(undefined);
+    setToolSelectionOverride(undefined);
     saveMutation.reset();
     form.resetFields();
+  };
+
+  const openCreateEditor = () => {
+    setToolSelectionOverride(undefined);
+    form.setFieldsValue({
+      name: "",
+      description: "",
+      system_prompt: "",
+      default_model_configuration_id: undefined,
+      knowledge_base_id: null,
+      allowed_workflow_ids: [],
+    });
+    setEditor({ mode: "create" });
+  };
+
+  const openEditEditor = (employee: Employee) => {
+    setToolSelectionOverride(undefined);
+    form.setFieldsValue(employeeFormValues(employee));
+    setEditor({ mode: "edit", employee });
   };
 
   const knowledgeBaseLabel = (employee: Employee) => {
@@ -266,7 +304,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
             <Title level={2}>数字员工</Title>
           </Space>
           <Typography.Paragraph type="secondary">
-            配置通用会话角色和系统指令，可按需绑定一个知识库并授权独立工作流。
+            配置角色、系统指令、知识库、工作流和精确工具权限。
           </Typography.Paragraph>
         </div>
         <Button
@@ -274,7 +312,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
           aria-label="创建数字员工"
           icon={<Plus aria-hidden="true" size={16} />}
           disabled={readOnly}
-          onClick={() => setEditor({ mode: "create" })}
+          onClick={openCreateEditor}
         >
           创建数字员工
         </Button>
@@ -390,7 +428,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
                   aria-label={`编辑 ${employee.name}`}
                   icon={<Pencil aria-hidden="true" size={15} />}
                   disabled={readOnly}
-                  onClick={() => setEditor({ mode: "edit", employee })}
+                  onClick={() => openEditEditor(employee)}
                 >
                   编辑
                 </Button>
@@ -425,7 +463,15 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
         okText={editor?.mode === "edit" ? "保存修改" : "确认创建"}
         cancelText="取消"
         confirmLoading={saveMutation.isPending}
-        okButtonProps={{ disabled: readOnly }}
+        okButtonProps={{
+          disabled:
+            readOnly ||
+            (editor?.mode === "edit" &&
+              (toolCatalog.isPending ||
+                toolGrants.isPending ||
+                toolCatalog.isError ||
+                toolGrants.isError)),
+        }}
         onOk={() => form.submit()}
         onCancel={closeEditor}
       >
@@ -547,6 +593,30 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
             />
           </Form.Item>
           <Text type="secondary">数字员工只会看到并调用这里明确授权的工作流。</Text>
+          {editor?.mode === "edit" ? (
+            <div className="employees-tool-grants">
+              <Typography.Title level={5}>工具权限</Typography.Title>
+              {toolCatalog.isPending || toolGrants.isPending ? (
+                <Skeleton active paragraph={{ rows: 3 }} />
+              ) : toolCatalog.isError || toolGrants.isError ? (
+                <Alert
+                  type="error"
+                  showIcon
+                  title="工具授权加载失败"
+                  description={getErrorMessage(toolCatalog.error ?? toolGrants.error)}
+                />
+              ) : toolCatalog.data && toolGrants.data ? (
+                <ToolGrantSelector
+                  catalog={toolCatalog.data}
+                  value={toolSelection}
+                  disabled={readOnly}
+                  onChange={setToolSelectionOverride}
+                />
+              ) : null}
+            </div>
+          ) : (
+            <Text type="secondary">新员工默认无工具；创建后可在编辑页精确授权。</Text>
+          )}
         </Form>
       </Modal>
     </section>

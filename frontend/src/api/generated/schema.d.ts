@@ -1296,6 +1296,10 @@ export interface components {
              * Format: uuid
              */
             model_configuration_id: string;
+            /** Tool Capability Ids */
+            tool_capability_ids?: string[];
+            /** Tool Collection Ids */
+            tool_collection_ids?: string[];
         };
         /** CreateKnowledgeBaseBody */
         CreateKnowledgeBaseBody: {

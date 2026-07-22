@@ -532,6 +532,14 @@ select {
   border-top: 1px solid #edf0f6;
 }
 
+.chat-tool-calls {
+  display: grid;
+  margin-top: 12px;
+  padding-top: 10px;
+  gap: 8px;
+  border-top: 1px solid #edf0f6;
+}
+
 .chat-workflow-runs .ant-collapse {
   min-width: min(480px, 62vw);
   border-color: #dfe6f7;
@@ -600,6 +608,11 @@ select {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.chat-tool-grants {
+  display: grid;
+  gap: 12px;
 }
 
 .chat-system-prompt {

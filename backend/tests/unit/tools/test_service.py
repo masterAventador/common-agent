@@ -194,6 +194,13 @@ def test_collection_selection_is_expanded_once_and_new_capabilities_do_not_auto_
     service = ToolService(factory)
 
     async def exercise() -> None:
+        prepared = await service.prepare_conversation_grants(
+            uuid4(),
+            ToolGrantSelection(collection_ids=(repository.collection.id,)),
+        )
+        assert prepared.capability_ids == (repository.first.id,)
+        assert repository.snapshots == {}
+
         saved = await service.replace_employee_grants(
             repository.employee_id,
             ToolGrantSelection(collection_ids=(repository.collection.id,)),
@@ -220,7 +227,8 @@ def test_collection_selection_is_expanded_once_and_new_capabilities_do_not_auto_
         assert set(refreshed.capability_ids) == {repository.first.id, second.id}
 
     asyncio.run(exercise())
-    assert all(unit.committed for unit in (units[0], units[-1]))
+    assert not units[0].committed
+    assert all(unit.committed for unit in (units[1], units[-1]))
 
 
 def test_conversation_grants_and_invalid_selection_fail_closed() -> None:
@@ -242,6 +250,38 @@ def test_conversation_grants_and_invalid_selection_fail_closed() -> None:
                 repository.employee_id,
                 ToolGrantSelection(collection_ids=(uuid4(),)),
             )
+        with pytest.raises(ToolCapabilityUnavailable):
+            await service.replace_employee_grants(
+                repository.employee_id,
+                ToolGrantSelection(capability_ids=(uuid4(),)),
+            )
+
+    asyncio.run(exercise())
+
+
+def test_existing_unavailable_grant_can_be_preserved_or_explicitly_revoked() -> None:
+    repository = _Repository()
+    service = ToolService(lambda: _UnitOfWork(repository))
+
+    async def exercise() -> None:
+        await service.replace_employee_grants(
+            repository.employee_id,
+            ToolGrantSelection(capability_ids=(repository.first.id,)),
+        )
+        repository.capabilities.clear()
+
+        preserved = await service.replace_employee_grants(
+            repository.employee_id,
+            ToolGrantSelection(capability_ids=(repository.first.id,)),
+        )
+        assert preserved.capability_ids == (repository.first.id,)
+
+        revoked = await service.replace_employee_grants(
+            repository.employee_id,
+            ToolGrantSelection(),
+        )
+        assert revoked.capability_ids == ()
+
         with pytest.raises(ToolCapabilityUnavailable):
             await service.replace_employee_grants(
                 repository.employee_id,

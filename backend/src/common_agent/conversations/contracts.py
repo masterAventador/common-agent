@@ -8,7 +8,11 @@ from common_agent.domain.conversation import Conversation, Message
 from common_agent.domain.employee import Employee
 from common_agent.domain.model_configuration import ModelConfiguration
 from common_agent.knowledge.retrieval import KnowledgeBoundSubject, ResolvedKnowledgeContext
-from common_agent.tools.models import ToolGrantSnapshot, ToolGrantTarget
+from common_agent.tools.models import (
+    ToolGrantSelection,
+    ToolGrantSnapshot,
+    ToolGrantTarget,
+)
 
 GENERIC_SYSTEM_INSTRUCTION = "你是通用 AI 助手,请准确、清晰地回答用户问题。"
 
@@ -114,6 +118,12 @@ class ToolGrantDirectory(Protocol):
     async def employee_grants(self, employee_id: UUID) -> ToolGrantSnapshot: ...
 
     async def conversation_grants(self, conversation_id: UUID) -> ToolGrantSnapshot: ...
+
+    async def prepare_conversation_grants(
+        self,
+        conversation_id: UUID,
+        selection: ToolGrantSelection,
+    ) -> ToolGrantSnapshot: ...
 
 
 class KnowledgeResolver(Protocol):

@@ -25,11 +25,31 @@ import {
   fetchModelConfigurations,
 } from "../../api/modelConfigurations";
 import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
+import {
+  fetchConversationToolGrants,
+  fetchEmployeeToolGrants,
+  fetchToolCatalog,
+  replaceConversationToolGrants,
+  type ToolGrantSelection,
+} from "../../api/tools";
 import { fetchConversationWorkflowRuns } from "../../api/workflowRuns";
 import { fetchWorkflows } from "../../api/workflows";
+import { explicitToolGrantSelection } from "../tools/index";
 import { groupWorkflowRunsByMessage, mergeAcceptedTurn, replaceMessage } from "./chatState";
 
 export const GENERIC_CHAT_VALUE = "__generic__";
+const EMPTY_TOOL_SELECTION: ToolGrantSelection = {
+  collection_ids: [],
+  capability_ids: [],
+};
+
+export type ChatToolCallLifecycle = {
+  toolCallId: string;
+  capabilityId: string;
+  capabilityName: string;
+  status: "running" | "completed" | "failed";
+  errorCode: string | null;
+};
 
 export function useChatPageController() {
   const queryClient = useQueryClient();
@@ -39,6 +59,14 @@ export function useChatPageController() {
   const [streamNotice, setStreamNotice] = useState<string>();
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [selectedModelConfigurationId, setSelectedModelConfigurationId] = useState("");
+  const [toolSelectionOverride, setToolSelectionOverride] = useState<{
+    contextKey: string;
+    selection: ToolGrantSelection;
+  }>();
+  const [toolCallState, setToolCallState] = useState<{
+    conversationId: string;
+    callsByMessageId: Map<string, ChatToolCallLifecycle[]>;
+  }>();
   const modelContextRef = useRef("");
   const lastEventSequence = useRef(0);
   const requestedEmployeeId = searchParams.get("employee_id");
@@ -157,6 +185,50 @@ export function useChatPageController() {
     () => groupWorkflowRunsByMessage(workflowRunItems),
     [workflowRunItems],
   );
+  const toolCatalog = useQuery({
+    queryKey: ["tool-catalog"],
+    queryFn: fetchToolCatalog,
+  });
+  const conversationToolGrants = useQuery({
+    queryKey: ["conversation-tool-grants", selectedConversationId],
+    queryFn: () => fetchConversationToolGrants(selectedConversationId ?? ""),
+    enabled: Boolean(selectedConversationId && selectedConversation?.source === "generic"),
+  });
+  const employeeToolGrants = useQuery({
+    queryKey: ["employee-tool-grants", selectedEmployeeId],
+    queryFn: () => fetchEmployeeToolGrants(selectedEmployeeId ?? ""),
+    enabled: Boolean(selectedEmployeeId),
+  });
+  const toolCapabilityNames = useMemo(
+    () =>
+      new Map(
+        (toolCatalog.data?.capabilities ?? []).map((capability) => [
+          capability.id,
+          capability.display_name,
+        ]),
+      ),
+    [toolCatalog.data],
+  );
+  const toolSelectionContextKey = selectedConversationId
+    ? `conversation:${selectedConversationId}`
+    : selectedEmployeeId
+      ? `employee:${selectedEmployeeId}`
+      : "generic:new";
+  const persistedToolSelection =
+    selectedConversationId &&
+    selectedConversation?.source === "generic" &&
+    toolCatalog.data &&
+    conversationToolGrants.data
+      ? explicitToolGrantSelection(toolCatalog.data, conversationToolGrants.data)
+      : EMPTY_TOOL_SELECTION;
+  const toolSelection =
+    toolSelectionOverride?.contextKey === toolSelectionContextKey
+      ? toolSelectionOverride.selection
+      : persistedToolSelection;
+  const toolCallsByMessageId =
+    toolCallState && toolCallState.conversationId === selectedConversationId
+      ? toolCallState.callsByMessageId
+      : new Map<string, ChatToolCallLifecycle[]>();
 
   const modelContextKey = `${contextKey}:${requestedConversationId ?? "new"}:${
     defaultModelConfigurationId ?? "first"
@@ -193,6 +265,39 @@ export function useChatPageController() {
       onEvent: (event: ConversationEvent) => {
         if (event.sequence <= lastEventSequence.current) return;
         lastEventSequence.current = event.sequence;
+        const toolCall = event.tool_call;
+        if (toolCall) {
+          const status = toolCallStatus(event.type);
+          if (status) {
+            setToolCallState((current) => {
+              const next = new Map(
+                current?.conversationId === selectedConversationId
+                  ? current.callsByMessageId
+                  : undefined,
+              );
+              const existing = next.get(event.message_id) ?? [];
+              const lifecycle: ChatToolCallLifecycle = {
+                toolCallId: toolCall.tool_call_id,
+                capabilityId: toolCall.capability_id,
+                capabilityName: toolCall.capability_name,
+                status,
+                errorCode: toolCall.error_code,
+              };
+              const index = existing.findIndex(
+                (item) => item.toolCallId === lifecycle.toolCallId,
+              );
+              next.set(
+                event.message_id,
+                index === -1
+                  ? [...existing, lifecycle]
+                  : existing.map((item, itemIndex) =>
+                      itemIndex === index ? lifecycle : item,
+                    ),
+              );
+              return { conversationId: selectedConversationId, callsByMessageId: next };
+            });
+          }
+        }
         queryClient.setQueryData<ConversationMessage[]>(
           ["conversation-messages", selectedConversationId],
           (current) => replaceMessage(current, event.message),
@@ -241,6 +346,8 @@ export function useChatPageController() {
         employee_id: selectedEmployeeId ?? null,
         model_configuration_id: selectedModelConfigurationId,
         content,
+        tool_collection_ids: selectedEmployeeId ? [] : toolSelection.collection_ids,
+        tool_capability_ids: selectedEmployeeId ? [] : toolSelection.capability_ids,
       });
     },
     onSuccess: async (accepted) => {
@@ -300,6 +407,20 @@ export function useChatPageController() {
       );
     },
   });
+  const saveToolGrantsMutation = useMutation({
+    mutationFn: async (selection: ToolGrantSelection) => {
+      if (!selectedConversationId || selectedConversation?.source !== "generic") {
+        throw new Error("只有通用 AI 会话可以单独配置工具");
+      }
+      return replaceConversationToolGrants(selectedConversationId, selection);
+    },
+    onSuccess: (grant) => {
+      queryClient.setQueryData(
+        ["conversation-tool-grants", selectedConversationId],
+        grant,
+      );
+    },
+  });
 
   const sendDraft = () => {
     const content = draft.trim();
@@ -317,13 +438,21 @@ export function useChatPageController() {
     modelConfigurations,
     contextModelConfiguration,
     modelConfigurationItems,
+    toolCatalog,
+    toolSelection,
+    toolCallsByMessageId,
+    toolCapabilityNames,
+    conversationToolGrants,
+    employeeToolGrants,
+    saveToolGrantsMutation,
     selectedModelConfigurationId,
     operationError:
       selectedConversationQuery.error ??
       selectedEmployeeQuery.error ??
       sendMutation.error ??
       stopMutation.error ??
-      retryMutation.error,
+      retryMutation.error ??
+      saveToolGrantsMutation.error,
     retryMutation,
     runsByMessageId,
     selectedConversation,
@@ -340,6 +469,8 @@ export function useChatPageController() {
     setDraft,
     setEmployeeSearch,
     setSelectedModelConfigurationId,
+    setToolSelection: (selection: ToolGrantSelection) =>
+      setToolSelectionOverride({ contextKey: toolSelectionContextKey, selection }),
     startNewConversation,
     stopMutation,
     streamNotice,
@@ -349,6 +480,15 @@ export function useChatPageController() {
     hasMoreRuns: workflowRuns.hasNextPage,
     openWorkflowRun: (runId: string) => navigate(`/workflows?run_id=${runId}`),
   };
+}
+
+function toolCallStatus(
+  eventType: ConversationEvent["type"],
+): ChatToolCallLifecycle["status"] | undefined {
+  if (eventType === "assistant.tool.started") return "running";
+  if (eventType === "assistant.tool.completed") return "completed";
+  if (eventType === "assistant.tool.failed") return "failed";
+  return undefined;
 }
 
 export type ChatPageController = ReturnType<typeof useChatPageController>;

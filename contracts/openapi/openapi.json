@@ -827,6 +827,24 @@
             "format": "uuid",
             "title": "Model Configuration Id",
             "type": "string"
+          },
+          "tool_capability_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Tool Capability Ids",
+            "type": "array"
+          },
+          "tool_collection_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Tool Collection Ids",
+            "type": "array"
           }
         },
         "required": [
