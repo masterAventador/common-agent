@@ -3,8 +3,32 @@
 本项目固定使用 RAGFlow 官方稳定版 `v0.26.4`，并同时固定官方 tag 对应提交
 `cb93883f3f8c975eecb2fed81210effeb3bdb06f`，禁止使用 `latest` 或漂移分支。
 未修改的官方 checkout 以 `third_party/ragflow` Git submodule 纳入父仓库，`manage.sh` 只读取
-该目录；本项目只维护外围 Compose 覆盖层，不复制、Fork 或修改 RAGFlow 源码和官方 Compose。
-commit、tag、origin 或工作区任一不匹配时管理脚本都会关闭失败。
+该目录。R2-02 已建立私有镜像仓库和独立补丁工作区，但在 R2-07 完成补丁回归与依赖切换前，
+正式运行栈仍只使用当前未修改的官方 submodule 和官方镜像；不得把未提交补丁工作区临时挂入
+Compose。commit、tag、origin 或工作区任一不匹配时管理脚本都会关闭失败。
+
+## 私有补丁仓库
+
+私有仓库为 `masterAventador/common-agent-ragflow`。它不是 GitHub 的公开 fork 关系，而是权限独立的
+私有镜像：`main` 和 `v0.26.4` 永久固定官方基线提交，所有经基准和测试审查的改动只进入
+`common-agent/v0.26.4-patches`。`infra/ragflow/fork.env` 是仓库、版本和分支的单一元数据源；
+`fork.sh` 在 Git 忽略的 `.local/ragflow-fork` 创建补丁工作区，将私有仓库设为 `origin`，将官方
+仓库设为只读 `upstream`，并禁止 upstream push。
+
+另一台电脑具备该私有仓库的 SSH 权限并完成 `gh auth login` 后，执行：
+
+```bash
+infra/ragflow/fork.sh prepare
+infra/ragflow/fork.sh verify
+infra/ragflow/fork.sh verify-remote
+infra/ragflow/fork.sh status
+bash infra/ragflow/test-fork.sh
+```
+
+`verify-remote` 同时校验 GitHub 仓库仍为 private、默认分支仍为 `main`、官方与私有 tag 指向同一
+基线、私有 `main` 未漂移，以及远端补丁分支仍包含基线。补丁开发只在 `.local/ragflow-fork`
+完成并推送，不直接修改 `third_party/ragflow`；common-agent submodule、镜像和 Compose 的正式切换
+统一留到 R2-07，避免尚未完成回归的源码进入稳定栈。
 
 ## 使用
 
@@ -131,4 +155,5 @@ RAGFLOW_IMAGE_SOURCE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v0.26.4
 `docker compose down -v`。v0.26.4 官方入口会在 API 启动前执行数据库 schema 同步和模型供应商表
 迁移；首次启动后必须检查迁移日志、版本端点、既有数据集/文档和真实检索，再清理临时回滚资源。
 后续升级仍必须作为独立路线图任务：同步修改 submodule 指针、`VERSION` 与 `UPSTREAM_COMMIT`，
-运行配置契约、正式适配器契约和完整纵向链路回归；禁止修改 submodule 或维护上游补丁。
+运行配置契约、正式适配器契约和完整纵向链路回归；禁止直接修改 submodule、运行中容器或官方
+镜像，补丁只能在已锁定基线的版本化私有分支中维护。

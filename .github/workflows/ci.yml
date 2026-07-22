@@ -171,6 +171,7 @@ jobs:
           COMMON_AGENT_TEST_DOCKER_CONTEXT: default
         run: |
           bash infra/ragflow/test-manage.sh
+          bash infra/ragflow/test-fork.sh
           bash infra/platform/test-manage.sh
           bash infra/backup/test-manage.sh
           bash infra/production/test-manage.sh

@@ -2,8 +2,8 @@
 
 > 文档性质：V2 当前任务与执行结果的唯一台账
 > 建立日期：2026-07-22
-> 当前阶段：R2-02 创建私有 RAGFlow 仓库与补丁分支
-> 当前下一步：从官方 `v0.26.4` 精确提交创建私有仓库、只读 upstream 和版本化补丁分支
+> 当前阶段：R2-03 移植删除定向校验、独立计数和延迟 JOIN 分页
+> 当前下一步：对照 `ragflow-deploy` 与官方 `v0.26.4`，先为三项查询补丁建立正确性和 SQL 计划 RED
 
 任务状态、执行顺序、TDD、生产同路径、失败矩阵、完成定义、安全、资源清理和提交规则统一见
 根目录 `CLAUDE.md`，本文件不复制长期规则。
@@ -95,7 +95,7 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
 | ID | 任务 | 依赖 | 状态 |
 | --- | --- | --- | --- |
 | R2-01 | 建立 `v0.26.4` 写入、删除、列表和检索可复现性能基线 | V2-00 | ✅ 已完成 |
-| R2-02 | 创建私有 RAGFlow 镜像仓库、上游 remote 和版本化补丁分支 | R2-01 | ⬜ 未开始 |
+| R2-02 | 创建私有 RAGFlow 镜像仓库、上游 remote 和版本化补丁分支 | R2-01 | ✅ 已完成 |
 | R2-03 | 移植删除定向校验、独立计数和延迟 JOIN 分页 | R2-02 | ⬜ 未开始 |
 | R2-04 | 重做批量写入、独立 embedding 并发、Tika 启动与必要目录缓存 | R2-03 | ⬜ 未开始 |
 | R2-05 | 评估并优化语义检索、文档/切片读取和大结果边界 | R2-04 | ⬜ 未开始 |
@@ -590,4 +590,32 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
   四个被最终结果取代的烟测/中间目录已删除，只保留 Git 忽略的最终脱敏报告
   `.local/benchmarks/r2-01/20260722182923-60692/baseline.json`；稳定 RAGFlow 栈和 Volume 保留给
   R2-02，其他项目资源未处理。下一任务为 R2-02。
+- 提交：本任务提交（见 Git 历史）。
+
+### R2-02 创建私有 RAGFlow 镜像仓库、上游 remote 和版本化补丁分支
+
+- 状态：✅ 已完成
+- 日期：2026-07-23
+- RED：先新增 `infra/ragflow/test-fork.sh`，确认缺少 fork 元数据和可执行管理脚本时关闭失败；实现
+  本地仓库契约后，再把 CI 基线加入新门禁并确认 workflow 尚未执行该测试时按预期失败。
+- 远端：创建 GitHub 私有镜像 `masterAventador/common-agent-ragflow`，仓库可见性为 private、默认
+  分支为 `main`；`main`、`v0.26.4` 和 `common-agent/v0.26.4-patches` 初始均精确指向官方
+  `cb93883f3f8c975eecb2fed81210effeb3bdb06f`。由于公开仓库不能形成私有 GitHub fork，本仓库采用
+  权限独立的私有镜像语义，官方历史、tag 与基线提交仍完整保留。
+- 工作区：新增 `fork.env` 作为私有仓库、官方 upstream、基线版本/提交、默认分支和补丁分支的单一
+  元数据源；`fork.sh prepare` 从私有 origin 在 Git 忽略的 `.local/ragflow-fork` 克隆补丁工作区，
+  保留官方 `https://github.com/infiniflow/ragflow.git` 为 upstream，并把其 push URL 固定为
+  `DISABLED`。正式复现得到 origin、upstream、分支和 HEAD 均与锁定值一致。
+- 完整性：本地与远端校验要求私有 `main`/tag 永远等于官方基线，补丁分支可以前进但必须包含该
+  基线，工作区必须干净；真实 `gh repo view` 关闭失败地检查 private 和默认分支。本地裸仓库测试
+  已证明合法补丁提交可通过，而把远端 main 指向补丁提交会被拒绝。CI 基础设施门禁现已执行该无网
+  络 fixture 测试。
+- 门禁：私有 fork fixture、真实 GitHub 远端完整性、既有官方 submodule/Compose 基础设施契约、全仓
+  ShellCheck、CI 基线、Secret 治理、正式源码依赖/配置安全扫描、V1 冻结哈希和 `git diff --check`
+  全部通过。
+- 阶段边界：本任务没有修改官方 `third_party/ragflow` submodule 指针、RAGFlow 源码、正式 Compose
+  或官方镜像，也没有把补丁工作区接入运行栈；前三项性能补丁从 R2-03 开始逐项实现，统一到 R2-07
+  才把 common-agent 依赖切换到已推送且完整回归的 fork commit。
+- 清理与遗留：测试裸仓库和工作区由 trap 精确删除；保留 `.local/ragflow-fork` 作为后续补丁开发
+  工作区，稳定 RAGFlow 容器与 Volume 未改动，其他项目资源未处理。下一任务为 R2-03。
 - 提交：本任务提交（见 Git 历史）。

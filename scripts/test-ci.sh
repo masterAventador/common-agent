@@ -45,6 +45,7 @@ for expected in \
   'pnpm test:e2e:demo' \
   'COMMON_AGENT_E2E_DOCKER_CONTEXT: default' \
   'bash infra/ragflow/test-manage.sh' \
+  'bash infra/ragflow/test-fork.sh' \
   'bash infra/platform/test-manage.sh' \
   'bash infra/backup/test-manage.sh' \
   'bash infra/production/test-manage.sh' \
