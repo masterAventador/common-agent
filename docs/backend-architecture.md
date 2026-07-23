@@ -908,9 +908,12 @@ completed/failed/stopped 都严格提交后发布。停止接口只接受活跃�
 日志统一放在根目录 `.local/`；平台 MySQL 与 RAGFlow 使用不同的 Compose project、容器、网络和 Volume。
 
 RAGFlow 正式 submodule 已固定私有补丁 revision
-`9140f309de9129dc7cd6c889f2e0335b3f384628`，其官方上游基线仍为
+`21eb8fb4001421f2952ce3125e46e753825d3f9b`，其官方上游基线仍为
 `v0.26.4@cb93883f3f8c975eecb2fed81210effeb3bdb06f`；`infra/ragflow/manage.sh` 同时验证
 upstream tag/祖先关系、fork origin/commit、官方基底 digest、镜像 OCI revision 和补丁文件哈希。
+私有补丁只保留文档列表/定向删除、embedding 独立限流、根目录查询三项无法由官方扩展点实现的能力，
+生产改动严格限制为 4 个文件；批量写入及三类并发参数由 common-agent Compose 覆盖层维护，不修改
+RAGFlow 自带 Docker 配置。
 知识库新建、既有索引
 重建和检索分别显式固定阿里百炼
 `text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible` 与

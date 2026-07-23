@@ -25,6 +25,7 @@ PATCH_HEAD="${RAGFLOW_PATCH_HEAD_OVERRIDE:-${RAGFLOW_PATCH_HEAD}}"
 PATCH_SHORT="${RAGFLOW_PATCH_SHORT_OVERRIDE:-${RAGFLOW_PATCH_SHORT}}"
 PATCH_COMMITS="${RAGFLOW_PATCH_COMMITS_OVERRIDE:-${RAGFLOW_PATCH_COMMITS}}"
 ALLOWED_ROOTS="${RAGFLOW_PATCH_ALLOWED_ROOTS_OVERRIDE:-${RAGFLOW_PATCH_ALLOWED_ROOTS}}"
+PRODUCTION_FILES="${RAGFLOW_PATCH_PRODUCTION_FILES_OVERRIDE:-${RAGFLOW_PATCH_PRODUCTION_FILES}}"
 UPGRADE_COMMIT="${RAGFLOW_UPGRADE_AUDIT_COMMIT_OVERRIDE:-${RAGFLOW_UPGRADE_AUDIT_COMMIT}}"
 EXPECTED_CONFLICTS="${RAGFLOW_UPGRADE_EXPECTED_CONFLICTS_OVERRIDE:-${RAGFLOW_UPGRADE_EXPECTED_CONFLICTS}}"
 
@@ -73,6 +74,17 @@ while IFS= read -r changed_path; do
     fi
   done < <(printf '%s' "${ALLOWED_ROOTS}" | csv_to_sorted_lines)
   ((allowed == 1)) || fail "RAGFlow 补丁修改了未授权根目录：${changed_path}"
+
+  if [[ "${changed_path}" != test/* ]]; then
+    production_allowed=0
+    while IFS= read -r production_file; do
+      if [[ "${changed_path}" == "${production_file}" ]]; then
+        production_allowed=1
+        break
+      fi
+    done < <(printf '%s' "${PRODUCTION_FILES}" | csv_to_sorted_lines)
+    ((production_allowed == 1)) || fail "RAGFlow 补丁修改了未登记生产文件：${changed_path}"
+  fi
 done < <(git -C "${WORKTREE}" diff --name-only "${PATCH_BASE}..${PATCH_HEAD}")
 
 if [[ "${RAGFLOW_PATCHSET_SKIP_REMOTE_VERIFY:-0}" != "1" ]]; then

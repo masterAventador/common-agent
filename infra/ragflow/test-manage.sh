@@ -24,7 +24,7 @@ fail() {
 [[ -x "${MANAGER}" ]] || fail "缺少可执行的 RAGFlow 管理脚本"
 [[ "${VERSION}" == "v0.26.4" ]] || fail "RAGFlow 版本未固定为 v0.26.4"
 [[ "${UPSTREAM_COMMIT}" == "${RAGFLOW_UPSTREAM_COMMIT}" ]] || fail "RAGFlow 上游提交未固定"
-[[ "${EXPECTED_COMMIT}" == "9140f309de9129dc7cd6c889f2e0335b3f384628" ]] || fail "RAGFlow fork 提交未固定"
+[[ "${EXPECTED_COMMIT}" == "21eb8fb4001421f2952ce3125e46e753825d3f9b" ]] || fail "RAGFlow fork 提交未固定"
 [[ "${RAGFLOW_FORK_IMAGE_REVISION}" == "${EXPECTED_COMMIT}" ]] || fail "RAGFlow 镜像 revision 未固定"
 ENV_VERSION_LINE="$(rg --color=never --only-matching '^RAGFLOW_EXPECTED_VERSION=.*' "${REPOSITORY_ROOT}/.env.example" || true)"
 [[ "${ENV_VERSION_LINE#*=}" == "${VERSION}" ]] || fail "后端期望的 RAGFlow 版本与基础设施版本不一致"
@@ -140,6 +140,14 @@ rg --color=never --quiet 'container_name: common-agent-ragflow-api' <<< "${CONFI
 rg --color=never --fixed-strings --quiet "image: ${RAGFLOW_FORK_IMAGE}" <<< "${CONFIG}"
 rg --color=never --fixed-strings --quiet "RAGFLOW_IMAGE: ${RAGFLOW_FORK_IMAGE}" <<< "$(service_block ragflow-cpu)" || \
   fail "RAGFlow API 容器内镜像元数据没有同步 fork 标签"
+rg --color=never --fixed-strings --quiet 'DOC_BULK_SIZE: "32"' <<< "$(service_block ragflow-cpu)" || \
+  fail "RAGFlow 文档批量写入参数没有由 common-agent Compose 固定"
+rg --color=never --fixed-strings --quiet 'MAX_CONCURRENT_TASKS: "5"' <<< "$(service_block ragflow-cpu)" || \
+  fail "RAGFlow 任务并发参数没有由 common-agent Compose 固定"
+rg --color=never --fixed-strings --quiet 'MAX_CONCURRENT_CHUNK_BUILDERS: "1"' <<< "$(service_block ragflow-cpu)" || \
+  fail "RAGFlow 分块并发参数没有由 common-agent Compose 固定"
+rg --color=never --fixed-strings --quiet 'MAX_CONCURRENT_EMBEDDINGS: "8"' <<< "$(service_block ragflow-cpu)" || \
+  fail "RAGFlow embedding 并发参数没有由 common-agent Compose 固定"
 rg --color=never --fixed-strings --quiet "image: ${RAGFLOW_ELASTICSEARCH_IMAGE}" <<< "$(service_block es01)" || \
   fail "RAGFlow Elasticsearch 没有锁定已审阅 digest"
 rg --color=never --fixed-strings --quiet "image: ${RAGFLOW_MYSQL_IMAGE}" <<< "$(service_block mysql)" || \

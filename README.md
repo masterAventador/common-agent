@@ -38,7 +38,7 @@ git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
 `backend/uv.lock` 和 `frontend/pnpm-lock.yaml` 冻结，不能用未参与实际安装的源码副本冒充版本锁定。
 
 当前主仓库 gitlink 固定 `third_party/ragflow` 到 fork commit
-`9140f309de9129dc7cd6c889f2e0335b3f384628`；它以官方
+`21eb8fb4001421f2952ce3125e46e753825d3f9b`；它以官方
 `v0.26.4@cb93883f3f8c975eecb2fed81210effeb3bdb06f` 为祖先。submodule 初始化后
 通常显示 `HEAD (no branch)`，这是 Git 用 detached HEAD 精确复现主仓库 gitlink 的正常行为；
 不能用“当前没有分支名”判断版本未锁定。可用下面命令分别查看 gitlink、fork commit、官方基线 tag、
@@ -53,7 +53,7 @@ git -C third_party/ragflow merge-base --is-ancestor cb93883f3f8c975eecb2fed81210
 git -C third_party/ragflow status --short --branch
 ```
 
-稳定栈从官方固定 digest 本地构建 `common-agent/ragflow:v0.26.4-9140f309d`，覆盖 fork 的完整
+稳定栈从官方固定 digest 本地构建 `common-agent/ragflow:v0.26.4-21eb8fb40`，覆盖 fork 的完整
 `api/rag` 源码并逐个校验补丁文件哈希；`infra/ragflow/manage.sh pull-image` 会在缺失时构建，在已有时
 验证 revision、基底、安全元数据和容器内源码。Elasticsearch、MySQL、MinIO、Valkey 也通过已审阅
 的精确 digest 锁定，避免官方可变标签在另一台电脑拉到不同内容。升级 RAGFlow 或补丁集时必须先完成回归，再同步

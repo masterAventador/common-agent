@@ -6,7 +6,11 @@ services:
     environment:
       COMPOSE_PROFILES: ${COMPOSE_PROFILES}
       DASHSCOPE_HTTP_BASE_URL: ${RAGFLOW_DASHSCOPE_HTTP_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}
+      DOC_BULK_SIZE: "32"
       MACOS: "1"
+      MAX_CONCURRENT_CHUNK_BUILDERS: "1"
+      MAX_CONCURRENT_EMBEDDINGS: "8"
+      MAX_CONCURRENT_TASKS: "5"
       RAGFLOW_IMAGE: ${RAGFLOW_IMAGE}
     volumes:
       - ${RAGFLOW_DATA_ROOT}/logs:/ragflow/logs

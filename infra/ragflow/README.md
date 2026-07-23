@@ -2,7 +2,7 @@
 
 本项目以 RAGFlow 官方稳定版
 `v0.26.4@cb93883f3f8c975eecb2fed81210effeb3bdb06f` 为不可漂移基线，正式依赖锁定私有 fork
-`9140f309de9129dc7cd6c889f2e0335b3f384628`，禁止使用 `latest` 或漂移分支。
+`21eb8fb4001421f2952ce3125e46e753825d3f9b`，禁止使用 `latest` 或漂移分支。
 `third_party/ragflow` Git submodule 通过相对 URL 指向 `masterAventador/common-agent-ragflow`，因此会
 跟随父仓库所用 SSH/HTTPS 协议；`manage.sh` 只读取该锁定目录，不读取 `.local/ragflow-fork` 开发
 工作区。fork commit、官方 tag/基线、origin、工作区或镜像 revision 任一不匹配时都会关闭失败。
@@ -11,7 +11,7 @@
 
 私有仓库为 `masterAventador/common-agent-ragflow`。它不是 GitHub 的公开 fork 关系，而是权限独立的
 私有镜像：`main` 和 `v0.26.4` 永久固定官方基线提交，所有经基准和测试审查的改动只进入
-`common-agent/v0.26.4-patches`。`infra/ragflow/fork.env` 是仓库、版本和分支的单一元数据源；
+`common-agent/v0.26.4-minimal`。`infra/ragflow/fork.env` 是仓库、版本和分支的单一元数据源；
 `fork.sh` 在 Git 忽略的 `.local/ragflow-fork` 创建补丁工作区，将私有仓库设为 `origin`，将官方
 仓库设为只读 `upstream`，并禁止 upstream push。
 
@@ -36,10 +36,10 @@ infra/ragflow/verify-patchset.sh
 私有 sibling 仓库，需要把同时只读授权这两个仓库的细粒度 Token 保存为
 `COMMON_AGENT_REPOSITORIES_TOKEN`；本机权威验收不依赖该 Secret 或 Hosted Runner。
 
-`patchset.env` 固定补丁基线、最终提交、有序提交栈、允许改动目录、升级审计目标以及已确认的冲突
-文件；`verify-patchset.sh` 同时检查本地与远端补丁头、线性历史、工作区洁净和 `merge-tree` 冲突集。
-当前对官方 `main` 快照的审计只允许 `api/apps/services/dataset_api_service.py` 一处已知人工合并点，
-任何提交顺序、远端提交或升级冲突集合漂移都会关闭失败。
+`patchset.env` 固定补丁基线、最终提交、有序提交栈、允许改动目录、4 个生产文件白名单、升级审计目标
+及冲突集合；`verify-patchset.sh` 同时检查本地与远端补丁头、线性历史、工作区洁净和 `merge-tree`
+冲突集。当前最小补丁与锁定的官方 `main` 审计快照无冲突；任何提交顺序、生产文件、远端提交或升级
+冲突集合漂移都会关闭失败。
 
 性能补丁候选必须让基准源码、预期 Git commit 和镜像 OCI revision 三者一致，并显式使用
 `patched` 源码审计模式；正式栈固定使用本地可复现的 fork 覆盖镜像。基准运行器沿用 R2-01 的规模
@@ -57,9 +57,10 @@ COMMON_AGENT_R2_01_REPORT_PATH="$PWD/.local/benchmarks/candidate/baseline.json" 
 运行器会按源码模式分别记录官方 JOIN 查询或补丁后的独立计数、分页 ID、页内详情和定向删除
 `EXPLAIN ANALYZE`，并校验写入、检索、删除后不可见、资源采样和隔离数据清理。候选镜像如何构建与
 正式镜像由 `Dockerfile.fork` 从锁定官方 digest 起步，只覆盖 submodule 的完整 `api/rag` 目录；
-`docker/` 配置由同一 submodule 的 Compose 直接消费。构建不下载、不重解依赖，也不允许仅靠环境变量
-把未提交源码变成项目依赖。外围 Elasticsearch、MySQL、MinIO、Valkey 继续使用官方镜像，但 Compose
-从 `image.env` 读取已审阅的精确 digest，不再依赖可变 tag。
+`DOC_BULK_SIZE=32` 及 task/chunk/embedding 并发 `5/1/8` 由 common-agent 的
+`compose.override.yaml` 注入，RAGFlow 自带 `docker/` 保持官方原样。构建不下载、不重解依赖，也不
+允许仅靠环境变量把未提交源码变成项目依赖。外围 Elasticsearch、MySQL、MinIO、Valkey 继续使用
+官方镜像，但 Compose 从 `image.env` 读取已审阅的精确 digest，不再依赖可变 tag。
 
 R2-06 补丁集回归报告必须来自 `patchset.env` 固定的最终提交，分别覆盖 25 万行列表/定向删除、
 真实批量写入与 embedding 并发、合法和越界检索及 12k 切片读取。执行

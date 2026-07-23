@@ -11,7 +11,7 @@ LABEL org.opencontainers.image.revision="${RAGFLOW_FORK_IMAGE_REVISION}" \
       org.opencontainers.image.base.name="${RAGFLOW_FORK_IMAGE_BASE}" \
       com.common-agent.ragflow.base.digest="${RAGFLOW_FORK_IMAGE_BASE_DIGEST}"
 
-# 补丁集的生产源码只位于 api/ 与 rag/；docker/ 配置由同一 submodule 的 Compose 直接消费。
+# 补丁集的生产源码只位于 api/ 与 rag/；运行参数由 common-agent Compose 覆盖层维护。
 # 覆盖完整目录而不是维护易漏文件清单，依赖环境和前端仍精确复用已审阅的官方固定镜像。
 COPY api /ragflow/api
 COPY rag /ragflow/rag

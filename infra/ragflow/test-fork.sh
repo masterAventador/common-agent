@@ -26,7 +26,7 @@ source "${FORK_METADATA}"
 [[ "${RAGFLOW_UPSTREAM_COMMIT}" == "cb93883f3f8c975eecb2fed81210effeb3bdb06f" ]] || \
   fail "RAGFlow 上游基线提交漂移"
 [[ "${RAGFLOW_FORK_DEFAULT_BRANCH}" == "main" ]] || fail "RAGFlow fork 基线分支漂移"
-[[ "${RAGFLOW_PATCH_BRANCH}" == "common-agent/v0.26.4-patches" ]] || \
+[[ "${RAGFLOW_PATCH_BRANCH}" == "common-agent/v0.26.4-minimal" ]] || \
   fail "RAGFlow 版本化补丁分支漂移"
 
 rg --color=never --fixed-strings --quiet \
@@ -55,7 +55,7 @@ git -C "${SEED_ROOT}" tag v0.26.4
 git clone --quiet --bare "${SEED_ROOT}" "${UPSTREAM_REMOTE}"
 git clone --quiet --bare "${SEED_ROOT}" "${FORK_REMOTE}"
 git --git-dir="${FORK_REMOTE}" update-ref \
-  refs/heads/common-agent/v0.26.4-patches "${BASELINE_COMMIT}"
+  refs/heads/common-agent/v0.26.4-minimal "${BASELINE_COMMIT}"
 
 fork_command() {
   RAGFLOW_FORK_REMOTE_URL_OVERRIDE="${FORK_REMOTE}" \
@@ -70,7 +70,7 @@ fork_command prepare
 fork_command verify
 fork_command verify-remote
 
-[[ "$(git -C "${WORKTREE}" branch --show-current)" == "common-agent/v0.26.4-patches" ]] || \
+[[ "$(git -C "${WORKTREE}" branch --show-current)" == "common-agent/v0.26.4-minimal" ]] || \
   fail "fork 工作区没有检出版本化补丁分支"
 [[ "$(git -C "${WORKTREE}" remote get-url origin)" == "${FORK_REMOTE}" ]] || \
   fail "fork origin 没有指向私有仓库"
@@ -86,7 +86,7 @@ printf 'patch\n' >> "${WORKTREE}/README.md"
 git -C "${WORKTREE}" add README.md
 git -C "${WORKTREE}" commit --quiet -m "test patch"
 PATCH_COMMIT="$(git -C "${WORKTREE}" rev-parse HEAD)"
-git -C "${WORKTREE}" push --quiet origin HEAD:refs/heads/common-agent/v0.26.4-patches
+git -C "${WORKTREE}" push --quiet origin HEAD:refs/heads/common-agent/v0.26.4-minimal
 fork_command verify
 fork_command verify-remote
 

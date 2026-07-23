@@ -55,6 +55,7 @@ verify_fixture() {
   RAGFLOW_PATCH_HEAD_OVERRIDE="${PATCH_TWO}" \
   RAGFLOW_PATCH_SHORT_OVERRIDE="${PATCH_TWO_SHORT}" \
   RAGFLOW_PATCH_COMMITS_OVERRIDE="${PATCH_ONE},${PATCH_TWO}" \
+  RAGFLOW_PATCH_PRODUCTION_FILES_OVERRIDE="api/apps/services/example.py,api/apps/services/conflict.py" \
   RAGFLOW_UPGRADE_AUDIT_COMMIT_OVERRIDE="${UPGRADE_COMMIT}" \
   RAGFLOW_UPGRADE_EXPECTED_CONFLICTS_OVERRIDE="api/apps/services/conflict.py" \
   RAGFLOW_PATCHSET_SKIP_REMOTE_VERIFY=1 \
@@ -68,6 +69,7 @@ if RAGFLOW_PATCHSET_WORKTREE_OVERRIDE="${WORKTREE}" \
   RAGFLOW_PATCH_HEAD_OVERRIDE="${PATCH_TWO}" \
   RAGFLOW_PATCH_SHORT_OVERRIDE="${PATCH_TWO_SHORT}" \
   RAGFLOW_PATCH_COMMITS_OVERRIDE="${PATCH_TWO},${PATCH_ONE}" \
+  RAGFLOW_PATCH_PRODUCTION_FILES_OVERRIDE="api/apps/services/example.py,api/apps/services/conflict.py" \
   RAGFLOW_UPGRADE_AUDIT_COMMIT_OVERRIDE="${UPGRADE_COMMIT}" \
   RAGFLOW_UPGRADE_EXPECTED_CONFLICTS_OVERRIDE="api/apps/services/conflict.py" \
   RAGFLOW_PATCHSET_SKIP_REMOTE_VERIFY=1 \
@@ -80,12 +82,33 @@ if RAGFLOW_PATCHSET_WORKTREE_OVERRIDE="${WORKTREE}" \
   RAGFLOW_PATCH_HEAD_OVERRIDE="${PATCH_TWO}" \
   RAGFLOW_PATCH_SHORT_OVERRIDE="${PATCH_TWO_SHORT}" \
   RAGFLOW_PATCH_COMMITS_OVERRIDE="${PATCH_ONE},${PATCH_TWO}" \
+  RAGFLOW_PATCH_PRODUCTION_FILES_OVERRIDE="api/apps/services/example.py,api/apps/services/conflict.py" \
   RAGFLOW_UPGRADE_AUDIT_COMMIT_OVERRIDE="${UPGRADE_COMMIT}" \
   RAGFLOW_UPGRADE_EXPECTED_CONFLICTS_OVERRIDE="api/apps/services/other.py" \
   RAGFLOW_PATCHSET_SKIP_REMOTE_VERIFY=1 \
     "${PATCHSET_VERIFIER}" >/dev/null 2>&1; then
   fail "升级冲突路径漂移时验证仍然放行"
 fi
+
+git -C "${WORKTREE}" switch --quiet -c unauthorized-patch "${PATCH_TWO}"
+printf 'unauthorized\n' > "${WORKTREE}/api/apps/services/unauthorized.py"
+git -C "${WORKTREE}" add .
+git -C "${WORKTREE}" commit --quiet -m "unauthorized production file"
+UNAUTHORIZED_COMMIT="$(git -C "${WORKTREE}" rev-parse HEAD)"
+UNAUTHORIZED_SHORT="$(git -C "${WORKTREE}" rev-parse --short HEAD)"
+if RAGFLOW_PATCHSET_WORKTREE_OVERRIDE="${WORKTREE}" \
+  RAGFLOW_PATCH_BASE_OVERRIDE="${BASE_COMMIT}" \
+  RAGFLOW_PATCH_HEAD_OVERRIDE="${UNAUTHORIZED_COMMIT}" \
+  RAGFLOW_PATCH_SHORT_OVERRIDE="${UNAUTHORIZED_SHORT}" \
+  RAGFLOW_PATCH_COMMITS_OVERRIDE="${PATCH_ONE},${PATCH_TWO},${UNAUTHORIZED_COMMIT}" \
+  RAGFLOW_PATCH_PRODUCTION_FILES_OVERRIDE="api/apps/services/example.py,api/apps/services/conflict.py" \
+  RAGFLOW_UPGRADE_AUDIT_COMMIT_OVERRIDE="${UPGRADE_COMMIT}" \
+  RAGFLOW_UPGRADE_EXPECTED_CONFLICTS_OVERRIDE="api/apps/services/conflict.py" \
+  RAGFLOW_PATCHSET_SKIP_REMOTE_VERIFY=1 \
+    "${PATCHSET_VERIFIER}" >/dev/null 2>&1; then
+  fail "补丁修改未登记生产文件时验证仍然放行"
+fi
+git -C "${WORKTREE}" switch --quiet patchset
 
 printf 'dirty\n' >> "${WORKTREE}/api/apps/services/example.py"
 if verify_fixture >/dev/null 2>&1; then
