@@ -1029,3 +1029,19 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
 - 清理与提交：真实双租户业务与账号临时数据已清零，测试库身份状态由每个 fake RAGFlow 用例自行
   清理，未留下浏览器或测试服务。最终交付前停止本轮启动的 real 栈和 32 GiB Colima，保留正式默认
   身份、原有 5 个知识库、项目 Volume 与已验证 fork 镜像。本任务提交见 Git 历史。
+
+## 附:2026-07-24 代码 Review 修复
+
+拉取 `3bf41c1`(V2 工具/MCP + 私有补丁 RAGFlow + 生产化门禁)后做整体 review,并修复发现的
+问题。这些不属于既有 V2 任务,作为独立缺陷修复记录:
+
+| 问题 | 类型 | 修复 | 提交 |
+| --- | --- | --- | --- |
+| `infra/ragflow/image.sh` 的 `ensure_image` 在 fork 镜像缺失或校验漂移时经 `fail`(exit 1) 直接终止脚本,`build_image` 成为不可达代码——全新克隆、submodule 切 fork 或镜像被清理后首次 `real.sh up` 必然失败,需手动 `build-image` | 启动阻塞 | 子 shell 包裹 `verify_image` 使 exit 只退出子 shell、返回码交 if;末尾 case 加 `BASH_SOURCE` 守卫支持 source 后验证控制流;`test-image.sh` 补契约用例 | `2f9058b` |
+| 托管 HTTP 运行时 `build_managed_http_request` 未复核 PATH 参数值,参数为 `.`/`..` 时可越出能力设计的路径范围(配置期已校验点段、运行期未对齐) | 安全纵深 | 渲染完 path 后复用 `_safe_path` 点段校验,运行期与配置期对齐;新增 RED 测试 | `2ac2fc3` |
+| tools 大聚合模块(`routers/tools.py` 864、`openapi/managed_http.py` 708、`ToolsPage.tsx` 715)未纳入体量门禁,缺膨胀监控 | 一致性 | 新增 `AGGREGATE_LINE_CEILINGS` 防膨胀天花板门禁锁定现状上限;不做大拆分(拆分纯组织性、有回归风险,应作为独立重构任务) | `54fe851` |
+
+验收:real 完整栈本机启动(real 模式、RAGFlow available、百炼 configured、五容器 healthy);
+后端 unit+architecture+contract `915 passed`、Ruff、Mypy(212 源文件);前端 lint、typecheck、
+vitest、build 与七路由包体预算全部通过。启动时 ES 官方镜像层从 docker.io 拉取断流,改用
+daocloud 国内 pull-through 按**同一 digest** 补层,未改动任何 digest pin。
