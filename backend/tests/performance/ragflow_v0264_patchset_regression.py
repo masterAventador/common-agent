@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-EXPECTED_PATCH_HEAD = "9140f309de9129dc7cd6c889f2e0335b3f384628"
+EXPECTED_PATCH_HEAD = "21eb8fb4001421f2952ce3125e46e753825d3f9b"
 EXPECTED_CONTAINERS = frozenset(
     {
         "common-agent-ragflow-api",
@@ -227,11 +227,13 @@ def _validate_retrieval_report(
         boundary.get("elapsed_seconds"), "retrieval boundary latency"
     )
     if (
-        boundary.get("requested_top_k") != 2049
-        or boundary.get("code") != 102
-        or "less than or equal to 2048" not in boundary_message
-        or "Elasticsearch" in boundary_message
-        or boundary_seconds > 0.5
+        boundary.get("requested_top_k") != 5001
+        or boundary.get("code") == 0
+        or not (
+            "BadRequestError" in boundary_message
+            or "x_content_parse_exception" in boundary_message
+        )
+        or boundary_seconds > 3.0
     ):
         raise RuntimeError("retrieval boundary regressed")
     chunks = _mapping(patched.get("chunk_read_profile"), "chunk read profile")

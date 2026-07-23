@@ -39,7 +39,7 @@ def test_scale_count_parser_is_positive_and_bounded() -> None:
             parse_scale_count(invalid)
 
 
-def test_source_audit_distinguishes_official_and_patched_boundaries(tmp_path: Path) -> None:
+def test_source_audit_preserves_upstream_retrieval_shape_in_minimal_patch(tmp_path: Path) -> None:
     root = tmp_path / "ragflow"
     pagination = root / "api/utils/pagination_utils.py"
     chunk = root / "api/apps/restful_apis/chunk_api.py"
@@ -63,20 +63,6 @@ def test_source_audit_distinguishes_official_and_patched_boundaries(tmp_path: Pa
     )
     assert source_audit(root, "official")["mode"] == "official"
 
-    pagination.write_text(
-        "REST_API_MAX_TOP_K = 2048\ndef validate_rest_api_top_k(top_k): return top_k",
-        encoding="utf-8",
-    )
-    chunk.write_text(
-        "validate_rest_api_page_size validate_rest_api_top_k validate_rest_api_top_k\n"
-        'def _strip_chunk_runtime_fields(): "_vec$|_sm_|_tks|_ltks"',
-        encoding="utf-8",
-    )
-    dify.write_text("validate_rest_api_top_k validate_rest_api_top_k", encoding="utf-8")
-    bot.write_text(
-        "validate_rest_api_top_k validate_rest_api_top_k validate_rest_api_top_k",
-        encoding="utf-8",
-    )
     audit = source_audit(root, "patched")
     assert audit["mode"] == "patched"
     checks = audit["checks"]
@@ -89,7 +75,11 @@ def test_report_status_requires_mode_specific_boundary_and_cleanup() -> None:
         "source_audit": {"mode": "patched"},
         "retrieval_profile": {
             "marker_returned": True,
-            "boundary": {"code": 102, "message": "less than or equal to 2048"},
+            "boundary": {
+                "requested_top_k": 5001,
+                "code": 100,
+                "message": "BadRequestError: result window is too large",
+            },
             "levels": [
                 {"elapsed_seconds": 0.1},
                 {"elapsed_seconds": 0.2},

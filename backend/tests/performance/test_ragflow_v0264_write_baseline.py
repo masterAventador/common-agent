@@ -49,10 +49,8 @@ def test_source_audit_distinguishes_official_and_write_patched_shapes(
     root = tmp_path / "ragflow"
     limiter = root / "rag/svr/task_executor_limiter.py"
     file_service = root / "api/db/services/file_service.py"
-    parser = root / "rag/app/naive.py"
     limiter.parent.mkdir(parents=True)
     file_service.parent.mkdir(parents=True)
-    parser.parent.mkdir(parents=True)
     limiter.write_text(
         "embed_limiter = LoopLocalSemaphore(MAX_CONCURRENT_CHUNK_BUILDERS)",
         encoding="utf-8",
@@ -61,7 +59,6 @@ def test_source_audit_distinguishes_official_and_write_patched_shapes(
         "query.where(model.tenant_id == tenant_id, model.parent_id == model.id)",
         encoding="utf-8",
     )
-    parser.write_text("from tika import parser as tika_parser", encoding="utf-8")
     assert source_audit(root, "official")["mode"] == "official"
 
     limiter.write_text(
@@ -75,20 +72,12 @@ def test_source_audit_distinguishes_official_and_write_patched_shapes(
         "if file.parent_id == file.id: return file.to_dict()",
         encoding="utf-8",
     )
-    parser.write_text("from rag.utils import tika_parser", encoding="utf-8")
-    tika_guard = root / "rag/utils/tika_parser.py"
-    tika_guard.parent.mkdir(parents=True)
-    tika_guard.write_text(
-        "_startup_lock = threading.Lock()\n"
-        "with _startup_lock:\n"
-        "    parsed = _from_buffer(blob)",
-        encoding="utf-8",
-    )
     audit = source_audit(root, "patched")
     assert audit["mode"] == "patched"
     checks = audit["checks"]
     assert isinstance(checks, dict)
     assert all(checks.values())
+    assert checks["tika_startup_guard_absent"] is True
 
     with pytest.raises(RuntimeError, match="source shape"):
         source_audit(root, "official")

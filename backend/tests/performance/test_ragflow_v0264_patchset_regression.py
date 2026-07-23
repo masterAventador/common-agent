@@ -91,10 +91,10 @@ def _reports() -> tuple[dict[str, object], ...]:
                 {"top_k": 2048, "elapsed_seconds": 0.9},
             ],
             "boundary": {
-                "requested_top_k": 2049,
-                "code": 102,
-                "message": "`top_k` must be less than or equal to 2048",
-                "elapsed_seconds": 0.01,
+                "requested_top_k": 5001,
+                "code": 100,
+                "message": "BadRequestError: result window is too large",
+                "elapsed_seconds": 0.2,
             },
         },
         "chunk_read_profile": {
@@ -147,7 +147,7 @@ def test_patchset_reports_require_final_head_performance_and_cleanup() -> None:
         (
             4,
             lambda report: report["retrieval_profile"]["boundary"].update(
-                message="Elasticsearch BadRequestError"
+                message="unexpected boundary response"
             ),
             "boundary",
         ),

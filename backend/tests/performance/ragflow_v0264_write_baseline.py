@@ -79,17 +79,6 @@ def source_audit(source_root: Path, source_mode: str) -> dict[str, object]:
         encoding="utf-8"
     )
     tika_guard_path = source_root / "rag/utils/tika_parser.py"
-    parser_sources = tuple(
-        path.read_text(encoding="utf-8")
-        for path in (source_root / "rag").rglob("*.py")
-        if path != tika_guard_path
-    )
-    direct_tika_callers = sum(
-        "from tika import parser as tika_parser" in source for source in parser_sources
-    )
-    guarded_tika_callers = sum(
-        "from rag.utils import tika_parser" in source for source in parser_sources
-    )
 
     if source_mode == "official":
         checks: dict[str, bool] = {
@@ -101,11 +90,9 @@ def source_audit(source_root: Path, source_mode: str) -> dict[str, object]:
                 "parent_id == cls.model.id" in file_service
                 or "parent_id == model.id" in file_service
             ),
-            "tika_callers_bypass_startup_guard": direct_tika_callers > 0,
             "tika_startup_guard_absent": not tika_guard_path.exists(),
         }
     elif source_mode == "patched":
-        tika_guard = tika_guard_path.read_text(encoding="utf-8")
         checks = {
             "independent_embedding_limiter": (
                 "MAX_CONCURRENT_EMBEDDINGS" in limiter
@@ -118,14 +105,7 @@ def source_audit(source_root: Path, source_mode: str) -> dict[str, object]:
                 and "file.parent_id == file.id" in file_service
                 and "parent_id == cls.model.id" not in file_service
             ),
-            "tika_startup_guard": (
-                "_startup_lock = threading.Lock()" in tika_guard
-                and "with _startup_lock:" in tika_guard
-                and "parsed = _from_buffer(blob)" in tika_guard
-            ),
-            "all_tika_callers_guarded": (
-                direct_tika_callers == 0 and guarded_tika_callers >= 1
-            ),
+            "tika_startup_guard_absent": not tika_guard_path.exists(),
         }
     else:
         raise RuntimeError(f"unsupported RAGFlow source mode: {source_mode}")

@@ -107,7 +107,7 @@ test("creates a generic employee, keeps its knowledge binding, and enters chat",
 
   await expectRouteSearchParam(page, "/chat", "employee_id", createdEmployee.id);
   await expect(page.getByRole("heading", { name: "AI 会话" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "会话列表" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "历史会话" })).toBeVisible();
   await expect(page.getByRole("region", { name: "消息区域" })).toBeVisible();
   const employeeRegion = page.getByRole("region", { name: "数字员工信息" });
   await expect(employeeRegion).toContainText(employeeName);

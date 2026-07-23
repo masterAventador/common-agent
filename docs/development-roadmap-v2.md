@@ -939,3 +939,47 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
   `common-agent-dev` Colima，保留已验证的项目 Volume 和正式 fork 镜像。V2 当前没有未完成任务或
   待验收项；远程部署、工具市场、用户名密码代登录、OAuth 和更多付费内置工具仍在既定 V2 范围外。
   本任务提交见 Git 历史。
+
+### R2-06/R2-07 维护复审：把 RAGFlow fork 收敛为最小补丁栈
+
+- 状态：✅ 已完成
+- 日期：2026-07-23
+- 复审结论：逐项检查 RAGFlow `v0.26.4` 的公开插件、配置与外围扩展能力后，确认文档列表/定向删除
+  查询、embedding 独立限流和根目录索引查询没有可替代的官方扩展钩子，继续保留源码补丁；Tika
+  启动锁不覆盖 common-agent 当前允许的 TXT/Markdown/PDF/DOCX 路径，删除并保留未来外置 Tika
+  Server 的无 fork 方案；批量大小和 task/chunk/embedding 并发属于部署参数，迁移到 common-agent
+  `compose.override.yaml`；公共 retrieval `top_k` 补丁退出 fork，平台正式检索继续固定 `top_k=5`，
+  不替 RAGFlow 的 Dify/searchbot 等无关入口改变语义。旧分支与旧提交保留为历史证据，没有强制重写。
+- 最小 fork：从官方 `v0.26.4@cb93883f3f8c975eecb2fed81210effeb3bdb06f` 新建并推送
+  `common-agent/v0.26.4-minimal`，最终 HEAD 为
+  `21eb8fb4001421f2952ce3125e46e753825d3f9b`。三项能力分别由线性提交
+  `0262bf6d1`、`bb7c0f316`、`21eb8fb40` 承载；相对官方共改 8 个文件、`+358/-45`，其中生产代码
+  严格限制为 4 个文件、`+73/-44`。`patchset.env` 新增精确生产文件白名单；私有远端、提交顺序、
+  无 merge、工作区洁净和白名单全部关闭失败。与锁定官方
+  `main@d19a036cdaa7da3eb6e0cf1dc0d905f4a87c1d0d` 的 `merge-tree` 冲突从旧栈 1 处降为 0。
+- RED/GREEN：三组 fork 补丁均先在官方基线上观察目标失败，再做最小实现；文档查询 6 个定向用例、
+  embedding 联合 7 个用例、最终含文件上传/目录逻辑的 29 个联合用例全部通过，语法编译和
+  `git diff --check` 通过。主仓配置契约分别先因旧分支、旧 commit、缺少生产文件白名单失败，修正后
+  fork/patchset/image/manage 四组门禁及真实远端升级审计通过。写入和检索基准测试中残留的 Tika 与
+  `top_k<=2048` 旧假设也先 RED，再改为验证 Tika guard 缺席和 retrieval 官方形态保留，相关 17 个
+  后端单测通过。
+- 镜像与安全：submodule、镜像 revision 和正式标签统一切换到 `21eb8fb40`，新镜像
+  `common-agent/ragflow:v0.26.4-21eb8fb40` 只从锁定官方 digest 覆盖完整 `api/rag`，容器内所有改动
+  文件哈希与 submodule 一致。Trivy 在线更新因 `mirror.gcr.io` 超时关闭失败，随后使用 2026-07-22
+  已下载缓存数据库重跑同一锁定门禁，High 75、Critical 5，Secret 与官方基底一致；没有用网络失败
+  跳过扫描或更新安全基线。旧 `v0.26.4-9140f309d` 标签在确认无容器引用后删除。
+- 性能与真实链：新报告保存在 Git 忽略的
+  `.local/benchmarks/r2-06/21eb8fb40/{list-delete,write,retrieval,summary}.json`。25 万文档首/深页
+  P50 为 `0.881727/0.883253s`，定向删除 `0.044673s`，count/详情/归属查询工作量为
+  `250001/60/1` 行；128 chunks 写入吞吐 `6.913858 chunks/s`，为官方 `3.456390` 的
+  `2.000312x`；25 万目录的根查询从 `250013` 行降为 `3` 行。正式 `top_k=5` 检索为
+  `0.598609s`，12k 切片首/深页为 `0.045060/0.263315s`。三轮均清理隔离数据，Swap 0，五个容器
+  重启 0、OOM=false。正式无头页面 E2E 首轮知识库用例通过，但员工链暴露唯一旧 ARIA 断言仍写
+  “会话列表”；组件和其他测试的权威名称均为“历史会话”，一行修正后 React→FastAPI→Worker→
+  新 RAGFlow 的员工/知识库两条链路 `2 passed`，业务数据和临时进程全部清理。
+- 最终门禁：后端全量 `1095 passed, 15 skipped`，总行/分支覆盖率 `90.97%/74.19%`、核心
+  `93.29%/77.68%`，Ruff 和 Mypy（390 个源文件）通过；前端 30 个文件 `167 passed`，行/分支
+  `86.18%/75.27%`，ESLint、TypeScript、生产构建、Bundle 预算和 OpenAPI/事件/生成 DTO 漂移通过。
+  RAGFlow 三报告统一门禁、远端补丁集、镜像源码/安全、Compose 参数、真实百炼模型状态及页面生产
+  同路径均通过。最终移除 RAGFlow 与平台测试容器、停止 32 GiB `common-agent-dev` Colima，保留原生
+  数据 Volume、新验证镜像和 Git 忽略报告；本次没有新增产品范围或遗留待验收项。

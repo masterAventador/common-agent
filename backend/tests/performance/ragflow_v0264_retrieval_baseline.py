@@ -117,18 +117,17 @@ def source_audit(source_root: Path, source_mode: str) -> dict[str, object]:
         }
     elif source_mode == "patched":
         mode_checks = {
-            "shared_top_k_limit": (
-                "REST_API_MAX_TOP_K = 2048" in pagination
-                and "def validate_rest_api_top_k" in pagination
+            "upstream_shared_top_k_limit_absent": (
+                "REST_API_MAX_TOP_K" not in pagination
             ),
-            "chunk_top_k_bounded": (
-                handlers["chunk"].count("validate_rest_api_top_k") >= 2
+            "upstream_chunk_top_k_preserved": (
+                "validate_rest_api_top_k" not in handlers["chunk"]
             ),
-            "dify_top_k_bounded": (
-                handlers["dify"].count("validate_rest_api_top_k") >= 2
+            "upstream_dify_top_k_preserved": (
+                "validate_rest_api_top_k" not in handlers["dify"]
             ),
-            "searchbot_request_and_config_bounded": (
-                handlers["searchbot"].count("validate_rest_api_top_k") >= 3
+            "upstream_searchbot_top_k_preserved": (
+                "validate_rest_api_top_k" not in handlers["searchbot"]
             ),
         }
     else:
@@ -316,7 +315,7 @@ def _profile_retrieval(
             }
         )
 
-    boundary_top_k = 5001 if source_mode == "official" else 2049
+    boundary_top_k = 5001
     boundary, boundary_elapsed = _retrieval_request(
         api,
         dataset_id=dataset_id,
@@ -590,17 +589,14 @@ def determine_status(report: dict[str, object]) -> str:
     if not isinstance(boundary, dict):
         raise RuntimeError("RAGFlow retrieval boundary proof is missing")
     message = str(boundary.get("message", ""))
-    if audit["mode"] == "official":
-        if boundary.get("code") == 0 or not (
+    if (
+        boundary.get("requested_top_k") != 5001
+        or boundary.get("code") == 0
+        or not (
             "BadRequestError" in message or "x_content_parse_exception" in message
-        ):
-            raise RuntimeError("official unbounded retrieval failure was not reproduced")
-    elif (
-        boundary.get("code") != 102
-        or "less than or equal to 2048" not in message
-        or "Elasticsearch" in message
+        )
     ):
-        raise RuntimeError("patched retrieval boundary did not reject early")
+        raise RuntimeError("upstream retrieval boundary failure was not reproduced")
 
     chunk_reads = report.get("chunk_read_profile")
     if not isinstance(chunk_reads, dict):
