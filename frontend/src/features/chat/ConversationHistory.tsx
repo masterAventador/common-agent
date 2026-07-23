@@ -86,7 +86,7 @@ export function ConversationHistory({ readOnly = false }: { readOnly?: boolean }
               <ResourceDeleteButton
                 resourceKind="会话"
                 resourceName={conversation.title}
-                impact="消息、引用和由该会话触发的工作流运行都会被永久删除。"
+                impact="消息、引用及工作流运行将永久删除。"
                 compact
                 size="small"
                 disabled={readOnly || deletion.isPending}
@@ -114,7 +114,9 @@ export function ConversationHistory({ readOnly = false }: { readOnly?: boolean }
           title="会话删除失败"
           description={getResourceDeletionErrorMessage(deletion.error)}
         />
-      ) : null}
+      ) : (
+        deletion.isSuccess && `会话“${deletion.variables.title}”已删除`
+      )}
     </section>
   );
 }

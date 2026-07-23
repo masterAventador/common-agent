@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import argparse
 import http.client
+import io
 import json
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
+from unittest.mock import patch
 from urllib.parse import urlsplit
 
 KIB = 1024
@@ -114,7 +116,7 @@ def _monitor(
         except (OSError, RuntimeError, subprocess.SubprocessError) as error:
             errors.append(
                 {
-                    "at": datetime.now(timezone.utc).isoformat(),
+                    "at": datetime.now(UTC).isoformat(),
                     "elapsed_seconds": f"{elapsed:.3f}",
                     "type": type(error).__name__,
                 }
@@ -145,7 +147,7 @@ def _sample(health_endpoint: HealthEndpoint) -> dict[str, Any]:
     memory = _read_vm_memory()
     containers = _read_containers()
     return {
-        "at": datetime.now(timezone.utc).isoformat(),
+        "at": datetime.now(UTC).isoformat(),
         **memory,
         "container_used_bytes": sum(item["memory_bytes"] for item in containers.values()),
         "containers": containers,
@@ -255,15 +257,19 @@ def _health_endpoint(url: str) -> HealthEndpoint:
 
 
 def _system_ready(endpoint: HealthEndpoint) -> bool:
+    connection: http.client.HTTPConnection | None = None
     try:
-        with http.client.HTTPConnection(endpoint.host, endpoint.port, timeout=5) as connection:
-            connection.request("GET", endpoint.path)
-            response = connection.getresponse()
-            if response.status != 200:
-                return False
-            payload = json.load(response)
+        connection = http.client.HTTPConnection(endpoint.host, endpoint.port, timeout=5)
+        connection.request("GET", endpoint.path)
+        response = connection.getresponse()
+        if response.status != 200:
+            return False
+        payload = json.load(response)
     except (OSError, http.client.HTTPException, json.JSONDecodeError):
         return False
+    finally:
+        if connection is not None:
+            connection.close()
     return bool(
         payload.get("integration_mode") == "real"
         and payload.get("model", {}).get("status") == "configured"
@@ -400,6 +406,31 @@ def _self_test() -> None:
         port=18200,
         path="/api/v1/system/status",
     )
+
+    class FakeResponse(io.BytesIO):
+        status = 200
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def request(self, method: str, path: str) -> None:
+            assert (method, path) == ("GET", "/api/v1/system/status")
+
+        def getresponse(self) -> FakeResponse:
+            return FakeResponse(
+                b'{"integration_mode":"real","model":{"status":"configured"},'
+                b'"knowledge":{"availability":"available"}}'
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    fake_connection = FakeConnection()
+    with patch.object(http.client, "HTTPConnection", return_value=fake_connection):
+        assert _system_ready(_health_endpoint(DEFAULT_HEALTH_URL))
+    assert fake_connection.closed
+
     for unsafe in (
         "file:///etc/passwd",
         "http://example.com/api/v1/system/status",

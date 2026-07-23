@@ -281,7 +281,7 @@ test("blocks live references, unbinds them, and deletes all four resources throu
   );
   expect((await deletedConversation).status()).toBe(204);
   await expect(page.getByText(`会话“${conversationTitle}”已删除`)).toBeVisible();
-  await expect(page.getByText("还没有会话")).toBeVisible();
+  await expect(page.getByText("暂无历史会话")).toBeVisible();
   await page.reload();
   await expect(
     page.getByRole("button", { name: `打开会话 ${conversationTitle}` }),

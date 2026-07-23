@@ -96,6 +96,7 @@ describe("ConversationHistory", () => {
     await user.click(await screen.findByRole("button", { name: "删除会话 通用历史" }));
     await user.click(screen.getByRole("button", { name: "确认删除会话 通用历史" }));
     await waitFor(() => expect(conversationApi.deleteConversation).toHaveBeenCalledWith(generic.id));
+    expect(await screen.findByText("会话“通用历史”已删除")).toBeInTheDocument();
     expect(await screen.findByText("暂无历史会话")).toBeInTheDocument();
   });
 });

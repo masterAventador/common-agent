@@ -29,6 +29,11 @@ submodule 使用相对 URL，会跟随父仓库的 SSH/HTTPS 协议解析到同�
 git clone --recurse-submodules git@github.com:masterAventador/common-agent.git
 ```
 
+若递归克隆报 `Permission denied` 或 `Repository not found`，先确认同一 SSH 身份或 HTTPS Token
+同时拥有 `common-agent` 与 `common-agent-ragflow` 两个私有仓库的只读权限，再重试
+`git submodule update --init --recursive`；不要把 `.gitmodules` 临时改回官方 RAGFlow，否则会绕过
+项目锁定的私有补丁而得到一份表面成功、实际错误的依赖。
+
 已有工作区使用 `git submodule update --init --recursive` 初始化。普通 Python/npm 依赖仍分别由
 `backend/uv.lock` 和 `frontend/pnpm-lock.yaml` 冻结，不能用未参与实际安装的源码副本冒充版本锁定。
 
@@ -110,7 +115,9 @@ scripts/real.sh stop    # 停止并释放 Colima 内存，保留容器、数据�
 Colima 原生 Volume，避免 macOS bind mount 在虚拟机重启后丢失容器 UID；旧 bind 数据首次迁移
 后仍保留作回退。32 GiB 已通过 R8-04 完整冷启动、真实业务链路和 30 分钟专项验收：VM
 峰值 6.91 GiB、容器合计峰值 6.85 GiB、Swap/重启/OOM 均为 0，因此确认为长期 `real`
-默认值；日常 Demo 仍使用 12 GiB `demo-light`。
+默认值；R2-08 切到正式私有 fork 后又从完全停止状态复核，冷启动 93.879 秒，30 分钟稳态的
+VM/容器峰值分别为 7.44/7.36 GiB，Swap/重启/OOM/未就绪样本仍均为 0。日常 Demo 仍使用
+12 GiB `demo-light`。
 
 ## 备份与恢复
 
