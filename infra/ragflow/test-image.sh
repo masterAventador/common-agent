@@ -86,4 +86,23 @@ if RAGFLOW_IMAGE_SKIP_DOCKER=1 \
   fail "RAGFlow fork 镜像源码 revision 漂移仍然被放行"
 fi
 
+ensure_falls_back_to_build_when_verification_fails() {
+  local output
+  output="$(
+    # shellcheck disable=SC1090
+    source "${IMAGE_MANAGER}"
+    # 下面三个函数覆盖 image.sh 的实现,由 ensure_image 间接调用(SC2329 误报)。
+    # shellcheck disable=SC2329
+    verify_source() { :; }
+    # shellcheck disable=SC2329
+    verify_image() { fail "模拟 fork 镜像缺失或验证失败"; }
+    # shellcheck disable=SC2329
+    build_image() { printf 'BUILD_INVOKED\n'; }
+    ensure_image
+  )" || fail "ensure 在镜像缺失/验证失败时应回退构建而非直接退出"
+  rg --color=never --fixed-strings --quiet 'BUILD_INVOKED' <<< "${output}" || \
+    fail "ensure 未在验证失败时触发构建"
+}
+ensure_falls_back_to_build_when_verification_fails
+
 echo "RAGFlow 私有 submodule、覆盖镜像与安全基线契约通过"

@@ -155,7 +155,9 @@ build_image() {
 
 ensure_image() {
   verify_source >/dev/null
-  if verify_image >/dev/null 2>&1; then
+  # verify_image 用 fail(exit 1) 表达验证失败,必须在子 shell 中运行,
+  # 否则 exit 会直接终止整个脚本,使缺镜像时无法回退到 build_image。
+  if ( verify_image ) >/dev/null 2>&1; then
     echo "复用已验证的 RAGFlow fork 镜像：${IMAGE}"
     return
   fi
@@ -211,6 +213,7 @@ scan_image() {
   echo "RAGFlow fork 镜像安全基线通过：High=${actual_high}, Critical=${actual_critical}, Secret 与官方一致"
 }
 
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 case "${1:-}" in
   verify-source)
     verify_source
@@ -242,3 +245,4 @@ case "${1:-}" in
     exit 2
     ;;
 esac
+fi
