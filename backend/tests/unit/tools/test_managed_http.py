@@ -463,6 +463,8 @@ def test_managed_http_snapshot_rejects_wrong_sources_capabilities_and_duplicates
         ({"order_id": {"nested": True}}, "必须是标量"),
         ({"order_id": float("inf")}, "不是有限值"),
         ({"order_id": "A-1", "trace": "line\nbreak"}, "控制字符"),
+        ({"order_id": ".."}, "路径穿越"),
+        ({"order_id": "."}, "路径穿越"),
     ],
 )
 def test_managed_http_request_rejects_invalid_runtime_arguments(

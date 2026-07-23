@@ -334,6 +334,7 @@ def build_managed_http_request(
             body_values[binding.target_name] = value
     if "{" in rendered_path or "}" in rendered_path:
         raise ManagedHttpValidationError("arguments", "缺少路径参数")
+    _safe_path("arguments", rendered_path)
     if cookies:
         headers["Cookie"] = "; ".join(f"{name}={value}" for name, value in cookies)
     body: bytes | None = None
