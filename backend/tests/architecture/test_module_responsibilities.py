@@ -10,6 +10,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 BACKEND_SOURCE = REPOSITORY_ROOT / "backend" / "src"
 FRONTEND_SOURCE = REPOSITORY_ROOT / "frontend" / "src"
 
+# 薄门面 / 页面容器责任预算:这些文件应保持精简,只做编排。
 FOCUSED_LINE_BUDGETS = {
     "backend/src/common_agent/conversations/service.py": 220,
     "backend/src/common_agent/application/workflow_service.py": 220,
@@ -18,6 +19,14 @@ FOCUSED_LINE_BUDGETS = {
     "backend/src/common_agent/api/routers/workflow_runs.py": 240,
     "frontend/src/features/chat/ChatPage.tsx": 180,
     "frontend/src/features/workflows/WorkflowsPage.tsx": 180,
+}
+
+# 大聚合模块的防膨胀天花板:tools 路由聚合多资源端点、OpenAPI 解析器和工具箱页面
+# 本身较大且拆分需独立重构任务,这里只锁定现状上限,防止继续无节制膨胀。
+AGGREGATE_LINE_CEILINGS = {
+    "backend/src/common_agent/api/routers/tools.py": 900,
+    "backend/src/common_agent/adapters/openapi/managed_http.py": 740,
+    "frontend/src/features/tools/ToolsPage.tsx": 760,
 }
 
 IMPLEMENTATION_MODULES = (
@@ -53,6 +62,21 @@ def test_orchestration_files_stay_within_responsibility_budget(
     line_count = len(path.read_text(encoding="utf-8").splitlines())
 
     assert line_count <= maximum, f"{relative_path} has {line_count} lines; budget is {maximum}"
+
+
+@pytest.mark.parametrize(("relative_path", "ceiling"), AGGREGATE_LINE_CEILINGS.items())
+def test_aggregate_modules_stay_below_growth_ceiling(
+    relative_path: str,
+    ceiling: int,
+) -> None:
+    path = REPOSITORY_ROOT / relative_path
+
+    line_count = len(path.read_text(encoding="utf-8").splitlines())
+
+    assert line_count <= ceiling, (
+        f"{relative_path} 有 {line_count} 行,超过防膨胀天花板 {ceiling};"
+        "请拆分该模块或作为独立重构任务评估,而不是继续堆叠。"
+    )
 
 
 def test_backend_implementation_modules_do_not_import_service_facades() -> None:
