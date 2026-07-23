@@ -1,7 +1,7 @@
 # 通用 Agent 中台工程结构
 
-> 状态：V1 结构已落地，V2 工具/MCP 与私有 RAGFlow 目标结构已确认
-> 确认日期：2026-07-22
+> 状态：V1 结构已落地，V2 工具/MCP、私有 RAGFlow 与工作区级 RAGFlow 身份已落地
+> 确认日期：2026-07-23
 
 ## 1. 核心决策
 
@@ -92,7 +92,8 @@ backend/
 │       ├── knowledge/           # KnowledgeService 协议
 │       │   ├── base.py
 │       │   ├── service.py
-│       │   └── retrieval.py
+│       │   ├── retrieval.py
+│       │   └── ragflow_identity.py # 工作区级 RAGFlow 身份、迁移守卫与 Token 解析
 │       ├── ports/               # 仓储、资源删除、缓存、事件、对象存储与任务端口
 │       ├── worker_app.py        # 独立 Worker 组合根
 │       ├── worker_main.py       # Worker 信号与进程入口
@@ -100,12 +101,13 @@ backend/
 │           ├── auth/            # Argon2id 密码适配器
 │           ├── backup/          # 流式 AES-256-GCM 归档、清单校验与安全解包
 │           ├── agent/           # Deep Agents 正式适配器
-│           ├── knowledge/       # RAGFlow 正式适配器
+│           ├── knowledge/       # RAGFlow 正式适配器、公开账号初始化与模型配置
 │           ├── model/           # 阿里百炼转换与仅适配层可见的 LangChain 桥
 │           ├── mcp/             # MCP SDK、托管 HTTP 转换、外部连接与工具包装
 │           ├── openapi/         # 受限 OpenAPI 3 JSON/YAML 解码与托管能力草稿转换
 │           ├── workflow/        # LangGraph 编译、状态与节点框架转换
-│           └── persistence/     # MySQL 适配器，含业务事务、任务队列与事件日志
+│           ├── security/        # MCP 与 RAGFlow 身份的独立 AES-GCM 密钥边界
+│           └── persistence/     # MySQL 适配器，含业务事务、任务/事件与 RAGFlow 身份
 ├── migrations/                  # 当前正式数据库迁移
 ├── tests/
 │   ├── unit/
@@ -135,7 +137,8 @@ api -> application -> domain
 - `auth/` 定义用户、服务端会话、恢复码及仓储/密码端口；Cookie、Origin 和 CSRF 只在 API
   边界处理，Argon2id 与 SQLAlchemy 分别留在对应适配层；
 - `tenancy/` 定义 Owner/Editor/Viewer、工作区访问解析和 fail-closed 上下文；平台资源仓储、
-  事件与锁以租户命名空间运行，RAGFlow 外部 ID 归属保存在平台 MySQL，不触碰上游内部表；
+  事件与锁以租户命名空间运行。每个工作区绑定独立 RAGFlow 技术租户，Token 加密保存在平台
+  MySQL；知识库外部 ID 归属保留为第二层授权，不触碰上游内部表；
 - `observability/` 只用标准库定义 JSON 日志、W3C trace context 与进程内有界指标；业务服务
   绑定平台会话/工作流 ID，外围 HTTP 适配器负责把 trace context 传给 RAGFlow 与百炼；
 - `tasks/` 与 `events/` 只定义平台模型、端口和执行协议；API 组合根只提交/读取，独立

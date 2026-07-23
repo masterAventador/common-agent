@@ -30,6 +30,7 @@ from common_agent.knowledge.retrieval import (
     ConversationKnowledgeResolver,
     ResolvedKnowledgeContext,
 )
+from common_agent.knowledge.service import KnowledgeBaseService
 from tests.support.employees import default_employee_model_fields
 
 EMPLOYEE_ID = UUID("ddbdad78-1128-4334-ad02-d28833357529")
@@ -152,6 +153,45 @@ def test_bound_employee_retrieves_every_message_and_maps_runtime_context_and_cit
     assert second_resolved.runtime_chunks[0].chunk_id == "chunk-2"
     assert KNOWLEDGE_MARKER not in repr(first_resolved)
     assert KNOWLEDGE_MARKER not in repr(first_resolved.citations[0])
+
+
+def test_runtime_rechecks_knowledge_ownership_before_every_employee_retrieval() -> None:
+    class DenyingOwnership:
+        async def owns(self, tenant_id: UUID, knowledge_base_id: str) -> bool:
+            del tenant_id, knowledge_base_id
+            return False
+
+        async def list_ids(self, tenant_id: UUID) -> frozenset[str]:
+            del tenant_id
+            return frozenset()
+
+        async def claim_legacy(
+            self,
+            tenant_id: UUID,
+            knowledge_base_ids: tuple[str, ...],
+            *,
+            now: datetime,
+        ) -> None:
+            del tenant_id, knowledge_base_ids, now
+
+        async def assign(self, tenant_id: UUID, knowledge_base_id: str, *, now: datetime) -> None:
+            del tenant_id, knowledge_base_id, now
+
+        async def release(self, tenant_id: UUID, knowledge_base_id: str) -> None:
+            del tenant_id, knowledge_base_id
+
+    knowledge = _KnowledgeProbe([_result()])
+    guarded = KnowledgeBaseService(
+        knowledge,  # type: ignore[arg-type]
+        ownership=DenyingOwnership(),
+        tenant_id_provider=lambda: UUID("10000000-0000-4000-8000-000000000002"),
+    )
+    resolver = ConversationKnowledgeResolver(guarded)
+
+    with pytest.raises(KnowledgeBaseNotFound):
+        asyncio.run(resolver.resolve(_employee(knowledge_base_id="foreign-kb"), _user_message()))
+
+    assert knowledge.requests == []
 
 
 def test_empty_retrieval_keeps_bound_knowledge_base_semantics() -> None:

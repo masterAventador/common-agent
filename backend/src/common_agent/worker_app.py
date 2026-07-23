@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import socket
 from datetime import timedelta
@@ -12,6 +13,7 @@ from common_agent.adapters.agent.tool_resolver import CompositeDeepAgentToolReso
 from common_agent.adapters.agent.workflow_tools import WorkflowToolRegistry
 from common_agent.adapters.demo import DemoEmployeeRuntime, DemoKnowledgeService, DemoWorkflowModel
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
+from common_agent.adapters.knowledge.ragflow_tenants import RagFlowTenantProvisioner
 from common_agent.adapters.mcp import (
     ExternalMcpRuntime,
     ManagedHttpMcpRuntime,
@@ -36,6 +38,7 @@ from common_agent.adapters.persistence import (
     SqlAlchemyKnowledgeOwnershipStore,
     SqlAlchemyManagedHttpUnitOfWorkFactory,
     SqlAlchemyPlatformToolSeeder,
+    SqlAlchemyRagFlowTenantIdentityStore,
     SqlAlchemyTaskQueue,
     SqlAlchemyTenancyStore,
     SqlAlchemyToolCredentialUnitOfWorkFactory,
@@ -52,7 +55,10 @@ from common_agent.adapters.persistence.model_configurations import (
     SqlAlchemyModelConfigurationUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
-from common_agent.adapters.security import AesGcmToolCredentialCipher
+from common_agent.adapters.security import (
+    AesGcmRagFlowIdentityCipher,
+    AesGcmToolCredentialCipher,
+)
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.application.resource_locks import ResourceMutationGuard
 from common_agent.application.workflow_service import WorkflowService
@@ -63,6 +69,7 @@ from common_agent.bootstrap import (
     DatabaseSettings,
     IntegrationModeSettings,
     ModelSettings,
+    RagFlowIdentitySettings,
     RagFlowSettings,
     ToolCredentialSettings,
     ToolEgressSettings,
@@ -71,6 +78,10 @@ from common_agent.bootstrap import (
 from common_agent.concurrency import CoordinatedLockPool
 from common_agent.conversations import ConversationEventBroker, ConversationService
 from common_agent.employees import EmployeeService
+from common_agent.knowledge.ragflow_identity import (
+    LegacyRagFlowIdentityMigrationRequired,
+    RagFlowTenantIdentityService,
+)
 from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.lifecycle import AsyncCleanup, run_cleanups
@@ -92,6 +103,8 @@ from common_agent.workflows.ai_targets import (
 )
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
+
+_LOGGER = logging.getLogger("common_agent.worker")
 
 
 async def run_worker(stop: asyncio.Event) -> None:
@@ -122,7 +135,8 @@ async def run_worker(stop: asyncio.Event) -> None:
             return f"tenant:{current_tenant().tenant_id}:{key}"
 
         tenancy_store = SqlAlchemyTenancyStore(database)
-        await SqlAlchemyPlatformToolSeeder(database).seed_all(await tenancy_store.list_tenant_ids())
+        tenant_ids = await tenancy_store.list_tenant_ids()
+        await SqlAlchemyPlatformToolSeeder(database).seed_all(tenant_ids)
         tools = ToolService(SqlAlchemyToolUnitOfWorkFactory(database, tenant_id_provider))
         platform_mcp = PlatformMcpRuntime()
 
@@ -138,9 +152,45 @@ async def run_worker(stop: asyncio.Event) -> None:
             model_configuration_verifier = DemoModelConfigurationVerifier()
         else:
             ragflow_settings = RagFlowSettings.from_env()
+            model_settings = ModelSettings.from_env()
+            identity_settings = RagFlowIdentitySettings.from_env()
+            ragflow_identities = RagFlowTenantIdentityService(
+                SqlAlchemyRagFlowTenantIdentityStore(database),
+                cipher=AesGcmRagFlowIdentityCipher(
+                    keys=identity_settings.keys,
+                    active_key_id=identity_settings.active_key_id,
+                ),
+                provisioner=RagFlowTenantProvisioner(
+                    base_url=ragflow_settings.base_url,
+                    expected_version=ragflow_settings.expected_version,
+                    bailian_api_key=model_settings.api_key.get_secret_value(),
+                    bailian_base_url=model_settings.base_url,
+                    timeout_seconds=ragflow_settings.timeout_seconds,
+                    ca_bundle_path=(
+                        str(ragflow_settings.ca_bundle_path)
+                        if ragflow_settings.ca_bundle_path is not None
+                        else None
+                    ),
+                ),
+                legacy_api_key=ragflow_settings.api_key.get_secret_value(),
+                distributed_locks=MySqlNamedLockProvider(database),
+            )
+            try:
+                await ragflow_identities.ensure_all(tenant_ids)
+            except LegacyRagFlowIdentityMigrationRequired:
+                raise
+            except Exception as error:
+                _LOGGER.warning(
+                    "ragflow.identity_bootstrap_deferred",
+                    extra={"exception_type": type(error).__name__},
+                )
+
+            async def ragflow_api_key_provider() -> str:
+                return await ragflow_identities.api_key_for(current_tenant().tenant_id)
+
             knowledge_adapter = RagFlowKnowledgeService(
                 base_url=ragflow_settings.base_url,
-                api_key=ragflow_settings.api_key.get_secret_value(),
+                api_key_provider=ragflow_api_key_provider,
                 expected_version=ragflow_settings.expected_version,
                 embedding_model=ragflow_settings.embedding_model,
                 rerank_model=ragflow_settings.rerank_model,
@@ -151,7 +201,6 @@ async def run_worker(stop: asyncio.Event) -> None:
                     else None
                 ),
             )
-            model_settings = ModelSettings.from_env()
             real_model = BailianChatModelAdapter(model_settings)
             workflow_model = real_model
             model_configuration_verifier = BailianModelConfigurationVerifier(model_settings)
@@ -298,7 +347,7 @@ async def run_worker(stop: asyncio.Event) -> None:
         conversations = ConversationService(
             SqlAlchemyConversationUnitOfWorkFactory(database, tenant_id_provider),
             employees=employees,
-            knowledge=ConversationKnowledgeResolver(knowledge_adapter),
+            knowledge=ConversationKnowledgeResolver(knowledge_bases),
             runtime=runtime,
             events=conversation_events,
             model_configurations=model_configurations,

@@ -1427,6 +1427,65 @@ class RagFlowKnowledgeBaseOwnershipRow(PersistenceBase):
     created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
 
 
+class RagFlowTenantIdentityRow(PersistenceBase):
+    __tablename__ = "ragflow_tenant_identities"
+    __table_args__ = (
+        CheckConstraint(
+            "CHAR_LENGTH(account_email) BETWEEN 3 AND 254 "
+            "AND account_email = LOWER(TRIM(account_email))",
+            name="ck_ragflow_tenant_identities_email",
+        ),
+        CheckConstraint(
+            "status IN ('provisioning', 'active')",
+            name="ck_ragflow_tenant_identities_status",
+        ),
+        CheckConstraint(
+            "CHAR_LENGTH(encryption_key_id) BETWEEN 1 AND 64 "
+            "AND encryption_key_id = TRIM(encryption_key_id)",
+            name="ck_ragflow_tenant_identities_key_id",
+        ),
+        CheckConstraint(
+            "(status = 'provisioning' AND ragflow_tenant_id IS NULL "
+            "AND format_version IS NULL AND nonce IS NULL AND ciphertext IS NULL) OR "
+            "(status = 'active' AND ragflow_tenant_id IS NOT NULL "
+            "AND format_version = 1 AND OCTET_LENGTH(nonce) = 12 "
+            "AND OCTET_LENGTH(ciphertext) >= 17)",
+            name="ck_ragflow_tenant_identities_state",
+        ),
+        CheckConstraint(
+            "updated_at >= created_at",
+            name="ck_ragflow_tenant_identities_timestamps",
+        ),
+        UniqueConstraint(
+            "account_email",
+            name="uq_ragflow_tenant_identities_email",
+        ),
+        UniqueConstraint(
+            "ragflow_tenant_id",
+            name="uq_ragflow_tenant_identities_external_tenant",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "tenants.id",
+            ondelete="CASCADE",
+            name="fk_ragflow_tenant_identities_tenant_id",
+        ),
+        primary_key=True,
+    )
+    account_email: Mapped[str] = mapped_column(String(254), nullable=False)
+    ragflow_tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    format_version: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    encryption_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    nonce: Mapped[bytes | None] = mapped_column(LargeBinary(12), nullable=True)
+    ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
 class McpSourceRow(PersistenceBase):
     __tablename__ = "mcp_sources"
     __table_args__ = (

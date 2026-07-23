@@ -350,6 +350,63 @@ class ToolCredentialSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class RagFlowIdentitySettings:
+    keys: Mapping[str, bytes] = field(repr=False)
+    active_key_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "keys", MappingProxyType(dict(self.keys)))
+
+    @classmethod
+    def from_env(cls) -> RagFlowIdentitySettings:
+        return cls.from_mapping(os.environ)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> RagFlowIdentitySettings:
+        runtime = RuntimeEnvironmentSettings.from_mapping(values)
+        configured = values.get("COMMON_AGENT_RAGFLOW_IDENTITY_KEYS", "").strip()
+        if not configured:
+            if runtime.environment == "production":
+                raise ConfigurationError(
+                    "COMMON_AGENT_RAGFLOW_IDENTITY_KEYS is required in production"
+                )
+            key_id = "local-ragflow-v1"
+            key = hashlib.sha256(
+                b"common-agent local RAGFlow tenant identity development key v1"
+            ).digest()
+            return cls(keys={key_id: key}, active_key_id=key_id)
+
+        parsed: dict[str, bytes] = {}
+        try:
+            for item in configured.split(","):
+                key_id, separator, encoded = item.strip().partition(":")
+                if not separator or not key_id or key_id in parsed:
+                    raise ValueError
+                decoded = base64.b64decode(encoded, altchars=b"-_", validate=True)
+                if len(decoded) != 32:
+                    raise ValueError
+                parsed[key_id] = decoded
+        except (ValueError, binascii.Error):
+            raise ConfigurationError(
+                "COMMON_AGENT_RAGFLOW_IDENTITY_KEYS must contain unique "
+                "id:base64-32-byte entries"
+            ) from None
+        active = values.get("COMMON_AGENT_RAGFLOW_IDENTITY_ACTIVE_KEY_ID", "").strip()
+        if not active:
+            if len(parsed) != 1:
+                raise ConfigurationError(
+                    "COMMON_AGENT_RAGFLOW_IDENTITY_ACTIVE_KEY_ID is required for a "
+                    "multi-key keyring"
+                )
+            active = next(iter(parsed))
+        if active not in parsed:
+            raise ConfigurationError(
+                "COMMON_AGENT_RAGFLOW_IDENTITY_ACTIVE_KEY_ID must identify a configured key"
+            )
+        return cls(keys=parsed, active_key_id=active)
+
+
+@dataclass(frozen=True, slots=True)
 class ToolEgressSettings:
     allowed_hosts: tuple[str, ...]
     allowed_cidrs: tuple[IPv4Network | IPv6Network, ...]

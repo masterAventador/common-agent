@@ -331,10 +331,18 @@ def test_employee_validation_and_missing_resources_use_stable_errors() -> None:
     assert_error_response(missing_update, status=404, code="employee_not_found")
 
 
-def test_binding_without_knowledge_configuration_fails_closed_without_write() -> None:
+def test_binding_while_tenant_identity_cannot_be_provisioned_fails_without_write() -> None:
     name = f"missing-config-{uuid4().hex}"
     with (
-        running_api(TEST_DATABASE_URL) as api_url,
+        running_api(
+            TEST_DATABASE_URL,
+            env_overrides={
+                "RAGFLOW_BASE_URL": "http://127.0.0.1:1",
+                "RAGFLOW_API_KEY": "",
+                "RAGFLOW_EXPECTED_VERSION": "v0.26.4",
+                "RAGFLOW_TIMEOUT_SECONDS": "0.2",
+            },
+        ) as api_url,
         authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         rejected = client.post(
@@ -343,7 +351,7 @@ def test_binding_without_knowledge_configuration_fails_closed_without_write() ->
         )
         listed = client.get("/api/v1/employees")
 
-    assert_error_response(rejected, status=503, code="configuration_missing")
+    assert_error_response(rejected, status=503, code="knowledge_service_unavailable")
     assert name not in {item["name"] for item in listed.json()["items"]}
 
 

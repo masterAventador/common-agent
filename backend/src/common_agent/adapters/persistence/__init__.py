@@ -13,6 +13,9 @@ from common_agent.adapters.persistence.managed_http import (
     SqlAlchemyManagedHttpUnitOfWorkFactory,
 )
 from common_agent.adapters.persistence.platform_tools import SqlAlchemyPlatformToolSeeder
+from common_agent.adapters.persistence.ragflow_identities import (
+    SqlAlchemyRagFlowTenantIdentityStore,
+)
 from common_agent.adapters.persistence.tasks import SqlAlchemyTaskQueue
 from common_agent.adapters.persistence.tenancy import SqlAlchemyTenancyStore
 from common_agent.adapters.persistence.tool_credentials import (
@@ -31,6 +34,7 @@ __all__ = [
     "SqlAlchemyKnowledgeOwnershipStore",
     "SqlAlchemyManagedHttpUnitOfWorkFactory",
     "SqlAlchemyPlatformToolSeeder",
+    "SqlAlchemyRagFlowTenantIdentityStore",
     "SqlAlchemyTaskQueue",
     "SqlAlchemyTenancyStore",
     "SqlAlchemyToolCredentialUnitOfWorkFactory",

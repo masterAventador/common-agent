@@ -14,6 +14,14 @@ def test_tenant_resource_migration_index_definitions_have_stable_shape() -> None
     assert all(len(definition) == 4 for definition in migration._TENANT_INDEXES)
 
 
+def test_ragflow_tenant_identity_migration_follows_the_current_head() -> None:
+    migration = importlib.import_module(
+        "migrations.versions.20260723_0027_ragflow_tenant_identities"
+    )
+
+    assert migration.down_revision == "20260723_0026"
+
+
 def test_upgrade_database_uses_runtime_alembic_config_after_wheel_install(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,

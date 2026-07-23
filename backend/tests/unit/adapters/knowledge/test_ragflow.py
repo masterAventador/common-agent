@@ -573,6 +573,38 @@ def test_status_is_not_configured_without_calling_ragflow_when_key_is_missing() 
     assert called is False
 
 
+def test_each_request_resolves_the_current_tenant_api_key_instead_of_sharing_headers() -> None:
+    requested_authorizations: list[str] = []
+    current_key = "ragflow-tenant-a"
+
+    async def api_key_provider() -> str:
+        return current_key
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_authorizations.append(request.headers["Authorization"])
+        return httpx.Response(200, json={"code": 0, "data": []})
+
+    async def scenario() -> None:
+        nonlocal current_key
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://ragflow") as client:
+            service = RagFlowKnowledgeService(
+                base_url="http://ragflow",
+                api_key_provider=api_key_provider,
+                expected_version="v0.26.4",
+                client=client,
+            )
+            await service.list_knowledge_bases()
+            current_key = "ragflow-tenant-b"
+            await service.list_knowledge_bases()
+
+    _run(scenario())
+    assert requested_authorizations == [
+        "Bearer ragflow-tenant-a",
+        "Bearer ragflow-tenant-b",
+    ]
+
+
 def test_status_fails_closed_when_the_real_version_does_not_match() -> None:
     transport = httpx.MockTransport(
         lambda request: httpx.Response(200, json={"code": 0, "data": "v0.26.0"})

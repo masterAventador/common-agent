@@ -24,7 +24,7 @@ BAILIAN_EMBEDDING_ID: Final = (
 BAILIAN_RERANK_ID: Final = f"{BAILIAN_RERANK_MODEL}@{BAILIAN_RERANK_INSTANCE}@{BAILIAN_FACTORY}"
 
 _LOCAL_EMAIL: Final = "common-agent@local.test"
-_LOCAL_ENCRYPTED_PASSWORD: Final = (
+LOCAL_RAGFLOW_LEGACY_ENCRYPTED_PASSWORD: Final = (
     "ctAseGvejiaSWWZ88T/m4FQVOpQyUvP+x7sXtdv3feqZACiQleuewkUi35E16wSd5C5QcnkkcV9cYc8T"
     "KPTRZlxappDuirxghxoOvFcJxFU4ixLsDfN33jCHRoDUW81IH9zjij/vaw8IbVyb6vuwg6MX6inOEBRRzVbRYxXO"
     "u1wkWY6SsI8X70oF9aeLFp/PzQpjoe/YbSqpTq8qqrmHzn9vO+yvyYyvmDsphXeX8f7fp9c7vUsfOCkM+gHY3Pad"
@@ -249,9 +249,22 @@ class RagFlowBailianIndexMigrator:
 
 
 class RagFlowModelConfigurator:
-    def __init__(self, *, client: httpx.Client) -> None:
+    def __init__(
+        self,
+        *,
+        client: httpx.Client,
+        account_email: str = _LOCAL_EMAIL,
+        encrypted_password: str = LOCAL_RAGFLOW_LEGACY_ENCRYPTED_PASSWORD,
+        authorization: str | None = None,
+    ) -> None:
         self._client = client
-        self._authorization: str | None = None
+        self._account_email = account_email.strip().casefold()
+        self._encrypted_password = encrypted_password.strip()
+        self._authorization = authorization.strip() if authorization else None
+        if not self._account_email or (
+            self._authorization is None and not self._encrypted_password
+        ):
+            raise RagFlowModelConfigurationError("account_input")
 
     def apply(self, *, api_key: str, provider_base_url: str) -> RagFlowModelStatus:
         key = api_key.strip()
@@ -391,12 +404,48 @@ class RagFlowModelConfigurator:
         self._authenticate()
         return cast(str, self._authorization)
 
-    def ensure_api_token(self, *, token_file: Path) -> None:
-        current = _read_token_file(token_file)
-        if current is not None and self._api_token_valid(current):
-            _write_token_file(token_file, current)
-            return
+    def profile(self) -> tuple[str, str]:
+        data = self._request_data("GET", "/api/v1/users/me", stage="account_profile")
+        if not isinstance(data, dict):
+            raise RagFlowModelConfigurationError("account_profile")
+        tenant_id = data.get("id")
+        email = data.get("email")
+        if (
+            not isinstance(tenant_id, str)
+            or not tenant_id.strip()
+            or not isinstance(email, str)
+            or not email.strip()
+        ):
+            raise RagFlowModelConfigurationError("account_profile")
+        return tenant_id.strip(), email.strip().casefold()
 
+    def version(self) -> str:
+        data = self._request_data("GET", "/api/v1/system/version", stage="version")
+        if not isinstance(data, str) or not data.strip():
+            raise RagFlowModelConfigurationError("version")
+        return data.strip()
+
+    def change_password(
+        self,
+        *,
+        current_encrypted_password: str,
+        new_encrypted_password: str,
+    ) -> None:
+        current = current_encrypted_password.strip()
+        new = new_encrypted_password.strip()
+        if not current or not new:
+            raise RagFlowModelConfigurationError("account_password")
+        self._request_success(
+            "PATCH",
+            "/api/v1/users/me",
+            stage="change_password",
+            json={"password": current, "new_password": new},
+        )
+
+    def ensure_api_token_value(self, current: str | None = None) -> str:
+        normalized = current.strip() if current else ""
+        if normalized and self._api_token_valid(normalized):
+            return normalized
         token = next(
             (
                 candidate
@@ -409,6 +458,11 @@ class RagFlowModelConfigurator:
             token = self._create_api_token()
             if not self._api_token_valid(token):
                 raise RagFlowModelConfigurationError("token_create_verify")
+        return token
+
+    def ensure_api_token(self, *, token_file: Path) -> None:
+        current = _read_token_file(token_file)
+        token = self.ensure_api_token_value(current)
         _write_token_file(token_file, token)
 
     def check_api_token(self, *, token_file: Path) -> None:
@@ -483,9 +537,9 @@ class RagFlowModelConfigurator:
             "POST",
             "/api/v1/users",
             json={
-                "email": _LOCAL_EMAIL,
+                "email": self._account_email,
                 "nickname": "common-agent",
-                "password": _LOCAL_ENCRYPTED_PASSWORD,
+                "password": self._encrypted_password,
             },
             allow_error=True,
             stage="register_local_account",
@@ -501,7 +555,10 @@ class RagFlowModelConfigurator:
         try:
             response = self._client.post(
                 "/api/v1/auth/login",
-                json={"email": _LOCAL_EMAIL, "password": _LOCAL_ENCRYPTED_PASSWORD},
+                json={
+                    "email": self._account_email,
+                    "password": self._encrypted_password,
+                },
             )
             response.raise_for_status()
             payload = _payload(response)
@@ -721,12 +778,22 @@ def main(argv: list[str] | None = None) -> int:
             timeout=httpx.Timeout(ragflow.timeout_seconds),
             trust_env=False,
         ) as client:
-            configurator = RagFlowModelConfigurator(client=client)
+            raw_token_file = os.environ.get("RAGFLOW_TOKEN_FILE", "").strip()
+            token_file = Path(raw_token_file).expanduser() if raw_token_file else None
+            existing_token = (
+                _read_token_file(token_file, require_private_mode=True)
+                if token_file is not None and token_file.exists()
+                else None
+            )
+            configurator = RagFlowModelConfigurator(
+                client=client,
+                authorization=(
+                    f"Bearer {existing_token}" if existing_token is not None else None
+                ),
+            )
             if action in {"ensure-token", "check-token"}:
-                raw_token_file = os.environ.get("RAGFLOW_TOKEN_FILE", "").strip()
-                if not raw_token_file:
+                if token_file is None:
                     raise RagFlowModelConfigurationError("token_file")
-                token_file = Path(raw_token_file).expanduser()
                 if action == "ensure-token":
                     configurator.ensure_api_token(token_file=token_file)
                 else:

@@ -247,9 +247,11 @@ ensure_ragflow_token() {
 configure_bailian_with_retry() {
   local deadline=$((SECONDS + 60)) output=""
   while ((SECONDS < deadline)); do
-    if output="$("${RAGFLOW_MANAGER}" configure-bailian 2>&1)"; then
+    if output="$(RAGFLOW_TOKEN_FILE="${RAGFLOW_TOKEN_FILE}" \
+      "${RAGFLOW_MANAGER}" configure-bailian 2>&1)"; then
       echo "${output}"
-      "${RAGFLOW_MANAGER}" check-bailian
+      RAGFLOW_TOKEN_FILE="${RAGFLOW_TOKEN_FILE}" \
+        "${RAGFLOW_MANAGER}" check-bailian
       return
     fi
     sleep 2
@@ -579,7 +581,8 @@ status() {
   done
   if ragflow_reachable; then
     "${RAGFLOW_MANAGER}" prepare || failed=1
-    "${RAGFLOW_MANAGER}" check-bailian || failed=1
+    RAGFLOW_TOKEN_FILE="${RAGFLOW_TOKEN_FILE}" \
+      "${RAGFLOW_MANAGER}" check-bailian || failed=1
     check_ragflow_token || failed=1
   else
     echo "RAGFlow API：stopped/unhealthy"

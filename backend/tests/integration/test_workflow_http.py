@@ -164,7 +164,7 @@ def test_workflow_schema_and_missing_resources_use_stable_errors() -> None:
     assert_error_response(missing_update, status=404, code="workflow_not_found")
 
 
-def test_invalid_graph_and_missing_knowledge_configuration_fail_without_write() -> None:
+def test_invalid_graph_and_failed_tenant_identity_provisioning_do_not_write() -> None:
     invalid_name = f"invalid-{uuid4().hex}"
     invalid_graph = _body(include_end=False)
     invalid_graph["name"] = invalid_name
@@ -173,7 +173,15 @@ def test_invalid_graph_and_missing_knowledge_configuration_fail_without_write() 
     knowledge_graph["name"] = knowledge_name
 
     with (
-        running_api(TEST_DATABASE_URL) as api_url,
+        running_api(
+            TEST_DATABASE_URL,
+            env_overrides={
+                "RAGFLOW_BASE_URL": "http://127.0.0.1:1",
+                "RAGFLOW_API_KEY": "",
+                "RAGFLOW_EXPECTED_VERSION": "v0.26.4",
+                "RAGFLOW_TIMEOUT_SECONDS": "0.2",
+            },
+        ) as api_url,
         authenticated_client(base_url=api_url, timeout=5) as client,
     ):
         rejected_graph = client.post("/api/v1/workflows", json=invalid_graph)
@@ -181,7 +189,11 @@ def test_invalid_graph_and_missing_knowledge_configuration_fail_without_write() 
         listed = client.get("/api/v1/workflows")
 
     assert_error_response(rejected_graph, status=422, code="workflow_invalid")
-    assert_error_response(rejected_knowledge, status=503, code="configuration_missing")
+    assert_error_response(
+        rejected_knowledge,
+        status=503,
+        code="knowledge_service_unavailable",
+    )
     assert {invalid_name, knowledge_name}.isdisjoint(
         {item["name"] for item in listed.json()["items"]}
     )

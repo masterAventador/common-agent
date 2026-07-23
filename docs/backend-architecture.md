@@ -1,7 +1,7 @@
 # 通用 Agent 中台后端架构
 
-> 状态：V1 已落地，V2 工具/MCP 与私有 RAGFlow 目标架构已确认
-> 确认日期：2026-07-22
+> 状态：V1 已落地，V2 工具/MCP、私有 RAGFlow 与工作区级 RAGFlow 身份已落地
+> 确认日期：2026-07-23
 > 运行范围：本机 FastAPI + 按需平台基础设施 + 本机 RAGFlow，外部只调用阿里百炼
 
 ## 1. 建设目标
@@ -141,9 +141,20 @@ React
   资源。消息通过所属会话继承租户，不维护第二份可漂移字段；
 - 请求上下文使用平台 `ContextVar` 传递已验证的 `TenantAccess`，仓储在缺失上下文时关闭失败。
   会话/工作流事件历史和资源变更锁都把租户 ID 纳入命名空间，相同资源 ID 不能跨租户共享状态；
-- RAGFlow 仍只通过官方 API 使用。平台单独保存外部知识库 ID 到租户的全局唯一归属；列表、详情、
-  上传、检索和删除先验证归属。升级前未登记的数据集只允许默认租户惰性接管，其他租户不可见，
-  不修改或直连 RAGFlow 源码及内部数据库。
+- RAGFlow 仍只通过官方 API 使用。每个平台工作区对应一个独立 RAGFlow 技术账号/租户；
+  `ragflow_tenant_identities` 保存平台租户、RAGFlow 租户 ID、账号邮箱和加密 Token，API 与 Worker
+  在每次业务请求中按已验证的当前工作区动态解析 Token，不共享进程级认证 Header；
+- 新工作区通过 RAGFlow 公开注册、登录、用户资料、模型和 Token API 自动初始化，并配置本工作区
+  的百炼 embedding/rerank 实例与默认模型。默认工作区升级时原位接管既有
+  `common-agent@local.test` 账号，不复制已有知识库；旧固定密码随接管轮换成按工作区和密钥版本
+  派生的密码，密码不落库，后续本机模型配置脚本优先使用权限为 `0600` 的 API Token；
+- RAGFlow Token 用独立 AES-256-GCM 多密钥 keyring 加密，AAD 同时绑定格式版本、平台租户、
+  RAGFlow 账号邮箱和 RAGFlow 租户 ID；生产环境必须显式配置
+  `COMMON_AGENT_RAGFLOW_IDENTITY_KEYS`，浏览器、日志和审计都不能取得明文；
+- 平台知识库归属表继续作为第二层授权和旧数据接管证据：列表、详情、上传、检索和删除都复核
+  归属，会话每轮检索也使用同一个带归属检查的 `KnowledgeBaseService`。升级前未登记的数据集只
+  允许默认工作区惰性接管；若发现尚无独立身份的非默认旧映射，启动关闭失败并要求显式迁移，
+  不静默复制、过滤或串租户。不修改或直连 RAGFlow 内部数据库。
 
 ### 2.8 审计与安全事件
 
@@ -171,7 +182,8 @@ React
 - `adapters/backup` 只负责大文件流式 AES-256-GCM、认证头、逐文件 SHA-256 清单和安全解包。
   Docker 停写、数据采集、保留和恢复编排属于 `infra/backup`，不进入 API/领域调用路径；
 - 256-bit 备份密钥只从独立 `0600` 文件读取并与归档分开保管。部署配置采用显式白名单；百炼
-  Key、RAGFlow Token、认证/恢复/引导凭据和数据库口令不得进入归档，恢复时由目标环境重新提供；
+  Key、RAGFlow 明文 Token、RAGFlow 身份 keyring、认证/恢复/引导凭据和数据库口令不得进入归档。
+  平台库只包含 RAGFlow Token 密文；恢复时必须从独立秘密存储提供原身份 keyring，否则关闭失败；
 - 当前恢复点是最近一次已验证归档，目标 RPO 24 小时、RTO 120 分钟、保留 30 天且至少保留 7
   个代际，每 90 天演练。开发 MySQL 未开启 binary log，因此不声称支持归档间任意时间点恢复；
 - `restore` 只接受全新的 `common-agent-recovery-*` MySQL、Volume 和目录，任何既有表、Volume

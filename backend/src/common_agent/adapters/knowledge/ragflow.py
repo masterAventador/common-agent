@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any, Literal, cast
@@ -124,7 +125,8 @@ class RagFlowKnowledgeService:
         self,
         *,
         base_url: str,
-        api_key: str,
+        api_key: str | None = None,
+        api_key_provider: Callable[[], Awaitable[str]] | None = None,
         expected_version: str,
         embedding_model: str = ("text-embedding-v4@common-agent-embedding@OpenAI-API-Compatible"),
         rerank_model: str = ("qwen3-rerank@common-agent-rerank@OpenAI-API-Compatible"),
@@ -132,7 +134,10 @@ class RagFlowKnowledgeService:
         ca_bundle_path: str | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._api_key = api_key.strip()
+        if api_key_provider is not None and api_key is not None:
+            raise ValueError("RAGFlow API Key 与动态解析器不能同时配置")
+        self._api_key = (api_key or "").strip()
+        self._api_key_provider = api_key_provider
         self._expected_version = expected_version
         self._embedding_model = embedding_model
         self._rerank_model = rerank_model
@@ -143,14 +148,13 @@ class RagFlowKnowledgeService:
             verify=ca_bundle_path or True,
             trust_env=False,
         )
-        self._headers = {"Authorization": f"Bearer {self._api_key}"}
 
     async def aclose(self) -> None:
         if self._owned_client:
             await self._client.aclose()
 
     async def status(self) -> KnowledgeServiceStatus:
-        if not self._api_key:
+        if self._api_key_provider is None and not self._api_key:
             return KnowledgeServiceStatus(
                 provider=self.provider_name,
                 availability=KnowledgeServiceAvailability.NOT_CONFIGURED,
@@ -158,7 +162,11 @@ class RagFlowKnowledgeService:
                 error_code=KnowledgeConfigurationMissing.code,
             )
         try:
-            data = await self._request("GET", "/api/v1/system/version")
+            data = await self._request(
+                "GET",
+                "/api/v1/system/version",
+                authorize=self._api_key_provider is None,
+            )
             version = _validate(_VERSION_ADAPTER, data)
         except KnowledgeServiceError as error:
             return KnowledgeServiceStatus(
@@ -430,16 +438,22 @@ class RagFlowKnowledgeService:
         path: str,
         *,
         dataset_scoped: bool = False,
+        authorize: bool = True,
         failure_mode: Literal["standard", "upload", "post_upload", "retry", "delete"] = "standard",
         include_total: bool = False,
         **kwargs: Any,
     ) -> Any:
-        self._require_configured()
+        headers = outbound_trace_headers()
+        if authorize:
+            headers = {
+                "Authorization": f"Bearer {await self._resolved_api_key()}",
+                **headers,
+            }
         try:
             response = await self._client.request(
                 method,
                 path,
-                headers={**self._headers, **outbound_trace_headers()},
+                headers=headers,
                 **kwargs,
             )
         except httpx.HTTPError as error:
@@ -506,9 +520,21 @@ class RagFlowKnowledgeService:
             return envelope.data, envelope.total_datasets
         return envelope.data
 
-    def _require_configured(self) -> None:
-        if not self._api_key:
+    async def _resolved_api_key(self) -> str:
+        try:
+            api_key = (
+                await self._api_key_provider()
+                if self._api_key_provider is not None
+                else self._api_key
+            )
+        except KnowledgeServiceError:
+            raise
+        except Exception:
+            raise KnowledgeServiceUnavailable() from None
+        normalized = api_key.strip()
+        if not normalized:
             raise KnowledgeConfigurationMissing()
+        return normalized
 
     @staticmethod
     def _knowledge_base(payload: _RagFlowDataset) -> KnowledgeBaseSummary:

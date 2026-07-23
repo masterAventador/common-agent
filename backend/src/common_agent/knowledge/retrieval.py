@@ -42,8 +42,12 @@ class KnowledgeBoundSubject(Protocol):
 
 
 class ConversationKnowledgeResolver:
-    def __init__(self, knowledge: KnowledgeService) -> None:
-        self._knowledge = KnowledgeBaseService(knowledge)
+    def __init__(self, knowledge: KnowledgeService | KnowledgeBaseService) -> None:
+        self._knowledge = (
+            knowledge
+            if isinstance(knowledge, KnowledgeBaseService)
+            else KnowledgeBaseService(knowledge)
+        )
 
     async def resolve(
         self,

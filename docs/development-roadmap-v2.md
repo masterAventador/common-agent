@@ -2,7 +2,7 @@
 
 > 文档性质：V2 当前任务与执行结果的唯一台账
 > 建立日期：2026-07-22
-> 当前阶段：V2 已完成
+> 当前阶段：R2-09 已完成
 > 当前下一步：当前路线图没有未完成任务；后续缺陷回到对应任务证据排查，新范围另建路线图
 
 任务状态、执行顺序、TDD、生产同路径、失败矩阵、完成定义、安全、资源清理和提交规则统一见
@@ -102,6 +102,7 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
 | R2-06 | 私有补丁集的正确性、性能、升级冲突和安全回归 | R2-05 | ✅ 已完成 |
 | R2-07 | 推送私有仓库并把 common-agent submodule/镜像/脚本切到 fork 提交 | R2-06 | ✅ 已完成 |
 | R2-08 | 真实知识链、备份恢复、资源与全新递归克隆验收 | R2-07 | ✅ 已完成 |
+| R2-09 | 平台工作区与 RAGFlow 技术租户 1:1 隔离及存量默认工作区迁移 | R2-08 | ✅ 已完成 |
 
 ### 3.4 V2 收口
 
@@ -983,3 +984,48 @@ MCP 入口、多模型供应商扩张，也不触发远程部署。
   RAGFlow 三报告统一门禁、远端补丁集、镜像源码/安全、Compose 参数、真实百炼模型状态及页面生产
   同路径均通过。最终移除 RAGFlow 与平台测试容器、停止 32 GiB `common-agent-dev` Colima，保留原生
   数据 Volume、新验证镜像和 Git 忽略报告；本次没有新增产品范围或遗留待验收项。
+
+### R2-09 平台工作区与 RAGFlow 技术租户 1:1 隔离及存量默认工作区迁移
+
+- 状态：✅ 已完成
+- 日期：2026-07-23
+- 迁移审计：真实平台库只有默认工作区，RAGFlow 中
+  `common-agent@local.test` 持有 5 个数据集和 1 个 API Token，其他平台工作区和知识库归属映射为
+  0，因此默认工作区可以原位接管现有账号，无需复制文档或重写员工、工作流及 Citation 引用。公开
+  RAGFlow API 已确认 Token 按账号/tenant ID 限定命名空间；公开 API 没有数据集所有者转移能力。
+  对未来发现的“非默认工作区已有旧归属但尚无独立身份”场景，迁移守卫启动关闭失败，不静默复制、
+  过滤或错绑数据。
+- RED/GREEN：先增加工作区身份 keyring、Token AAD、确定性账号密码、接管/重试/旧映射守卫、动态
+  请求 Token、会话每轮归属复核、独立账号公开 API 和 Alembic head 测试，分别观察到模块、构造参数、
+  迁移和归属路径不存在的预期失败；旧账号密码轮换也先因 adopt 参数与公开 PATCH 能力缺失失败。
+  实现后定向 124 项回归通过，完整后端最终 `1110 passed, 15 skipped`，跳过项均为需要显式外部配置
+  的既有真实 RAGFlow/百炼/Deep Agents 专项。
+- 身份与密文：Alembic `20260723_0027` 增加 `ragflow_tenant_identities`，平台租户为主键，RAGFlow
+  账号邮箱和租户 ID 分别全局唯一；`provisioning/active` 约束保证半成品没有伪装成可用身份。
+  RAGFlow Token 使用独立 AES-256-GCM 多密钥 keyring，随机 96-bit nonce，AAD 绑定格式版本、平台
+  租户、账号邮箱和 RAGFlow 租户 ID；生产环境缺少
+  `COMMON_AGENT_RAGFLOW_IDENTITY_KEYS` 直接拒绝启动。账号密码按租户和记录的 key ID 用 HMAC-SHA256
+  派生，只以 RAGFlow 要求的 RSA 密文发送，不落库、不回前端。
+- 运行链路：API 与 Worker 启动时复核存量迁移并尽力初始化当前工作区；外部 RAGFlow 暂时不可用时
+  平台仍可启动，首次知识操作安全重试初始化并返回稳定 503。新工作区通过公开注册、登录、资料、
+  provider/model/default 和 Token API 建立独立 RAGFlow 技术租户；每次知识请求从当前
+  `TenantAccess` 动态解密 Token，不再共享进程级 Header。会话检索改用已经装配归属仓储的
+  `KnowledgeBaseService`，绑定后每一轮仍复核知识库归属。
+- 默认账号升级：默认工作区以既有 0600 Token 原位接管 `common-agent@local.test`，保留 5 个知识库
+  和现有外部 ID；首次接管把源码历史固定密码轮换为工作区派生密码。`real.sh` 和 RAGFlow 模型配置
+  CLI 改为优先用 Token 文件，密码轮换后再次启动、模型检查与 Token 检查全部通过。平台库只保存
+  12-byte nonce 和 67-byte ciphertext，未保存明文 Token 或密码；备份文档同步要求恢复时从独立秘密
+  存储提供原身份 keyring。
+- 真实双租户验收：从真实前端 Origin 调用正式 FastAPI 注册临时 Owner 并创建第二工作区，平台自动
+  创建第二个 RAGFlow 账号/租户和独立 Token。默认工作区列表为 5，第二工作区初始为 0；在第二工作区
+  创建临时知识库后其列表为 1，而默认工作区仍为 5 且看不到该 ID，`isolated=true`。随后通过平台 API
+  删除临时知识库，并精确清理临时 Owner、平台工作区、RAGFlow Token/model provider/root file、
+  user-tenant、tenant 和 user；复核临时记录均为 0，默认账号和 5 个知识库未改变。
+- 门禁与安全：Ruff、Mypy（212 个生产源文件）、Alembic 空库/重启/损坏恢复、MySQL/HTTP 集成、
+  real 统一入口合同和 `git diff --check` 通过；前端 30 个文件 `167 passed`，ESLint、TypeScript、
+  生产构建和七路由包体预算通过。Secret 自检/治理与 Semgrep 通过；在线 Trivy DB 两次下载均因
+  `mirror.gcr.io` 超时关闭失败，随后使用 2026-07-22 已验证缓存数据库执行相同
+  High/Critical/Secret 规则，Python/前端锁文件漏洞为 0，四个 IaC 目标均无高危配置。
+- 清理与提交：真实双租户业务与账号临时数据已清零，测试库身份状态由每个 fake RAGFlow 用例自行
+  清理，未留下浏览器或测试服务。最终交付前停止本轮启动的 real 栈和 32 GiB Colima，保留正式默认
+  身份、原有 5 个知识库、项目 Volume 与已验证 fork 镜像。本任务提交见 Git 历史。

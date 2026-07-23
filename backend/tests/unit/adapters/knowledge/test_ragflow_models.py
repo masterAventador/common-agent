@@ -164,6 +164,110 @@ def test_configurator_registers_bailian_models_and_sets_tenant_defaults() -> Non
     assert "fixture-bailian-secret" not in repr(status)
 
 
+def test_configurator_supports_a_dedicated_tenant_account_instead_of_fixed_local_login() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/api/v1/users":
+            return httpx.Response(200, json={"code": 0, "data": True})
+        if request.url.path == "/api/v1/auth/login":
+            return httpx.Response(
+                200,
+                headers={"Authorization": "tenant-session"},
+                json={"code": 0, "data": True},
+            )
+        if request.url.path == "/api/v1/users/me":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "id": "ragflow-tenant-id",
+                        "email": "common-agent-tenant@local.test",
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
+
+    with httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="http://ragflow"
+    ) as client:
+        profile = RagFlowModelConfigurator(
+            client=client,
+            account_email="common-agent-tenant@local.test",
+            encrypted_password="rsa-ciphertext",
+        ).profile()
+
+    assert profile == ("ragflow-tenant-id", "common-agent-tenant@local.test")
+    assert json.loads(requests[0].content) == {
+        "email": "common-agent-tenant@local.test",
+        "nickname": "common-agent",
+        "password": "rsa-ciphertext",
+    }
+    assert json.loads(requests[1].content) == {
+        "email": "common-agent-tenant@local.test",
+        "password": "rsa-ciphertext",
+    }
+
+
+def test_configurator_can_manage_an_adopted_account_with_api_token_only() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "id": "legacy-ragflow-tenant",
+                    "email": "common-agent@local.test",
+                },
+            },
+        )
+
+    with httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="http://ragflow"
+    ) as client:
+        profile = RagFlowModelConfigurator(
+            client=client,
+            authorization="Bearer ragflow-existing",
+        ).profile()
+
+    assert profile == ("legacy-ragflow-tenant", "common-agent@local.test")
+    assert len(requests) == 1
+    assert requests[0].headers["Authorization"] == "Bearer ragflow-existing"
+
+
+def test_configurator_changes_a_legacy_password_through_the_public_profile_api() -> None:
+    captured: httpx.Request | None = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured
+        captured = request
+        return httpx.Response(200, json={"code": 0, "data": True})
+
+    with httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="http://ragflow"
+    ) as client:
+        RagFlowModelConfigurator(
+            client=client,
+            authorization="Bearer ragflow-existing",
+        ).change_password(
+            current_encrypted_password="legacy-rsa",
+            new_encrypted_password="tenant-rsa",
+        )
+
+    assert captured is not None
+    assert captured.method == "PATCH"
+    assert captured.url.path == "/api/v1/users/me"
+    assert json.loads(captured.content) == {
+        "password": "legacy-rsa",
+        "new_password": "tenant-rsa",
+    }
+
+
 def test_configurator_accepts_idempotent_existing_local_account() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/users":

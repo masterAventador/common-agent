@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -21,6 +22,7 @@ from common_agent.adapters.demo import (
     DemoWorkflowModel,
 )
 from common_agent.adapters.knowledge import RagFlowKnowledgeService
+from common_agent.adapters.knowledge.ragflow_tenants import RagFlowTenantProvisioner
 from common_agent.adapters.mcp import (
     ExternalMcpRuntime,
     ManagedHttpMcpRuntime,
@@ -48,6 +50,7 @@ from common_agent.adapters.persistence import (
     SqlAlchemyKnowledgeOwnershipStore,
     SqlAlchemyManagedHttpUnitOfWorkFactory,
     SqlAlchemyPlatformToolSeeder,
+    SqlAlchemyRagFlowTenantIdentityStore,
     SqlAlchemyTaskQueue,
     SqlAlchemyTenancyStore,
     SqlAlchemyToolCredentialUnitOfWorkFactory,
@@ -65,7 +68,10 @@ from common_agent.adapters.persistence.model_configurations import (
 )
 from common_agent.adapters.persistence.resources import SqlAlchemyResourceDeletionStore
 from common_agent.adapters.persistence.workflows import SqlAlchemyWorkflowUnitOfWorkFactory
-from common_agent.adapters.security import AesGcmToolCredentialCipher
+from common_agent.adapters.security import (
+    AesGcmRagFlowIdentityCipher,
+    AesGcmToolCredentialCipher,
+)
 from common_agent.adapters.workflow.langgraph import LangGraphWorkflowCompiler
 from common_agent.api.audit import audit_http_request
 from common_agent.api.authentication import enforce_request_security, require_authenticated
@@ -99,6 +105,7 @@ from common_agent.bootstrap import (
     DatabaseSettings,
     IntegrationModeSettings,
     ModelSettings,
+    RagFlowIdentitySettings,
     RagFlowSettings,
     ToolCredentialSettings,
     ToolEgressSettings,
@@ -107,6 +114,10 @@ from common_agent.bootstrap import (
 from common_agent.conversations import ConversationEventBroker, ConversationService
 from common_agent.employees import EmployeeService
 from common_agent.employees.seeds import seed_default_employee
+from common_agent.knowledge.ragflow_identity import (
+    LegacyRagFlowIdentityMigrationRequired,
+    RagFlowTenantIdentityService,
+)
 from common_agent.knowledge.retrieval import ConversationKnowledgeResolver
 from common_agent.knowledge.service import KnowledgeBaseService
 from common_agent.lifecycle import AsyncCleanup, run_cleanups
@@ -138,6 +149,8 @@ from common_agent.workflows.ai_targets import (
 )
 from common_agent.workflows.events import WorkflowEventBroker
 from common_agent.workflows.nodes.registry import create_workflow_node_registry
+
+_LOGGER = logging.getLogger("common_agent.api.app")
 
 
 @asynccontextmanager
@@ -178,11 +191,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         tenancy_store = SqlAlchemyTenancyStore(database)
         platform_tool_seeder = SqlAlchemyPlatformToolSeeder(database)
-        await platform_tool_seeder.seed_all(await tenancy_store.list_tenant_ids())
-        app.state.tenancy = TenancyService(
-            tenancy_store,
-            tenant_initializer=platform_tool_seeder.seed,
-        )
+        tenant_ids = await tenancy_store.list_tenant_ids()
+        await platform_tool_seeder.seed_all(tenant_ids)
 
         def tenant_id_provider() -> UUID:
             return current_tenant().tenant_id
@@ -243,11 +253,65 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             demo_workflow_model = DemoWorkflowModel()
             workflow_model = demo_workflow_model
             model_configuration_verifier = DemoModelConfigurationVerifier()
+
+            async def tenant_initializer(tenant_id: UUID) -> None:
+                await platform_tool_seeder.seed(tenant_id)
+
         else:
             ragflow_settings: RagFlowSettings = app.state.ragflow_settings
+            model_settings = ModelSettings.from_env()
+            identity_settings: RagFlowIdentitySettings = app.state.ragflow_identity_settings
+            ragflow_identities = RagFlowTenantIdentityService(
+                SqlAlchemyRagFlowTenantIdentityStore(database),
+                cipher=AesGcmRagFlowIdentityCipher(
+                    keys=identity_settings.keys,
+                    active_key_id=identity_settings.active_key_id,
+                ),
+                provisioner=RagFlowTenantProvisioner(
+                    base_url=ragflow_settings.base_url,
+                    expected_version=ragflow_settings.expected_version,
+                    bailian_api_key=model_settings.api_key.get_secret_value(),
+                    bailian_base_url=model_settings.base_url,
+                    timeout_seconds=ragflow_settings.timeout_seconds,
+                    ca_bundle_path=(
+                        str(ragflow_settings.ca_bundle_path)
+                        if ragflow_settings.ca_bundle_path is not None
+                        else None
+                    ),
+                ),
+                legacy_api_key=ragflow_settings.api_key.get_secret_value(),
+                distributed_locks=MySqlNamedLockProvider(database),
+            )
+            try:
+                await ragflow_identities.ensure_all(tenant_ids)
+            except LegacyRagFlowIdentityMigrationRequired:
+                raise
+            except Exception as error:
+                _LOGGER.warning(
+                    "ragflow.identity_bootstrap_deferred",
+                    extra={"exception_type": type(error).__name__},
+                )
+            app.state.ragflow_identities = ragflow_identities
+
+            async def ragflow_api_key_provider() -> str:
+                return await ragflow_identities.api_key_for(current_tenant().tenant_id)
+
+            async def tenant_initializer(tenant_id: UUID) -> None:
+                await platform_tool_seeder.seed(tenant_id)
+                try:
+                    await ragflow_identities.ensure(tenant_id)
+                except Exception as error:
+                    _LOGGER.warning(
+                        "ragflow.tenant_identity_provisioning_deferred",
+                        extra={
+                            "tenant_id": str(tenant_id),
+                            "exception_type": type(error).__name__,
+                        },
+                    )
+
             knowledge_adapter = RagFlowKnowledgeService(
                 base_url=ragflow_settings.base_url,
-                api_key=ragflow_settings.api_key.get_secret_value(),
+                api_key_provider=ragflow_api_key_provider,
                 expected_version=ragflow_settings.expected_version,
                 embedding_model=ragflow_settings.embedding_model,
                 rerank_model=ragflow_settings.rerank_model,
@@ -258,10 +322,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     else None
                 ),
             )
-            model_settings = ModelSettings.from_env()
             real_model = BailianChatModelAdapter(model_settings)
             workflow_model = real_model
             model_configuration_verifier = BailianModelConfigurationVerifier(model_settings)
+        app.state.tenancy = TenancyService(
+            tenancy_store,
+            tenant_initializer=tenant_initializer,
+        )
         knowledge_bases = KnowledgeBaseService(
             knowledge_adapter,
             ownership=(
@@ -380,7 +447,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         conversations = ConversationService(
             SqlAlchemyConversationUnitOfWorkFactory(database, tenant_id_provider),
             employees=employees,
-            knowledge=ConversationKnowledgeResolver(knowledge_adapter),
+            knowledge=ConversationKnowledgeResolver(knowledge_bases),
             runtime=runtime,
             events=conversation_events,
             model_configurations=model_configurations,
@@ -414,6 +481,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.model_configurations = None
         app.state.resource_deletions = None
         app.state.system = None
+        app.state.ragflow_identities = None
         cleanups: list[AsyncCleanup] = []
         if workflows is not None:
             cleanups.append(workflows.aclose)
@@ -459,9 +527,13 @@ def create_app() -> FastAPI:
     app.state.worker_settings = WorkerSettings.from_env()
     app.state.tool_credential_settings = ToolCredentialSettings.from_env()
     app.state.tool_egress_settings = ToolEgressSettings.from_env()
+    app.state.ragflow_identity_settings = (
+        RagFlowIdentitySettings.from_env() if integration_mode.mode == "real" else None
+    )
     app.state.audit = None
     app.state.cors_settings = cors
     app.state.authentication = None
+    app.state.ragflow_identities = None
     app.state.tenancy = None
     app.state.tools = None
     app.state.tool_credentials = None

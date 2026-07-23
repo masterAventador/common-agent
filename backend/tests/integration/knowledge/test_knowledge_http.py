@@ -13,7 +13,11 @@ from typing import Any, cast
 from sqlalchemy import delete
 
 from common_agent.adapters.persistence.database import Database
-from common_agent.adapters.persistence.models import RagFlowKnowledgeBaseOwnershipRow
+from common_agent.adapters.persistence.models import (
+    RagFlowKnowledgeBaseOwnershipRow,
+    RagFlowTenantIdentityRow,
+)
+from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from tests.support.http import (
     assert_error_response,
     authenticated_client,
@@ -64,6 +68,100 @@ def _handler(probe: _RagFlowProbe) -> type[BaseHTTPRequestHandler]:
             if self.path == "/api/v1/system/version":
                 _send_json(self, 200, {"code": 0, "data": probe.version})
                 return
+            if self.path == "/api/v1/users/me":
+                _send_json(
+                    self,
+                    200,
+                    {
+                        "code": 0,
+                        "data": {
+                            "id": "fake-ragflow-tenant",
+                            "email": (
+                                f"common-agent-{DEFAULT_TENANT_ID.hex}@local.test"
+                                if self.headers.get("Authorization") == "tenant-session"
+                                else "common-agent@local.test"
+                            ),
+                        },
+                    },
+                )
+                return
+            if self.path == "/api/v1/providers":
+                _send_json(
+                    self,
+                    200,
+                    {"code": 0, "data": [{"name": "OpenAI-API-Compatible"}]},
+                )
+                return
+            if self.path == "/api/v1/providers/OpenAI-API-Compatible/instances":
+                _send_json(
+                    self,
+                    200,
+                    {
+                        "code": 0,
+                        "data": [
+                            {
+                                "instance_name": "common-agent-embedding",
+                                "status": "active",
+                            },
+                            {
+                                "instance_name": "common-agent-rerank",
+                                "status": "active",
+                            },
+                        ],
+                    },
+                )
+                return
+            if self.path == "/api/v1/models":
+                _send_json(
+                    self,
+                    200,
+                    {
+                        "code": 0,
+                        "data": [
+                            {
+                                "name": "text-embedding-v4",
+                                "instance_name": "common-agent-embedding",
+                                "provider_name": "OpenAI-API-Compatible",
+                                "model_type": "embedding",
+                            },
+                            {
+                                "name": "qwen3-rerank",
+                                "instance_name": "common-agent-rerank",
+                                "provider_name": "OpenAI-API-Compatible",
+                                "model_type": "rerank",
+                            },
+                        ],
+                    },
+                )
+                return
+            if self.path == "/api/v1/models/default":
+                _send_json(
+                    self,
+                    200,
+                    {
+                        "code": 0,
+                        "data": {
+                            "models": [
+                                {
+                                    "model_name": "text-embedding-v4",
+                                    "model_instance": "common-agent-embedding",
+                                    "model_provider": "OpenAI-API-Compatible",
+                                    "model_type": "embedding",
+                                },
+                                {
+                                    "model_name": "qwen3-rerank",
+                                    "model_instance": "common-agent-rerank",
+                                    "model_provider": "OpenAI-API-Compatible",
+                                    "model_type": "rerank",
+                                },
+                            ]
+                        },
+                    },
+                )
+                return
+            if self.path == "/api/v1/system/tokens":
+                _send_json(self, 200, {"code": 0, "data": []})
+                return
             if self.path.startswith("/api/v1/datasets?"):
                 _send_json(
                     self,
@@ -109,6 +207,26 @@ def _handler(probe: _RagFlowProbe) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             body = _read_body(self)
+            if self.path == "/api/v1/users":
+                _send_json(self, 200, {"code": 0, "data": True})
+                return
+            if self.path == "/api/v1/auth/login":
+                response = {"code": 0, "data": True}
+                encoded = json.dumps(response).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.send_header("Authorization", "tenant-session")
+                self.end_headers()
+                self.wfile.write(encoded)
+                return
+            if self.path == "/api/v1/system/tokens":
+                _send_json(
+                    self,
+                    200,
+                    {"code": 0, "data": {"token": "ragflow-fake-token"}},
+                )
+                return
             if self.path == "/api/v1/datasets":
                 probe.create_payloads.append(json.loads(body))
                 _send_json(
@@ -150,11 +268,19 @@ def _handler(probe: _RagFlowProbe) -> type[BaseHTTPRequestHandler]:
                 return
             _send_json(self, 404, {"code": 102})
 
+        def do_PATCH(self) -> None:
+            _read_body(self)
+            if self.path == "/api/v1/models/default":
+                _send_json(self, 200, {"code": 0, "data": True})
+                return
+            _send_json(self, 404, {"code": 102})
+
     return Handler
 
 
 @contextmanager
 def _fake_ragflow() -> Iterator[tuple[str, _RagFlowProbe]]:
+    asyncio.run(_clear_fake_identity())
     probe = _RagFlowProbe()
     server = _LoopbackHTTPServer(("127.0.0.1", available_port()), _handler(probe))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -166,6 +292,7 @@ def _fake_ragflow() -> Iterator[tuple[str, _RagFlowProbe]]:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+        asyncio.run(_clear_fake_identity())
 
 
 def _ragflow_env(base_url: str, *, api_key: str = "layered-test-key") -> dict[str, str]:
@@ -330,19 +457,37 @@ def test_knowledge_service_unavailable_is_retryable_and_safe() -> None:
     assert response.json()["retryable"] is True
 
 
-def test_knowledge_service_missing_configuration_is_permanent_and_safe() -> None:
-    with (
-        _fake_ragflow() as (ragflow_url, _),
-        running_api(
-            TEST_DATABASE_URL,
-            env_overrides=_ragflow_env(ragflow_url, api_key=""),
-        ) as api_url,
-        authenticated_client(base_url=api_url, timeout=5) as client,
-    ):
-        response = client.get("/api/v1/knowledge-bases")
+def test_fresh_install_provisions_default_ragflow_account_without_a_legacy_api_key() -> None:
+    asyncio.run(_clear_fake_identity())
+    try:
+        with (
+            _fake_ragflow() as (ragflow_url, _),
+            running_api(
+                TEST_DATABASE_URL,
+                env_overrides=_ragflow_env(ragflow_url, api_key=""),
+            ) as api_url,
+            authenticated_client(base_url=api_url, timeout=5) as client,
+        ):
+            response = client.get("/api/v1/knowledge-bases")
+    finally:
+        asyncio.run(_clear_fake_identity())
 
-    assert_error_response(response, status=503, code="configuration_missing")
-    assert response.json()["retryable"] is False
+    assert response.status_code == 200
+
+
+async def _clear_fake_identity() -> None:
+    database = Database(TEST_DATABASE_URL)
+    await database.start()
+    try:
+        async with database.session() as session:
+            await session.execute(
+                delete(RagFlowTenantIdentityRow).where(
+                    RagFlowTenantIdentityRow.tenant_id == str(DEFAULT_TENANT_ID)
+                )
+            )
+            await session.commit()
+    finally:
+        await database.stop()
 
 
 def test_ragflow_version_mismatch_fails_closed_before_business_request() -> None:
