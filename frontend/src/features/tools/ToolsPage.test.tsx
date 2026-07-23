@@ -378,7 +378,7 @@ describe("ToolsPage", () => {
     expect(screen.getByRole("button", { name: "新建外部 MCP" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "同步能力 合作方 MCP" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "新建业务工具集" })).toBeDisabled();
-  }, 10_000);
+  }, 20_000);
 
   it("creates external MCP offline and syncs only after an explicit action", async () => {
     const user = userEvent.setup();

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient } from "./client";
 import {
+  addManagedMcpCapability,
   createExternalMcpSource,
   createManagedMcpSource,
   createToolCollection,
@@ -17,6 +18,7 @@ import {
   fetchMcpCredential,
   fetchToolCatalog,
   importManagedMcpOpenApi,
+  parseManagedMcpCapabilityInput,
   parseManagedMcpSource,
   previewManagedMcpOpenApi,
   syncExternalMcpSource,
@@ -25,6 +27,7 @@ import {
   updateExternalMcpSource,
   replaceConversationToolGrants,
   replaceEmployeeToolGrants,
+  updateManagedMcpSource,
   updateManagedMcpCapability,
   updateMcpCredential,
   updateToolCollection,
@@ -264,6 +267,46 @@ describe("managed MCP API boundary", () => {
       { capabilities: [expect.objectContaining({ remote_name: capability.remote_name })] },
     );
   });
+
+  it("validates capability input and encodes remaining managed CRUD paths", async () => {
+    const input = {
+      remote_name: capability.remote_name,
+      display_name: capability.display_name,
+      description: capability.description,
+      input_schema: capability.input_schema,
+      method: capability.method,
+      path_template: capability.path_template,
+      parameter_bindings: capability.parameter_bindings,
+      timeout_seconds: capability.timeout_seconds,
+      response_json_pointer: capability.response_json_pointer,
+      enabled: capability.enabled,
+    };
+    vi.mocked(apiClient.put).mockResolvedValueOnce({ data: source });
+    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: capability });
+
+    expect(parseManagedMcpCapabilityInput(input)).toEqual(input);
+    expect(() => parseManagedMcpCapabilityInput({ ...input, authorization: "secret" })).toThrow();
+    await expect(
+      updateManagedMcpSource("source/id", {
+        name: source.name,
+        description: source.description,
+        base_url: source.base_url,
+        enabled: source.enabled,
+      }),
+    ).resolves.toEqual(source);
+    await expect(addManagedMcpCapability("source/id", input)).resolves.toEqual(capability);
+
+    expect(apiClient.put).toHaveBeenCalledWith("/managed-mcp-sources/source%2Fid", {
+      name: source.name,
+      description: source.description,
+      base_url: source.base_url,
+      enabled: source.enabled,
+    });
+    expect(apiClient.post).toHaveBeenCalledWith(
+      "/managed-mcp-sources/source%2Fid/capabilities",
+      input,
+    );
+  });
 });
 
 describe("external MCP and tool collection API boundary", () => {
@@ -420,5 +463,79 @@ describe("external MCP and tool collection API boundary", () => {
       `/conversations/${conversationId}/tool-grants`,
       selection,
     );
+  });
+
+  it("normalizes transport failures for every tool API operation", async () => {
+    const failure = new Error("offline");
+    vi.mocked(apiClient.get).mockRejectedValue(failure);
+    vi.mocked(apiClient.post).mockRejectedValue(failure);
+    vi.mocked(apiClient.put).mockRejectedValue(failure);
+    vi.mocked(apiClient.delete).mockRejectedValue(failure);
+    const managedInput = {
+      name: source.name,
+      description: source.description,
+      base_url: source.base_url,
+      enabled: source.enabled,
+    };
+    const capabilityInput = {
+      remote_name: capability.remote_name,
+      display_name: capability.display_name,
+      description: capability.description,
+      input_schema: capability.input_schema,
+      method: capability.method,
+      path_template: capability.path_template,
+      parameter_bindings: capability.parameter_bindings,
+      timeout_seconds: capability.timeout_seconds,
+      response_json_pointer: capability.response_json_pointer,
+      enabled: capability.enabled,
+    };
+    const externalInput = {
+      name: externalSource.name,
+      description: externalSource.description,
+      endpoint_url: externalSource.endpoint_url,
+    };
+    const collectionInput = {
+      name: collection.name,
+      description: collection.description,
+      source_ids: collection.source_ids,
+    };
+    const selection = {
+      collection_ids: [collection.id],
+      capability_ids: [externalCapability.id],
+    };
+    const file = new File(["{}"], "api.json", { type: "application/json" });
+    const operations = [
+      () => fetchManagedMcpSources(),
+      () => createManagedMcpSource(managedInput),
+      () => updateManagedMcpSource(source.id, managedInput),
+      () => deleteManagedMcpSource(source.id),
+      () => addManagedMcpCapability(source.id, capabilityInput),
+      () => updateManagedMcpCapability(source.id, capability.id, capabilityInput),
+      () => deleteManagedMcpCapability(source.id, capability.id),
+      () => discoverManagedMcpSource(source.id),
+      () => testManagedMcpCapability(source.id, capability.id, {}),
+      () => previewManagedMcpOpenApi(source.id, file),
+      () => importManagedMcpOpenApi(source.id, [capabilityInput]),
+      () => fetchMcpCredential(source.id),
+      () => updateMcpCredential(source.id, { action: "clear" }),
+      () => fetchExternalMcpSources(),
+      () => createExternalMcpSource(externalInput),
+      () => updateExternalMcpSource(externalSource.id, externalInput),
+      () => deleteExternalMcpSource(externalSource.id),
+      () => syncExternalMcpSource(externalSource.id),
+      () => testExternalMcpCapability(externalSource.id, externalCapability.id, {}),
+      () => fetchToolCatalog(),
+      () => createToolCollection(collectionInput),
+      () => updateToolCollection(collection.id, collectionInput),
+      () => deleteToolCollection(collection.id),
+      () => fetchEmployeeToolGrants("employee/id"),
+      () => replaceEmployeeToolGrants("employee/id", selection),
+      () => fetchConversationToolGrants("conversation/id"),
+      () => replaceConversationToolGrants("conversation/id", selection),
+    ];
+
+    for (const operation of operations) {
+      await expect(operation()).rejects.toBeDefined();
+    }
   });
 });

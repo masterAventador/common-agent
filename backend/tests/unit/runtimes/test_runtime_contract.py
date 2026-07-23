@@ -123,9 +123,24 @@ def test_runtime_request_repr_does_not_expose_prompt_history_or_knowledge_conten
         {"history": ()},
         {"history": (_history_message(role=MessageRole.ASSISTANT),)},
         {"assistant_sequence_number": 3},
+        {"assistant_message_id": _USER_MESSAGE_ID},
+        {"history": ("not-a-runtime-message",)},
         {"allowed_workflow_ids": (_WORKFLOW_ID, _WORKFLOW_ID)},
         {"allowed_workflow_ids": ("not-a-uuid",)},
+        {"allowed_workflow_ids": tuple(UUID(int=index + 1) for index in range(101))},
         {"streaming_breaks_tool_calls": 1},
+        {"allowed_tool_capability_ids": (_CAPABILITY_ID,)},
+        {
+            "allowed_tool_capability_ids": (_CAPABILITY_ID,),
+            "tool_grant_target": "invalid",
+        },
+        {
+            "allowed_tool_capability_ids": tuple(
+                UUID(int=index + 1_000) for index in range(501)
+            )
+        },
+        {"allowed_tool_capability_ids": ("not-a-uuid",)},
+        {"allowed_tool_capability_ids": (_CAPABILITY_ID, _CAPABILITY_ID)},
     ],
 )
 def test_request_rejects_invalid_identity_instruction_history_or_capabilities(
@@ -212,6 +227,25 @@ def test_request_distinguishes_unbound_empty_result_and_retrieved_context() -> N
         _request(knowledge_context=(_chunk(knowledge_base_id="kb-2"),))
     with pytest.raises(RuntimeValidationError, match="knowledge_context"):
         _request(knowledge_context=(_chunk(), _chunk()))
+    with pytest.raises(RuntimeValidationError, match="knowledge_context"):
+        _request(knowledge_context=("not-a-knowledge-chunk",))
+
+
+@pytest.mark.parametrize(
+    ("role", "content"),
+    [("user", "valid"), (MessageRole.USER, 1)],
+)
+def test_runtime_message_rejects_invalid_role_or_content(
+    role: object,
+    content: object,
+) -> None:
+    with pytest.raises(RuntimeValidationError):
+        RuntimeConversationMessage(
+            message_id=_USER_MESSAGE_ID,
+            sequence_number=1,
+            role=role,  # type: ignore[arg-type]
+            content=content,  # type: ignore[arg-type]
+        )
 
 
 def test_request_bounds_knowledge_context() -> None:
@@ -227,7 +261,37 @@ def test_request_bounds_knowledge_context() -> None:
     "values",
     [
         {"sequence": 0, "kind": RuntimeEventKind.DELTA, "delta": "内容"},
+        {"sequence": 1, "kind": "delta", "delta": "内容"},
+        {"sequence": 1, "kind": RuntimeEventKind.DELTA, "delta": None},
         {"sequence": 1, "kind": RuntimeEventKind.DELTA, "delta": ""},
+        {
+            "sequence": 1,
+            "kind": RuntimeEventKind.DELTA,
+            "delta": "内容",
+            "error_code": "wrong",
+        },
+        {
+            "sequence": 1,
+            "kind": RuntimeEventKind.DELTA,
+            "delta": "内容",
+            "tool_call_id": _TOOL_CALL_ID,
+        },
+        {
+            "sequence": 1,
+            "kind": RuntimeEventKind.TOOL_STARTED,
+            "delta": "wrong",
+            "tool_call_id": _TOOL_CALL_ID,
+            "capability_id": _CAPABILITY_ID,
+            "capability_name": "当前时间",
+        },
+        {
+            "sequence": 1,
+            "kind": RuntimeEventKind.TOOL_STARTED,
+            "error_code": "wrong",
+            "tool_call_id": _TOOL_CALL_ID,
+            "capability_id": _CAPABILITY_ID,
+            "capability_name": "当前时间",
+        },
         {"sequence": 1, "kind": RuntimeEventKind.COMPLETED, "delta": "多余"},
         {"sequence": 1, "kind": RuntimeEventKind.FAILED, "error_code": None},
         {"sequence": 1, "kind": RuntimeEventKind.STOPPED, "error_code": "wrong"},

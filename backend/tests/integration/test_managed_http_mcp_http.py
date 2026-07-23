@@ -418,3 +418,117 @@ def test_openapi_preview_selection_and_atomic_import_use_formal_api_and_mysql() 
             ]
     finally:
         asyncio.run(_cleanup(source_id))
+
+
+def test_tool_management_api_returns_stable_errors_for_missing_resources() -> None:
+    missing_source = uuid4()
+    missing_capability = uuid4()
+    missing_collection = uuid4()
+    source_body = {
+        "name": "不存在的托管来源",
+        "description": "验证不存在资源的稳定错误映射",
+        "base_url": "https://business.example/api",
+        "enabled": True,
+    }
+    external_body = {
+        "name": "不存在的外部来源",
+        "description": "验证不存在资源的稳定错误映射",
+        "endpoint_url": "https://partner.example/mcp",
+    }
+
+    with (
+        running_api(TEST_DATABASE_URL) as api_url,
+        authenticated_client(base_url=api_url, timeout=10) as client,
+    ):
+        assert client.get("/api/v1/managed-mcp-sources").status_code == 200
+        assert client.get("/api/v1/external-mcp-sources").status_code == 200
+        managed_requests = (
+            client.get(f"/api/v1/managed-mcp-sources/{missing_source}"),
+            client.put(
+                f"/api/v1/managed-mcp-sources/{missing_source}",
+                json=source_body,
+            ),
+            client.delete(f"/api/v1/managed-mcp-sources/{missing_source}"),
+            client.post(
+                f"/api/v1/managed-mcp-sources/{missing_source}/capabilities",
+                json=_capability_body(),
+            ),
+            client.put(
+                f"/api/v1/managed-mcp-sources/{missing_source}/capabilities/"
+                f"{missing_capability}",
+                json=_capability_body(),
+            ),
+            client.delete(
+                f"/api/v1/managed-mcp-sources/{missing_source}/capabilities/"
+                f"{missing_capability}"
+            ),
+            client.post(
+                f"/api/v1/managed-mcp-sources/{missing_source}/openapi/preview",
+                files={"file": ("api.json", json.dumps(_openapi_document()))},
+            ),
+            client.post(
+                f"/api/v1/managed-mcp-sources/{missing_source}/openapi/import",
+                json={"capabilities": [_capability_body()]},
+            ),
+            client.post(f"/api/v1/managed-mcp-sources/{missing_source}/discover"),
+            client.post(
+                f"/api/v1/managed-mcp-sources/{missing_source}/capabilities/"
+                f"{missing_capability}/test-call",
+                json={"arguments": {}},
+            ),
+            client.get(f"/api/v1/mcp-sources/{missing_source}/credentials"),
+            client.put(
+                f"/api/v1/mcp-sources/{missing_source}/credentials",
+                json={"action": "clear"},
+            ),
+        )
+        for response in managed_requests:
+            assert_error_response(
+                response,
+                status=404,
+                code=(
+                    "mcp_credential_source_not_found"
+                    if "/credentials" in response.request.url.path
+                    else "managed_mcp_source_not_found"
+                ),
+            )
+
+        external_requests = (
+            client.get(f"/api/v1/external-mcp-sources/{missing_source}"),
+            client.put(
+                f"/api/v1/external-mcp-sources/{missing_source}",
+                json=external_body,
+            ),
+            client.delete(f"/api/v1/external-mcp-sources/{missing_source}"),
+            client.post(f"/api/v1/external-mcp-sources/{missing_source}/sync"),
+            client.post(
+                f"/api/v1/external-mcp-sources/{missing_source}/capabilities/"
+                f"{missing_capability}/test-call",
+                json={"arguments": {}},
+            ),
+        )
+        for response in external_requests:
+            assert_error_response(
+                response,
+                status=404,
+                code="external_mcp_source_not_found",
+            )
+
+        collection_body = {
+            "name": "不存在的工具集",
+            "description": "验证错误映射",
+            "source_ids": [str(missing_source)],
+        }
+        assert_error_response(
+            client.put(
+                f"/api/v1/tool-collections/{missing_collection}",
+                json=collection_body,
+            ),
+            status=404,
+            code="tool_collection_not_found",
+        )
+        assert_error_response(
+            client.delete(f"/api/v1/tool-collections/{missing_collection}"),
+            status=404,
+            code="tool_collection_not_found",
+        )

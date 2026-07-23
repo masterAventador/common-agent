@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
-from common_agent.adapters.openapi.managed_http import ManagedHttpOpenApiParser
+from common_agent.adapters.openapi.managed_http import (
+    ManagedHttpOpenApiParser,
+    _argument_name,
+    _ReferenceResolver,
+    _tool_name,
+    _validate_complexity,
+)
 from common_agent.tools.openapi_import import (
     OPENAPI_MAX_FILE_BYTES,
     OpenApiDocumentError,
@@ -284,3 +291,243 @@ def test_parser_rejects_documents_over_operation_or_structure_limits() -> None:
         with pytest.raises(OpenApiDocumentError) as captured:
             ManagedHttpOpenApiParser().parse(json.dumps(document).encode(), "bounded.json")
         assert captured.value.code == "openapi_document_too_complex"
+
+
+def _minimal_document(operation: object = None) -> dict[str, Any]:
+    return {
+        "openapi": "3.0.3",
+        "paths": {
+            "/items": {
+                "get": (
+                    {
+                        "operationId": "getItems",
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                    if operation is None
+                    else operation
+                )
+            }
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("document", "code"),
+    [
+        ({"openapi": "3.0.3"}, "openapi_no_operations"),
+        ({"openapi": "3.0.3", "paths": []}, "openapi_no_operations"),
+        ({"openapi": "3.0.3", "paths": {"/items": []}}, "openapi_format_invalid"),
+        (_minimal_document("get"), "openapi_format_invalid"),
+        (_minimal_document({"operationId": ""}), "openapi_format_invalid"),
+        ({"openapi": "3.0.3", "paths": {}}, "openapi_no_operations"),
+        (
+            {
+                "openapi": "3.0.3",
+                "paths": {
+                    "/a": {"get": {"operationId": "get item"}},
+                    "/b": {"get": {"operationId": "get_item"}},
+                },
+            },
+            "openapi_operation_conflict",
+        ),
+        (
+            {
+                "openapi": "3.0.3",
+                "paths": {"items": {"get": {"operationId": "getItems"}}},
+            },
+            "openapi_operation_unsupported",
+        ),
+    ],
+)
+def test_parser_rejects_invalid_path_and_operation_shapes(
+    document: dict[str, Any],
+    code: str,
+) -> None:
+    with pytest.raises(OpenApiDocumentError) as captured:
+        ManagedHttpOpenApiParser().parse(json.dumps(document).encode(), "invalid.json")
+
+    assert captured.value.code == code
+
+
+@pytest.mark.parametrize(
+    ("parameter", "path", "code"),
+    [
+        ({"in": "query"}, "/items", "openapi_operation_unsupported"),
+        ({"name": "value", "in": "formData"}, "/items", "openapi_operation_unsupported"),
+        (
+            {"name": "Authorization", "in": "header"},
+            "/items",
+            "openapi_operation_unsupported",
+        ),
+        (
+            {"name": "value", "in": "header", "schema": {"type": "array"}},
+            "/items",
+            "openapi_operation_unsupported",
+        ),
+        (
+            {"name": "value", "in": "query", "schema": {"type": "object"}},
+            "/items",
+            "openapi_operation_unsupported",
+        ),
+        (
+            {"name": "itemId", "in": "path", "required": False},
+            "/items/{itemId}",
+            "openapi_operation_unsupported",
+        ),
+        (
+            {"name": "otherId", "in": "path", "required": True},
+            "/items/{itemId}",
+            "openapi_operation_unsupported",
+        ),
+    ],
+)
+def test_parser_rejects_unsafe_or_unrepresentable_parameters(
+    parameter: dict[str, Any],
+    path: str,
+    code: str,
+) -> None:
+    document = _minimal_document()
+    operation = document["paths"].pop("/items")
+    document["paths"][path] = operation
+    operation["get"]["parameters"] = [parameter]
+
+    with pytest.raises(OpenApiDocumentError) as captured:
+        ManagedHttpOpenApiParser().parse(json.dumps(document).encode(), "invalid.json")
+
+    assert captured.value.code == code
+
+
+@pytest.mark.parametrize(
+    "request_body",
+    [
+        {},
+        {"content": {"text/plain": {"schema": {"type": "string"}}}},
+        {"content": {"application/json": {"schema": {"type": "string"}}}},
+        {
+            "content": {
+                "application/json": {
+                    "schema": {"type": "object", "required": "name"}
+                }
+            }
+        },
+    ],
+)
+def test_parser_rejects_request_bodies_that_cannot_be_exposed_as_arguments(
+    request_body: dict[str, Any],
+) -> None:
+    document = _minimal_document()
+    document["paths"]["/items"]["get"]["requestBody"] = request_body
+
+    with pytest.raises(OpenApiDocumentError) as captured:
+        ManagedHttpOpenApiParser().parse(json.dumps(document).encode(), "invalid.json")
+
+    assert captured.value.code == "openapi_operation_unsupported"
+
+
+def test_parser_normalizes_default_names_and_schema_composition() -> None:
+    document = {
+        "openapi": "3.1.0",
+        "info": {"title": "", "version": 3},
+        "paths": {
+            "/items": {
+                "get": {
+                    "summary": "x" * 129,
+                    "parameters": [
+                        {
+                            "name": "9-page",
+                            "in": "query",
+                            "schema": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "oneOf": [{"type": "array"}],
+                                "anyOf": [{"type": "array"}],
+                                "additionalProperties": {"type": "string"},
+                            },
+                        }
+                    ],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+
+    preview = ManagedHttpOpenApiParser().parse(
+        json.dumps(document).encode(),
+        "fallback-name.json",
+    )
+
+    draft = preview.drafts[0]
+    assert preview.title == "fallback-name.json"
+    assert preview.version == ""
+    assert draft.remote_name == "get__items"
+    assert draft.parameter_bindings[0].argument_name == "parameter_9_page"
+    assert "显示名称不能超过 128 个字符" in draft.issues
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"allOf": []},
+        {"properties": []},
+        {"properties": {"name": {"type": "string"}}, "required": "name"},
+        {"oneOf": []},
+        {"anyOf": "invalid"},
+        {"items": "invalid"},
+    ],
+)
+def test_reference_resolver_rejects_invalid_schema_shapes(schema: object) -> None:
+    with pytest.raises(OpenApiDocumentError) as captured:
+        _ReferenceResolver({}).schema(schema)
+
+    assert captured.value.code == "openapi_operation_unsupported"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not-an-object",
+        {"$ref": 1},
+        {"$ref": "#/missing"},
+    ],
+)
+def test_reference_resolver_rejects_invalid_object_references(value: object) -> None:
+    with pytest.raises(OpenApiDocumentError) as captured:
+        _ReferenceResolver({}).resolve_object(value)
+
+    assert captured.value.code == "openapi_reference_invalid"
+
+
+def test_reference_resolver_rejects_scalar_targets_and_excessive_depth() -> None:
+    resolver = _ReferenceResolver({"value": "scalar", "object": {}})
+    with pytest.raises(OpenApiDocumentError) as scalar:
+        resolver.resolve_object({"$ref": "#/value"})
+    with pytest.raises(OpenApiDocumentError) as object_depth:
+        resolver.resolve_object({"$ref": "#/object"}, ("ref",) * 65)
+    with pytest.raises(OpenApiDocumentError) as schema_depth:
+        resolver.schema({}, depth=65)
+
+    assert scalar.value.code == "openapi_reference_invalid"
+    assert object_depth.value.code == "openapi_document_too_complex"
+    assert schema_depth.value.code == "openapi_document_too_complex"
+
+
+def test_yaml_and_complexity_validators_reject_ambiguous_keys() -> None:
+    with pytest.raises(OpenApiDocumentError) as duplicate:
+        ManagedHttpOpenApiParser().parse(
+            b"openapi: 3.0.3\npaths: {}\npaths: {}\n",
+            "duplicate.yaml",
+        )
+    with pytest.raises(OpenApiDocumentError) as malformed:
+        ManagedHttpOpenApiParser().parse(b"openapi: [", "malformed.yaml")
+    with pytest.raises(OpenApiDocumentError) as nested_key:
+        _validate_complexity({"nested": {1: "value"}})
+
+    assert duplicate.value.code == "openapi_format_invalid"
+    assert malformed.value.code == "openapi_format_invalid"
+    assert nested_key.value.code == "openapi_format_invalid"
+
+
+def test_name_normalizers_handle_degenerate_values() -> None:
+    assert _argument_name("---") == "parameter"
+    assert _tool_name("_", "get", "/items") == "get_items"
+    assert _tool_name("x", "get", "/items") == "x_tool"
