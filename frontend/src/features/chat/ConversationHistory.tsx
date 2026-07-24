@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Divider, Empty, Skeleton, Typography } from "antd";
 import { History } from "lucide-react";
+import { useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -44,6 +45,12 @@ export function ConversationHistory({ readOnly = false }: { readOnly?: boolean }
       await queryClient.resetQueries({ queryKey: ["conversations"] });
     },
   });
+  const { isSuccess: deletionSucceeded, reset: resetDeletion } = deletion;
+  useEffect(() => {
+    if (!deletionSucceeded) return;
+    const timer = setTimeout(resetDeletion, 3000);
+    return () => clearTimeout(timer);
+  }, [deletionSucceeded, resetDeletion]);
 
   return (
     <section className="app-conversation-history" role="region" aria-label="历史会话">
@@ -114,9 +121,11 @@ export function ConversationHistory({ readOnly = false }: { readOnly?: boolean }
           title="会话删除失败"
           description={getResourceDeletionErrorMessage(deletion.error)}
         />
-      ) : (
-        deletion.isSuccess && `会话“${deletion.variables.title}”已删除`
-      )}
+      ) : deletion.isSuccess ? (
+        <Typography.Text type="secondary">
+          {`会话“${deletion.variables?.title ?? ""}”已删除`}
+        </Typography.Text>
+      ) : null}
     </section>
   );
 }
