@@ -25,7 +25,6 @@ import {
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
-import { SystemStatus } from "../components/SystemStatus";
 import { BrandLogo } from "../components/BrandLogo";
 import { getErrorMessage } from "../api/errors";
 import {
@@ -224,7 +223,6 @@ function AuthenticatedApp() {
                 </Button>
               </>
             ) : null}
-            <SystemStatus />
             <Tag color="processing">{auth.session?.email}</Tag>
             <Button
               size="small"

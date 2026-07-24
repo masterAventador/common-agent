@@ -1843,8 +1843,7 @@ a,
 }
 
 @media (max-width: 640px) {
-  .app-header-actions > .ant-space-item:has(.ant-tag),
-  .app-header-actions > .ant-space-item:has(.system-status) {
+  .app-header-actions > .ant-space-item:has(.ant-tag) {
     display: none;
   }
 

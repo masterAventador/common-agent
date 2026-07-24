@@ -21,22 +21,6 @@ vi.mock("../api/auth", () => ({
   resetPassword: vi.fn(),
 }));
 
-vi.mock("../api/system", () => ({
-  fetchSystemStatus: vi.fn().mockResolvedValue({
-    backend: "available",
-    service: "common-agent-api",
-    version: "0.1.0",
-    integration_mode: "real",
-    model: { provider: "bailian", status: "configured" },
-    knowledge: {
-      provider: "ragflow",
-      availability: "available",
-      version: "v0.26.4",
-      error_code: null,
-    },
-  }),
-}));
-
 const tenantAccesses = vi.hoisted(() => [
   {
     id: "10000000-0000-4000-8000-000000000001",
