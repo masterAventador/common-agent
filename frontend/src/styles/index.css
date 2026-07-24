@@ -507,6 +507,11 @@ select {
   margin-bottom: 8px;
 }
 
+.chat-message-body > .ant-typography:last-child,
+.chat-message-content.ant-typography:last-child {
+  margin-bottom: 0;
+}
+
 .chat-citations {
   display: grid;
   margin-top: 12px;

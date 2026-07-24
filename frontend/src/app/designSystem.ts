@@ -12,6 +12,8 @@ export const designTheme: ThemeConfig = {
     colorBgLayout: "#FAFAFA",
     colorBgContainer: "#FFFFFF",
     colorBgElevated: "#FFFFFF",
+    controlItemBgActive: "#F1F1EF",
+    controlItemBgActiveHover: "#E8E8E4",
     colorBorder: "#EDEDE9",
     colorBorderSecondary: "#EDEDE9",
     colorText: "#37352F",
@@ -63,6 +65,9 @@ export const designTheme: ThemeConfig = {
       activeBorderColor: "#B8B8B2",
       activeOutlineColor: "transparent",
       hoverBorderColor: "#B8B8B2",
+      optionSelectedBg: "#F1F1EF",
+      optionSelectedColor: "#191919",
+      optionActiveBg: "#F5F5F2",
     },
     Table: {
       headerBg: "#FAFAFA",
