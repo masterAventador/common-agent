@@ -3,6 +3,7 @@ from common_agent.tenancy.context import (
     activate_tenant,
     bind_tenant,
     current_tenant,
+    system_tenant_access,
     tenant_namespace,
 )
 from common_agent.tenancy.models import Tenant, TenantAccess, TenantRole
@@ -18,5 +19,6 @@ __all__ = [
     "activate_tenant",
     "bind_tenant",
     "current_tenant",
+    "system_tenant_access",
     "tenant_namespace",
 ]

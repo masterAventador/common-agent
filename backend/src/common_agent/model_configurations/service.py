@@ -20,7 +20,10 @@ from common_agent.pagination import (
     decode_keyset_cursor,
     encode_keyset_cursor,
 )
-from common_agent.ports.model_configurations import ModelConfigurationUnitOfWorkFactory
+from common_agent.ports.model_configurations import (
+    ModelConfigurationAlreadyExists,
+    ModelConfigurationUnitOfWorkFactory,
+)
 
 
 class ModelConfigurationServiceError(Exception):
@@ -134,6 +137,23 @@ class ModelConfigurationService:
             await unit_of_work.model_configurations.add(candidate)
             await unit_of_work.commit()
         return candidate
+
+    async def ensure(self, value: ModelConfigurationInput) -> ModelConfiguration:
+        """幂等地按模型标识预置配置: 已存在则原样返回, 缺失才创建。
+
+        用于默认工作区启动时的常用模型 seed, 重复执行不会重复创建, 也不覆盖
+        既有配置的显示名或启用状态。
+        """
+        async with self._unit_of_work_factory() as unit_of_work:
+            existing = await unit_of_work.model_configurations.get_by_identifier(
+                value.model_identifier
+            )
+        if existing is not None:
+            return existing
+        try:
+            return await self.create(value)
+        except ModelConfigurationAlreadyExists:
+            return await self.get_by_identifier(value.model_identifier)
 
     async def update(
         self,

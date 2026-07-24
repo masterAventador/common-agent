@@ -6,12 +6,28 @@ from uuid import UUID
 
 import pytest
 
+from common_agent.model_configurations.seeds import (
+    seed_common_model_configurations_for_tenants,
+)
 from common_agent.tenancy.models import TenantAccess, TenantRole
 from common_agent.tenancy.service import TenancyError, TenancyService
+from tests.unit.model_configurations.support import (
+    TenantAwareRepositoryHub,
+    build_tenant_scoped_service,
+)
 
 USER_ID = UUID("20000000-0000-4000-8000-000000000001")
 TENANT_A = UUID("10000000-0000-4000-8000-000000000001")
 TENANT_B = UUID("10000000-0000-4000-8000-000000000002")
+
+_SEED_IDENTIFIERS = {
+    "qwen-max",
+    "qwen-plus",
+    "qwen-turbo",
+    "qwen-long",
+    "deepseek-r1",
+    "deepseek-v3",
+}
 
 
 class FakeTenancyStore:
@@ -129,3 +145,40 @@ def test_new_tenant_runs_platform_catalog_initializer_before_returning() -> None
 
     asyncio.run(exercise())
     assert initialized == [TENANT_B]
+
+
+def test_new_tenant_initializer_seeds_full_model_catalog() -> None:
+    """新建工作区经 tenant_initializer 后, 该工作区应自动获得全部预置模型。"""
+    expected = TenantAccess(TENANT_B, USER_ID, TenantRole.OWNER)
+    hub = TenantAwareRepositoryHub()
+    service = build_tenant_scoped_service(hub)
+
+    class CreatingStore(FakeTenancyStore):
+        async def create_tenant(
+            self,
+            *,
+            owner_user_id: UUID,
+            organization_id: UUID,
+            name: str,
+            now: datetime,
+        ) -> TenantAccess:
+            del owner_user_id, organization_id, name, now
+            return expected
+
+    async def initialize(tenant_id: UUID) -> None:
+        await seed_common_model_configurations_for_tenants(service, (tenant_id,))
+
+    async def exercise() -> None:
+        await TenancyService(
+            CreatingStore(()),
+            tenant_initializer=initialize,
+        ).create_tenant(
+            owner_user_id=USER_ID,
+            organization_id=UUID(int=3),
+            name="安师大实打实的",
+        )
+
+    asyncio.run(exercise())
+
+    identifiers = {item.model_identifier for item in hub.repository_for(TENANT_B).items.values()}
+    assert identifiers == _SEED_IDENTIFIERS

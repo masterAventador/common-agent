@@ -128,14 +128,16 @@ from common_agent.model_configurations import (
 from common_agent.model_configurations.defaults import (
     PLATFORM_DEFAULT_MODEL_IDENTIFIER,
 )
+from common_agent.model_configurations.seeds import (
+    seed_common_model_configurations_for_tenants,
+)
 from common_agent.models.base import TextStreamingModel
 from common_agent.observability import MetricsRegistry, configure_json_logging
 from common_agent.tenancy import (
     TenancyService,
-    TenantAccess,
-    TenantRole,
     bind_tenant,
     current_tenant,
+    system_tenant_access,
 )
 from common_agent.tenancy.constants import DEFAULT_TENANT_ID
 from common_agent.tools.credential_service import ToolCredentialService
@@ -256,6 +258,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
             async def tenant_initializer(tenant_id: UUID) -> None:
                 await platform_tool_seeder.seed(tenant_id)
+                await seed_common_model_configurations_for_tenants(
+                    model_configurations, (tenant_id,)
+                )
 
         else:
             ragflow_settings: RagFlowSettings = app.state.ragflow_settings
@@ -298,6 +303,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
             async def tenant_initializer(tenant_id: UUID) -> None:
                 await platform_tool_seeder.seed(tenant_id)
+                await seed_common_model_configurations_for_tenants(
+                    model_configurations, (tenant_id,)
+                )
                 try:
                     await ragflow_identities.ensure(tenant_id)
                 except Exception as error:
@@ -426,7 +434,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             guard=resource_guard,
         )
         app.state.employees = employees
-        with bind_tenant(_system_tenant_access(DEFAULT_TENANT_ID)):
+        await seed_common_model_configurations_for_tenants(model_configurations, tenant_ids)
+        with bind_tenant(system_tenant_access(DEFAULT_TENANT_ID)):
             platform_default_model = await model_configurations.get_by_identifier(
                 PLATFORM_DEFAULT_MODEL_IDENTIFIER
             )
@@ -606,11 +615,3 @@ def create_app() -> FastAPI:
         responses=protected_responses,
     )
     return app
-
-
-def _system_tenant_access(tenant_id: UUID) -> TenantAccess:
-    return TenantAccess(
-        tenant_id=tenant_id,
-        user_id=UUID(int=0),
-        role=TenantRole.OWNER,
-    )
