@@ -14,6 +14,7 @@ import {
   Skeleton,
   Space,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import { Pencil, Plus } from "lucide-react";
@@ -119,13 +120,21 @@ export function ToolCollectionsSection({ readOnly }: { readOnly: boolean }) {
             聚合多个 MCP 来源；授权时保存当时的精确能力快照，后续新增能力不会自动扩权。
           </Paragraph>
         </div>
-        <Button
-          icon={<Plus size={16} />}
-          disabled={readOnly || selectableSources.length === 0}
-          onClick={() => setEditor({ mode: "create" })}
+        <Tooltip
+          title={
+            !readOnly && selectableSources.length === 0
+              ? "请先在上方创建平台托管 MCP 或外部 MCP 来源，业务工具集需要关联至少一个来源"
+              : undefined
+          }
         >
-          新建业务工具集
-        </Button>
+          <Button
+            icon={<Plus size={16} />}
+            disabled={readOnly || selectableSources.length === 0}
+            onClick={() => setEditor({ mode: "create" })}
+          >
+            新建业务工具集
+          </Button>
+        </Tooltip>
       </Flex>
       {query.isPending ? <Skeleton active paragraph={{ rows: 4 }} /> : null}
       {query.isError ? (
