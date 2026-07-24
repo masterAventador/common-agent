@@ -193,7 +193,7 @@ describe("KnowledgeBasesPage", () => {
     await user.click(
       await screen.findByRole("button", { name: `删除知识库 ${knowledgeBase.name}` }),
     );
-    expect(screen.getByText("RAGFlow 中的文档、切片和索引都会被永久删除。")).toBeInTheDocument();
+    expect(screen.getByText("知识库中的文档、切片和索引都会被永久删除。")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: `确认删除知识库 ${knowledgeBase.name}` }));
 
     await waitFor(() =>

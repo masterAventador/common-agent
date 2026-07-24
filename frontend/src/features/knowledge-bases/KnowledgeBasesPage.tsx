@@ -203,7 +203,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
             <Title level={2}>知识库</Title>
           </Space>
           <Typography.Paragraph type="secondary">
-            创建通用知识库，上传文档并查看 RAGFlow 返回的真实解析状态。
+            创建通用知识库，上传文档并查看真实解析状态。
           </Typography.Paragraph>
         </div>
         <Button
@@ -296,7 +296,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
                   <ResourceDeleteButton
                     resourceKind="知识库"
                     resourceName={activeKnowledgeBase.name}
-                    impact="RAGFlow 中的文档、切片和索引都会被永久删除。"
+                    impact="知识库中的文档、切片和索引都会被永久删除。"
                     loading={deleteMutation.isPending}
                     disabled={readOnly || deleteMutation.isPending || uploadBusy}
                     onConfirm={() => deleteMutation.mutateAsync(activeKnowledgeBase)}

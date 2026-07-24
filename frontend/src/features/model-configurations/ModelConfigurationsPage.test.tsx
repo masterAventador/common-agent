@@ -63,7 +63,6 @@ describe("ModelConfigurationsPage", () => {
     expect(await screen.findByRole("heading", { name: "模型管理" })).toBeInTheDocument();
     expect(screen.getByText("Qwen Plus")).toBeInTheDocument();
     expect(screen.getByText("qwen-plus")).toBeInTheDocument();
-    expect(screen.getByText("阿里百炼")).toBeInTheDocument();
     expect(screen.getByText("启用")).toBeInTheDocument();
     expect(screen.getByText("工具调用自动非流式")).toBeInTheDocument();
     expect(screen.queryByText("模型目录")).not.toBeInTheDocument();
@@ -78,7 +77,7 @@ describe("ModelConfigurationsPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "创建模型" }));
     await user.type(screen.getByRole("textbox", { name: "显示名称" }), "Qwen Max");
-    await user.type(screen.getByRole("textbox", { name: "百炼模型标识" }), "qwen-max");
+    await user.type(screen.getByRole("textbox", { name: "模型标识" }), "qwen-max");
     await user.click(screen.getByRole("button", { name: "确认创建" }));
 
     await waitFor(() =>

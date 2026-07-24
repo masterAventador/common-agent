@@ -159,7 +159,7 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
             <Title level={2}>模型管理</Title>
           </Space>
           <Typography.Paragraph type="secondary">
-            管理当前工作区可用的百炼聊天模型；平台凭据由服务端统一保管。
+            管理当前工作区可用的聊天模型；平台凭据由服务端统一保管。
           </Typography.Paragraph>
         </div>
         <Button
@@ -176,7 +176,7 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
         aria-label="搜索模型"
         allowClear
         value={search}
-        placeholder="搜索显示名称、百炼模型标识或完整 ID"
+        placeholder="搜索显示名称、模型标识或完整 ID"
         onChange={(event) => setSearch(event.target.value)}
       />
 
@@ -230,8 +230,6 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
               extra={<Tag color={item.enabled ? "success" : "default"}>{item.enabled ? "启用" : "停用"}</Tag>}
             >
               <div className="model-configuration-details">
-                <Text type="secondary">提供商</Text>
-                <Text>阿里百炼</Text>
                 <Text type="secondary">模型标识</Text>
                 <Text code>{item.model_identifier}</Text>
                 <Text type="secondary">工具调用流</Text>
@@ -309,7 +307,7 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
             <Input autoFocus placeholder="例如：Qwen Plus" />
           </Form.Item>
           <Form.Item
-            label="百炼模型标识"
+            label="模型标识"
             name="model_identifier"
             rules={[
               { required: true, whitespace: true, max: 128 },
@@ -318,7 +316,7 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
                 message: "只能包含字母、数字、点、下划线和连字符",
               },
             ]}
-            extra="填写百炼兼容模式支持的模型标识，不需要填写 API Key。"
+            extra="填写平台支持的模型标识，不需要填写 API Key。"
           >
             <Input placeholder="例如：qwen-plus" />
           </Form.Item>
