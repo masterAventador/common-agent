@@ -159,7 +159,6 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
       >
         <div>
           <Space align="center">
-            <Bot aria-hidden="true" className="model-configurations-title-icon" size={22} />
             <Title level={2}>模型管理</Title>
           </Space>
           <Typography.Paragraph type="secondary">

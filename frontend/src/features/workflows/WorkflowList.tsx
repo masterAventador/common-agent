@@ -32,12 +32,6 @@ export function WorkflowList({
       <Flex justify="space-between" align="flex-start" gap={24} className="workflows-heading">
         <div>
           <Space align="center">
-            <WorkflowIcon
-              aria-hidden="true"
-              className="workflows-title-icon"
-              size={22}
-              strokeWidth={1.75}
-            />
             <Title level={2}>工作流</Title>
           </Space>
           <Paragraph type="secondary">

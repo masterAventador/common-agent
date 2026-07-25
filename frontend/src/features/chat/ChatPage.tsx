@@ -1,5 +1,5 @@
 import { Alert, Button, Empty, Flex, Select, Skeleton, Space, Typography } from "antd";
-import { MessageSquare, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 import { getErrorMessage } from "../../api/errors";
 import { ChatWorkspace } from "./ChatWorkspace";
@@ -98,7 +98,6 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
       <Flex justify="space-between" align="center" gap={24} className="chat-page-heading">
         <div>
           <Space align="center">
-            <MessageSquare aria-hidden="true" className="chat-title-icon" size={22} strokeWidth={1.75} />
             <Title level={2}>AI 会话</Title>
           </Space>
           <Typography.Paragraph type="secondary">

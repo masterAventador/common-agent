@@ -297,7 +297,6 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
       <Flex justify="space-between" align="flex-start" gap={24} className="employees-page-heading">
         <div>
           <Space align="center">
-            <Bot aria-hidden="true" className="employees-title-icon" size={22} strokeWidth={1.75} />
             <Title level={2}>数字员工</Title>
           </Space>
           <Typography.Paragraph type="secondary">

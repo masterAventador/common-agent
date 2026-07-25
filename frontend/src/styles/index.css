@@ -195,11 +195,6 @@ select {
   margin-top: 0;
 }
 
-.knowledge-title-icon {
-  color: var(--text-heading);
-  font-size: 24px;
-}
-
 .knowledge-empty-card {
   padding: 48px 0;
   border-style: dashed;
@@ -286,11 +281,6 @@ select {
 
 .employees-page-heading .ant-typography {
   margin-top: 0;
-}
-
-.employees-title-icon {
-  color: var(--text-heading);
-  font-size: 24px;
 }
 
 .employees-inline-alert {
@@ -397,11 +387,6 @@ select {
   margin-top: 0;
 }
 
-.chat-title-icon {
-  color: var(--text-heading);
-  font-size: 24px;
-}
-
 .chat-employee-select {
   width: 220px;
 }
@@ -485,23 +470,26 @@ select {
 
 .chat-welcome-mark {
   display: grid;
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
   place-items: center;
   border-radius: 16px;
   background: var(--primary);
   color: var(--bg-container);
 }
 
+/* 开场大标题按原型 .welcome h1：34px / 700 / -.02em */
 .chat-welcome-title.ant-typography {
-  margin: 4px 0 0;
-  font-size: 28px;
+  margin: 12px 0 0;
+  font-size: 34px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .chat-welcome .ant-typography-secondary {
   max-width: 480px;
+  font-size: 16px;
 }
 
 /* 一轮对话：AI 回复上方署名后正文平铺，用户消息只有右对齐气泡（原型 .turn / .ubub） */
@@ -716,11 +704,6 @@ select {
 
 .workflows-heading .ant-typography {
   margin-top: 0;
-}
-
-.workflows-title-icon {
-  color: var(--text-heading);
-  font-size: 24px;
 }
 
 .workflows-alert {
@@ -1528,14 +1511,6 @@ a,
   margin-bottom: 0;
 }
 
-.employees-title-icon,
-.model-configurations-title-icon,
-.knowledge-title-icon,
-.chat-title-icon,
-.workflows-title-icon {
-  color: var(--text-heading);
-}
-
 .tools-inline-alert {
   margin-bottom: 16px;
 }
@@ -2205,6 +2180,7 @@ a,
 }
 
 .model-configuration-table .ant-table-thead > tr > th {
+  padding: 14px 20px;
   font-family: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
   font-size: 10.5px;
   font-weight: 500;
@@ -2213,7 +2189,9 @@ a,
   color: var(--text-faint);
 }
 
+/* 行高按原型的 .tr（padding 14px 20px），不用 antd 默认的宽松行距 */
 .model-configuration-table .ant-table-tbody > tr > td {
+  padding: 14px 20px;
   border-bottom-color: var(--border);
 }
 
@@ -2224,9 +2202,9 @@ a,
 }
 
 .model-cell .resource-card-icon {
-  width: 36px;
-  height: 36px;
-  flex-basis: 36px;
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
   border-radius: 9px;
 }
 

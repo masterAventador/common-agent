@@ -19,7 +19,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { BookOpen, Database, FileText, Pencil, Plus, RefreshCw } from "lucide-react";
+import { BookOpen, FileText, Pencil, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -221,7 +221,6 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
       <Flex justify="space-between" align="flex-start" gap={24} className="knowledge-page-heading">
         <div>
           <Space align="center">
-            <Database aria-hidden="true" className="knowledge-title-icon" size={22} strokeWidth={1.75} />
             <Title level={2}>知识库</Title>
           </Space>
           <Typography.Paragraph type="secondary">
