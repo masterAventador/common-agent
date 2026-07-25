@@ -774,6 +774,17 @@ select {
   white-space: nowrap;
 }
 
+.workflow-list-item .resource-card-icon {
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
+  border-radius: 8px;
+}
+
+.workflow-list-item .resource-card-head {
+  gap: 10px;
+}
+
 .workflow-list-item:hover,
 .workflow-list-item:focus-visible,
 .workflow-canvas-node-item:hover,

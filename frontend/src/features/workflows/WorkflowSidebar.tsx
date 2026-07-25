@@ -1,5 +1,11 @@
 import { Button, Empty, Input, Typography } from "antd";
-import { Bot, CircleCheckBig, CirclePlay, Database } from "lucide-react";
+import {
+  Bot,
+  CircleCheckBig,
+  CirclePlay,
+  Database,
+  Workflow as WorkflowIcon,
+} from "lucide-react";
 import type { Dispatch, DragEvent, ReactNode } from "react";
 
 import type { Workflow, WorkflowNodeType } from "../../api/workflows";
@@ -71,7 +77,14 @@ export function WorkflowSidebar({
               disabled={editingLocked && state.workflowId !== workflow.id}
               onClick={() => onSelectWorkflow(workflow)}
             >
-              <Text strong>{workflow.name}</Text>
+              <div className="resource-card-head">
+                <span className="resource-card-icon" aria-hidden="true">
+                  <WorkflowIcon size={18} strokeWidth={1.75} />
+                </span>
+                <Text strong className="resource-card-title">
+                  {workflow.name}
+                </Text>
+              </div>
               <Text type="secondary">
                 {workflow.nodes.length} 个节点 · {workflow.edges.length} 条连线
               </Text>
