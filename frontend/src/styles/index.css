@@ -429,8 +429,8 @@ select {
 
 .chat-messages-heading {
   display: flex;
-  min-height: 72px;
-  padding: 14px 20px;
+  min-height: 0;
+  padding: 8px 20px;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border);

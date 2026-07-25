@@ -93,10 +93,8 @@ export function ChatWorkspace({
     <div className="chat-workspace">
       <main className="chat-messages-panel" role="region" aria-label="消息区域">
         <div className="chat-messages-heading">
-          <div>
-            <Title level={3}>{selectedConversation?.title ?? "新会话"}</Title>
-            {employee ? <Text type="secondary">{employee.name}</Text> : null}
-          </div>
+          {/* 会话标题就是用户自己发的第一句话, 页面上方已经有页头, 这里不再重复 */}
+          {employee ? <Text type="secondary">{employee.name}</Text> : <span />}
           <Flex align="center" gap={8}>
             {activeMessage && <Tag color="processing">正在生成</Tag>}
             <Button size="small" disabled={readOnly} onClick={startNewConversation}>

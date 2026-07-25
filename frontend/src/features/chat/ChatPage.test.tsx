@@ -1193,7 +1193,8 @@ describe("ChatPage", () => {
     renderPage();
 
     const input = await screen.findByRole("textbox", { name: "消息输入" });
-    await screen.findByRole("heading", { name: "知识问答" });
+    // 等开场语出现再操作输入框, 确认会话与员工上下文已经就位
+    await screen.findByRole("heading", { name: `你好，我是${employee.name}` });
     await user.type(input, "保留换行");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
     expect(chatApi.sendConversationMessage).not.toHaveBeenCalled();
@@ -1289,7 +1290,8 @@ describe("ChatPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole("heading", { name: "知识问答" });
+    // 等开场语出现再操作输入框, 确认会话与员工上下文已经就位
+    await screen.findByRole("heading", { name: `你好，我是${employee.name}` });
     await user.type(screen.getByRole("textbox", { name: "消息输入" }), userMessage.content);
     await user.click(screen.getByRole("button", { name: "发送消息" }));
     await waitFor(() => expect(chatApi.streamOptions).toBeDefined());
