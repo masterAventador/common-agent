@@ -17,8 +17,8 @@ from sqlalchemy import text
 
 from common_agent.adapters.persistence.database import Database
 from tests.support.http import available_port, running_api
-from tests.support.ragflow import provision_api_key
 from tests.support.migrations import current_head_revision
+from tests.support.ragflow import provision_api_key
 from tests.support.settings import TEST_DATABASE_URL
 
 
