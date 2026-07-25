@@ -405,13 +405,19 @@ select {
   gap: 14px;
 }
 
-.chat-messages-panel,
+.chat-messages-panel {
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .chat-employee-panel {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--bg-container);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .chat-employee-panel {
@@ -548,10 +554,22 @@ select {
 
 .chat-citations {
   display: grid;
-  margin-top: 12px;
-  padding-top: 10px;
-  gap: 8px;
-  border-top: 1px solid var(--border);
+  margin: 16px 0 6px;
+  padding: 10px 12px;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-container);
+}
+
+.chat-citations > .ant-typography:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .chat-citation-item {
@@ -2295,4 +2313,54 @@ a,
   height: 32px;
   padding: 0 10px;
   font-size: 13px;
+}
+
+/* 对话间距按原型：整轮 30px、用户气泡下 26px */
+.chat-message.is-user {
+  margin-bottom: 4px;
+}
+
+.chat-message.is-assistant + .chat-message.is-user {
+  margin-top: 12px;
+}
+
+/* AI 回复顶部署名行，对应原型的「头像 · 名称 · 用时」 */
+.chat-message.is-assistant .chat-message-author {
+  width: 26px;
+  height: 26px;
+  flex-basis: 26px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: var(--bg-container);
+  font-size: 10px;
+}
+
+/* 对话区按原型：扁平无卡片，正文居中限宽，输入区独立浮起 */
+.chat-messages-heading {
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+
+.chat-message-scroll {
+  background: transparent;
+}
+
+.chat-message-scroll > .chat-message,
+.chat-message-scroll > .chat-welcome {
+  width: 100%;
+  max-width: 720px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.chat-message.is-user {
+  justify-content: flex-end;
+}
+
+.chat-composer {
+  max-width: 720px;
+  margin: 12px auto;
+  border-color: var(--border-strong);
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
 }
