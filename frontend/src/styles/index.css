@@ -940,8 +940,8 @@ select {
 
 .react-flow__node.is-run-completed .workflow-node-card {
   border-color: var(--success);
-  background: #e6f5ec;
-  box-shadow: 0 0 0 3px rgba(53, 164, 111, 0.12);
+  background: #e6f0ec;
+  box-shadow: 0 0 0 3px rgba(17, 112, 103, 0.12);
 }
 
 .react-flow__node.is-run-failed .workflow-node-card {
@@ -1089,8 +1089,8 @@ select {
 }
 
 .workflow-run-node.is-completed {
-  border-color: #2c8754;
-  background: #e6f5ec;
+  border-color: var(--accent);
+  background: #e6f0ec;
 }
 
 .workflow-run-node.is-completed .workflow-run-node-dot {
@@ -1662,8 +1662,8 @@ a,
 }
 
 .chat-employee-avatar {
-  background: #e6f5ec;
-  color: #2c8754;
+  background: #e6f0ec;
+  color: var(--accent);
 }
 
 .chat-citation-item,
