@@ -14,6 +14,7 @@ from common_agent.domain.knowledge import (
     KnowledgeRetrievalRequest,
     KnowledgeRetrievalResult,
     KnowledgeServiceAvailability,
+    UpdateKnowledgeBaseRequest,
 )
 from common_agent.knowledge.base import (
     KnowledgeBaseNotFound,
@@ -218,6 +219,13 @@ class KnowledgeBaseService:
             await self._knowledge.delete_knowledge_base(created.id)
             raise KnowledgeBaseNotFound()
         return created
+
+    async def update_knowledge_base(
+        self, knowledge_base_id: str, request: UpdateKnowledgeBaseRequest
+    ) -> KnowledgeBaseSummary:
+        await self._ensure_available()
+        await self._ensure_owned(knowledge_base_id)
+        return await self._knowledge.update_knowledge_base(knowledge_base_id, request)
 
     async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
         await self._ensure_available()

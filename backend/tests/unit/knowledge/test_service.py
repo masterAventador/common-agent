@@ -21,6 +21,7 @@ from common_agent.knowledge.base import (
     KnowledgeBaseNotFound,
     KnowledgeDocumentNotFound,
     KnowledgeDocumentRetryRejected,
+    UpdateKnowledgeBaseRequest,
 )
 from common_agent.knowledge.service import (
     MAX_DOCUMENT_SIZE_BYTES,
@@ -48,6 +49,7 @@ class _KnowledgeProbe:
         self.knowledge_bases: list[KnowledgeBaseSummary] = []
         self.get_calls: list[str] = []
         self.deleted: list[str] = []
+        self.updated: list[tuple[str, UpdateKnowledgeBaseRequest]] = []
         self.page_calls: list[ListPageRequest] = []
 
     async def status(self) -> KnowledgeServiceStatus:
@@ -90,6 +92,24 @@ class _KnowledgeProbe:
         )
         self.knowledge_bases.append(created)
         return created
+
+    async def update_knowledge_base(
+        self, knowledge_base_id: str, request: UpdateKnowledgeBaseRequest
+    ) -> KnowledgeBaseSummary:
+        self.updated.append((knowledge_base_id, request))
+        for index, value in enumerate(self.knowledge_bases):
+            if value.id != knowledge_base_id:
+                continue
+            renamed = KnowledgeBaseSummary(
+                id=value.id,
+                name=request.name,
+                description=request.description,
+                document_count=value.document_count,
+                parsing_count=value.parsing_count,
+            )
+            self.knowledge_bases[index] = renamed
+            return renamed
+        raise AssertionError("知识库不存在")
 
     async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
         self.deleted.append(knowledge_base_id)
@@ -392,3 +412,38 @@ def test_tenant_pagination_walks_provider_pages_beyond_the_first_hundred() -> No
 
     assert asyncio.run(exercise()) == [f"kb-{index:03d}" for index in range(150)]
     assert len(probe.page_calls) >= 2
+
+
+def test_knowledge_base_rename_is_blocked_across_tenants() -> None:
+    tenant_a = UUID("10000000-0000-4000-8000-000000000005")
+    tenant_b = UUID("10000000-0000-4000-8000-000000000006")
+    selected = tenant_a
+    probe = _KnowledgeProbe()
+    probe.knowledge_bases = [
+        KnowledgeBaseSummary("kb-a", "旧名称", "旧描述", 2, 0),
+        KnowledgeBaseSummary("kb-b", "他人知识库", "", 0, 0),
+    ]
+    ownership = _OwnershipProbe()
+    ownership.values = {tenant_a: {"kb-a"}, tenant_b: {"kb-b"}}
+    service = KnowledgeBaseService(
+        probe,
+        ownership=ownership,
+        tenant_id_provider=lambda: selected,
+    )
+
+    async def exercise() -> None:
+        updated = await service.update_knowledge_base(
+            "kb-a", UpdateKnowledgeBaseRequest(name="新名称", description="新描述")
+        )
+        assert updated.name == "新名称"
+        assert updated.description == "新描述"
+        # 文档统计不能因为改名归零
+        assert updated.document_count == 2
+
+        with pytest.raises(KnowledgeBaseNotFound):
+            await service.update_knowledge_base(
+                "kb-b", UpdateKnowledgeBaseRequest(name="越权改名", description="")
+            )
+
+    asyncio.run(exercise())
+    assert [call[0] for call in probe.updated] == ["kb-a"]

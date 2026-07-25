@@ -47,6 +47,10 @@ class DemoKnowledgeRepository(Protocol):
 
     async def add_knowledge_base(self, value: PersistedDemoKnowledgeBase) -> None: ...
 
+    async def rename_knowledge_base(
+        self, knowledge_base_id: str, *, name: str, description: str
+    ) -> bool: ...
+
     async def delete_knowledge_base(self, knowledge_base_id: str) -> bool: ...
 
     async def list_documents(

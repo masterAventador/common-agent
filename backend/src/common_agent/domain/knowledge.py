@@ -50,6 +50,12 @@ class CreateKnowledgeBaseRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class UpdateKnowledgeBaseRequest:
+    name: str
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
 class DocumentUpload:
     file_name: str
     content_type: str

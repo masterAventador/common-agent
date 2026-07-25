@@ -20,6 +20,7 @@ from common_agent.domain.knowledge import (
     KnowledgeServiceAvailability,
     KnowledgeServiceStatus,
     RetrievedChunk,
+    UpdateKnowledgeBaseRequest,
 )
 from common_agent.knowledge.base import (
     KnowledgeBaseDeleteResultUnknown,
@@ -276,6 +277,17 @@ class RagFlowKnowledgeService:
                 "chunk_method": "naive",
                 "embedding_model": self._embedding_model,
             },
+        )
+        return self._knowledge_base(_validate(_DATASET_ADAPTER, data))
+
+    async def update_knowledge_base(
+        self, knowledge_base_id: str, request: UpdateKnowledgeBaseRequest
+    ) -> KnowledgeBaseSummary:
+        data = await self._request(
+            "PUT",
+            f"/api/v1/datasets/{knowledge_base_id}",
+            dataset_scoped=True,
+            json={"name": request.name, "description": request.description},
         )
         return self._knowledge_base(_validate(_DATASET_ADAPTER, data))
 

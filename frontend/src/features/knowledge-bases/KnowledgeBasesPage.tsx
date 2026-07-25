@@ -21,7 +21,7 @@ import {
   Typography,
   type TableColumnsType,
 } from "antd";
-import { BookOpen, Database, FileText, Plus, RefreshCw } from "lucide-react";
+import { BookOpen, Database, FileText, Pencil, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import {
@@ -29,6 +29,7 @@ import {
   deleteKnowledgeBase,
   fetchKnowledgeBases,
   fetchKnowledgeDocuments,
+  updateKnowledgeBase,
   type CreateKnowledgeBaseInput,
   type KnowledgeBase,
   type KnowledgeDocument,
@@ -93,7 +94,7 @@ const documentColumns: TableColumnsType<KnowledgeDocument> = [
 
 export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean }) {
   const queryClient = useQueryClient();
-  const [createOpen, setCreateOpen] = useState(false);
+  const [editor, setEditor] = useState<{ mode: "create" } | { mode: "edit"; target: KnowledgeBase }>();
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>();
   const [uploadBusy, setUploadBusy] = useState(false);
@@ -134,10 +135,24 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
     onSuccess: async (created) => {
       toast.success(`知识库“${created.name}”已创建`);
       setSelectedId(created.id);
-      setCreateOpen(false);
+      setEditor(undefined);
       form.resetFields();
       await queryClient.resetQueries({ queryKey: ["knowledge-bases"] });
     },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (values: CreateKnowledgeBaseInput) => {
+      if (editor?.mode !== "edit") throw new Error("没有正在编辑的知识库");
+      return updateKnowledgeBase(editor.target.id, values);
+    },
+    onSuccess: async (updated) => {
+      toast.success(`知识库“${updated.name}”已保存`);
+      setEditor(undefined);
+      form.resetFields();
+      await queryClient.resetQueries({ queryKey: ["knowledge-bases"] });
+    },
+    onError: (error) => toast.error(`知识库保存失败：${getErrorMessage(error)}`),
   });
 
   const refreshDocuments = useCallback(async () => {
@@ -212,7 +227,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
           aria-label="创建知识库"
           icon={<Plus aria-hidden="true" size={16} />}
           disabled={readOnly}
-          onClick={() => setCreateOpen(true)}
+          onClick={() => setEditor({ mode: "create" })}
         >
           创建知识库
         </Button>
@@ -283,6 +298,16 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
             extra={
               <Space>
                 {activeKnowledgeBase && (
+                  <Button
+                    icon={<Pencil aria-hidden="true" size={16} />}
+                    aria-label={`编辑知识库 ${activeKnowledgeBase.name}`}
+                    disabled={readOnly}
+                    onClick={() => setEditor({ mode: "edit", target: activeKnowledgeBase })}
+                  >
+                    编辑
+                  </Button>
+                )}
+                {activeKnowledgeBase && (
                   <ResourceDeleteButton
                     resourceKind="知识库"
                     resourceName={activeKnowledgeBase.name}
@@ -336,24 +361,35 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
       )}
 
       <Modal
-        title="创建知识库"
-        open={createOpen}
-        okText="确认创建"
+        title={editor?.mode === "edit" ? "编辑知识库" : "创建知识库"}
+        open={Boolean(editor)}
+        okText={editor?.mode === "edit" ? "保存修改" : "确认创建"}
         cancelText="取消"
-        confirmLoading={createMutation.isPending}
+        confirmLoading={createMutation.isPending || updateMutation.isPending}
         okButtonProps={{ disabled: readOnly }}
         onOk={() => form.submit()}
         onCancel={() => {
-          setCreateOpen(false);
+          setEditor(undefined);
           createMutation.reset();
+          updateMutation.reset();
           form.resetFields();
         }}
+        destroyOnHidden
       >
         <Form<CreateKnowledgeBaseInput>
           form={form}
           layout="vertical"
           requiredMark={false}
-          onFinish={(values) => createMutation.mutate(values)}
+          initialValues={
+            editor?.mode === "edit"
+              ? { name: editor.target.name, description: editor.target.description }
+              : { name: "", description: "" }
+          }
+          onFinish={(values) =>
+            editor?.mode === "edit"
+              ? updateMutation.mutate(values)
+              : createMutation.mutate(values)
+          }
         >
           {createMutation.isError && (
             <Alert

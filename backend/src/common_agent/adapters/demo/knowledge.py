@@ -17,6 +17,7 @@ from common_agent.domain.knowledge import (
     KnowledgeServiceAvailability,
     KnowledgeServiceStatus,
     RetrievedChunk,
+    UpdateKnowledgeBaseRequest,
 )
 from common_agent.knowledge.base import (
     KnowledgeBaseNotFound,
@@ -129,6 +130,25 @@ class DemoKnowledgeService:
         except DemoKnowledgeBaseAlreadyExists:
             raise KnowledgeRequestRejected() from None
         return created.summary
+
+    async def update_knowledge_base(
+        self, knowledge_base_id: str, request: UpdateKnowledgeBaseRequest
+    ) -> KnowledgeBaseSummary:
+        self._ensure_open()
+        try:
+            async with self._unit_of_work() as unit_of_work:
+                renamed = await unit_of_work.knowledge.rename_knowledge_base(
+                    knowledge_base_id,
+                    name=request.name,
+                    description=request.description,
+                )
+                if renamed:
+                    await unit_of_work.commit()
+        except DemoKnowledgeBaseAlreadyExists:
+            raise KnowledgeRequestRejected() from None
+        if not renamed:
+            raise KnowledgeBaseNotFound()
+        return await self.get_knowledge_base(knowledge_base_id)
 
     async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
         self._ensure_open()

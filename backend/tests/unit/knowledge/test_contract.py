@@ -15,6 +15,7 @@ from common_agent.domain.knowledge import (
     KnowledgeServiceAvailability,
     KnowledgeServiceStatus,
     RetrievedChunk,
+    UpdateKnowledgeBaseRequest,
 )
 from common_agent.knowledge.base import (
     KnowledgeBaseNotFound,
@@ -48,6 +49,12 @@ class _ContractShape:
         self, request: CreateKnowledgeBaseRequest
     ) -> KnowledgeBaseSummary:
         del request
+        raise NotImplementedError
+
+    async def update_knowledge_base(
+        self, knowledge_base_id: str, request: UpdateKnowledgeBaseRequest
+    ) -> KnowledgeBaseSummary:
+        del knowledge_base_id, request
         raise NotImplementedError
 
     async def delete_knowledge_base(self, knowledge_base_id: str) -> None:

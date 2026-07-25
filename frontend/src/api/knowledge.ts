@@ -74,6 +74,21 @@ export async function createKnowledgeBase(
   }
 }
 
+export async function updateKnowledgeBase(
+  knowledgeBaseId: string,
+  input: CreateKnowledgeBaseInput,
+): Promise<KnowledgeBase> {
+  try {
+    const response = await apiClient.patch<unknown>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`,
+      input,
+    );
+    return parseKnowledgeBaseResponse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
 export async function deleteKnowledgeBase(knowledgeBaseId: string): Promise<void> {
   try {
     await apiClient.delete(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`);

@@ -10,6 +10,7 @@ from common_agent.domain.knowledge import (
     KnowledgeRetrievalRequest,
     KnowledgeRetrievalResult,
     KnowledgeServiceStatus,
+    UpdateKnowledgeBaseRequest,
 )
 from common_agent.pagination import CursorPage, ListPageRequest
 
@@ -108,6 +109,10 @@ class KnowledgeService(Protocol):
 
     async def create_knowledge_base(
         self, request: CreateKnowledgeBaseRequest
+    ) -> KnowledgeBaseSummary: ...
+
+    async def update_knowledge_base(
+        self, knowledge_base_id: str, request: UpdateKnowledgeBaseRequest
     ) -> KnowledgeBaseSummary: ...
 
     async def delete_knowledge_base(self, knowledge_base_id: str) -> None: ...

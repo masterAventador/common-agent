@@ -205,6 +205,25 @@ def _handler(probe: _RagFlowProbe) -> type[BaseHTTPRequestHandler]:
                 return
             _send_json(self, 404, {"code": 102})
 
+        def do_PUT(self) -> None:
+            payload = json.loads(_read_body(self) or b"{}")
+            if self.path == "/api/v1/datasets/kb-1":
+                _send_json(
+                    self,
+                    200,
+                    {
+                        "code": 0,
+                        "data": {
+                            "id": "kb-1",
+                            "name": payload["name"],
+                            "description": payload["description"],
+                            "document_count": 1,
+                        },
+                    },
+                )
+                return
+            _send_json(self, 404, {"code": 102})
+
         def do_POST(self) -> None:
             body = _read_body(self)
             if self.path == "/api/v1/users":
@@ -378,6 +397,44 @@ async def _clear_fake_ownerships() -> None:
             await session.commit()
     finally:
         await database.stop()
+
+
+def test_knowledge_base_rename_goes_through_the_formal_route_and_ragflow() -> None:
+    """改名走真实 Uvicorn 与 RAGFlow 适配层, 返回更新后的名称与描述。"""
+    asyncio.run(_clear_fake_ownerships())
+    try:
+        with (
+            _fake_ragflow() as (ragflow_url, _probe),
+            running_api(TEST_DATABASE_URL, env_overrides=_ragflow_env(ragflow_url)) as api_url,
+            authenticated_client(base_url=api_url, timeout=5) as client,
+        ):
+            # 与真实用户路径一致: 先进列表页 (此处完成历史数据归属认领), 再改名
+            client.get("/api/v1/knowledge-bases")
+            updated = client.patch(
+                "/api/v1/knowledge-bases/kb-1",
+                json={"name": "制度库-改", "description": "改后的描述"},
+            )
+            missing = client.patch(
+                "/api/v1/knowledge-bases/missing",
+                json={"name": "不存在", "description": ""},
+            )
+            invalid = client.patch(
+                "/api/v1/knowledge-bases/kb-1",
+                json={"name": "", "description": ""},
+            )
+    finally:
+        asyncio.run(_clear_fake_ownerships())
+
+    assert updated.status_code == 200
+    assert updated.json() == {
+        "id": "kb-1",
+        "name": "制度库-改",
+        "description": "改后的描述",
+        "document_count": 1,
+        "parsing_count": 0,
+    }
+    assert missing.status_code == 404
+    assert invalid.status_code == 422
 
 
 def test_upload_limits_fail_before_calling_ragflow() -> None:

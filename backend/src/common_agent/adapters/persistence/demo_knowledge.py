@@ -6,7 +6,7 @@ from types import TracebackType
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import and_, case, delete, func, or_, select
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -118,6 +118,26 @@ class SqlAlchemyDemoKnowledgeRepository:
             await self._session.flush()
         except IntegrityError:
             raise DemoKnowledgeBaseAlreadyExists from None
+
+    async def rename_knowledge_base(
+        self, knowledge_base_id: str, *, name: str, description: str
+    ) -> bool:
+        result = cast(
+            CursorResult[object],
+            await self._session.execute(
+                update(DemoKnowledgeBaseRow)
+                .where(
+                    DemoKnowledgeBaseRow.id == knowledge_base_id,
+                    DemoKnowledgeBaseRow.tenant_id == self._tenant_id,
+                )
+                .values(name=name, description=description)
+            ),
+        )
+        try:
+            await self._session.flush()
+        except IntegrityError:
+            raise DemoKnowledgeBaseAlreadyExists from None
+        return bool(result.rowcount)
 
     async def delete_knowledge_base(self, knowledge_base_id: str) -> bool:
         result = cast(

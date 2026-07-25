@@ -22,6 +22,7 @@ from common_agent.domain.knowledge import (
     DocumentUpload,
     KnowledgeBaseSummary,
     KnowledgeDocument,
+    UpdateKnowledgeBaseRequest,
 )
 from common_agent.knowledge.base import (
     KnowledgeBaseDeleteResultUnknown,
@@ -72,6 +73,13 @@ KnowledgeBaseDescription = Annotated[
 
 
 class CreateKnowledgeBaseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: KnowledgeBaseName
+    description: KnowledgeBaseDescription = ""
+
+
+class UpdateKnowledgeBaseBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: KnowledgeBaseName
@@ -227,6 +235,32 @@ async def create_knowledge_base(
         raise knowledge_error_to_app_error(error) from error
     mark_audit_resource(request, AuditResourceType.KNOWLEDGE_BASE, created.id)
     return _knowledge_base_response(created)
+
+
+@router.patch(
+    "/{knowledge_base_id}",
+    response_model=KnowledgeBaseResponse,
+    responses={
+        404: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        502: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def update_knowledge_base(
+    request: Request,
+    knowledge_base_id: str,
+    body: UpdateKnowledgeBaseBody,
+) -> KnowledgeBaseResponse:
+    try:
+        updated = await _application(request).update_knowledge_base(
+            knowledge_base_id,
+            UpdateKnowledgeBaseRequest(name=body.name, description=body.description),
+        )
+    except KnowledgeServiceError as error:
+        raise knowledge_error_to_app_error(error) from error
+    mark_audit_resource(request, AuditResourceType.KNOWLEDGE_BASE, knowledge_base_id)
+    return _knowledge_base_response(updated)
 
 
 @router.delete(

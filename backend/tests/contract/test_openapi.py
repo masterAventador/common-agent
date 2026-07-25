@@ -153,7 +153,7 @@ def test_openapi_exposes_knowledge_contract_and_stable_validation_errors() -> No
     documents = paths["/api/v1/knowledge-bases/{knowledge_base_id}/documents"]
 
     assert set(knowledge) == {"get", "post"}
-    assert set(knowledge_detail) == {"delete"}
+    assert set(knowledge_detail) == {"delete", "patch"}
     assert set(documents) == {"get", "post"}
     assert knowledge["post"]["responses"]["201"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/KnowledgeBaseResponse"

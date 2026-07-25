@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PropsWithChildren } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,7 @@ import { KnowledgeBasesPage } from "./KnowledgeBasesPage";
 const knowledgeApi = vi.hoisted(() => ({
   createKnowledgeBase: vi.fn(),
   deleteKnowledgeBase: vi.fn(),
+  updateKnowledgeBase: vi.fn(),
   fetchKnowledgeBases: vi.fn(),
   fetchKnowledgeDocuments: vi.fn(),
   uploadKnowledgeDocument: vi.fn(),
@@ -165,6 +166,36 @@ describe("KnowledgeBasesPage", () => {
     await waitFor(() =>
       expect(knowledgeApi.uploadKnowledgeDocument).toHaveBeenCalledWith("kb-1", file),
     );
+  });
+
+  it("renames a knowledge base through the editor", async () => {
+    const renamed = { ...knowledgeBase, name: "制度库-改", description: "改后的描述" };
+    knowledgeApi.fetchKnowledgeBases
+      .mockResolvedValueOnce({ items: [knowledgeBase], next_cursor: null })
+      .mockResolvedValue({ items: [renamed], next_cursor: null });
+    knowledgeApi.updateKnowledgeBase.mockResolvedValue(renamed);
+    const user = userEvent.setup();
+    render(<KnowledgeBasesPage />, { wrapper: TestProviders });
+
+    await user.click(
+      await screen.findByRole("button", { name: `编辑知识库 ${knowledgeBase.name}` }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "编辑知识库" });
+    const nameField = within(dialog).getByRole("textbox", { name: "名称" });
+    await user.clear(nameField);
+    await user.type(nameField, "制度库-改");
+    const descriptionField = within(dialog).getByRole("textbox", { name: "描述" });
+    await user.clear(descriptionField);
+    await user.type(descriptionField, "改后的描述");
+    await user.click(within(dialog).getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() =>
+      expect(knowledgeApi.updateKnowledgeBase).toHaveBeenCalledWith(knowledgeBase.id, {
+        name: "制度库-改",
+        description: "改后的描述",
+      }),
+    );
+    expect(await screen.findByText("制度库-改")).toBeInTheDocument();
   });
 
   it("shows a safe list error and retries through the same query", async () => {
