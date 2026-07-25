@@ -235,6 +235,8 @@ class WorkflowAiTargetExecutor:
                     raise WorkflowAiTargetExecutionFailed("runtime_response_invalid")
                 fragments.append(event.delta)
             elif event.kind in {
+                # 思考过程不是节点的产出, 工具事件也不是; 跳过但不能判失败
+                RuntimeEventKind.REASONING,
                 RuntimeEventKind.TOOL_STARTED,
                 RuntimeEventKind.TOOL_COMPLETED,
                 RuntimeEventKind.TOOL_FAILED,

@@ -116,6 +116,10 @@ class _Runtime:
         if self.outcome is RuntimeEventKind.COMPLETED:
             yield emitter.delta("数字员工回答")
             yield emitter.complete()
+        elif self.outcome is RuntimeEventKind.REASONING:
+            yield emitter.reasoning("先想一想")
+            yield emitter.delta("数字员工回答")
+            yield emitter.complete()
         elif self.outcome is RuntimeEventKind.FAILED:
             yield emitter.fail("employee_runtime_failed")
         elif self.outcome is RuntimeEventKind.STOPPED:
@@ -250,6 +254,32 @@ def test_model_target_resolves_selected_enabled_configuration_and_records_snapsh
         assert model.requests[0].messages[-1].content == "上游内容"
         assert observer.summaries[0].target_type is AiChatTargetType.MODEL
         assert observer.summaries[0].model_identifier == "qwen-max"
+
+    asyncio.run(exercise())
+
+
+def test_employee_target_ignores_model_reasoning_in_the_node_output() -> None:
+    """会思考的模型也能用在工作流节点上: 思考不是节点结果, 但也不能让整节点判失败。"""
+
+    async def exercise() -> None:
+        configuration = _model_configuration()
+        employee = _employee(configuration)
+        executor = WorkflowAiTargetExecutor(
+            _Directory(employee, configuration),
+            _ModelResolver(_Model()),
+            KnowledgeBaseService(KnowledgeProbe()),
+            employee_runtime=_Runtime(RuntimeEventKind.REASONING),
+        )
+
+        result = await executor.execute(
+            AiChatNodeConfig(
+                prompt="节点约束",
+                target=EmployeeAiChatTarget(employee_id=employee.id),
+            ),
+            _context(_Observer()),
+        )
+
+        assert result.output == "数字员工回答"
 
     asyncio.run(exercise())
 

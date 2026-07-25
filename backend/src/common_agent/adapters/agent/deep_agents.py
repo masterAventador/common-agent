@@ -283,6 +283,7 @@ class DeepAgentsEmployeeRuntime:
         stop_task: asyncio.Task[None] | None = None
         emitted_delta = False
         pending_text = ""
+        pending_reasoning = ""
         upstream_closed = False
         try:
             while True:
@@ -374,10 +375,13 @@ class DeepAgentsEmployeeRuntime:
                                 lifecycle.error_code or ToolCallErrorCode.EXECUTION_FAILED.value
                             ),
                         )
-                # 思考内容与正文分开产出: 它不计入"是否给出了回复", 界面上单独折叠展示
-                reasoning = _agent_reasoning(item)
-                if reasoning:
-                    yield emitter.reasoning(reasoning)
+                # 思考内容与正文分开产出: 它不计入"是否给出了回复", 界面上单独折叠展示。
+                # 思考流里会夹纯换行的分片, 运行时事件不收纯空白文本, 因此与正文一样先攒着,
+                # 攒到有实际内容再一起发, 换行才不会丢。
+                pending_reasoning += _agent_reasoning(item)
+                if pending_reasoning.strip():
+                    yield emitter.reasoning(pending_reasoning)
+                    pending_reasoning = ""
                 pending_text += _agent_text(item)
                 if pending_text.strip():
                     emitted_delta = True

@@ -225,6 +225,73 @@ def test_runtime_projects_model_reasoning_as_platform_reasoning_events() -> None
     assert answer == "7 更大"
 
 
+def test_blank_reasoning_chunks_do_not_break_the_turn() -> None:
+    """DeepSeek 的思考流里夹着纯换行分片, 不能因此判整轮失败。
+
+    平台的运行时事件不接受纯空白文本, 但换行是思考内容本身的一部分, 不能直接丢掉,
+    否则思考正文会粘成一坨。做法与正文增量一致: 先攒着, 攒到有实际内容再一起发出去。
+    """
+
+    class _BlankReasoningGraph:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def astream(
+            self,
+            input_data: Mapping[str, object],
+            config: Mapping[str, object],
+            *,
+            stream_mode: str,
+        ) -> AsyncIterator[tuple[AIMessageChunk, dict[str, object]]]:
+            assert stream_mode == "messages"
+            metadata = {"langgraph_node": "model"}
+            try:
+                yield (
+                    AIMessageChunk(content="", additional_kwargs={"reasoning_content": "第一步"}),
+                    metadata,
+                )
+                yield (
+                    AIMessageChunk(content="", additional_kwargs={"reasoning_content": "\n\n"}),
+                    metadata,
+                )
+                yield (
+                    AIMessageChunk(content="", additional_kwargs={"reasoning_content": "第二步"}),
+                    metadata,
+                )
+                yield AIMessageChunk(content="答案"), metadata
+            finally:
+                self.closed = True
+
+    gateway = _Gateway(_ToolBindingFakeChatModel(messages=iter(["unused"])))
+    runtime = DeepAgentsEmployeeRuntime(
+        gateway,
+        tools=DeepAgentToolRegistry({}),
+        agent_builder=lambda **_: _BlankReasoningGraph(),
+    )
+
+    async def exercise() -> list[RuntimeEvent]:
+        events = [
+            event
+            async for event in runtime.stream(runtime_request(), stop=RuntimeStopToken())
+        ]
+        await runtime.aclose()
+        return events
+
+    events = asyncio.run(exercise())
+
+    assert [event.kind for event in events] == [
+        RuntimeEventKind.REASONING,
+        RuntimeEventKind.REASONING,
+        RuntimeEventKind.DELTA,
+        RuntimeEventKind.COMPLETED,
+    ]
+    reasoning = "".join(
+        event.delta or "" for event in events if event.kind is RuntimeEventKind.REASONING
+    )
+    # 换行必须保留, 否则思考正文会粘成一行
+    assert reasoning == "第一步\n\n第二步"
+
+
 def test_reasoning_alone_is_not_a_successful_answer() -> None:
     """只有思考没有正文时仍按空回复失败, 思考不能顶替回复内容。"""
 
