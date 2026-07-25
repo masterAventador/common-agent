@@ -21,7 +21,7 @@ import {
   Typography,
   type TableColumnsType,
 } from "antd";
-import { Database, FileText, Plus, RefreshCw } from "lucide-react";
+import { BookOpen, Database, FileText, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import {
@@ -265,14 +265,23 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
                   className={`knowledge-base-item ${item.id === activeId ? "is-active" : ""}`}
                   onClick={() => setSelectedId(item.id)}
                 >
-                  <Flex justify="space-between" gap={12}>
-                    <Text strong>{item.name}</Text>
-                    {item.parsing_count > 0 && <Tag color="processing">{item.parsing_count} 个解析中</Tag>}
-                  </Flex>
+                  <div className="resource-card-head">
+                    <span className="resource-card-icon" aria-hidden="true">
+                      <BookOpen size={18} strokeWidth={1.75} />
+                    </span>
+                    <Text strong className="resource-card-title">
+                      {item.name}
+                    </Text>
+                    {item.parsing_count > 0 && (
+                      <Tag color="processing">{item.parsing_count} 个解析中</Tag>
+                    )}
+                  </div>
                   <Text type="secondary" className="knowledge-base-description">
                     {item.description || "暂无描述"}
                   </Text>
-                  <Text type="secondary">{item.document_count} 个文档</Text>
+                  <Text type="secondary" className="knowledge-base-meta">
+                    {item.document_count} 个文档
+                  </Text>
                 </button>
               ))}
               {knowledgeBases.hasNextPage && (

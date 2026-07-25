@@ -1,4 +1,4 @@
-import { Alert, Button, Empty, Flex, Input, Select, Skeleton, Tag, Typography } from "antd";
+import { Alert, Button, Flex, Input, Select, Skeleton, Tag, Typography } from "antd";
 import { Bot, Send, Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 
@@ -68,7 +68,7 @@ export function ChatWorkspace({
         </div>
         <div className="chat-message-scroll" aria-live="polite">
           {!selectedConversation ? (
-            <Empty description="输入第一条消息后会自动创建会话" />
+            <ChatWelcome employee={employee} />
           ) : messages.isPending ? (
             <Skeleton active paragraph={{ rows: 8 }} />
           ) : messages.isError ? (
@@ -80,7 +80,7 @@ export function ChatWorkspace({
               action={<Button onClick={() => void messages.refetch()}>重试</Button>}
             />
           ) : messages.data.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="发送第一条消息开始对话" />
+            <ChatWelcome employee={employee} />
           ) : (
             messages.data.map((message) => (
               <MessageBubble
@@ -183,6 +183,27 @@ export function ChatWorkspace({
           <GenericAssistantDetails controller={controller} readOnly={readOnly} />
         )}
       </aside>
+    </div>
+  );
+}
+
+function ChatWelcome({ employee }: { employee?: Employee }) {
+  return (
+    <div className="chat-welcome">
+      <span className="chat-welcome-mark" aria-hidden="true">
+        <Bot size={26} strokeWidth={1.75} />
+      </span>
+      <Title level={2} className="chat-welcome-title">
+        你好，我是{employee?.name ?? "通用 AI"}
+      </Title>
+      <Text type="secondary">
+        {employee
+          ? employee.description ||
+            (employee.knowledge_base_id
+              ? "每次提问都会自动检索绑定的知识库后回答。"
+              : "直接使用所选模型回答你的问题。")
+          : "输入下面第一条消息即可开始，会话会自动保存。"}
+      </Text>
     </div>
   );
 }

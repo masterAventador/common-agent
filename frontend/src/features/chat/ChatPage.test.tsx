@@ -655,6 +655,17 @@ describe("ChatPage", () => {
     expect(within(messageRegion).queryByText(/相关度/)).not.toBeInTheDocument();
   });
 
+  it("greets with a centered welcome heading before the first message", async () => {
+    chatApi.fetchConversationMessages.mockResolvedValue([]);
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    // 空状态按设计原型：居中欢迎大标题 + 一句说明，替代灰色空盒子
+    expect(
+      await within(messageRegion).findByRole("heading", { name: `你好，我是${employee.name}` }),
+    ).toBeInTheDocument();
+  });
+
   it("auto-scrolls the message area to the newest content", async () => {
     const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
     try {
