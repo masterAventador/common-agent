@@ -308,6 +308,7 @@ select {
 
 .employee-card-grid {
   display: grid;
+  /* 原型是 284px，但我们的卡片还带三个操作按钮，再窄就会换行挤成两排 */
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
 }
@@ -315,7 +316,17 @@ select {
 .employee-card .ant-card-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+}
+
+.employee-card-meta {
+  display: flex;
+  gap: 6px 10px;
+  flex-wrap: wrap;
+}
+
+.employee-card .resource-card-footer {
+  justify-content: flex-end;
 }
 
 .employee-description {
@@ -341,12 +352,12 @@ select {
 
 .resource-card-icon {
   display: grid;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
   place-items: center;
-  border-radius: 11px;
-  /* 原型的图标 tile 用青绿 tint，不是中性灰 */
+  border-radius: 12px;
+  /* 原型的图标 tile 是彩色 tint，不是中性灰；数字员工按 resourceTint 逐个换色 */
   background: #e6f0ec;
   color: var(--accent);
 }
@@ -800,11 +811,14 @@ select {
   margin-top: 20px;
 }
 
-/* 工作流列表页：与设计稿一致的行式列表（.wf-row / .wf-ic / .wf-main / .wf-meta） */
+/* 列表页搜索框按原型固定宽度，不拉满整行（.search{width:240px}） */
+.page-search,
 .workflow-list-search {
   max-width: 320px;
   margin-bottom: 8px;
 }
+
+/* 工作流列表页：与设计稿一致的行式列表（.wf-row / .wf-ic / .wf-main / .wf-meta） */
 
 .workflow-row {
   display: flex;
@@ -1432,7 +1446,8 @@ a,
 
 .app-content {
   min-width: 0;
-  padding: 24px;
+  /* 原型的页面留白：上 40、左右 40、下 60（.page） */
+  padding: 40px 40px 60px;
 }
 
 .entry-shell,
@@ -1476,6 +1491,7 @@ a,
   box-shadow: none;
 }
 
+/* 原型的页头没有分隔线，只靠 30px 留白和字号分层（.phead） */
 .employees-page-heading,
 .model-configurations-heading,
 .tools-heading,
@@ -1483,10 +1499,10 @@ a,
 .chat-page-heading,
 .workflows-heading,
 .audit-page > .ant-flex:first-child {
-  min-height: 72px;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
+  min-height: 0;
+  margin-bottom: 30px;
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .employees-page-heading h2,

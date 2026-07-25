@@ -44,6 +44,7 @@ import {
   ResourceDeleteButton,
 } from "../../components/ResourceDeleteButton";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
+import { resourceTint } from "../../components/resourceTint";
 import { toast } from "../../components/toast";
 import {
   fetchEmployeeToolGrants,
@@ -247,17 +248,12 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
     );
   };
 
+  // 设计稿的卡片底栏是等宽小字的模型名；只有模型不可用时才升级成警告色标签
   const defaultModelLabel = (employee: Employee) => {
     const configured = modelsById.get(employee.default_model_configuration_id);
-    if (configured) {
-      return (
-        <Tag color={configured.enabled ? "cyan" : "warning"}>
-          {configured.display_name}
-          {configured.enabled ? "" : "（已停用）"}
-        </Tag>
-      );
-    }
-    if (modelConfigurations.isPending) return <Tag>正在读取默认模型</Tag>;
+    if (configured?.enabled) return <span>{configured.display_name}</span>;
+    if (configured) return <Tag color="warning">{configured.display_name}（已停用）</Tag>;
+    if (modelConfigurations.isPending) return <span>正在读取默认模型</span>;
     return <Tag color="warning">{employee.default_model_identifier}</Tag>;
   };
 
@@ -322,6 +318,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
       <Input.Search
         aria-label="搜索数字员工"
         allowClear
+        className="page-search"
         value={employeeSearch}
         placeholder="搜索名称前缀或完整 ID"
         onChange={(event) => setEmployeeSearch(event.target.value)}
@@ -375,21 +372,26 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
           {items.map((employee) => (
             <Card key={employee.id} className="employee-card">
               <div className="resource-card-head">
-                <span className="resource-card-icon" aria-hidden="true">
+                <span
+                  className="resource-card-icon"
+                  style={resourceTint(employee.id)}
+                  aria-hidden="true"
+                >
                   <Bot size={20} strokeWidth={1.75} />
                 </span>
                 <Text strong className="resource-card-title">
                   {employee.name}
                 </Text>
-                {knowledgeBaseLabel(employee)}
               </div>
               <Text type="secondary" className="employee-description">
                 {employee.description || "暂无说明"}
               </Text>
-              <div className="resource-card-footer">
+              {/* 设计稿把绑定信息放在描述下的独立一行，标题行只留图标和名称 */}
+              <div className="employee-card-meta">
+                {knowledgeBaseLabel(employee)}
                 {workflowPermissionLabel(employee)}
-                {defaultModelLabel(employee)}
               </div>
+              <div className="resource-card-footer">{defaultModelLabel(employee)}</div>
               <Flex gap={8} justify="flex-end" wrap>
                 <ResourceDeleteButton
                   resourceKind="数字员工"
