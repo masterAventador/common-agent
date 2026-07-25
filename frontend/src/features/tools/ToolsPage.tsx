@@ -252,6 +252,7 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
   const deleteSource = useMutation({
     mutationFn: deleteManagedMcpSource,
     onSuccess: resetSources,
+    onError: (error) => toast.error(`托管 MCP 删除失败：${getErrorMessage(error)}`),
   });
   const saveCapability = useMutation({
     mutationFn: (values: CapabilityForm) => {
@@ -270,11 +271,13 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
       capabilityForm.resetFields();
       await resetSources();
     },
+    onError: (error) => toast.error(`工具能力保存失败：${getErrorMessage(error)}`),
   });
   const deleteCapability = useMutation({
     mutationFn: ({ sourceId, capabilityId }: { sourceId: string; capabilityId: string }) =>
       deleteManagedMcpCapability(sourceId, capabilityId),
     onSuccess: resetSources,
+    onError: (error) => toast.error(`工具能力删除失败：${getErrorMessage(error)}`),
   });
   const discovery = useMutation({
     mutationFn: (sourceId: string) => discoverManagedMcpSource(sourceId),

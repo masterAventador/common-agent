@@ -456,4 +456,17 @@ describe("ToolsPage", () => {
       }),
     );
   });
+
+  it("surfaces a failed collection deletion instead of silently doing nothing", async () => {
+    toolsApi.deleteToolCollection.mockRejectedValue(new Error("工具集仍被数字员工引用"));
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("订单与合作方")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除业务工具集 订单与合作方" }));
+    await user.click(screen.getByRole("button", { name: "确认删除业务工具集 订单与合作方" }));
+
+    const failure = await screen.findByText(/工具集仍被数字员工引用/);
+    expect(failure.closest(".toast-item")).toHaveAttribute("role", "alert");
+  });
 });

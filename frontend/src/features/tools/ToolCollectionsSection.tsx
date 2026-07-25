@@ -21,6 +21,7 @@ import { Pencil, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { getErrorMessage } from "../../api/errors";
+import { toast } from "../../components/toast";
 import {
   createToolCollection,
   deleteToolCollection,
@@ -97,6 +98,7 @@ export function ToolCollectionsSection({ readOnly }: { readOnly: boolean }) {
   const remove = useMutation({
     mutationFn: (collectionId: string) => deleteToolCollection(collectionId),
     onSuccess: refresh,
+    onError: (error) => toast.error(`业务工具集删除失败：${getErrorMessage(error)}`),
   });
   const selectableSources = useMemo(
     () =>

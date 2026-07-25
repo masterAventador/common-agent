@@ -20,6 +20,7 @@ import { Pencil, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { getErrorMessage } from "../../api/errors";
+import { toast } from "../../components/toast";
 import {
   createExternalMcpSource,
   deleteExternalMcpSource,
@@ -116,6 +117,7 @@ export function ExternalMcpSection({
   const remove = useMutation({
     mutationFn: (sourceId: string) => deleteExternalMcpSource(sourceId),
     onSuccess: refresh,
+    onError: (error) => toast.error(`外部 MCP 删除失败：${getErrorMessage(error)}`),
   });
   const synchronize = useMutation({
     mutationFn: (sourceId: string) => syncExternalMcpSource(sourceId),
