@@ -16,6 +16,7 @@ import {
   Skeleton,
   Space,
   Switch,
+  Table,
   Tag,
   Typography,
 } from "antd";
@@ -190,56 +191,78 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
           </Empty>
         </Card>
       ) : (
-        <div className="model-configuration-grid">
-          {items.map((item) => (
-            <Card key={item.id} className="model-configuration-card">
-              <div className="resource-card-head">
-                <span className="resource-card-icon" aria-hidden="true">
-                  <Bot size={20} strokeWidth={1.75} />
-                </span>
-                <Text strong className="resource-card-title">
-                  {item.display_name}
-                </Text>
-                <Tag color={item.enabled ? "success" : "default"}>
-                  {item.enabled ? "启用" : "停用"}
-                </Tag>
-              </div>
-              <div className="resource-card-footer">
-                <Text type="secondary">模型标识</Text>
-                <Text code>{item.model_identifier}</Text>
-              </div>
-              <Flex gap={8} justify="flex-end" wrap>
-                <Button
-                  icon={<Zap aria-hidden="true" size={15} />}
-                  aria-label={`测试调用 ${item.display_name}`}
-                  loading={
-                    verifyMutation.isPending && verifyMutation.variables?.id === item.id
-                  }
-                  disabled={readOnly}
-                  onClick={() => verifyMutation.mutate(item)}
-                >
-                  测试调用
-                </Button>
-                <Button
-                  icon={<Pencil aria-hidden="true" size={15} />}
-                  aria-label={`编辑 ${item.display_name}`}
-                  disabled={readOnly}
-                  onClick={() => setEditor({ mode: "edit", item })}
-                >
-                  编辑
-                </Button>
-                <ResourceDeleteButton
-                  resourceKind="模型"
-                  resourceName={item.display_name}
-                  impact="模型配置会被永久删除；存在数字员工、工作流或会话引用时平台会拒绝本次操作。"
-                  disabled={readOnly || deleteMutation.isPending}
-                  loading={deleteMutation.isPending && deleteMutation.variables?.id === item.id}
-                  onConfirm={() => deleteMutation.mutateAsync(item)}
-                />
-              </Flex>
-            </Card>
-          ))}
-        </div>
+        <Table<ModelConfiguration>
+          className="model-configuration-table"
+          rowKey={(item) => item.id}
+          dataSource={items}
+          pagination={false}
+          columns={[
+            {
+              title: "模型",
+              dataIndex: "display_name",
+              render: (displayName: string, item) => (
+                <div className="model-cell">
+                  <span className="resource-card-icon" aria-hidden="true">
+                    <Bot size={18} strokeWidth={1.75} />
+                  </span>
+                  <div className="model-cell-identity">
+                    <Text strong>{displayName}</Text>
+                    <Text type="secondary" className="model-cell-identifier">
+                      {item.model_identifier}
+                    </Text>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              title: "状态",
+              dataIndex: "enabled",
+              width: 120,
+              render: (enabled: boolean) => (
+                <Tag color={enabled ? "success" : "default"}>{enabled ? "启用" : "停用"}</Tag>
+              ),
+            },
+            {
+              title: "操作",
+              key: "actions",
+              width: 300,
+              render: (_value, item) => (
+                <Flex gap={8} wrap>
+                  <Button
+                    size="small"
+                    icon={<Zap aria-hidden="true" size={14} />}
+                    aria-label={`测试调用 ${item.display_name}`}
+                    loading={
+                      verifyMutation.isPending && verifyMutation.variables?.id === item.id
+                    }
+                    disabled={readOnly}
+                    onClick={() => verifyMutation.mutate(item)}
+                  >
+                    测试调用
+                  </Button>
+                  <Button
+                    size="small"
+                    icon={<Pencil aria-hidden="true" size={14} />}
+                    aria-label={`编辑 ${item.display_name}`}
+                    disabled={readOnly}
+                    onClick={() => setEditor({ mode: "edit", item })}
+                  >
+                    编辑
+                  </Button>
+                  <ResourceDeleteButton
+                    size="small"
+                    resourceKind="模型"
+                    resourceName={item.display_name}
+                    impact="模型配置会被永久删除；存在数字员工、工作流或会话引用时平台会拒绝本次操作。"
+                    disabled={readOnly || deleteMutation.isPending}
+                    loading={deleteMutation.isPending && deleteMutation.variables?.id === item.id}
+                    onConfirm={() => deleteMutation.mutateAsync(item)}
+                  />
+                </Flex>
+              ),
+            },
+          ]}
+        />
       )}
 
       {configurations.hasNextPage ? (

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PropsWithChildren } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -61,6 +61,17 @@ describe("ModelConfigurationsPage", () => {
       items: [modelConfiguration],
       next_cursor: null,
     });
+  });
+
+  it("lists models in a table like the design prototype", async () => {
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "模型管理" })).toBeInTheDocument();
+    // 原型该页是表格而非卡片墙：有表头与数据行
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("columnheader", { name: "模型" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "状态" })).toBeInTheDocument();
+    expect(within(table).getByRole("cell", { name: /Qwen Plus/ })).toBeInTheDocument();
   });
 
   it("lists only user-created model configurations with explicit provider and state", async () => {

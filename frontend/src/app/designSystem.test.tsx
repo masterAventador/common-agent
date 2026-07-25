@@ -7,14 +7,17 @@ import { designTheme } from "./designSystem";
 describe("统一设计基线", () => {
   it("使用 DESIGN.md 规定的中性色与控件尺度", () => {
     expect(designTheme.token).toMatchObject({
-      colorPrimary: "#191919",
-      // 暖米纸感基线，取自 PowerAI Atlas 原型实测
+      // 逐条对齐原型实测样式表 docs/design/prototype-computed.css
+      colorPrimary: "#1C1B17",
       colorBgLayout: "#F5F2EB",
       colorBgContainer: "#FBFAF5",
-      colorBorder: "#E2DCCD",
-      colorText: "#37352F",
-      colorTextHeading: "#191919",
-      borderRadius: 10,
+      colorBorder: "#E5DFD0",
+      colorText: "#3B3930",
+      colorTextHeading: "#1C1B17",
+      // 原型强调色是青绿而非蓝
+      colorInfo: "#117067",
+      controlHeight: 42,
+      borderRadius: 9,
       fontSize: 14,
     });
   });

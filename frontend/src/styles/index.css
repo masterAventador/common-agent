@@ -1,26 +1,32 @@
 :root {
-  /* 暖米纸感基线：色值取自 docs/design/PowerAI Atlas.html 原型实测 */
+  /* 色值逐条取自原型实测样式表 docs/design/prototype-computed.css 的 :root
+     （--paper/--paper-2/--panel/--line/--ink/--mut/--teal…），不要凭印象改。 */
   --bg-app: #f5f2eb;
   --bg-container: #fbfaf5;
   --bg-sidebar: #efebe1;
   --bg-hover: #f0ece1;
-  --bg-active: #e9e4d6;
-  --border: #e2dccd;
-  --border-strong: #d5cdb8;
-  --border-focus: #b5ab92;
-  --text-heading: #191919;
-  --text-body: #37352f;
-  --text-secondary: #787774;
-  --text-tertiary: #a8a8a5;
-  --primary: #191919;
-  --info: #2563eb;
-  --electric-blue: #4da3ff;
-  --electric-teal: #0ea5a4;
-  --success: #1f8a4c;
+  --bg-active: #ede7d8;
+  --border: #e5dfd0;
+  --border-strong: #e2dccd;
+  --border-focus: #a59c87;
+  --text-heading: #1c1b17;
+  --text-body: #3b3930;
+  --text-secondary: #837c6b;
+  --text-tertiary: #a59c87;
+  --text-faint: #b0a78f;
+  --primary: #1c1b17;
+  /* 原型的强调色是青绿，不是蓝；用于选中、进行中、链接等状态 */
+  --accent: #117067;
+  --accent-strong: #0d5b53;
+  --info: #117067;
+  --success: #117067;
   --warning: #c46a17;
-  --error: #d64545;
+  --error: #c2413a;
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 40px 90px -24px rgba(0, 0, 0, 0.45);
+  --control-height: 42px;
+  --control-radius: 9px;
   color: var(--text-body);
   background: var(--bg-app);
   font-family:
@@ -1481,31 +1487,10 @@ a,
 
 
 .model-configurations-empty-card,
-.model-configuration-grid {
-  margin-top: 20px;
-}
 
-.model-configuration-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(348px, 1fr));
-  gap: 16px;
-}
 
-.model-configuration-card {
-  border-color: var(--border);
-  background: var(--bg-container);
-}
 
-.model-configuration-card .ant-card-body {
-  display: flex;
-  min-height: 176px;
-  flex-direction: column;
-  gap: 20px;
-}
 
-.model-configuration-card .ant-flex:last-child {
-  margin-top: auto;
-}
 
 .model-configurations-load-more {
   margin-top: 20px;
@@ -1849,9 +1834,6 @@ a,
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .model-configuration-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 
   .chat-page-heading .chat-employee-select {
     width: min(100%, 280px);
@@ -2075,4 +2057,143 @@ a,
   .knowledge-document-workspace {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ── 与原型对齐的组件细节（依据 docs/design/prototype-computed.css）────────── */
+
+/* 弹窗：原型遮罩是半透明墨色 + 高斯模糊，容器 16px 圆角并带远投影 */
+.ant-modal-mask {
+  background: rgba(28, 27, 23, 0.2) !important;
+  backdrop-filter: blur(2px);
+}
+
+.ant-modal .ant-modal-content {
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--bg-container);
+  box-shadow: var(--shadow-modal);
+}
+
+.ant-modal .ant-modal-header {
+  margin-bottom: 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+
+.ant-modal .ant-modal-body {
+  padding-top: 4px;
+}
+
+/* 表单控件：原型统一 42px 高、9px 圆角、暖底 + line-2 描边 */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-picker,
+.ant-select .ant-select-selector {
+  border-color: var(--border-strong);
+  background: var(--bg-app);
+}
+
+.ant-input::placeholder,
+.ant-input-affix-wrapper input::placeholder,
+.ant-select .ant-select-selection-placeholder {
+  color: var(--text-tertiary);
+}
+
+/* 下拉箭头：原型是细描边 chevron，不是 antd 默认的实心小三角 */
+.ant-select .ant-select-arrow {
+  color: var(--text-tertiary);
+}
+
+.ant-select-dropdown {
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-container);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 对话：用户消息带气泡，AI 回复不带气泡直接铺排（与原型一致） */
+.chat-message.is-user .chat-message-body {
+  padding: 11px 16px;
+  border: 0;
+  border-radius: 14px 14px 4px;
+  background: #ede7d8;
+  box-shadow: none;
+  color: var(--text-body);
+  font-size: 15px;
+}
+
+.chat-message.is-assistant .chat-message-body {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.chat-message.is-assistant .chat-message-content.ant-typography {
+  font-size: 15px;
+  line-height: 1.85;
+}
+
+.chat-message.is-assistant {
+  max-width: min(92%, 860px);
+}
+
+.chat-message-author {
+  border-radius: 11px;
+  background: var(--bg-active);
+  color: var(--text-heading);
+  font-size: 11px;
+}
+
+.chat-message.is-user .chat-message-author {
+  background: var(--primary);
+  color: var(--bg-container);
+}
+
+/* 模型管理：原型该页是表格，不是卡片墙 */
+.model-configuration-table .ant-table {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-container);
+  overflow: hidden;
+}
+
+.model-configuration-table .ant-table-thead > tr > th {
+  font-family: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.model-configuration-table .ant-table-tbody > tr > td {
+  border-bottom-color: var(--border);
+}
+
+.model-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.model-cell .resource-card-icon {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  border-radius: 9px;
+}
+
+.model-cell-identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.model-cell-identifier {
+  font-family: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12.5px;
 }
