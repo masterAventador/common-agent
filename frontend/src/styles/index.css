@@ -719,7 +719,8 @@ select {
   display: grid;
   min-height: 640px;
   height: calc(100vh - 220px);
-  grid-template-columns: 268px minmax(520px, 1fr) 300px;
+  /* 各栏都给可收缩下限，避免窄屏下第三栏被挤出容器（此前 268+520+300 超出可用宽度） */
+  grid-template-columns: minmax(220px, 268px) minmax(0, 1fr) minmax(240px, 300px);
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -850,24 +851,14 @@ select {
   border-radius: 9px;
 }
 
-.workflow-palette-icon {
+/* 节点图标统一到原型的青绿 tile；原型不用多色区分节点类型 */
+.workflow-palette-icon,
+.workflow-node-icon {
   width: 34px;
   height: 34px;
-  background: var(--bg-hover);
-  color: var(--text-heading);
+  background: #e6f0ec;
+  color: var(--accent);
   font-size: 17px;
-}
-
-.workflow-palette-icon.is-knowledge_retrieval,
-.workflow-node-icon.is-knowledge_retrieval {
-  background: #e6f5ec;
-  color: #2c8754;
-}
-
-.workflow-palette-icon.is-end,
-.workflow-node-icon.is-end {
-  background: #f2ecfa;
-  color: #8853c1;
 }
 
 .workflow-canvas-node-list {
@@ -972,14 +963,6 @@ select {
       0 0 0 6px rgba(25, 25, 25, 0.08),
       0 12px 34px rgba(25, 25, 25, 0.08);
   }
-}
-
-.workflow-node-icon {
-  width: 36px;
-  height: 36px;
-  background: var(--bg-hover);
-  color: var(--text-heading);
-  font-size: 17px;
 }
 
 .workflow-node-title,
@@ -1160,8 +1143,8 @@ select {
 /* DESIGN.md 统一视觉基线 */
 
 ::selection {
-  background: #e8f0fb;
-  color: var(--text-heading);
+  background: var(--accent);
+  color: #fff;
 }
 
 button,
@@ -1659,8 +1642,8 @@ a,
 
 .chat-message-author {
   border-radius: 9px;
-  background: #e8f0fb;
-  color: #2467c8;
+  background: var(--bg-active);
+  color: var(--text-heading);
 }
 
 .chat-message.is-user .chat-message-author {
@@ -1740,12 +1723,6 @@ a,
   background-size: 18px 18px;
 }
 
-.workflow-palette-icon,
-.workflow-node-icon {
-  background: #e8f0fb;
-  color: #2467c8;
-}
-
 .workflow-canvas .react-flow__edge-path {
   stroke: var(--text-tertiary);
 }
@@ -1778,7 +1755,7 @@ a,
   }
 
   .workflow-designer {
-    grid-template-columns: 232px minmax(440px, 1fr) 260px;
+    grid-template-columns: minmax(200px, 232px) minmax(0, 1fr) minmax(220px, 260px);
   }
 }
 
@@ -2438,4 +2415,11 @@ a,
   font-family: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px;
   color: var(--text-faint);
+}
+
+/* 三栏内部允许收缩，防止长内容把栏撑破 */
+.workflow-sidebar,
+.workflow-inspector,
+.workflow-canvas-shell {
+  min-width: 0;
 }
