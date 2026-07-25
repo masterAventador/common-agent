@@ -116,11 +116,11 @@ const conversationEventTypes = [
   "assistant.tool.failed",
 ] as const;
 
-export function parseConversationsResponse(data: unknown): CursorPage<ConversationHistoryItem> {
+function parseConversationsResponse(data: unknown): CursorPage<ConversationHistoryItem> {
   return conversationsSchema.parse(data);
 }
 
-export function parseConversationHistoryItem(data: unknown): ConversationHistoryItem {
+function parseConversationHistoryItem(data: unknown): ConversationHistoryItem {
   return conversationHistoryItemSchema.parse(data);
 }
 

@@ -128,17 +128,6 @@ select {
   padding: 0 20px;
 }
 
-.brand-mark {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border-radius: 11px;
-  color: #fff;
-  background: var(--primary);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
 
 .brand-subtitle,
 .header-description {
@@ -276,40 +265,9 @@ select {
   background: var(--bg-container);
 }
 
-.knowledge-upload-row {
-  margin-bottom: 20px;
-  padding: 14px;
-  border-radius: 12px;
-  background: var(--bg-hover);
-}
 
-.knowledge-file-picker {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  height: 32px;
-  padding: 0 15px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-container);
-  cursor: pointer;
-}
 
-.knowledge-file-picker:hover,
-.knowledge-file-picker:focus-within {
-  border-color: var(--text-heading);
-  color: var(--text-heading);
-}
 
-.knowledge-file-picker input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  clip-path: inset(50%);
-}
 
 .knowledge-inline-alert {
   margin-bottom: 16px;
@@ -1521,9 +1479,6 @@ a,
   padding-inline-end: 4px;
 }
 
-.model-configurations-inline-alert {
-  margin-top: 16px;
-}
 
 .model-configurations-empty-card,
 .model-configuration-grid {
@@ -1593,16 +1548,7 @@ a,
   background: var(--bg-active);
 }
 
-.knowledge-upload-row {
-  border: 1px dashed var(--border-strong);
-  background: var(--bg-app);
-}
 
-.knowledge-file-picker {
-  height: 36px;
-  border-color: var(--border-strong);
-  border-radius: 8px;
-}
 
 .knowledge-upload-queue {
   display: grid;

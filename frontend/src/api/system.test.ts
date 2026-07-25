@@ -2,7 +2,8 @@ import { AxiosError, type AxiosResponse } from "axios";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient } from "./client";
-import { fetchHealth, parseHealthResponse, toApiClientError } from "./system";
+import { toApiClientError } from "./errors";
+import { fetchHealth, parseHealthResponse } from "./system";
 
 vi.mock("./client", () => ({ apiClient: { get: vi.fn() } }));
 

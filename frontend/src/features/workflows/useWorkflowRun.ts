@@ -23,7 +23,7 @@ export function isWorkflowRunActive(run: WorkflowRun | undefined): boolean {
   return Boolean(run && ["pending", "running"].includes(run.status));
 }
 
-export function mergeWorkflowRun(
+function mergeWorkflowRun(
   current: WorkflowRun | undefined,
   next: WorkflowRun,
 ): WorkflowRun {

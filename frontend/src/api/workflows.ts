@@ -119,7 +119,7 @@ export function parseWorkflowResponse(data: unknown): Workflow {
   return workflowSchema.parse(data);
 }
 
-export function parseWorkflowsResponse(data: unknown): CursorPage<Workflow> {
+function parseWorkflowsResponse(data: unknown): CursorPage<Workflow> {
   return workflowsSchema.parse(data);
 }
 

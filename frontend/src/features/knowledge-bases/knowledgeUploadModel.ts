@@ -1,7 +1,7 @@
 import type { KnowledgeDocument } from "../../api/knowledge";
 
-export const MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024;
-export const MAX_UPLOAD_QUEUE_FILES = 20;
+const MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024;
+const MAX_UPLOAD_QUEUE_FILES = 20;
 export const UPLOAD_CONCURRENCY = 2;
 
 export type KnowledgeUploadStatus =

@@ -4,8 +4,6 @@ import type { HealthResponse } from "./contracts";
 import { apiClient } from "./client";
 import { toApiClientError } from "./errors";
 
-export { ApiClientError, toApiClientError } from "./errors";
-
 const healthResponseSchema = z.strictObject({
   status: z.literal("ok"),
   service: z.literal("common-agent-api"),

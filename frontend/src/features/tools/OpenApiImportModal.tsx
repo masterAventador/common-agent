@@ -345,4 +345,3 @@ export function OpenApiImportModal({
   );
 }
 
-export default OpenApiImportModal;
