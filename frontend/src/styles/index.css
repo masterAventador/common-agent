@@ -2365,3 +2365,63 @@ a,
   border-radius: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
 }
+
+/* 文档卡片网格：对应原型的 .kgrid / .ktile */
+.knowledge-doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+  gap: 14px;
+}
+
+.knowledge-doc-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-height: 158px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-container);
+  color: var(--text-heading);
+  transition:
+    border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.knowledge-doc-tile:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 8px 22px -12px rgba(0, 0, 0, 0.14);
+}
+
+.knowledge-doc-icon {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: #e6f0ec;
+  color: var(--accent);
+}
+
+.knowledge-doc-name {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.knowledge-doc-tile .ant-tag {
+  width: max-content;
+  margin: 0;
+}
+
+.knowledge-doc-meta {
+  margin-top: auto;
+  font-family: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text-faint);
+}

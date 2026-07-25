@@ -16,10 +16,8 @@ import {
   Modal,
   Skeleton,
   Space,
-  Table,
   Tag,
   Typography,
-  type TableColumnsType,
 } from "antd";
 import { BookOpen, Database, FileText, Pencil, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -58,46 +56,46 @@ function formatBytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-function documentColumns(knowledgeBaseId: string): TableColumnsType<KnowledgeDocument> {
-  return [
-  {
-    title: "文档",
-    dataIndex: "name",
-    render: (name: string, document: KnowledgeDocument) => (
-      <Link
-        className="knowledge-document-link"
-        to={`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(
-          document.id,
-        )}`}
-      >
-        <FileText aria-hidden="true" size={15} />
-        <span>{name}</span>
-      </Link>
-    ),
-  },
-  {
-    title: "大小",
-    dataIndex: "size_bytes",
-    width: 110,
-    render: (size: number) => <Text type="secondary">{formatBytes(size)}</Text>,
-  },
-  {
-    title: "状态",
-    dataIndex: "parsing_status",
-    width: 110,
-    render: (status: KnowledgeDocument["parsing_status"]) => {
-      const presentation = parsingStatus[status];
-      return <Tag color={presentation.color}>{presentation.label}</Tag>;
-    },
-  },
-  {
-    title: "失败原因",
-    dataIndex: "error_code",
-    width: 180,
-    render: (code: string | null) =>
-      code ? <Text type="danger">{code}</Text> : <Text type="secondary">—</Text>,
-  },
-  ];
+function DocumentTiles({
+  knowledgeBaseId,
+  documents,
+  loading,
+}: {
+  knowledgeBaseId: string;
+  documents: readonly KnowledgeDocument[];
+  loading: boolean;
+}) {
+  if (loading) return <Skeleton active paragraph={{ rows: 6 }} />;
+  if (documents.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无文档" />;
+  }
+  return (
+    <div className="knowledge-doc-grid">
+      {documents.map((document) => {
+        const status = parsingStatus[document.parsing_status];
+        return (
+          <Link
+            key={document.id}
+            className="knowledge-doc-tile"
+            aria-label={document.name}
+            to={`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(
+              document.id,
+            )}`}
+          >
+            <span className="knowledge-doc-icon" aria-hidden="true">
+              <FileText size={20} strokeWidth={1.7} />
+            </span>
+            <span className="knowledge-doc-name">{document.name}</span>
+            <Tag color={status.color}>{status.label}</Tag>
+            <span className="knowledge-doc-meta">
+              {formatBytes(document.size_bytes)}
+              {document.error_code ? ` · ${document.error_code}` : ""}
+            </span>
+          </Link>
+        );
+      })}
+    </div>
+  );
 }
 
 export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean }) {
@@ -355,13 +353,10 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
                 action={<Button onClick={() => void documents.refetch()}>重试</Button>}
               />
             ) : (
-              <Table
-                rowKey="id"
-                columns={documentColumns(activeId ?? "")}
-                dataSource={documents.data ?? []}
+              <DocumentTiles
+                knowledgeBaseId={activeId ?? ""}
+                documents={documents.data ?? []}
                 loading={documents.isPending}
-                pagination={false}
-                locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无文档" /> }}
               />
             )}
           </Card>

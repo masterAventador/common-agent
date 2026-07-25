@@ -164,7 +164,8 @@ describe("KnowledgeBasesPage", () => {
     expect(screen.getByText("解析中")).toBeInTheDocument();
     expect(screen.getByText("已完成")).toBeInTheDocument();
     expect(screen.getByText("解析失败")).toBeInTheDocument();
-    expect(screen.getByText("parser_failed")).toBeInTheDocument();
+    // 卡片形态下错误码并入底部 meta 行
+    expect(screen.getByText(/parser_failed/)).toBeInTheDocument();
 
     const file = new File(["shared knowledge"], "shared.txt", { type: "text/plain" });
     await user.upload(screen.getByLabelText("选择或拖拽文档"), file);
@@ -203,6 +204,21 @@ describe("KnowledgeBasesPage", () => {
       }),
     );
     expect(await screen.findByText("制度库-改")).toBeInTheDocument();
+  });
+
+  it("lists documents as cards like the design prototype", async () => {
+    knowledgeApi.fetchKnowledgeBases.mockResolvedValue({
+      items: [knowledgeBase],
+      next_cursor: null,
+    });
+    knowledgeApi.fetchKnowledgeDocuments.mockResolvedValue(documents);
+    render(<KnowledgeBasesPage />, { wrapper: TestProviders });
+
+    // 原型该区是卡片网格而非表格：每个文档一张可点击的卡片
+    const card = await screen.findByRole("link", { name: /completed\.pdf/ });
+    expect(card).toHaveClass("knowledge-doc-tile");
+    expect(within(card).getByText("已完成")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
   it("shows a safe list error and retries through the same query", async () => {
