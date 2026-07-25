@@ -63,10 +63,31 @@ body {
   width: 100%;
 }
 
+/* 登录页开场居中，标志在上、标题居中，对齐设计原型与 DESIGN.md 的 auth display 规格 */
 .auth-heading {
   display: flex;
+  flex-direction: column;
   gap: 14px;
   align-items: center;
+  text-align: center;
+}
+
+.auth-heading > div {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-heading h2.ant-typography {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.auth-heading .auth-logo {
+  width: 56px;
+  height: 56px;
+  flex-basis: 56px;
+  border-radius: 16px;
 }
 
 .auth-heading .ant-typography {
