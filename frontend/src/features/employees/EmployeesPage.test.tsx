@@ -198,6 +198,19 @@ describe("EmployeesPage", () => {
     expect(screen.getByRole("button", { name: "与知识助理开始对话" })).toBeEnabled();
   });
 
+  it("keeps the employee card compact like the design prototype", async () => {
+    renderPage();
+
+    expect(await screen.findByText("知识助理")).toBeInTheDocument();
+    // 卡片收敛为「图标 + 名称 + 描述 + 底部状态栏」，系统指令只在编辑弹窗里出现
+    expect(screen.queryByText("系统指令")).not.toBeInTheDocument();
+    expect(screen.queryByText("默认模型")).not.toBeInTheDocument();
+    expect(screen.queryByText("工作流权限")).not.toBeInTheDocument();
+    // 底部状态栏仍然承载关键信息：工作流授权与所用模型
+    expect(await screen.findByText("未授权工作流")).toBeInTheDocument();
+    expect(await screen.findByText(modelConfiguration.display_name)).toBeInTheDocument();
+  });
+
   it("loads reference options only when employees or the editor need them", async () => {
     employeeApi.fetchEmployees.mockResolvedValue({ items: [], next_cursor: null });
     const user = userEvent.setup();

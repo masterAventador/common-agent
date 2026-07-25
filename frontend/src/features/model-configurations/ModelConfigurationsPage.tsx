@@ -223,13 +223,19 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
       ) : (
         <div className="model-configuration-grid">
           {items.map((item) => (
-            <Card
-              key={item.id}
-              className="model-configuration-card"
-              title={item.display_name}
-              extra={<Tag color={item.enabled ? "success" : "default"}>{item.enabled ? "启用" : "停用"}</Tag>}
-            >
-              <div className="model-configuration-details">
+            <Card key={item.id} className="model-configuration-card">
+              <div className="resource-card-head">
+                <span className="resource-card-icon" aria-hidden="true">
+                  <Bot size={20} strokeWidth={1.75} />
+                </span>
+                <Text strong className="resource-card-title">
+                  {item.display_name}
+                </Text>
+                <Tag color={item.enabled ? "success" : "default"}>
+                  {item.enabled ? "启用" : "停用"}
+                </Tag>
+              </div>
+              <div className="resource-card-footer">
                 <Text type="secondary">模型标识</Text>
                 <Text code>{item.model_identifier}</Text>
               </div>

@@ -392,26 +392,22 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
       ) : (
         <div className="employee-card-grid">
           {items.map((employee) => (
-            <Card
-              key={employee.id}
-              className="employee-card"
-              title={employee.name}
-              extra={knowledgeBaseLabel(employee)}
-            >
+            <Card key={employee.id} className="employee-card">
+              <div className="resource-card-head">
+                <span className="resource-card-icon" aria-hidden="true">
+                  <Bot size={20} strokeWidth={1.75} />
+                </span>
+                <Text strong className="resource-card-title">
+                  {employee.name}
+                </Text>
+                {knowledgeBaseLabel(employee)}
+              </div>
               <Text type="secondary" className="employee-description">
                 {employee.description || "暂无说明"}
               </Text>
-              <div className="employee-prompt-preview">
-                <Text type="secondary">系统指令</Text>
-                <Text>{employee.system_prompt}</Text>
-              </div>
-              <div className="employee-prompt-preview">
-                <Text type="secondary">默认模型</Text>
-                <div>{defaultModelLabel(employee)}</div>
-              </div>
-              <div className="employee-prompt-preview">
-                <Text type="secondary">工作流权限</Text>
-                <div>{workflowPermissionLabel(employee)}</div>
+              <div className="resource-card-footer">
+                {workflowPermissionLabel(employee)}
+                {defaultModelLabel(employee)}
               </div>
               <Flex gap={8} justify="flex-end" wrap>
                 <ResourceDeleteButton
