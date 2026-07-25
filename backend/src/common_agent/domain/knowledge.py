@@ -77,6 +77,20 @@ class KnowledgeDocument:
 
 
 @dataclass(frozen=True, slots=True)
+class DocumentChunk:
+    """文档解析后的一个切片。
+
+    与检索用的 RetrievedChunk 不同: 浏览文档时没有查询, 也就没有相关度分数,
+    取而代之的是切片在文档中的顺序, 用于左侧正文定位。
+    """
+
+    id: str
+    document_id: str
+    content: str
+    position: int
+
+
+@dataclass(frozen=True, slots=True)
 class KnowledgeRetrievalRequest:
     knowledge_base_id: str
     query: str

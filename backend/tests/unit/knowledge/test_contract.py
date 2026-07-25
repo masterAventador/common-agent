@@ -6,6 +6,7 @@ import pytest
 
 from common_agent.domain.knowledge import (
     CreateKnowledgeBaseRequest,
+    DocumentChunk,
     DocumentParsingStatus,
     DocumentUpload,
     KnowledgeBaseSummary,
@@ -28,6 +29,7 @@ from common_agent.knowledge.base import (
     KnowledgeServiceUnavailable,
     KnowledgeServiceVersionMismatch,
 )
+from common_agent.pagination import CursorPage, ListPageRequest
 
 
 class _ContractShape:
@@ -59,6 +61,12 @@ class _ContractShape:
 
     async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
         del knowledge_base_id
+        raise NotImplementedError
+
+    async def list_document_chunks(
+        self, knowledge_base_id: str, document_id: str, page: ListPageRequest
+    ) -> CursorPage[DocumentChunk]:
+        del knowledge_base_id, document_id, page
         raise NotImplementedError
 
     async def upload_document(

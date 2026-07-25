@@ -18,6 +18,7 @@ from common_agent.domain.knowledge import (
     KnowledgeServiceStatus,
 )
 from common_agent.knowledge.base import (
+    DocumentChunk,
     KnowledgeBaseNotFound,
     KnowledgeDocumentNotFound,
     KnowledgeDocumentRetryRejected,
@@ -50,6 +51,8 @@ class _KnowledgeProbe:
         self.get_calls: list[str] = []
         self.deleted: list[str] = []
         self.updated: list[tuple[str, UpdateKnowledgeBaseRequest]] = []
+        self.chunks: list[DocumentChunk] = []
+        self.chunk_calls: list[tuple[str, str, ListPageRequest]] = []
         self.page_calls: list[ListPageRequest] = []
 
     async def status(self) -> KnowledgeServiceStatus:
@@ -113,6 +116,12 @@ class _KnowledgeProbe:
 
     async def delete_knowledge_base(self, knowledge_base_id: str) -> None:
         self.deleted.append(knowledge_base_id)
+
+    async def list_document_chunks(
+        self, knowledge_base_id: str, document_id: str, page: ListPageRequest
+    ) -> CursorPage[DocumentChunk]:
+        self.chunk_calls.append((knowledge_base_id, document_id, page))
+        return CursorPage(items=tuple(self.chunks), next_cursor=None)
 
     async def upload_document(
         self, knowledge_base_id: str, upload: DocumentUpload
@@ -447,3 +456,38 @@ def test_knowledge_base_rename_is_blocked_across_tenants() -> None:
 
     asyncio.run(exercise())
     assert [call[0] for call in probe.updated] == ["kb-a"]
+
+
+def test_document_chunks_are_scoped_to_the_owning_tenant() -> None:
+    tenant_a = UUID("10000000-0000-4000-8000-000000000007")
+    tenant_b = UUID("10000000-0000-4000-8000-000000000008")
+    selected = tenant_a
+    probe = _KnowledgeProbe()
+    probe.knowledge_bases = [
+        KnowledgeBaseSummary("kb-a", "我的知识库", "", 1, 0),
+        KnowledgeBaseSummary("kb-b", "他人知识库", "", 1, 0),
+    ]
+    probe.chunks = [
+        DocumentChunk(id="chunk-1", document_id="doc-1", content="第一段正文", position=1),
+        DocumentChunk(id="chunk-2", document_id="doc-1", content="第二段正文", position=2),
+    ]
+    ownership = _OwnershipProbe()
+    ownership.values = {tenant_a: {"kb-a"}, tenant_b: {"kb-b"}}
+    service = KnowledgeBaseService(
+        probe,
+        ownership=ownership,
+        tenant_id_provider=lambda: selected,
+    )
+
+    async def exercise() -> None:
+        page = await service.list_document_chunks(
+            "kb-a", "doc-1", ListPageRequest(limit=20)
+        )
+        assert [chunk.content for chunk in page.items] == ["第一段正文", "第二段正文"]
+
+        # 不能借别的工作区的知识库读切片
+        with pytest.raises(KnowledgeBaseNotFound):
+            await service.list_document_chunks("kb-b", "doc-1", ListPageRequest(limit=20))
+
+    asyncio.run(exercise())
+    assert [call[0] for call in probe.chunk_calls] == ["kb-a"]

@@ -4,6 +4,7 @@ from typing import ClassVar, Protocol, runtime_checkable
 
 from common_agent.domain.knowledge import (
     CreateKnowledgeBaseRequest,
+    DocumentChunk,
     DocumentUpload,
     KnowledgeBaseSummary,
     KnowledgeDocument,
@@ -122,6 +123,10 @@ class KnowledgeService(Protocol):
     ) -> KnowledgeDocument: ...
 
     async def list_documents(self, knowledge_base_id: str) -> tuple[KnowledgeDocument, ...]: ...
+
+    async def list_document_chunks(
+        self, knowledge_base_id: str, document_id: str, page: ListPageRequest
+    ) -> CursorPage[DocumentChunk]: ...
 
     async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult: ...
 

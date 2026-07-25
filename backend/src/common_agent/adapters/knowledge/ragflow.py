@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, TypeAdapter, Val
 
 from common_agent.domain.knowledge import (
     CreateKnowledgeBaseRequest,
+    DocumentChunk,
     DocumentParsingStatus,
     DocumentUpload,
     KnowledgeBaseSummary,
@@ -88,6 +89,22 @@ class _RagFlowChunk(BaseModel):
     similarity: FiniteFloat = Field(ge=0, le=1)
 
 
+class _RagFlowDocumentChunk(BaseModel):
+    """文档浏览返回的切片。检索接口才有 similarity/document_keyword, 这里没有。"""
+
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    id: str = Field(min_length=1)
+    content: str
+
+
+class _RagFlowDocumentChunkList(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    total: int = Field(ge=0)
+    chunks: list[_RagFlowDocumentChunk]
+
+
 class _RagFlowRetrieval(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
@@ -97,6 +114,7 @@ class _RagFlowRetrieval(BaseModel):
 
 _ENVELOPE_ADAPTER = TypeAdapter(_RagFlowEnvelope)
 _DATASET_ADAPTER = TypeAdapter(_RagFlowDataset)
+_DOCUMENT_CHUNK_LIST_ADAPTER = TypeAdapter(_RagFlowDocumentChunkList)
 _DATASET_LIST_ADAPTER = TypeAdapter(list[_RagFlowDataset])
 _DOCUMENT_LIST_ADAPTER = TypeAdapter(_RagFlowDocumentList)
 _UPLOADED_DOCUMENTS_ADAPTER = TypeAdapter(list[_RagFlowDocument])
@@ -297,6 +315,47 @@ class RagFlowKnowledgeService:
             "/api/v1/datasets",
             failure_mode="delete",
             json={"ids": [knowledge_base_id]},
+        )
+
+    async def list_document_chunks(
+        self, knowledge_base_id: str, document_id: str, page: ListPageRequest
+    ) -> CursorPage[DocumentChunk]:
+        scope = f"document-chunks:{document_id}"
+        offset = (
+            0
+            if page.cursor is None
+            else decode_offset_cursor(
+                page.cursor, scope=scope, search=page.search, limit=page.limit
+            )
+        )
+        if offset % page.limit != 0:
+            raise InvalidPageCursor
+        data = await self._request(
+            "GET",
+            f"/api/v1/datasets/{knowledge_base_id}/documents/{document_id}/chunks",
+            dataset_scoped=True,
+            params={"page": offset // page.limit + 1, "page_size": page.limit},
+        )
+        payload = _validate(_DOCUMENT_CHUNK_LIST_ADAPTER, data)
+        items = tuple(
+            DocumentChunk(
+                id=chunk.id,
+                document_id=document_id,
+                content=chunk.content,
+                position=offset + index + 1,
+            )
+            for index, chunk in enumerate(payload.chunks)
+        )
+        consumed = offset + len(items)
+        return CursorPage(
+            items=items,
+            next_cursor=(
+                encode_offset_cursor(
+                    scope=scope, search=page.search, limit=page.limit, offset=consumed
+                )
+                if consumed < payload.total
+                else None
+            ),
         )
 
     async def upload_document(

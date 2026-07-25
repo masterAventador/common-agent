@@ -7,6 +7,7 @@ from uuid import UUID
 
 from common_agent.domain.knowledge import (
     CreateKnowledgeBaseRequest,
+    DocumentChunk,
     DocumentParsingStatus,
     DocumentUpload,
     KnowledgeBaseSummary,
@@ -238,6 +239,13 @@ class KnowledgeBaseService:
         await self._ensure_available()
         await self._ensure_owned(knowledge_base_id)
         return await self._knowledge.list_documents(knowledge_base_id)
+
+    async def list_document_chunks(
+        self, knowledge_base_id: str, document_id: str, page: ListPageRequest
+    ) -> CursorPage[DocumentChunk]:
+        await self._ensure_available()
+        await self._ensure_owned(knowledge_base_id)
+        return await self._knowledge.list_document_chunks(knowledge_base_id, document_id, page)
 
     async def upload_document(
         self,

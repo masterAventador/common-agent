@@ -86,6 +86,15 @@ class UpdateKnowledgeBaseBody(BaseModel):
     description: KnowledgeBaseDescription = ""
 
 
+class DocumentChunkResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    id: str
+    document_id: str
+    content: str
+    position: int
+
+
 class KnowledgeBaseResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
@@ -302,6 +311,39 @@ async def list_documents(
     except KnowledgeServiceError as error:
         raise knowledge_error_to_app_error(error) from error
     return [_document_response(document) for document in documents]
+
+
+@router.get(
+    "/{knowledge_base_id}/documents/{document_id}/chunks",
+    response_model=CursorPageResponse[DocumentChunkResponse],
+    responses={
+        404: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
+        502: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def list_document_chunks(
+    request: Request,
+    knowledge_base_id: str,
+    document_id: str,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
+    cursor: Annotated[str | None, Query(max_length=MAX_PAGE_CURSOR_LENGTH)] = None,
+) -> CursorPageResponse[DocumentChunkResponse]:
+    try:
+        page = await _application(request).list_document_chunks(
+            knowledge_base_id,
+            document_id,
+            ListPageRequest(limit=limit, search="", cursor=cursor),
+        )
+    except InvalidPageCursor as error:
+        raise AppError(error.code, error.message, 422, error.retryable) from error
+    except KnowledgeServiceError as error:
+        raise knowledge_error_to_app_error(error) from error
+    return CursorPageResponse[DocumentChunkResponse](
+        items=[DocumentChunkResponse.model_validate(chunk) for chunk in page.items],
+        next_cursor=page.next_cursor,
+    )
 
 
 @router.post(

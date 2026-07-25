@@ -179,6 +179,22 @@ def _handler(probe: _RagFlowProbe) -> type[BaseHTTPRequestHandler]:
                     },
                 )
                 return
+            if self.path.startswith("/api/v1/datasets/kb-1/documents/doc-1/chunks"):
+                _send_json(
+                    self,
+                    200,
+                    {
+                        "code": 0,
+                        "data": {
+                            "total": 2,
+                            "chunks": [
+                                {"id": "chunk-1", "content": "第一段正文"},
+                                {"id": "chunk-2", "content": "第二段正文"},
+                            ],
+                        },
+                    },
+                )
+                return
             if self.path.startswith("/api/v1/datasets/kb-1/documents?"):
                 _send_json(
                     self,
@@ -435,6 +451,32 @@ def test_knowledge_base_rename_goes_through_the_formal_route_and_ragflow() -> No
     }
     assert missing.status_code == 404
     assert invalid.status_code == 422
+
+
+def test_document_chunks_are_listed_through_the_formal_route() -> None:
+    """切片浏览走真实 Uvicorn 与 RAGFlow 适配层, 返回带顺序的切片。"""
+    asyncio.run(_clear_fake_ownerships())
+    try:
+        with (
+            _fake_ragflow() as (ragflow_url, _probe),
+            running_api(TEST_DATABASE_URL, env_overrides=_ragflow_env(ragflow_url)) as api_url,
+            authenticated_client(base_url=api_url, timeout=5) as client,
+        ):
+            client.get("/api/v1/knowledge-bases")
+            chunks = client.get("/api/v1/knowledge-bases/kb-1/documents/doc-1/chunks")
+            foreign = client.get("/api/v1/knowledge-bases/missing/documents/doc-1/chunks")
+    finally:
+        asyncio.run(_clear_fake_ownerships())
+
+    assert chunks.status_code == 200
+    assert chunks.json() == {
+        "items": [
+            {"id": "chunk-1", "document_id": "doc-1", "content": "第一段正文", "position": 1},
+            {"id": "chunk-2", "document_id": "doc-1", "content": "第二段正文", "position": 2},
+        ],
+        "next_cursor": None,
+    }
+    assert foreign.status_code == 404
 
 
 def test_upload_limits_fail_before_calling_ragflow() -> None:

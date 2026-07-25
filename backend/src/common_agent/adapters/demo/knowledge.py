@@ -8,6 +8,7 @@ from common_agent.domain.conversation import CITATION_CONTENT_MAX_LENGTH
 from common_agent.domain.knowledge import (
     KNOWLEDGE_DOCUMENT_NAME_MAX_LENGTH,
     CreateKnowledgeBaseRequest,
+    DocumentChunk,
     DocumentParsingStatus,
     DocumentUpload,
     KnowledgeBaseSummary,
@@ -21,6 +22,7 @@ from common_agent.domain.knowledge import (
 )
 from common_agent.knowledge.base import (
     KnowledgeBaseNotFound,
+    KnowledgeDocumentNotFound,
     KnowledgeDocumentUploadFailed,
     KnowledgeRequestRejected,
 )
@@ -198,6 +200,38 @@ class DemoKnowledgeService:
                 raise KnowledgeBaseNotFound()
             documents = await unit_of_work.knowledge.list_documents(knowledge_base_id)
         return tuple(item.document for item in documents)
+
+    async def list_document_chunks(
+        self, knowledge_base_id: str, document_id: str, page: ListPageRequest
+    ) -> CursorPage[DocumentChunk]:
+        """按段落切分 Demo 文档正文, 模拟真实解析产生的切片顺序。"""
+        self._ensure_open()
+        async with self._unit_of_work() as unit_of_work:
+            if await unit_of_work.knowledge.get_knowledge_base(knowledge_base_id) is None:
+                raise KnowledgeBaseNotFound()
+            documents = await unit_of_work.knowledge.list_documents(knowledge_base_id)
+        stored = next(
+            (item for item in documents if item.document.id == document_id),
+            None,
+        )
+        if stored is None:
+            raise KnowledgeDocumentNotFound()
+        paragraphs = [block for block in (stored.content or "").split("\n\n") if block.strip()]
+        offset = 0 if page.cursor is None else int(page.cursor)
+        window = paragraphs[offset : offset + page.limit]
+        consumed = offset + len(window)
+        return CursorPage(
+            items=tuple(
+                DocumentChunk(
+                    id=f"demo-{document_id}-{offset + index + 1}",
+                    document_id=document_id,
+                    content=block,
+                    position=offset + index + 1,
+                )
+                for index, block in enumerate(window)
+            ),
+            next_cursor=str(consumed) if consumed < len(paragraphs) else None,
+        )
 
     async def retrieve(self, request: KnowledgeRetrievalRequest) -> KnowledgeRetrievalResult:
         self._ensure_open()
