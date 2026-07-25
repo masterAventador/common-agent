@@ -3,8 +3,8 @@ version: 1.0
 name: PowerAI-design-system
 description: A high-end, business-grade design system for PowerAI Studio — an enterprise AI middle-platform (数智化中台) for the power & energy industry. Paper-calm Notion foundation, near-black neutral brand, hairline borders, restrained "electric" accent. Deliberately not "obviously AI."
 language: Simplified Chinese (zh-CN)
-brand-color: "#191919"
-accent: "#4DA3FF (electric blue) · #0EA5A4 (electric teal)"
+brand-color: "#1C1B17"
+accent: "#117067 (teal)"
 ---
 
 # PowerAI — Design System
@@ -32,33 +32,36 @@ the "paper-calm" the theme calls for, not a cool SaaS white.
 
 | Token | Hex | Use |
 |---|---|---|
-| `--bg-app` | `#F5F2EB` | page canvas (warm paper off-white) |
-| `--bg-container` | `#FBFAF5` | cards, panels, popovers |
-| `--bg-sidebar` | `#EFEBE1` | left navigation rail (one step deeper than canvas) |
+| `--bg-app` (`--paper`) | `#F5F2EB` | page canvas (warm paper off-white) |
+| `--bg-container` (`--paper-2`) | `#FBFAF5` | cards, panels, popovers |
+| `--bg-sidebar` (`--panel`) | `#EFEBE1` | left navigation rail |
 | `--bg-hover` | `#F0ECE1` | row / menu hover (one step darker) |
-| `--bg-active` | `#E9E4D6` | selected fill |
-| `--border` | `#E2DCCD` | default hairline |
-| `--border-strong` | `#D5CDB8` | emphasis hairline |
-| `--border-focus` | `#B5AB92` | input focus (no glow ring) |
+| `--bg-active` | `#EDE7D8` | selected fill, icon tiles |
+| `--border` (`--line`) | `#E5DFD0` | default hairline |
+| `--border-strong` (`--line-2`) | `#E2DCCD` | emphasis hairline, control borders |
+| `--border-focus` (`--mut-2`) | `#A59C87` | input focus (no glow ring) |
 
 ### Ink (text)
 | Token | Hex | Use |
 |---|---|---|
-| `--text-heading` | `#191919` | headings |
-| `--text-body` | `#37352F` | body |
-| `--text-secondary` | `#787774` | secondary |
-| `--text-tertiary` | `#A8A8A5` | meta / placeholder |
+| `--text-heading` (`--ink`) | `#1C1B17` | headings |
+| `--text-body` (`--ink-2`) | `#3B3930` | body |
+| `--text-secondary` (`--mut`) | `#837C6B` | secondary |
+| `--text-tertiary` (`--mut-2`) | `#A59C87` | meta / placeholder |
+| `--text-faint` (`--faint`) | `#B0A78F` | table headers, timestamps |
 
 ### Brand & status (use only to signal state)
 | Token | Hex | Meaning |
 |---|---|---|
-| `--primary` | `#191919` | core actions (neutral black) · hover `#333333` · active `#000000` |
-| `--info` | `#2563EB` | links, info |
-| `--electric` (teal) | `#0EA5A4` | AI-running / processing accent (sparingly) |
-| electric blue | `#4DA3FF` | primary logo spark accent |
-| `--success` | `#1F8A4C` | success, enabled |
+| `--primary` (`--ink`) | `#1C1B17` | core actions (neutral near-black) · hover `#3B3930` |
+| `--accent` (`--teal`) | `#117067` | **the accent — selection, enabled, running, links** · deep `#0D5B53` |
+| accent tint | `#E6F0EC` | icon tiles, enabled badges, selected chips |
 | `--warning` | `#C46A17` | warning, pending |
-| `--error` | `#D64545` | error, destructive |
+| `--error` (`--red`) | `#C2413A` | error, destructive |
+
+> The accent is **teal, not blue**. An earlier revision of this file listed an electric-blue
+> accent and a cool gray ramp; the prototype source (`prototype/index.html`) never used them.
+> Every value in these tables is now taken from that source's `:root`.
 
 ### The tag palette — signature element
 A **Notion-style 10-color palette** (charcoal, silver, brown, gold, orange, green, blue, purple, pink, red), each a **low-saturation tint background + deep readable text**. Powers tags, status badges (with a 6px status dot), small icon-container badges, and deterministic avatar backgrounds. Color identifies category; it never floods an area.
@@ -159,13 +162,13 @@ White fill · 1px `--border` hairline · **12px radius** · 20px padding · **no
 ## Quick reference
 
 ```
-brand/ink   #191919  (primary, never pure black)
-body        #37352F   secondary #787774   tertiary #A8A8A5
-canvas      #F5F2EB   card #FBFAF5   sidebar #EFEBE1   hover #F0ECE1   active #E9E4D6
-border      #E2DCCD  (1px hairline — the primary boundary)
-accent      #4DA3FF electric blue · #0EA5A4 electric teal (state only)
+brand/ink   #1C1B17  (primary, never pure black)
+body        #3B3930   secondary #837C6B   tertiary #A59C87   faint #B0A78F
+canvas      #F5F2EB   card #FBFAF5   sidebar #EFEBE1   hover #F0ECE1   active #EDE7D8
+border      #E5DFD0  (1px hairline) · strong #E2DCCD (controls)
+accent      #117067 teal (selection / enabled / running) · tint #E6F0EC
 type        Inter (UI) · Geist Mono (code/IDs)   base 14px/1.57
-radius      cards 12 · controls 10 · buttons 8 · tags 4 · avatars full
+radius      cards 14 · controls 9 · buttons 9 · icon tiles 11 · modal 16 · tags full
 shadow      xs 0 1px 2px rgba(0,0,0,.04) · sm 0 4px 12px rgba(0,0,0,.06)
 spacing     4 / 8 / 12 / 16 / 20 / 24 / 32   sidebar 232 · rows 64 · reading 896
 motion      0.15–0.2s cubic-bezier(0.4,0,0.2,1) · functional only, no bounce

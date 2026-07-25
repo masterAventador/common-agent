@@ -1,6 +1,7 @@
 :root {
-  /* 色值逐条取自原型实测样式表 docs/design/prototype-computed.css 的 :root
-     （--paper/--paper-2/--panel/--line/--ink/--mut/--teal…），不要凭印象改。 */
+  /* 色值逐条取自原型源码 docs/design/prototype/index.html 顶部的 :root
+     （--paper/--paper-2/--panel/--line/--line-2/--ink/--ink-2/--mut/--mut-2/--faint/--teal），
+     不要凭印象改。原型是设计稿的事实来源，DESIGN.md 早期版本与它并不一致。 */
   --bg-app: #f5f2eb;
   --bg-container: #fbfaf5;
   --bg-sidebar: #efebe1;
