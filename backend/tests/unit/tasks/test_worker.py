@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Iterator
-from contextlib import contextmanager
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4
@@ -289,7 +287,7 @@ def test_worker_retries_with_bounded_exponential_backoff() -> None:
 
 
 def test_worker_logs_unexpected_handler_failure_before_retrying() -> None:
-    """未预期异常必须留下堆栈，否则任务失败后无从排查根因。"""
+    """未预期异常必须留下堆栈, 否则任务失败后无从排查根因。"""
 
     async def scenario() -> None:
         task = _task(attempts=1, max_attempts=3)

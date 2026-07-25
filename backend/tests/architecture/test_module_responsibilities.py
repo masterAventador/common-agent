@@ -209,10 +209,10 @@ def _assert_acyclic(graph: dict[str, set[str]]) -> None:
 
 
 def test_tool_call_error_codes_are_referenced_through_the_enum() -> None:
-    """工具错误码只能来自 ToolCallErrorCode 枚举，不允许在别处硬编码同一串字面量。
+    """工具错误码只能来自 ToolCallErrorCode 枚举, 不允许在别处硬编码同一串字面量。
 
-    这些码同时出现在适配层、服务层与会话事件里；散落成字面量后，改枚举值不会带动
-    其余位置，属于典型的定时炸弹。枚举定义文件本身与测试断言不在约束范围内。
+    这些码同时出现在适配层、服务层与会话事件里。散落成字面量后, 改枚举值不会带动
+    其余位置, 属于典型的定时炸弹。枚举定义文件本身与测试断言不在约束范围内。
     """
     from common_agent.tools.models import ToolCallErrorCode
 
@@ -229,6 +229,6 @@ def test_tool_call_error_codes_are_referenced_through_the_enum() -> None:
                 ).append(str(path.relative_to(REPOSITORY_ROOT)))
 
     assert offenders == {}, (
-        "以下工具错误码被硬编码，应改用 ToolCallErrorCode 枚举:\n"
+        "以下工具错误码被硬编码, 应改用 ToolCallErrorCode 枚举:\n"
         + "\n".join(f"  {code}: {', '.join(files)}" for code, files in sorted(offenders.items()))
     )
