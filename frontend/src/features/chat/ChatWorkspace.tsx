@@ -1,5 +1,6 @@
 import { Alert, Button, Empty, Flex, Input, Select, Skeleton, Tag, Typography } from "antd";
 import { Bot, Send, Square } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import type { Employee } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
@@ -38,6 +39,17 @@ export function ChatWorkspace({
     loadingMoreRuns,
     openWorkflowRun,
   } = controller;
+
+  const scrollBottomRef = useRef<HTMLDivElement>(null);
+  const renderedMessages = messages.isSuccess ? messages.data : undefined;
+  // 内容变长（新消息或流式增量）时把对话区滚到最新，避免用户手动下拉。
+  const scrollSignal = renderedMessages
+    ? `${renderedMessages.length}:${renderedMessages.at(-1)?.content.length ?? 0}`
+    : "";
+  useEffect(() => {
+    if (!scrollSignal) return;
+    scrollBottomRef.current?.scrollIntoView({ block: "end" });
+  }, [scrollSignal]);
 
   return (
     <div className="chat-workspace">
@@ -90,6 +102,7 @@ export function ChatWorkspace({
               加载更多运行记录
             </Button>
           )}
+          <div ref={scrollBottomRef} aria-hidden="true" />
         </div>
         <div className="chat-composer">
           <Input.TextArea

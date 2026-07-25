@@ -52,11 +52,11 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 
 | ID | 任务 | 验收标准 | 状态 |
 | --- | --- | --- | --- |
-| D13 | 数字员工（qwen-long）对话报错「本次没有生成可显示的内容 / 生成失败」 | 根因：Deep Agents 中间件把系统消息 content 组装成数组，qwen-long 在百炼 compatible-mode 强制要求 content 为纯字符串（报 `Input should be a valid string`），其余模型宽容故未暴露。修复：Bailian 适配器出站前把内容块拍平为字符串；并给 deep_agents 两处被吞异常补 `_LOGGER.exception`。TDD 单测 + 真实 qwen-long 走真实 deep agent 适配层验证流式正常 | ✅ 已完成 |
-| D15 | qwen-max 预置在本端点调不通 | 该百炼专属 compatible-mode 端点上 qwen-max 返回非 OpenAI 结构（仅 finish_reason/text，无 choices/message），适配层无法解析，测试调用与会话都失败。从预置 seed 移除并更新说明；清理 dev 库中两个租户下无引用的 qwen-max 行 | ✅ 已完成 |
-| D10 | AI 对话页不随内容长度自动滚动到底部 | 新消息与流式增量到达时对话区自动滚到底部；TDD + 真实页面验收 | 🚧 实现中 |
-| D11 | 引用资料只显示引用了哪些文档（名称） | AI 回答下方引用区去掉每个片段正文与相似度，按文档名去重只列名称；TDD + 真实页面验收 | 🚧 实现中 |
-| D14 | 模型卡片去掉「工具调用流」展示行 | 模型管理卡片不再展示「工具调用流：正常流式/自动非流式」这一行 | 🚧 实现中 |
+| D13 | 数字员工（qwen-long）对话报错「本次没有生成可显示的内容 / 生成失败」 | 根因：Deep Agents 中间件把系统消息 content 组装成数组，qwen-long 在百炼 compatible-mode 强制要求 content 为纯字符串（报 `Input should be a valid string`），其余模型宽容故未暴露。修复：Bailian 适配器出站前把内容块拍平为字符串；并给 deep_agents 两处被吞异常补 `_LOGGER.exception`。TDD 单测 + 真实 qwen-long 走真实 deep agent 适配层验证流式正常。生产同路径复验：经真实 FastAPI `POST /conversations/{id}/messages`（带真实会话 Cookie/CSRF/租户头）触发，同一会话内修复前消息 `status=failed / deep_agent_execution_failed`、修复后新消息 `status=completed` 并返回正常回复，真实页面截图两条消息对照可见 | ✅ 已完成 |
+| D15 | qwen-max 预置在本端点调不通 | 该百炼专属 compatible-mode 端点上 qwen-max 返回非 OpenAI 结构（仅 finish_reason/text，无 choices/message），适配层无法解析，测试调用与会话都失败。从预置 seed 移除并更新说明；清理 dev 库中两个租户下无引用的 qwen-max 行。真实页面确认模型管理只剩 5 张可调通卡片、无 qwen-max | ✅ 已完成 |
+| D10 | AI 对话页不随内容长度自动滚动到底部 | 对话区底部哨兵 + 按「消息条数:末条长度」变化触发 `scrollIntoView`，新消息与流式增量都会滚到最新；jsdom 缺 `scrollIntoView`，在 `src/test/setup.ts` 补 polyfill（同 matchMedia/ResizeObserver 既有做法）。RED→GREEN 单测 + 真实页面截图确认停在最新回复 | ✅ 已完成 |
+| D11 | 引用资料只显示引用了哪些文档（名称） | `CitationList` 按 `document_name` 去重，只渲染名称 chip，移除片段正文与「相关度 xx%」标签；样式由片段卡片改为紧凑 chip。RED→GREEN 单测（含同文档多片段只出现一次）+ 真实页面确认只显示 `文明养犬管理规定.docx` / `文明旅游出行提示.pdf` | ✅ 已完成 |
+| D14 | 模型卡片去掉「工具调用流」展示行 | 模型管理卡片不再展示「工具调用流：正常流式/自动非流式」这一行；测试改为断言该文案不存在；真实页面确认 5 张卡片均无此行 | ✅ 已完成 |
 
 ### 2.2c 🅕 需查证（第二批）
 

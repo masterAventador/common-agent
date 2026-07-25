@@ -64,7 +64,10 @@ describe("ModelConfigurationsPage", () => {
     expect(screen.getByText("Qwen Plus")).toBeInTheDocument();
     expect(screen.getByText("qwen-plus")).toBeInTheDocument();
     expect(screen.getByText("启用")).toBeInTheDocument();
-    expect(screen.getByText("工具调用自动非流式")).toBeInTheDocument();
+    // 卡片不再展示「工具调用流」这一行
+    expect(screen.queryByText("工具调用流")).not.toBeInTheDocument();
+    expect(screen.queryByText("工具调用自动非流式")).not.toBeInTheDocument();
+    expect(screen.queryByText("正常流式")).not.toBeInTheDocument();
     expect(screen.queryByText("模型目录")).not.toBeInTheDocument();
   });
 

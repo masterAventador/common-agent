@@ -521,12 +521,14 @@ select {
 }
 
 .chat-citation-item {
-  display: grid;
-  padding: 10px;
-  gap: 6px;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 10px;
   border: 1px solid #e1e7f5;
-  border-radius: 9px;
+  border-radius: 999px;
   background: #f8faff;
+  font-size: 13px;
 }
 
 .chat-workflow-runs {

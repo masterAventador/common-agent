@@ -598,11 +598,75 @@ describe("ChatPage", () => {
       await within(messageRegion).findByText("验收标记是 COMMON_AGENT_CHAT_OK。"),
     ).toBeInTheDocument();
     expect(within(messageRegion).getByText("通用手册.txt")).toBeInTheDocument();
+    // 引用区只列文档名，不展示片段正文与相似度
     expect(
-      within(messageRegion).getByText("可靠片段包含 COMMON_AGENT_CHAT_OK。"),
-    ).toBeInTheDocument();
+      within(messageRegion).queryByText("可靠片段包含 COMMON_AGENT_CHAT_OK。"),
+    ).not.toBeInTheDocument();
+    expect(within(messageRegion).queryByText(/相关度/)).not.toBeInTheDocument();
     expect(within(employeeRegion).getByText("知识助理")).toBeInTheDocument();
     expect(within(employeeRegion).getByText("已绑定知识库")).toBeInTheDocument();
+  });
+
+  it("lists each cited document name once even with multiple chunks", async () => {
+    chatApi.fetchConversationMessages.mockResolvedValue([
+      userMessage,
+      {
+        ...assistantMessage,
+        citations: [
+          {
+            position: 1,
+            knowledge_base_id: "kb-1",
+            chunk_id: "chunk-1",
+            document_id: "doc-1",
+            document_name: "通用手册.txt",
+            content: "片段一。",
+            score: 0.96,
+          },
+          {
+            position: 2,
+            knowledge_base_id: "kb-1",
+            chunk_id: "chunk-2",
+            document_id: "doc-1",
+            document_name: "通用手册.txt",
+            content: "片段二。",
+            score: 0.81,
+          },
+          {
+            position: 3,
+            knowledge_base_id: "kb-1",
+            chunk_id: "chunk-3",
+            document_id: "doc-2",
+            document_name: "补充说明.pdf",
+            content: "片段三。",
+            score: 0.77,
+          },
+        ],
+      },
+    ]);
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    expect(
+      await within(messageRegion).findByText("补充说明.pdf"),
+    ).toBeInTheDocument();
+    expect(within(messageRegion).getAllByText("通用手册.txt")).toHaveLength(1);
+    expect(within(messageRegion).queryByText("片段一。")).not.toBeInTheDocument();
+    expect(within(messageRegion).queryByText("片段二。")).not.toBeInTheDocument();
+    expect(within(messageRegion).queryByText(/相关度/)).not.toBeInTheDocument();
+  });
+
+  it("auto-scrolls the message area to the newest content", async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
+    try {
+      renderPage();
+
+      expect(
+        await screen.findByText("验收标记是 COMMON_AGENT_CHAT_OK。"),
+      ).toBeInTheDocument();
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+    } finally {
+      scrollSpy.mockRestore();
+    }
   });
 
   it("renders replayed tool lifecycle events without arguments or results", async () => {

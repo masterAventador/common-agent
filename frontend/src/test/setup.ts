@@ -32,4 +32,10 @@ Object.defineProperty(globalThis, "ResizeObserver", {
   },
 });
 
+// jsdom 不实现布局，缺少 scrollIntoView；补空实现供自动滚动逻辑调用。
+Object.defineProperty(Element.prototype, "scrollIntoView", {
+  writable: true,
+  value: vi.fn(),
+});
+
 afterEach(cleanup);

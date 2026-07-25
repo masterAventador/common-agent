@@ -128,22 +128,17 @@ function ToolCallLifecycle({
 }
 
 function CitationList({ message }: { message: ConversationMessage }) {
-  if (message.citations.length === 0) return null;
+  // 同一文档可能命中多个片段，按文档名去重，只列引用了哪些资料。
+  const documentNames = [...new Set(message.citations.map((citation) => citation.document_name))];
+  if (documentNames.length === 0) return null;
   return (
-    <div className="chat-citations" aria-label={`引用资料 ${message.citations.length}`}>
+    <div className="chat-citations" aria-label={`引用资料 ${documentNames.length}`}>
       <Text strong>
-        <FileText aria-hidden="true" size={14} /> 引用资料 {message.citations.length}
+        <FileText aria-hidden="true" size={14} /> 引用资料 {documentNames.length}
       </Text>
-      {message.citations.map((citation) => (
-        <div
-          key={`${citation.knowledge_base_id}:${citation.chunk_id}`}
-          className="chat-citation-item"
-        >
-          <Flex justify="space-between" align="center" gap={8}>
-            <Text strong>{citation.document_name}</Text>
-            <Tag color="geekblue">相关度 {Math.round(citation.score * 100)}%</Tag>
-          </Flex>
-          <Text type="secondary">{citation.content}</Text>
+      {documentNames.map((name) => (
+        <div key={name} className="chat-citation-item">
+          <Text>{name}</Text>
         </div>
       ))}
     </div>
