@@ -307,7 +307,7 @@ select {
 
 .employee-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(348px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
 }
 
@@ -319,7 +319,9 @@ select {
 
 .employee-description {
   display: -webkit-box;
-  min-height: 44px;
+  min-height: 40px;
+  font-size: 13px;
+  line-height: 1.55;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -338,20 +340,22 @@ select {
 
 .resource-card-icon {
   display: grid;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
   place-items: center;
-  border-radius: 10px;
-  background: var(--bg-active);
-  color: var(--text-heading);
+  border-radius: 11px;
+  /* 原型的图标 tile 用青绿 tint，不是中性灰 */
+  background: #e6f0ec;
+  color: var(--accent);
 }
 
 .resource-card-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 15px;
+  font-size: 17px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -364,6 +368,9 @@ select {
   margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+  font-family: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text-faint);
 }
 
 .chat-page {
@@ -2196,4 +2203,96 @@ a,
 .model-cell-identifier {
   font-family: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
   font-size: 12.5px;
+}
+
+/* 徽标形态：原型是小号粗体胶囊 */
+.ant-tag {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* 彩色标签统一到原型的中性 + 青绿体系，不用 antd 默认的高饱和蓝紫。
+   antd v5 的运行时样式权重高于普通选择器，此处必须用 !important 才能覆盖，
+   与本文件既有的 antd 覆盖写法一致。 */
+.ant-tag.ant-tag-blue,
+.ant-tag.ant-tag-cyan,
+.ant-tag.ant-tag-geekblue,
+.ant-tag.ant-tag-processing,
+.ant-tag.ant-tag-success {
+  border-color: transparent !important;
+  background: #e6f0ec !important;
+  color: var(--accent) !important;
+}
+
+.ant-tag.ant-tag-purple,
+.ant-tag.ant-tag-magenta,
+.ant-tag.ant-tag-default {
+  border-color: transparent !important;
+  background: var(--bg-active) !important;
+  color: var(--text-secondary) !important;
+}
+
+.ant-tag.ant-tag-warning,
+.ant-tag.ant-tag-orange,
+.ant-tag.ant-tag-gold {
+  border-color: transparent !important;
+  background: #f7ecdc !important;
+  color: var(--warning) !important;
+}
+
+.ant-tag.ant-tag-error,
+.ant-tag.ant-tag-red {
+  border-color: transparent !important;
+  background: #f7e6e5 !important;
+  color: var(--error) !important;
+}
+
+/* 徽标形态：原型是小号粗体胶囊 */
+.ant-tag {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* 彩色标签统一到原型的中性 + 青绿体系，不用 antd 默认的高饱和蓝紫。
+   antd 的运行时样式优先级高于普通类选择器，这里用双类提高权重。 */
+.ant-tag.ant-tag-blue,
+.ant-tag.ant-tag-cyan,
+.ant-tag.ant-tag-geekblue,
+.ant-tag.ant-tag-processing,
+.ant-tag.ant-tag-success {
+  border-color: transparent;
+  background: #e6f0ec;
+  color: var(--accent);
+}
+
+.ant-tag.ant-tag-purple,
+.ant-tag.ant-tag-magenta,
+.ant-tag.ant-tag-default {
+  border-color: transparent;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+}
+
+.ant-tag.ant-tag-warning,
+.ant-tag.ant-tag-orange,
+.ant-tag.ant-tag-gold {
+  border-color: transparent;
+  background: #f7ecdc;
+  color: var(--warning);
+}
+
+.ant-tag.ant-tag-error,
+.ant-tag.ant-tag-red {
+  border-color: transparent;
+  background: #f7e6e5;
+  color: var(--error);
+}
+
+/* 卡片操作按钮收紧，避免窄卡片里换行 */
+.employee-card .ant-flex:last-child .ant-btn {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
 }
