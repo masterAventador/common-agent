@@ -5,6 +5,7 @@ import type { PropsWithChildren } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ToastHost } from "../../components/ToastHost";
 import { ConversationHistory } from "./ConversationHistory";
 
 const conversationApi = vi.hoisted(() => ({
@@ -39,7 +40,12 @@ function Providers({ children }: PropsWithChildren) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      {children}
+      <ToastHost />
+    </QueryClientProvider>
+  );
 }
 
 function LocationProbe() {
@@ -96,7 +102,8 @@ describe("ConversationHistory", () => {
     await user.click(await screen.findByRole("button", { name: "删除会话 通用历史" }));
     await user.click(screen.getByRole("button", { name: "确认删除会话 通用历史" }));
     await waitFor(() => expect(conversationApi.deleteConversation).toHaveBeenCalledWith(generic.id));
-    expect(await screen.findByText("会话“通用历史”已删除")).toBeInTheDocument();
+    const removalToast = await screen.findByText("会话“通用历史”已删除");
+    expect(removalToast.closest(".toast-item")).toHaveAttribute("role", "status");
     expect(await screen.findByText("暂无历史会话")).toBeInTheDocument();
   });
 });

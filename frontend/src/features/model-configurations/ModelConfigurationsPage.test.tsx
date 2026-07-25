@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClientError } from "../../api/errors";
+import { ToastHost } from "../../components/ToastHost";
 import { ModelConfigurationsPage } from "./ModelConfigurationsPage";
 
 const modelApi = vi.hoisted(() => ({
@@ -36,7 +37,12 @@ function Providers({ children }: PropsWithChildren) {
       mutations: { retry: false },
     },
   });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      {children}
+      <ToastHost />
+    </QueryClientProvider>
+  );
 }
 
 function renderPage(readOnly = false) {
@@ -132,7 +138,8 @@ describe("ModelConfigurationsPage", () => {
     await user.click(await screen.findByRole("button", { name: "测试调用 Qwen Plus" }));
 
     expect(modelApi.verifyModelConfiguration).toHaveBeenCalledWith(modelConfiguration.id);
-    expect(await screen.findByText("模型调用成功")).toBeInTheDocument();
+    const toastItem = await screen.findByText(/模型调用成功/);
+    expect(toastItem.closest(".toast-item")).toHaveAttribute("role", "status");
   });
 
   it("keeps an in-use configuration visible and explains the blocker", async () => {
@@ -150,9 +157,10 @@ describe("ModelConfigurationsPage", () => {
     await user.click(await screen.findByRole("button", { name: "删除模型 Qwen Plus" }));
     await user.click(screen.getByRole("button", { name: "确认删除模型 Qwen Plus" }));
 
-    expect(
-      await screen.findByText("该模型仍被数字员工或工作流引用，请先解除引用。"),
-    ).toBeInTheDocument();
+    const failureToast = await screen.findByText(
+      "该模型仍被数字员工或工作流引用，请先解除引用。",
+    );
+    expect(failureToast.closest(".toast-item")).toHaveAttribute("role", "alert");
     expect(screen.getByText("Qwen Plus")).toBeInTheDocument();
   });
 

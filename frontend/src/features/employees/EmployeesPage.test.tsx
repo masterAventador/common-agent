@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClientError } from "../../api/errors";
+import { ToastHost } from "../../components/ToastHost";
 import { EmployeesPage } from "./EmployeesPage";
 
 const employeeApi = vi.hoisted(() => ({
@@ -154,6 +155,7 @@ function renderPage(readOnly = false) {
           <Route path="/chat" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>
+      <ToastHost />
     </QueryClientProvider>,
   );
   return { ...result, client };
@@ -196,6 +198,19 @@ describe("EmployeesPage", () => {
     expect(await screen.findByText("通用产品手册")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "编辑 知识助理" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "与知识助理开始对话" })).toBeEnabled();
+  });
+
+  it("keeps the employee card compact like the design prototype", async () => {
+    renderPage();
+
+    expect(await screen.findByText("知识助理")).toBeInTheDocument();
+    // 卡片收敛为「图标 + 名称 + 描述 + 底部状态栏」，系统指令只在编辑弹窗里出现
+    expect(screen.queryByText("系统指令")).not.toBeInTheDocument();
+    expect(screen.queryByText("默认模型")).not.toBeInTheDocument();
+    expect(screen.queryByText("工作流权限")).not.toBeInTheDocument();
+    // 底部状态栏仍然承载关键信息：工作流授权与所用模型
+    expect(await screen.findByText("未授权工作流")).toBeInTheDocument();
+    expect(await screen.findByText(modelConfiguration.display_name)).toBeInTheDocument();
   });
 
   it("loads reference options only when employees or the editor need them", async () => {
@@ -468,7 +483,8 @@ describe("EmployeesPage", () => {
     await user.click(screen.getByRole("button", { name: `确认删除数字员工 ${employee.name}` }));
 
     await waitFor(() => expect(employeeApi.deleteEmployee).toHaveBeenCalledWith(employee.id));
-    expect(await screen.findByText(`数字员工“${employee.name}”已删除`)).toBeInTheDocument();
+    const removalToast = await screen.findByText(`数字员工“${employee.name}”已删除`);
+    expect(removalToast.closest(".toast-item")).toHaveAttribute("role", "status");
     expect(await screen.findByText("还没有数字员工")).toBeInTheDocument();
   });
 });

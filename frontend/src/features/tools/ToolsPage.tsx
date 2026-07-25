@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { toast } from "../../components/toast";
 import { getErrorMessage } from "../../api/errors";
 import {
   addManagedMcpCapability,
@@ -187,7 +188,6 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
   const [credentialSource, setCredentialSource] = useState<CredentialTarget>();
   const [openApiSource, setOpenApiSource] = useState<ManagedMcpSource>();
   const [testEditor, setTestEditor] = useState<TestCallEditor>();
-  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string }>();
   const [testResult, setTestResult] = useState<Record<string, unknown>>();
   const [sourceForm] = Form.useForm<ManagedMcpSourceInput>();
   const [capabilityForm] = Form.useForm<CapabilityForm>();
@@ -242,10 +242,9 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
       setSourceEditor(undefined);
       sourceForm.resetFields();
       if (endpointChanged) {
-        setNotice({
-          type: "success",
-          text: `${saved.name} Base URL 已变更；为防止旧凭据泄漏，原鉴权已清除，请重新配置。`,
-        });
+        toast.success(
+          `${saved.name} Base URL 已变更；为防止旧凭据泄漏，原鉴权已清除，请重新配置。`,
+        );
       }
       await resetSources();
     },
@@ -280,8 +279,8 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
   const discovery = useMutation({
     mutationFn: (sourceId: string) => discoverManagedMcpSource(sourceId),
     onSuccess: (result) =>
-      setNotice({ type: "success", text: `已通过 MCP 发现 ${result.tools.length} 项启用能力` }),
-    onError: (error) => setNotice({ type: "error", text: getErrorMessage(error) }),
+      toast.success(`已通过 MCP 发现 ${result.tools.length} 项启用能力`),
+    onError: (error) => toast.error(getErrorMessage(error)),
   });
   const saveCredential = useMutation({
     mutationFn: async (values: CredentialForm) => {
@@ -419,16 +418,6 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
         </Button>
       </Flex>
 
-      {notice ? (
-        <Alert
-          type={notice.type}
-          showIcon
-          closable
-          title={notice.text}
-          onClose={() => setNotice(undefined)}
-          className="tools-inline-alert"
-        />
-      ) : null}
       {sources.length ? (
         <Collapse items={cards} defaultActiveKey={sources.map((source) => source.id)} />
       ) : (
@@ -492,7 +481,7 @@ export function ToolsPage({ readOnly = false }: { readOnly?: boolean }) {
           open
           onClose={() => setOpenApiSource(undefined)}
           onImported={async (count) => {
-            setNotice({ type: "success", text: `已原子导入 ${count} 项 OpenAPI 能力` });
+            toast.success(`已原子导入 ${count} 项 OpenAPI 能力`);
             await resetSources();
           }}
         />

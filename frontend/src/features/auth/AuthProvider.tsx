@@ -333,7 +333,7 @@ function AuthPage() {
         <Space orientation="vertical" size={20} className="auth-card-content">
           <div className="auth-heading">
             <span className="brand-logo-tile auth-logo">
-              <BrandLogo size={34} />
+              <BrandLogo size={46} />
             </span>
             <div>
               <Typography.Title level={2}>

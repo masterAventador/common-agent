@@ -44,6 +44,7 @@ import {
   ResourceDeleteButton,
 } from "../../components/ResourceDeleteButton";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
+import { toast } from "../../components/toast";
 import {
   fetchEmployeeToolGrants,
   fetchToolCatalog,
@@ -71,7 +72,6 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [editor, setEditor] = useState<EditorState>();
-  const [deleteNotice, setDeleteNotice] = useState<string>();
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [knowledgeSearch, setKnowledgeSearch] = useState("");
   const [workflowSearch, setWorkflowSearch] = useState("");
@@ -175,6 +175,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
       return updateEmployee(editor.employee.id, normalizedValues);
     },
     onSuccess: async (saved) => {
+      toast.success(editor?.mode === "edit" ? "数字员工已保存" : "数字员工已创建");
       queryClient.setQueryData(["employee", saved.id], saved);
       setEditor(undefined);
       setToolSelectionOverride(undefined);
@@ -188,14 +189,14 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
 
   const deleteMutation = useMutation({
     mutationFn: async (employee: Employee) => {
-      setDeleteNotice(undefined);
       await deleteEmployee(employee.id);
       return employee;
     },
     onSuccess: async (deleted) => {
-      setDeleteNotice(`数字员工“${deleted.name}”已删除`);
+      toast.success(`数字员工“${deleted.name}”已删除`);
       await queryClient.resetQueries({ queryKey: ["employees"] });
     },
+    onError: (error) => toast.error(getResourceDeletionErrorMessage(error)),
   });
 
   const closeEditor = () => {
@@ -361,27 +362,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
         />
       )}
 
-      {deleteNotice && (
-        <Alert
-          type="success"
-          showIcon
-          closable
-          title={deleteNotice}
-          className="employees-inline-alert"
-        />
-      )}
 
-      {deleteMutation.isError && (
-        <Alert
-          type="error"
-          showIcon
-          closable
-          title="数字员工删除失败"
-          description={getResourceDeletionErrorMessage(deleteMutation.error)}
-          className="employees-inline-alert"
-          onClose={() => deleteMutation.reset()}
-        />
-      )}
 
       {items.length === 0 ? (
         <Card className="employees-empty-card">
@@ -392,26 +373,22 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
       ) : (
         <div className="employee-card-grid">
           {items.map((employee) => (
-            <Card
-              key={employee.id}
-              className="employee-card"
-              title={employee.name}
-              extra={knowledgeBaseLabel(employee)}
-            >
+            <Card key={employee.id} className="employee-card">
+              <div className="resource-card-head">
+                <span className="resource-card-icon" aria-hidden="true">
+                  <Bot size={20} strokeWidth={1.75} />
+                </span>
+                <Text strong className="resource-card-title">
+                  {employee.name}
+                </Text>
+                {knowledgeBaseLabel(employee)}
+              </div>
               <Text type="secondary" className="employee-description">
                 {employee.description || "暂无说明"}
               </Text>
-              <div className="employee-prompt-preview">
-                <Text type="secondary">系统指令</Text>
-                <Text>{employee.system_prompt}</Text>
-              </div>
-              <div className="employee-prompt-preview">
-                <Text type="secondary">默认模型</Text>
-                <div>{defaultModelLabel(employee)}</div>
-              </div>
-              <div className="employee-prompt-preview">
-                <Text type="secondary">工作流权限</Text>
-                <div>{workflowPermissionLabel(employee)}</div>
+              <div className="resource-card-footer">
+                {workflowPermissionLabel(employee)}
+                {defaultModelLabel(employee)}
               </div>
               <Flex gap={8} justify="flex-end" wrap>
                 <ResourceDeleteButton

@@ -7,6 +7,8 @@ import {
 import { Modal } from "antd";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
+import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
+import { toast } from "../../components/toast";
 import { getErrorMessage } from "../../api/errors";
 import { fetchKnowledgeBases } from "../../api/knowledge";
 import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
@@ -48,7 +50,6 @@ export function useWorkflowDesigner() {
     createNewWorkflowEditorState,
   );
   const [localValidationMessage, setLocalValidationMessage] = useState<string>();
-  const [deleteNotice, setDeleteNotice] = useState<string>();
   const [workflowSearch, setWorkflowSearch] = useState("");
   const [knowledgeSearch, setKnowledgeSearch] = useState("");
   const runController = useWorkflowRun(state.workflowId, state.dirty);
@@ -138,7 +139,6 @@ export function useWorkflowDesigner() {
 
   const deleteMutation = useMutation({
     mutationFn: async (workflow: Workflow) => {
-      setDeleteNotice(undefined);
       await deleteWorkflow(workflow.id);
       return workflow;
     },
@@ -149,16 +149,16 @@ export function useWorkflowDesigner() {
         const next = remaining[0];
         dispatch(next ? { type: "workflow_loaded", workflow: next } : { type: "new_workflow" });
       }
-      setDeleteNotice(`工作流“${deleted.name}”已删除`);
+      toast.success(`工作流“${deleted.name}”已删除`);
       await queryClient.resetQueries({ queryKey: ["workflows"] });
     },
+    onError: (error) => toast.error(getResourceDeletionErrorMessage(error)),
   });
 
   const selectWorkflow = (workflow: Workflow) => {
     const load = () => {
       saveMutation.reset();
       deleteMutation.reset();
-      setDeleteNotice(undefined);
       setLocalValidationMessage(undefined);
       if (workflow.id !== state.workflowId) runController.clear();
       dispatch({ type: "workflow_loaded", workflow });
@@ -177,7 +177,6 @@ export function useWorkflowDesigner() {
     const reset = () => {
       saveMutation.reset();
       deleteMutation.reset();
-      setDeleteNotice(undefined);
       setLocalValidationMessage(undefined);
       runController.clear();
       dispatch({ type: "new_workflow" });
@@ -213,7 +212,6 @@ export function useWorkflowDesigner() {
     activeRun,
     createDraft,
     deleteMutation,
-    deleteNotice,
     deleteSelectedWorkflow,
     dispatch,
     knowledgeBases,

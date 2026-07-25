@@ -34,6 +34,7 @@ import {
 import { ApiClientError, getErrorMessage } from "../../api/errors";
 import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 import { ResourceDeleteButton } from "../../components/ResourceDeleteButton";
+import { toast } from "../../components/toast";
 
 const { Text, Title } = Typography;
 type EditorState = { mode: "create" } | { mode: "edit"; item: ModelConfiguration };
@@ -57,7 +58,6 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [editor, setEditor] = useState<EditorState>();
-  const [verificationNotice, setVerificationNotice] = useState<string>();
   const [form] = Form.useForm<ModelConfigurationInput>();
 
   const configurations = useInfiniteQuery({
@@ -92,22 +92,25 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
         ? updateModelConfiguration(editor.item.id, values)
         : createModelConfiguration(values),
     onSuccess: async () => {
+      toast.success(editor?.mode === "edit" ? "模型已保存" : "模型已创建");
       setEditor(undefined);
       form.resetFields();
       await queryClient.resetQueries({ queryKey: ["model-configurations"] });
     },
+    onError: (error) => toast.error(`模型保存失败：${getErrorMessage(error)}`),
   });
   const verifyMutation = useMutation({
     mutationFn: (item: ModelConfiguration) => verifyModelConfiguration(item.id),
-    onMutate: () => setVerificationNotice(undefined),
-    onSuccess: (result) =>
-      setVerificationNotice(`模型调用成功 · ${result.response_preview}`),
+    onSuccess: (result) => toast.success(`模型调用成功：${result.response_preview}`),
+    onError: (error) => toast.error(`模型调用失败：${getErrorMessage(error)}`),
   });
   const deleteMutation = useMutation({
     mutationFn: (item: ModelConfiguration) => deleteModelConfiguration(item.id),
     onSuccess: async () => {
+      toast.success("模型已删除");
       await queryClient.resetQueries({ queryKey: ["model-configurations"] });
     },
+    onError: (error) => toast.error(deletionMessage(error)),
   });
 
   const closeEditor = () => {
@@ -180,40 +183,6 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
         onChange={(event) => setSearch(event.target.value)}
       />
 
-      {verificationNotice ? (
-        <Alert
-          type="success"
-          showIcon
-          closable
-          title="模型调用成功"
-          description={verificationNotice.split(" · ")[1]}
-          className="model-configurations-inline-alert"
-          onClose={() => setVerificationNotice(undefined)}
-        />
-      ) : null}
-      {verifyMutation.isError ? (
-        <Alert
-          type="error"
-          showIcon
-          closable
-          title="模型调用失败"
-          description={getErrorMessage(verifyMutation.error)}
-          className="model-configurations-inline-alert"
-          onClose={() => verifyMutation.reset()}
-        />
-      ) : null}
-      {deleteMutation.isError ? (
-        <Alert
-          type="error"
-          showIcon
-          closable
-          title="模型删除失败"
-          description={deletionMessage(deleteMutation.error)}
-          className="model-configurations-inline-alert"
-          onClose={() => deleteMutation.reset()}
-        />
-      ) : null}
-
       {items.length === 0 ? (
         <Card className="model-configurations-empty-card">
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有模型配置">
@@ -223,13 +192,19 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
       ) : (
         <div className="model-configuration-grid">
           {items.map((item) => (
-            <Card
-              key={item.id}
-              className="model-configuration-card"
-              title={item.display_name}
-              extra={<Tag color={item.enabled ? "success" : "default"}>{item.enabled ? "启用" : "停用"}</Tag>}
-            >
-              <div className="model-configuration-details">
+            <Card key={item.id} className="model-configuration-card">
+              <div className="resource-card-head">
+                <span className="resource-card-icon" aria-hidden="true">
+                  <Bot size={20} strokeWidth={1.75} />
+                </span>
+                <Text strong className="resource-card-title">
+                  {item.display_name}
+                </Text>
+                <Tag color={item.enabled ? "success" : "default"}>
+                  {item.enabled ? "启用" : "停用"}
+                </Tag>
+              </div>
+              <div className="resource-card-footer">
                 <Text type="secondary">模型标识</Text>
                 <Text code>{item.model_identifier}</Text>
               </div>
@@ -320,14 +295,6 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
               checkedChildren={<CircleCheck aria-hidden="true" size={14} />}
             />
           </Form.Item>
-          {saveMutation.isError ? (
-            <Alert
-              type="error"
-              showIcon
-              title="模型保存失败"
-              description={getErrorMessage(saveMutation.error)}
-            />
-          ) : null}
         </Form>
       </Modal>
     </section>

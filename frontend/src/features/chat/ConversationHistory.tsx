@@ -1,7 +1,6 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Divider, Empty, Skeleton, Typography } from "antd";
 import { History } from "lucide-react";
-import { useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -13,6 +12,7 @@ import { getErrorMessage } from "../../api/errors";
 import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 import { ResourceDeleteButton } from "../../components/ResourceDeleteButton";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
+import { toast } from "../../components/toast";
 
 const HISTORY_PAGE_SIZE = 10;
 
@@ -42,16 +42,11 @@ export function ConversationHistory({ readOnly = false }: { readOnly?: boolean }
         exact: true,
       });
       if (selectedConversationId === conversation.id) navigate("/chat");
+      toast.success(`会话“${conversation.title}”已删除`);
       await queryClient.resetQueries({ queryKey: ["conversations"] });
     },
+    onError: (error) => toast.error(getResourceDeletionErrorMessage(error)),
   });
-  const { isSuccess: deletionSucceeded, reset: resetDeletion } = deletion;
-  useEffect(() => {
-    if (!deletionSucceeded) return;
-    const timer = setTimeout(resetDeletion, 3000);
-    return () => clearTimeout(timer);
-  }, [deletionSucceeded, resetDeletion]);
-
   return (
     <section className="app-conversation-history" role="region" aria-label="历史会话">
       <Divider />
@@ -114,18 +109,6 @@ export function ConversationHistory({ readOnly = false }: { readOnly?: boolean }
           ) : null}
         </div>
       )}
-      {deletion.isError ? (
-        <Alert
-          type="error"
-          showIcon
-          title="会话删除失败"
-          description={getResourceDeletionErrorMessage(deletion.error)}
-        />
-      ) : deletion.isSuccess ? (
-        <Typography.Text type="secondary">
-          {`会话“${deletion.variables?.title ?? ""}”已删除`}
-        </Typography.Text>
-      ) : null}
     </section>
   );
 }

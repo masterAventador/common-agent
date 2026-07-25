@@ -8,9 +8,10 @@ describe("统一设计基线", () => {
   it("使用 DESIGN.md 规定的中性色与控件尺度", () => {
     expect(designTheme.token).toMatchObject({
       colorPrimary: "#191919",
-      colorBgLayout: "#FAFAFA",
-      colorBgContainer: "#FFFFFF",
-      colorBorder: "#EDEDE9",
+      // 暖米纸感基线，取自 PowerAI Atlas 原型实测
+      colorBgLayout: "#F5F2EB",
+      colorBgContainer: "#FBFAF5",
+      colorBorder: "#E2DCCD",
       colorText: "#37352F",
       colorTextHeading: "#191919",
       borderRadius: 10,

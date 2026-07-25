@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ToastHost } from "../../components/ToastHost";
 import { ApiClientError } from "../../api/errors";
 import { WorkflowsPage } from "./WorkflowsPage";
 
@@ -110,6 +111,7 @@ function renderPage(initialEntry = "/workflows") {
           <Route path="/workflows" element={<WorkflowsPage />} />
         </Routes>
       </MemoryRouter>
+      <ToastHost />
     </QueryClientProvider>,
   );
 }
@@ -505,7 +507,8 @@ describe("WorkflowsPage", () => {
     await user.click(screen.getByRole("button", { name: `确认删除工作流 ${workflow.name}` }));
 
     await waitFor(() => expect(workflowApi.deleteWorkflow).toHaveBeenCalledWith(workflow.id));
-    expect(await screen.findByText(`工作流“${workflow.name}”已删除`)).toBeInTheDocument();
+    const removalToast = await screen.findByText(`工作流“${workflow.name}”已删除`);
+    expect(removalToast.closest(".toast-item")).toHaveAttribute("role", "status");
     expect(await screen.findByText("还没有已保存工作流")).toBeInTheDocument();
   });
 });
