@@ -156,3 +156,55 @@ final gate 已跑通：前端 166 测试 + eslint + typecheck + 构建包体预�
 workflows / model-configurations / tools / audit-events，均无错误提示、无横向溢出；对话页
 确认署名行渲染为「知识助理 · 16:42」，工作流确认「列表 → 点击进画布 → 返回列表」闭环。
 工作流验收用的两个工作流经正式接口创建后保留为示例数据（该工作区原本 0 条）。
+
+## 6. 对话内容呈现（2026-07-25）
+
+用户指出两点：AI 回复的 Markdown 没渲染；以及"大模型推理时不可能没有思考过程"。第二点我先前
+的说法（"后端不产出推理内容"）是错的，实测已推翻。
+
+### 实测结论：思考内容一直都有，是平台丢掉了
+
+直接打本项目接入的百炼 compatible-mode 端点，流式 delta 里确实带 `reasoning_content`：
+
+| 模型 | 默认 | 加 `enable_thinking` |
+| --- | --- | --- |
+| qwen3.7-plus | 有（190 字） | 有 |
+| deepseek-v4-pro | 有 | 有 |
+| glm-5.2 | 有 | 有 |
+| qwen-plus | 无 | 有（869 字） |
+
+丢在哪：上游 `ChatOpenAI` 只对齐 OpenAI 官方响应规范，其模块文档明确写着第三方供应商附加的
+`reasoning_content` 等字段"**不会被提取或保留**"，并指引"用供应商专用子类"补齐。本项目本来就有
+`_BailianChatOpenAI` 子类（此前为修 qwen-long 的出站内容块问题而建），因此在同一个子类里覆盖
+流式与非流式两个公开扩展点取回该字段，属公开扩展点定制，不改第三方源码、不 Monkey Patch。
+
+| ID | 任务 | 关键点 | 状态 |
+| --- | --- | --- | --- |
+| UI-15 | AI 回复渲染 Markdown | 接 react-markdown + remark-gfm，覆盖标题/列表/强调/行内代码/代码块/表格/引用/链接；用户消息仍是纯文本。模型输出是不可信输入：**不接 rehype-raw**，回复里的 `<script>`/`<img onerror>` 只当纯文本，链接强制新窗口并断开 referrer/opener。渲染器约 163KB，静态引入后 /chat 首屏图只剩 8042 字节门禁余量，因此放到 lazy 边界后面、加载完成前先按纯文本显示同一段内容 | 🔍 待验收 |
+| UI-16 | 后端透传思考内容 | `_BailianChatOpenAI` 取回 `reasoning_content` → `ModelStreamReasoning` / `RuntimeEventKind.REASONING` → `ConversationEventKind.ASSISTANT_REASONING` → SSE。**沿用工具调用那条链路**：思考走会话事件流，刷新后靠 `afterSequence=0` 事件回放重建，因此不新增消息字段、不加数据库迁移。思考不计入"是否给出了回复"，只有思考没有正文仍按空回复失败 | 🔍 待验收 |
+| UI-17 | 思考过程折叠块 | 按原型 `.think / .think-h / .think-b` 实现：生成中自动展开并显示"正在思考…"（脑图标旋转），结束后收起为"已深度思考"，可点开回看。没有思考内容的模型不显示该块 | 🔍 待验收 |
+
+### 顺带修好的坏门禁
+
+上一次"加 11 个前沿预置模型"的改动碰坏了 6 个集成测试且当时没发现：它们固定创建 `qwen-turbo`
+这个模型配置，而该标识现在是平台预置模型，撞上"显示名或模型标识已存在"的唯一约束。改为每次
+运行取唯一测试标识（测试数据必须与预置目录分离）；其中流式兼容断言原本依赖把配置改名成
+`deepseek-v4-pro`，同样会撞预置，改为直接校验预置的 deepseek-v4-pro 配置反映实测表的 True。
+同时 `contracts/` 与前端 `generated/schema.d.ts` 存在未重新生成的漂移（知识库 PATCH 与文档切片
+两个接口），本次一并重新生成，`check-contracts.sh` 通过。
+
+### 已跑通的门禁
+
+- 后端：`ruff check .` 全清、Mypy 213 个源文件无问题、`pytest tests/unit tests/integration
+  tests/architecture` **1106 passed / 15 skipped**；
+- 前端：**192 passed**、ESLint、TypeScript、生产构建与七路由包体预算（/chat 1332776，门禁 1500000）；
+- 契约：`generate-contracts.sh` + `check-contracts.sh` 通过；
+- 模型真实链路：直连本项目接入的百炼端点，确认适配层能取回四个模型的思考内容（见上表）。
+
+### 未完成：正式页面的真实用户路径验收
+
+本机 real 栈的登录会话在开发期间因空闲超时失效，而平台不允许注册第二个 Owner，我没有账号口令，
+因此 **UI-15/16/17 三项都只做到 `🔍 待验收`**：分层测试、契约与模型真实链路都过了，但"在正式
+React 页面发一条消息、看到思考块展开再收起、看到 Markdown 渲染成真实排版"这一步没有走。
+解除条件：用户在浏览器登录一次（或提供本机测试口令），随后按用户路径复跑并补齐截图证据。
+后端与 Worker 已按新代码重启，运行中的实例已经在 OpenAPI 里暴露 `assistant.reasoning`。
