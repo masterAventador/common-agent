@@ -1,6 +1,6 @@
 import { Alert, Button, Flex, Input, Select, Skeleton, Tag, Typography } from "antd";
 import { Bot, Send, Square } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import type { Employee } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
@@ -41,6 +41,22 @@ export function ChatWorkspace({
   } = controller;
 
   const scrollBottomRef = useRef<HTMLDivElement>(null);
+  // 通用会话可以逐轮换模型，署名行要说明这条回复实际由哪个模型生成
+  const modelNames = useMemo(
+    () =>
+      new Map(
+        controller.modelConfigurationItems.map((configuration) => [
+          configuration.id,
+          configuration.display_name,
+        ]),
+      ),
+    [controller.modelConfigurationItems],
+  );
+  const authorNameOf = (message: { model_configuration_id: string | null; model_identifier: string | null }) =>
+    employee?.name ??
+    (message.model_configuration_id ? modelNames.get(message.model_configuration_id) : undefined) ??
+    message.model_identifier ??
+    "AI";
   const renderedMessages = messages.isSuccess ? messages.data : undefined;
   // 内容变长（新消息或流式增量）时把对话区滚到最新，避免用户手动下拉。
   const scrollSignal = renderedMessages
@@ -86,6 +102,7 @@ export function ChatWorkspace({
               <MessageBubble
                 key={message.id}
                 message={message}
+                authorName={authorNameOf(message)}
                 toolCalls={controller.toolCallsByMessageId.get(message.id) ?? []}
                 toolCapabilityNames={controller.toolCapabilityNames}
                 workflowRuns={runsByMessageId.get(message.id) ?? []}

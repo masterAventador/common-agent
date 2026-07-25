@@ -1,5 +1,5 @@
 import { Alert, Button, Collapse, Flex, Progress, Space, Spin, Tag, Typography } from "antd";
-import { FileText, RotateCcw } from "lucide-react";
+import { Bot, FileText, RotateCcw } from "lucide-react";
 
 import type { ConversationMessage } from "../../api/conversations";
 import type { WorkflowRun } from "../../api/workflowRuns";
@@ -18,8 +18,17 @@ const workflowRunStatus: Record<
   stopped: { color: "default", label: "已停止" },
 };
 
+function formatClockTime(timestamp: string): string {
+  return new Date(timestamp).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export function MessageBubble({
   message,
+  authorName,
   toolCalls,
   toolCapabilityNames,
   workflowRuns,
@@ -30,6 +39,7 @@ export function MessageBubble({
   onRetry,
 }: {
   message: ConversationMessage;
+  authorName: string;
   toolCalls: ChatToolCallLifecycle[];
   toolCapabilityNames: Map<string, string>;
   workflowRuns: WorkflowRun[];
@@ -47,7 +57,18 @@ export function MessageBubble({
       className={`chat-message ${isAssistant ? "is-assistant" : "is-user"}`}
       aria-label={isAssistant ? "助手消息" : "用户消息"}
     >
-      <div className="chat-message-author">{isAssistant ? "AI" : "你"}</div>
+      {/* 用户消息只保留右对齐气泡；AI 回复在正文上方署名，对应原型的「头像 · 名称 · 时间」 */}
+      {isAssistant && (
+        <header className="chat-message-meta">
+          <span className="chat-message-mark" aria-hidden="true">
+            <Bot size={13} strokeWidth={2} />
+          </span>
+          <span className="chat-message-author">{authorName}</span>
+          <span className="chat-message-time">
+            {isActive ? "生成中…" : formatClockTime(message.updated_at)}
+          </span>
+        </header>
+      )}
       <div className="chat-message-body">
         {message.content ? (
           <Typography.Paragraph className="chat-message-content">

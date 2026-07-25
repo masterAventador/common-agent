@@ -450,7 +450,7 @@ select {
   min-height: 320px;
   padding: 22px;
   flex-direction: column;
-  gap: 18px;
+  gap: 26px;
   overflow-y: auto;
   scroll-behavior: smooth;
 }
@@ -493,59 +493,65 @@ select {
   max-width: 480px;
 }
 
+/* 一轮对话：AI 回复上方署名后正文平铺，用户消息只有右对齐气泡（原型 .turn / .ubub） */
 .chat-message {
   display: flex;
-  max-width: min(82%, 780px);
-  gap: 10px;
-  align-items: flex-start;
+  max-width: 100%;
+  flex-direction: column;
 }
 
 .chat-message.is-user {
-  align-self: flex-end;
-  flex-direction: row-reverse;
+  align-items: flex-end;
 }
 
-.chat-message.is-assistant {
-  align-self: flex-start;
+.chat-message-meta {
+  display: flex;
+  margin-bottom: 14px;
+  align-items: center;
+  gap: 9px;
 }
 
-.chat-message-author {
+.chat-message-mark {
   display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: 22px;
+  height: 22px;
   place-items: center;
-  border-radius: 10px;
-  background: var(--bg-hover);
-  color: var(--text-heading);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.chat-message.is-user .chat-message-author {
-  background: var(--primary);
+  border-radius: 6px;
+  background: var(--accent);
   color: #fff;
 }
 
+.chat-message-author {
+  color: var(--text-heading);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chat-message-time {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
 .chat-message-body {
-  min-width: 72px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 4px 14px 14px;
-  background: var(--bg-container);
-  box-shadow: var(--shadow-xs);
+  color: var(--text-body);
+  font-size: 15px;
+  line-height: 1.78;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .chat-message.is-user .chat-message-body {
-  border-color: var(--border);
-  border-radius: 14px 4px 14px 14px;
-  background: var(--bg-hover);
+  max-width: 78%;
+  padding: 11px 16px;
+  border-radius: 14px 14px 4px;
+  background: var(--bg-active);
 }
 
 .chat-message-content.ant-typography {
-  margin-bottom: 8px;
+  margin-bottom: 14px;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .chat-message-body > .ant-typography:last-child,
@@ -1640,27 +1646,6 @@ a,
   background: var(--bg-container);
 }
 
-.chat-message-author {
-  border-radius: 9px;
-  background: var(--bg-active);
-  color: var(--text-heading);
-}
-
-.chat-message.is-user .chat-message-author {
-  background: var(--primary);
-}
-
-.chat-message-body {
-  border-color: var(--border);
-  background: var(--bg-container);
-  box-shadow: none;
-}
-
-.chat-message.is-user .chat-message-body {
-  border-color: var(--border-strong);
-  background: var(--bg-active);
-}
-
 .chat-employee-avatar {
   background: #e6f0ec;
   color: var(--accent);
@@ -2130,46 +2115,6 @@ a,
   box-shadow: var(--shadow-sm);
 }
 
-/* 对话：用户消息带气泡，AI 回复不带气泡直接铺排（与原型一致） */
-.chat-message.is-user .chat-message-body {
-  padding: 11px 16px;
-  border: 0;
-  border-radius: 14px 14px 4px;
-  background: #ede7d8;
-  box-shadow: none;
-  color: var(--text-body);
-  font-size: 15px;
-}
-
-.chat-message.is-assistant .chat-message-body {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.chat-message.is-assistant .chat-message-content.ant-typography {
-  font-size: 15px;
-  line-height: 1.85;
-}
-
-.chat-message.is-assistant {
-  max-width: min(92%, 860px);
-}
-
-.chat-message-author {
-  border-radius: 11px;
-  background: var(--bg-active);
-  color: var(--text-heading);
-  font-size: 11px;
-}
-
-.chat-message.is-user .chat-message-author {
-  background: var(--primary);
-  color: var(--bg-container);
-}
-
 /* 模型管理：原型该页是表格，不是卡片墙 */
 .model-configuration-table .ant-table {
   border: 1px solid var(--border);
@@ -2308,23 +2253,8 @@ a,
 }
 
 /* 对话间距按原型：整轮 30px、用户气泡下 26px */
-.chat-message.is-user {
+.chat-message.is-assistant {
   margin-bottom: 4px;
-}
-
-.chat-message.is-assistant + .chat-message.is-user {
-  margin-top: 12px;
-}
-
-/* AI 回复顶部署名行，对应原型的「头像 · 名称 · 用时」 */
-.chat-message.is-assistant .chat-message-author {
-  width: 26px;
-  height: 26px;
-  flex-basis: 26px;
-  border-radius: 8px;
-  background: var(--primary);
-  color: var(--bg-container);
-  font-size: 10px;
 }
 
 /* 对话区按原型：扁平无卡片，正文居中限宽，输入区独立浮起 */
@@ -2343,10 +2273,6 @@ a,
   max-width: 720px;
   margin-right: auto;
   margin-left: auto;
-}
-
-.chat-message.is-user {
-  justify-content: flex-end;
 }
 
 .chat-composer {

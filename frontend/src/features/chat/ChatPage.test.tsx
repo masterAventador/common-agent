@@ -655,6 +655,55 @@ describe("ChatPage", () => {
     expect(within(messageRegion).queryByText(/相关度/)).not.toBeInTheDocument();
   });
 
+  it("signs each assistant reply with an author row instead of a bare avatar", async () => {
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const assistantView = await within(messageRegion).findByRole("article", {
+      name: "助手消息",
+    });
+    // 原型的署名行：头像 · 名称 · 时间。绑定员工时名称取员工名
+    expect(within(assistantView).getByText(employee.name)).toBeInTheDocument();
+    expect(within(assistantView).getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument();
+    // 用户消息只有右对齐气泡，没有「你」这种头像文字
+    const userView = within(messageRegion).getByRole("article", { name: "用户消息" });
+    expect(within(userView).queryByText("你")).not.toBeInTheDocument();
+  });
+
+  it("signs a generic reply with the model that produced it", async () => {
+    chatApi.fetchConversation.mockResolvedValue({
+      ...genericConversation,
+      employee_name: null,
+    });
+
+    renderGenericHistoryPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const assistantView = await within(messageRegion).findByRole("article", {
+      name: "助手消息",
+    });
+    // 通用会话可以逐轮换模型，署名行说明这条回复由哪个模型生成
+    expect(
+      within(assistantView).getByText(modelConfiguration.display_name),
+    ).toBeInTheDocument();
+  });
+
+  it("marks an unfinished reply as generating in the author row", async () => {
+    chatApi.fetchConversationMessages.mockResolvedValue([
+      userMessage,
+      { ...assistantMessage, content: "", status: "streaming" as const, citations: [] },
+    ]);
+
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const assistantView = await within(messageRegion).findByRole("article", {
+      name: "助手消息",
+    });
+    expect(within(assistantView).getByText("生成中…")).toBeInTheDocument();
+    expect(within(assistantView).queryByText(/^\d{2}:\d{2}$/)).not.toBeInTheDocument();
+  });
+
   it("greets with a centered welcome heading before the first message", async () => {
     chatApi.fetchConversationMessages.mockResolvedValue([]);
     renderPage();
