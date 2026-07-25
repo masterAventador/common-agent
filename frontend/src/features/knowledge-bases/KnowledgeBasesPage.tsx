@@ -23,6 +23,7 @@ import {
 } from "antd";
 import { BookOpen, Database, FileText, Pencil, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   createKnowledgeBase,
@@ -57,15 +58,21 @@ function formatBytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-const documentColumns: TableColumnsType<KnowledgeDocument> = [
+function documentColumns(knowledgeBaseId: string): TableColumnsType<KnowledgeDocument> {
+  return [
   {
     title: "文档",
     dataIndex: "name",
-    render: (name: string) => (
-      <Space>
+    render: (name: string, document: KnowledgeDocument) => (
+      <Link
+        className="knowledge-document-link"
+        to={`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(
+          document.id,
+        )}`}
+      >
         <FileText aria-hidden="true" size={15} />
-        <Text>{name}</Text>
-      </Space>
+        <span>{name}</span>
+      </Link>
     ),
   },
   {
@@ -90,7 +97,8 @@ const documentColumns: TableColumnsType<KnowledgeDocument> = [
     render: (code: string | null) =>
       code ? <Text type="danger">{code}</Text> : <Text type="secondary">—</Text>,
   },
-];
+  ];
+}
 
 export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean }) {
   const queryClient = useQueryClient();
@@ -349,7 +357,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
             ) : (
               <Table
                 rowKey="id"
-                columns={documentColumns}
+                columns={documentColumns(activeId ?? "")}
                 dataSource={documents.data ?? []}
                 loading={documents.isPending}
                 pagination={false}

@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import type { PropsWithChildren } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { MemoryRouter } from "react-router-dom";
+
 import { ToastHost } from "../../components/ToastHost";
 import { KnowledgeBasesPage } from "./KnowledgeBasesPage";
 
@@ -68,7 +70,12 @@ function TestProviders({ children }: PropsWithChildren) {
       mutations: { retry: false },
     },
   });
-  return <QueryClientProvider client={client}>{children}<ToastHost /></QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{children}</MemoryRouter>
+      <ToastHost />
+    </QueryClientProvider>
+  );
 }
 
 describe("KnowledgeBasesPage", () => {

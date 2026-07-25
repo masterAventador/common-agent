@@ -41,6 +41,10 @@ const KnowledgeBasesPage = lazy(async () => {
   const module = await import("../features/knowledge-bases/KnowledgeBasesPage");
   return { default: module.KnowledgeBasesPage };
 });
+const KnowledgeDocumentPage = lazy(async () => {
+  const module = await import("../features/knowledge-bases/KnowledgeDocumentPage");
+  return { default: module.KnowledgeDocumentPage };
+});
 const EmployeesPage = lazy(async () => {
   const module = await import("../features/employees/EmployeesPage");
   return { default: module.EmployeesPage };
@@ -250,6 +254,10 @@ function AuthenticatedApp() {
               <Route
                 path="/knowledge-bases"
                 element={<KnowledgeBasesPage readOnly={isViewer} />}
+              />
+              <Route
+                path="/knowledge-bases/:knowledgeBaseId/documents/:documentId"
+                element={<KnowledgeDocumentPage />}
               />
               <Route
                 path="/employees"

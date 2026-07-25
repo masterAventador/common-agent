@@ -11,6 +11,7 @@ import {
 } from "./pagination";
 
 export type KnowledgeBase = components["schemas"]["KnowledgeBaseResponse"];
+export type DocumentChunk = z.infer<typeof documentChunkSchema>;
 export type KnowledgeDocument = components["schemas"]["KnowledgeDocumentResponse"];
 export type CreateKnowledgeBaseInput = components["schemas"]["CreateKnowledgeBaseBody"];
 
@@ -31,7 +32,15 @@ const knowledgeDocumentSchema = z.strictObject({
   error_code: z.string().min(1).nullable(),
 });
 
+const documentChunkSchema = z.strictObject({
+  id: z.string().min(1),
+  document_id: z.string().min(1),
+  content: z.string(),
+  position: z.number().int().positive(),
+});
+
 const knowledgeBasesSchema = cursorPageSchema(knowledgeBaseSchema);
+const documentChunksSchema = cursorPageSchema(documentChunkSchema);
 const knowledgeDocumentsSchema = z.array(knowledgeDocumentSchema);
 
 export function parseKnowledgeBasesResponse(data: unknown): CursorPage<KnowledgeBase> {
@@ -69,6 +78,35 @@ export async function createKnowledgeBase(
   try {
     const response = await apiClient.post<unknown>("/knowledge-bases", input);
     return parseKnowledgeBaseResponse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function fetchKnowledgeBase(knowledgeBaseId: string): Promise<KnowledgeBase> {
+  try {
+    const response = await apiClient.get<unknown>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`,
+    );
+    return parseKnowledgeBaseResponse(response.data);
+  } catch (error) {
+    throw toApiClientError(error);
+  }
+}
+
+export async function fetchDocumentChunks(
+  knowledgeBaseId: string,
+  documentId: string,
+  request: ListPageRequest = {},
+): Promise<CursorPage<DocumentChunk>> {
+  try {
+    const response = await apiClient.get<unknown>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(
+        documentId,
+      )}/chunks`,
+      { params: listPageParams(request) },
+    );
+    return documentChunksSchema.parse(response.data);
   } catch (error) {
     throw toApiClientError(error);
   }
