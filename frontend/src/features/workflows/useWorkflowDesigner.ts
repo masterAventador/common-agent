@@ -42,7 +42,6 @@ interface SaveResult {
 
 export function useWorkflowDesigner() {
   const queryClient = useQueryClient();
-  const initialized = useRef(false);
   const synchronizedRunId = useRef<string | undefined>(undefined);
   const [state, dispatch] = useReducer(
     workflowEditorReducer,
@@ -50,6 +49,8 @@ export function useWorkflowDesigner() {
     createNewWorkflowEditorState,
   );
   const [localValidationMessage, setLocalValidationMessage] = useState<string>();
+  // 设计稿把工作流分成「列表页 → 画布」两屏，进入页面时先看列表
+  const [designerOpened, setDesignerOpened] = useState(false);
   const [workflowSearch, setWorkflowSearch] = useState("");
   const [knowledgeSearch, setKnowledgeSearch] = useState("");
   const runController = useWorkflowRun(state.workflowId, state.dirty);
@@ -99,12 +100,6 @@ export function useWorkflowDesigner() {
   const modelItems = useMemo(() => flattenCursorPages(models.data), [models.data]);
 
   useEffect(() => {
-    if (initialized.current || !workflows.data) return;
-    initialized.current = true;
-    if (workflowItems[0]) dispatch({ type: "workflow_loaded", workflow: workflowItems[0] });
-  }, [workflowItems, workflows.data]);
-
-  useEffect(() => {
     const restoredRun = runController.run;
     if (
       !restoredRun ||
@@ -119,6 +114,13 @@ export function useWorkflowDesigner() {
     const workflow = workflowItems.find((item) => item.id === restoredRun.workflow_id);
     if (workflow) dispatch({ type: "workflow_loaded", workflow });
   }, [runController.run, state.dirty, state.workflowId, workflowItems, workflows.data]);
+
+  // 从正式运行 URL 恢复时直接停在那次运行所属的画布上，不先让用户在列表里找一遍
+  const designerOpen =
+    designerOpened ||
+    Boolean(
+      state.workflowId && runController.run?.workflow_id === state.workflowId,
+    );
 
   const saveMutation = useMutation({
     mutationFn: async ({ workflowId, configuration }: SaveRequest): Promise<SaveResult> => {
@@ -143,11 +145,11 @@ export function useWorkflowDesigner() {
       return workflow;
     },
     onSuccess: async (deleted) => {
-      const remaining = workflowItems.filter((item) => item.id !== deleted.id);
       runController.clear();
+      // 删掉的正是当前打开的工作流时回到列表，而不是把用户丢进另一张图
       if (state.workflowId === deleted.id) {
-        const next = remaining[0];
-        dispatch(next ? { type: "workflow_loaded", workflow: next } : { type: "new_workflow" });
+        dispatch({ type: "new_workflow" });
+        setDesignerOpened(false);
       }
       toast.success(`工作流“${deleted.name}”已删除`);
       await queryClient.resetQueries({ queryKey: ["workflows"] });
@@ -162,6 +164,7 @@ export function useWorkflowDesigner() {
       setLocalValidationMessage(undefined);
       if (workflow.id !== state.workflowId) runController.clear();
       dispatch({ type: "workflow_loaded", workflow });
+      setDesignerOpened(true);
     };
     if (!state.dirty) return load();
     Modal.confirm({
@@ -180,6 +183,7 @@ export function useWorkflowDesigner() {
       setLocalValidationMessage(undefined);
       runController.clear();
       dispatch({ type: "new_workflow" });
+      setDesignerOpened(true);
     };
     if (!state.dirty) return reset();
     Modal.confirm({
@@ -188,6 +192,24 @@ export function useWorkflowDesigner() {
       okText: "放弃并新建",
       cancelText: "继续编辑",
       onOk: reset,
+    });
+  };
+
+  const closeDesigner = () => {
+    const leave = () => {
+      saveMutation.reset();
+      deleteMutation.reset();
+      setLocalValidationMessage(undefined);
+      dispatch({ type: "new_workflow" });
+      setDesignerOpened(false);
+    };
+    if (!state.dirty) return leave();
+    Modal.confirm({
+      title: "放弃未保存修改？",
+      content: "返回列表会丢弃当前草稿中的修改。",
+      okText: "放弃并返回",
+      cancelText: "继续编辑",
+      onOk: leave,
     });
   };
 
@@ -210,7 +232,9 @@ export function useWorkflowDesigner() {
 
   return {
     activeRun,
+    closeDesigner,
     createDraft,
+    designerOpen,
     deleteMutation,
     deleteSelectedWorkflow,
     dispatch,

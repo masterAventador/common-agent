@@ -2,6 +2,7 @@ import { Alert, Button, Skeleton } from "antd";
 import { RefreshCw } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { getErrorMessage } from "../../api/errors";
+import { WorkflowList } from "./WorkflowList";
 import { WorkflowPageHeader } from "./WorkflowPageHeader";
 import { WorkflowSidebar } from "./WorkflowSidebar";
 import { useWorkflowDesigner } from "./useWorkflowDesigner";
@@ -44,11 +45,26 @@ export function WorkflowsPage({ readOnly = false }: { readOnly?: boolean }) {
       </section>
     );
   }
+  if (!controller.designerOpen) {
+    return (
+      <section className="workflows-page is-list">
+        <WorkflowList
+          workflows={controller.workflowItems}
+          search={controller.workflowSearch}
+          readOnly={readOnly}
+          hasMore={Boolean(workflows.hasNextPage)}
+          loadingMore={workflows.isFetchingNextPage}
+          onSearch={controller.setWorkflowSearch}
+          onLoadMore={() => void workflows.fetchNextPage()}
+          onSelect={controller.selectWorkflow}
+          onCreate={controller.createDraft}
+        />
+      </section>
+    );
+  }
   return (
     <section className="workflows-page">
       <WorkflowPageHeader controller={controller} readOnly={readOnly} />
-
-
 
       {(controller.localValidationMessage || controller.saveMutation.isError) && (
         <Alert
@@ -93,15 +109,8 @@ export function WorkflowsPage({ readOnly = false }: { readOnly?: boolean }) {
 
       <div className="workflow-designer">
         <WorkflowSidebar
-          workflows={controller.workflowItems}
           state={state}
           editingLocked={controller.activeRun || readOnly}
-          search={controller.workflowSearch}
-          onSearch={controller.setWorkflowSearch}
-          hasMore={Boolean(workflows.hasNextPage)}
-          loadingMore={workflows.isFetchingNextPage}
-          onLoadMore={() => void workflows.fetchNextPage()}
-          onSelectWorkflow={controller.selectWorkflow}
           dispatch={controller.dispatch}
         />
         <Suspense fallback={<Skeleton.Node active />}>

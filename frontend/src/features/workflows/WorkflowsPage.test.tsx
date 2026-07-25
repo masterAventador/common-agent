@@ -116,6 +116,14 @@ function renderPage(initialEntry = "/workflows") {
   );
 }
 
+/** 工作流是「列表页 → 画布」两屏，设计器相关断言都要先从列表进入。 */
+async function enterDesigner(
+  user: ReturnType<typeof userEvent.setup>,
+  name = workflow.name,
+) {
+  await user.click(await screen.findByRole("button", { name: `选择工作流 ${name}` }));
+}
+
 describe("WorkflowsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -166,11 +174,35 @@ describe("WorkflowsPage", () => {
     );
   });
 
-  it("loads the persisted graph into the workflow list, canvas, and inspector", async () => {
+  it("opens on the workflow list and enters the designer only after picking one", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    // 原型的工作流是「列表页 → 画布」两屏，进入时不直接展开设计器
+    const row = await screen.findByRole("button", { name: "选择工作流 知识问答流程" });
+    expect(row).toHaveTextContent("检索后回答");
+    expect(row).toHaveTextContent("3 个节点");
+    expect(screen.queryByRole("region", { name: "工作流画布" })).not.toBeInTheDocument();
+
+    await user.click(row);
+    expect(await screen.findByRole("region", { name: "工作流画布" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "选择工作流 知识问答流程" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "返回工作流列表" }));
+    expect(
+      await screen.findByRole("button", { name: "选择工作流 知识问答流程" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "工作流画布" })).not.toBeInTheDocument();
+  });
+
+  it("loads the persisted graph into the canvas and inspector", async () => {
+    const user = userEvent.setup();
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "工作流" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "选择工作流 知识问答流程" })).toBeEnabled();
+    await user.click(await screen.findByRole("button", { name: "选择工作流 知识问答流程" }));
     expect(await screen.findByRole("region", { name: "工作流画布" })).toBeInTheDocument();
     expect(screen.getByText("开始", { selector: ".workflow-node-title" })).toBeInTheDocument();
     expect(screen.getByText("AI 对话", { selector: ".workflow-node-title" })).toBeInTheDocument();
@@ -217,6 +249,7 @@ describe("WorkflowsPage", () => {
   it("edits node configuration and validates before updating", async () => {
     const user = userEvent.setup();
     renderPage();
+    await enterDesigner(user);
 
     await user.click(await screen.findByRole("button", { name: "选择节点 AI 对话 chat" }));
     const prompt = screen.getByRole("textbox", { name: "节点提示词" });
@@ -241,6 +274,7 @@ describe("WorkflowsPage", () => {
   it("switches an AI node between created model and employee targets", async () => {
     const user = userEvent.setup();
     renderPage();
+    await enterDesigner(user);
 
     await user.click(await screen.findByRole("button", { name: "选择节点 AI 对话 chat" }));
     await user.click(screen.getByRole("combobox", { name: "AI 对话执行目标" }));
@@ -272,6 +306,7 @@ describe("WorkflowsPage", () => {
     });
     const user = userEvent.setup();
     renderPage();
+    await enterDesigner(user);
 
     await user.click(await screen.findByRole("button", { name: "保存工作流" }));
 
@@ -321,7 +356,7 @@ describe("WorkflowsPage", () => {
     const user = userEvent.setup();
     const { container } = renderPage();
 
-    await screen.findByRole("button", { name: "选择工作流 知识问答流程" });
+    await enterDesigner(user);
     await user.type(screen.getByRole("textbox", { name: "工作流运行输入" }), runningRun.input);
     await user.click(screen.getByRole("button", { name: "运行工作流" }));
 
@@ -397,7 +432,7 @@ describe("WorkflowsPage", () => {
       updated_at: "2026-07-20T06:00:02Z",
     };
 
-    await screen.findByRole("button", { name: "选择工作流 知识问答流程" });
+    await enterDesigner(user);
     await user.type(screen.getByRole("textbox", { name: "工作流运行输入" }), runningRun.input);
     await user.click(screen.getByRole("button", { name: "运行工作流" }));
     await waitFor(() => expect(workflowRunApi.streamOptions).toBeDefined());
@@ -425,7 +460,7 @@ describe("WorkflowsPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole("button", { name: "选择工作流 知识问答流程" });
+    await enterDesigner(user);
     await user.type(screen.getByRole("textbox", { name: "工作流运行输入" }), runningRun.input);
     await user.click(screen.getByRole("button", { name: "运行工作流" }));
     await waitFor(() => expect(workflowRunApi.streamOptions).toBeDefined());
@@ -459,7 +494,8 @@ describe("WorkflowsPage", () => {
     renderPage(`/workflows?run_id=${completedRun.id}`);
 
     expect(await screen.findByText(completedRun.output)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "选择工作流 第二个工作流" }));
+    await user.click(screen.getByRole("button", { name: "返回工作流列表" }));
+    await enterDesigner(user, "第二个工作流");
 
     expect(screen.getByRole("textbox", { name: "工作流名称" })).toHaveValue("第二个工作流");
     expect(screen.queryByText(completedRun.output)).not.toBeInTheDocument();
@@ -467,7 +503,10 @@ describe("WorkflowsPage", () => {
 
   it("does not run an unsaved workflow draft", async () => {
     workflowApi.fetchWorkflows.mockResolvedValue({ items: [], next_cursor: null });
+    const user = userEvent.setup();
     renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "新建工作流" }));
 
     expect(await screen.findByText("请先保存工作流，再从正式定义启动运行。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "运行工作流" })).toBeDisabled();
@@ -485,6 +524,7 @@ describe("WorkflowsPage", () => {
     );
     const user = userEvent.setup();
     renderPage();
+    await enterDesigner(user);
 
     await user.click(await screen.findByRole("button", { name: `删除工作流 ${workflow.name}` }));
     await user.click(screen.getByRole("button", { name: `确认删除工作流 ${workflow.name}` }));
@@ -492,7 +532,8 @@ describe("WorkflowsPage", () => {
     expect(
       await screen.findByText("该工作流仍有活跃运行，请等待运行完成或停止后再重试。"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: `选择工作流 ${workflow.name}` })).toBeEnabled();
+    // 删除失败时留在原来的画布上，不把用户丢回列表
+    expect(screen.getByRole("textbox", { name: "工作流名称" })).toHaveValue(workflow.name);
   });
 
   it("clears the selected workflow only after deletion succeeds", async () => {
@@ -502,6 +543,7 @@ describe("WorkflowsPage", () => {
     workflowApi.deleteWorkflow.mockResolvedValue(undefined);
     const user = userEvent.setup();
     renderPage();
+    await enterDesigner(user);
 
     await user.click(await screen.findByRole("button", { name: `删除工作流 ${workflow.name}` }));
     await user.click(screen.getByRole("button", { name: `确认删除工作流 ${workflow.name}` }));

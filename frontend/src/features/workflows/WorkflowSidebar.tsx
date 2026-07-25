@@ -1,14 +1,8 @@
-import { Button, Empty, Input, Typography } from "antd";
-import {
-  Bot,
-  CircleCheckBig,
-  CirclePlay,
-  Database,
-  Workflow as WorkflowIcon,
-} from "lucide-react";
+import { Typography } from "antd";
+import { Bot, CircleCheckBig, CirclePlay, Database } from "lucide-react";
 import type { Dispatch, DragEvent, ReactNode } from "react";
 
-import type { Workflow, WorkflowNodeType } from "../../api/workflows";
+import type { WorkflowNodeType } from "../../api/workflows";
 import {
   WORKFLOW_NODE_LABELS,
   type WorkflowEditorAction,
@@ -29,76 +23,17 @@ const palette = [
 const { Text } = Typography;
 
 export function WorkflowSidebar({
-  workflows,
   state,
   editingLocked,
-  search,
-  onSearch,
-  hasMore,
-  loadingMore,
-  onLoadMore,
-  onSelectWorkflow,
   dispatch,
 }: {
-  workflows: Workflow[];
   state: WorkflowEditorState;
   editingLocked: boolean;
-  search: string;
-  onSearch: (value: string) => void;
-  hasMore: boolean;
-  loadingMore: boolean;
-  onLoadMore: () => void;
-  onSelectWorkflow: (workflow: Workflow) => void;
   dispatch: Dispatch<WorkflowEditorAction>;
 }) {
   return (
-    <aside className="workflow-sidebar" aria-label="工作流与节点面板">
+    <aside className="workflow-sidebar" aria-label="工作流节点面板">
       <div className="workflow-panel-heading">
-        <Text strong>工作流列表</Text>
-        <Text type="secondary">{workflows.length} 个</Text>
-      </div>
-      <Input.Search
-        aria-label="搜索工作流"
-        allowClear
-        value={search}
-        placeholder="搜索工作流"
-        onChange={(event) => onSearch(event.target.value)}
-      />
-      <div className="workflow-list">
-        {workflows.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有已保存工作流" />
-        ) : (
-          workflows.map((workflow) => (
-            <button
-              type="button"
-              key={workflow.id}
-              className={`workflow-list-item${state.workflowId === workflow.id ? " is-active" : ""}`}
-              aria-label={`选择工作流 ${workflow.name}`}
-              disabled={editingLocked && state.workflowId !== workflow.id}
-              onClick={() => onSelectWorkflow(workflow)}
-            >
-              <div className="resource-card-head">
-                <span className="resource-card-icon" aria-hidden="true">
-                  <WorkflowIcon size={18} strokeWidth={1.75} />
-                </span>
-                <Text strong className="resource-card-title">
-                  {workflow.name}
-                </Text>
-              </div>
-              <Text type="secondary">
-                {workflow.nodes.length} 个节点 · {workflow.edges.length} 条连线
-              </Text>
-            </button>
-          ))
-        )}
-        {hasMore && (
-          <Button block loading={loadingMore} onClick={onLoadMore}>
-            加载更多工作流
-          </Button>
-        )}
-      </div>
-
-      <div className="workflow-panel-heading workflow-node-panel-heading">
         <Text strong>节点面板</Text>
         <Text type="secondary">拖入或点击添加</Text>
       </div>

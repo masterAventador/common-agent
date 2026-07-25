@@ -1,5 +1,5 @@
 import { Button, Flex, Space, Tag, Typography } from "antd";
-import { Plus, Save, Workflow } from "lucide-react";
+import { ArrowLeft, Save } from "lucide-react";
 
 import { ResourceDeleteButton } from "../../components/ResourceDeleteButton";
 import type { useWorkflowDesigner } from "./useWorkflowDesigner";
@@ -16,16 +16,23 @@ export function WorkflowPageHeader({
   const { state } = controller;
   return (
     <Flex justify="space-between" align="flex-start" gap={24} className="workflows-heading">
-      <div>
-        <Space align="center">
-          <Workflow aria-hidden="true" className="workflows-title-icon" size={22} strokeWidth={1.75} />
-          <Title level={2}>工作流</Title>
-          {state.dirty ? <Tag color="gold">有未保存修改</Tag> : <Tag>已保存</Tag>}
-        </Space>
-        <Paragraph type="secondary">
-          拖入节点并通过连接点编排流程，保存前由服务端执行最终校验。
-        </Paragraph>
-      </div>
+      <Space align="start">
+        <Button
+          className="workflow-back-button"
+          icon={<ArrowLeft aria-hidden="true" size={18} />}
+          aria-label="返回工作流列表"
+          onClick={controller.closeDesigner}
+        />
+        <div>
+          <Space align="center">
+            <Title level={2}>{state.name || "未命名工作流"}</Title>
+            {state.dirty ? <Tag color="gold">有未保存修改</Tag> : <Tag>已保存</Tag>}
+          </Space>
+          <Paragraph type="secondary">
+            拖入节点并通过连接点编排流程，保存前由服务端执行最终校验。
+          </Paragraph>
+        </div>
+      </Space>
       <Space>
         <ResourceDeleteButton
           resourceKind="工作流"
@@ -35,14 +42,6 @@ export function WorkflowPageHeader({
           loading={controller.deleteMutation.isPending}
           onConfirm={controller.deleteSelectedWorkflow}
         />
-        <Button
-          icon={<Plus aria-hidden="true" size={16} />}
-          aria-label="新建工作流"
-          disabled={readOnly || controller.activeRun}
-          onClick={controller.createDraft}
-        >
-          新建工作流
-        </Button>
         <Button
           type="primary"
           icon={<Save aria-hidden="true" size={16} />}
