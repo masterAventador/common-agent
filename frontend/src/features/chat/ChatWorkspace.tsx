@@ -6,6 +6,7 @@ import type { Employee } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
 import { ToolGrantSelector } from "../tools/index";
 import { MessageBubble } from "./ChatMessages";
+import { shouldFollowBottom } from "./textReveal";
 import type { ChatPageController } from "./useChatPageController";
 
 const { Text, Title } = Typography;
@@ -41,6 +42,7 @@ export function ChatWorkspace({
   } = controller;
 
   const scrollBottomRef = useRef<HTMLDivElement>(null);
+  const scrollViewRef = useRef<HTMLDivElement>(null);
   // 通用会话可以逐轮换模型，署名行要说明这条回复实际由哪个模型生成
   const modelNames = useMemo(
     () =>
@@ -62,10 +64,30 @@ export function ChatWorkspace({
   const scrollSignal = renderedMessages
     ? `${renderedMessages.length}:${renderedMessages.at(-1)?.content.length ?? 0}`
     : "";
+  const streaming = Boolean(activeMessage);
   useEffect(() => {
     if (!scrollSignal) return;
-    scrollBottomRef.current?.scrollIntoView({ block: "end" });
-  }, [scrollSignal]);
+    // 生成中每个增量都会触发一次滚动, 用平滑滚动会不断打断上一次动画, 看上去就是一顿一顿的;
+    // 流式期间直接贴底, 只有新消息、切换会话这类跳跃才用平滑滚动。
+    scrollBottomRef.current?.scrollIntoView({
+      block: "end",
+      behavior: streaming ? "auto" : "smooth",
+    });
+  }, [scrollSignal, streaming]);
+
+  // 文字是按帧逐个吐出来的, 光靠增量事件驱动滚动会跟不上; 生成期间每帧贴一次底,
+  // 读者往上翻去看前文时就停止跟随, 不把他拽回来。
+  useEffect(() => {
+    if (!streaming) return;
+    let frame = 0;
+    const follow = () => {
+      const view = scrollViewRef.current;
+      if (view && shouldFollowBottom(view)) view.scrollTop = view.scrollHeight;
+      frame = requestAnimationFrame(follow);
+    };
+    frame = requestAnimationFrame(follow);
+    return () => cancelAnimationFrame(frame);
+  }, [streaming]);
 
   return (
     <div className="chat-workspace">
@@ -82,7 +104,7 @@ export function ChatWorkspace({
             </Button>
           </Flex>
         </div>
-        <div className="chat-message-scroll" aria-live="polite">
+        <div className="chat-message-scroll" ref={scrollViewRef} aria-live="polite">
           {!selectedConversation ? (
             <ChatWelcome employee={employee} />
           ) : messages.isPending ? (

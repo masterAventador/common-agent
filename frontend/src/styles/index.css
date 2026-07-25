@@ -448,7 +448,6 @@ select {
   flex-direction: column;
   gap: 26px;
   overflow-y: auto;
-  scroll-behavior: smooth;
 }
 
 .chat-message-scroll > .ant-empty,

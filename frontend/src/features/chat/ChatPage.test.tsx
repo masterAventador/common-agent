@@ -856,6 +856,56 @@ describe("ChatPage", () => {
     }
   });
 
+  it("reveals streaming text progressively instead of jumping in bursts", async () => {
+    const streamingMessage = {
+      ...assistantMessage,
+      content: "",
+      status: "streaming" as const,
+      citations: [],
+    };
+    chatApi.fetchConversationMessages.mockResolvedValue([userMessage, streamingMessage]);
+    renderPage();
+    await waitFor(() => expect(chatApi.streamOptions).toBeDefined());
+    // 先等这条空的助手消息挂上来, 与真实顺序一致: 发出消息 -> 出现空回复 -> 增量陆续到达
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const assistantView = await within(messageRegion).findByRole("article", {
+      name: "助手消息",
+    });
+
+    // 一次 SSE 带来一大段文字, 画面不应该立刻整段蹦出来
+    const burst = "这是一整段一次到达的回复内容，用来验证逐字呈现而不是整段跳出。";
+    act(() => {
+      chatApi.streamOptions?.onEvent({
+        schema_version: "2",
+        sequence: 1,
+        conversation_id: conversation.id,
+        turn_id: "50000000-0000-4000-8000-000000000005",
+        message_id: assistantMessage.id,
+        type: "assistant.delta",
+        delta: burst,
+        retry: false,
+        tool_call: null,
+        message: { ...streamingMessage, content: burst },
+        occurred_at: "2026-07-20T02:00:02Z",
+      });
+    });
+
+    expect(assistantView.textContent).not.toContain(burst);
+    // 但最终必须完整呈现, 不能吞字
+    await waitFor(() => expect(assistantView.textContent).toContain(burst));
+  });
+
+  it("shows finished replies in full without any typing animation", async () => {
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const assistantView = await within(messageRegion).findByRole("article", {
+      name: "助手消息",
+    });
+    // 历史消息是已完成状态, 打开就该是全文
+    expect(assistantView.textContent).toContain("验收标记是 COMMON_AGENT_CHAT_OK。");
+  });
+
   it("shows the model thinking block from replayed reasoning events", async () => {
     // 思考发生在回复完成之前，历史里这条回复还处于生成中
     const streamingMessage = {

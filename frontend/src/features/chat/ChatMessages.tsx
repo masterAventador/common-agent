@@ -5,6 +5,7 @@ import { lazy, Suspense, useState } from "react";
 import type { ConversationMessage } from "../../api/conversations";
 import type { WorkflowRun } from "../../api/workflowRuns";
 import type { Workflow } from "../../api/workflows";
+import { useRevealedText } from "./textReveal";
 import type { ChatToolCallLifecycle } from "./useChatPageController";
 
 /**
@@ -64,6 +65,9 @@ export function MessageBubble({
   const isAssistant = message.role === "assistant";
   const isActive = ["pending", "streaming"].includes(message.status);
   const mayRetry = isAssistant && ["failed", "stopped"].includes(message.status);
+  // 模型增量一阵一阵到达, 直接渲染会一卡一卡; 生成中按帧匀速吐字, 结束后立即给全文
+  const shownContent = useRevealedText(message.content, isAssistant && isActive);
+  const shownReasoning = useRevealedText(reasoning ?? "", isActive);
   return (
     <article
       className={`chat-message ${isAssistant ? "is-assistant" : "is-user"}`}
@@ -82,17 +86,17 @@ export function MessageBubble({
         </header>
       )}
       <div className="chat-message-body">
-        {isAssistant && reasoning ? (
-          <ThinkingBlock reasoning={reasoning} thinking={isActive} />
+        {isAssistant && shownReasoning ? (
+          <ThinkingBlock reasoning={shownReasoning} thinking={isActive} />
         ) : null}
-        {message.content ? (
+        {shownContent ? (
           isAssistant ? (
             // 模型按 Markdown 组织回复；用户自己打的字保持原样不做解释
-            <Suspense fallback={<PlainContent content={message.content} />}>
-              <MarkdownContent content={message.content} />
+            <Suspense fallback={<PlainContent content={shownContent} />}>
+              <MarkdownContent content={shownContent} />
             </Suspense>
           ) : (
-            <PlainContent content={message.content} />
+            <PlainContent content={shownContent} />
           )
         ) : isActive ? (
           <Space>
