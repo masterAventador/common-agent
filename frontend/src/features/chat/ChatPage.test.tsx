@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PropsWithChildren } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -851,6 +851,115 @@ describe("ChatPage", () => {
         await screen.findByText("验收标记是 COMMON_AGENT_CHAT_OK。"),
       ).toBeInTheDocument();
       await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+    } finally {
+      scrollSpy.mockRestore();
+    }
+  });
+
+  it("stops auto-scrolling for this reply once the reader scrolls up", async () => {
+    const streamingMessage = {
+      ...assistantMessage,
+      content: "",
+      status: "streaming" as const,
+      citations: [],
+    };
+    chatApi.fetchConversationMessages.mockResolvedValue([userMessage, streamingMessage]);
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
+    try {
+      renderPage();
+      await waitFor(() => expect(chatApi.streamOptions).toBeDefined());
+      const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+      await within(messageRegion).findByRole("article", { name: "助手消息" });
+
+      const scroller = messageRegion.querySelector(".chat-message-scroll");
+      if (!(scroller instanceof HTMLElement)) throw new Error("找不到消息滚动区");
+      // jsdom 没有布局, 手动摆出滚动位置
+      Object.defineProperty(scroller, "scrollHeight", { value: 4_000, configurable: true });
+      Object.defineProperty(scroller, "clientHeight", { value: 600, configurable: true });
+
+      const emitDelta = (sequence: number, content: string) => {
+        act(() => {
+          chatApi.streamOptions?.onEvent({
+            schema_version: "2",
+            sequence,
+            conversation_id: conversation.id,
+            turn_id: "50000000-0000-4000-8000-000000000005",
+            message_id: assistantMessage.id,
+            type: "assistant.delta",
+            delta: content,
+            retry: false,
+            tool_call: null,
+            message: {
+              ...streamingMessage,
+              content,
+              updated_at: `2026-07-20T02:00:0${sequence}Z`,
+            },
+            occurred_at: `2026-07-20T02:00:0${sequence}Z`,
+          });
+        });
+      };
+
+      // 对照: 读者停在底部时, 增量必须继续把视口带到最新
+      scroller.scrollTop = 3_400;
+      fireEvent.wheel(scroller, { deltaY: 10 });
+      scrollSpy.mockClear();
+      emitDelta(1, "贴底时的增量");
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+
+      // 读者往回翻去看前文, 本轮就不该再被拽回底部
+      scroller.scrollTop = 400;
+      fireEvent.wheel(scroller, { deltaY: -400 });
+      scrollSpy.mockClear();
+      emitDelta(2, "贴底时的增量继续生成的新内容");
+      await waitFor(() =>
+        expect(messageRegion.textContent).toContain("继续生成的新内容"),
+      );
+      expect(scrollSpy).not.toHaveBeenCalled();
+    } finally {
+      scrollSpy.mockRestore();
+    }
+  });
+
+  it("follows the newest content again after the reader sends the next message", async () => {
+    // 上一轮已经答完, 读者往回翻着看; 此时他发下一条消息就该重新跟随最新内容
+    chatApi.sendConversationMessage.mockResolvedValue({
+      turn_id: "6f0d6f5a-e0d0-4b1f-9a2f-6d3fbb0a9a01",
+      user_message: { ...userMessage, id: "9e2b1c60-2c2e-4c53-9a1a-0f6b1a6d1c11", sequence_number: 3 },
+      assistant_message: {
+        ...assistantMessage,
+        id: "0b1a5f2e-7f1e-4a5a-9c2b-6d1f0a2b3c44",
+        sequence_number: 4,
+        content: "",
+        status: "pending" as const,
+        citations: [],
+      },
+      retry: false,
+    });
+    const user = userEvent.setup();
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
+    try {
+      renderPage();
+      await waitFor(() => expect(chatApi.streamOptions).toBeDefined());
+      const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+      await within(messageRegion).findByRole("article", { name: "助手消息" });
+      const scroller = messageRegion.querySelector(".chat-message-scroll");
+      if (!(scroller instanceof HTMLElement)) throw new Error("找不到消息滚动区");
+      // 只认对话区底部那个哨兵元素, 免得把 antd 控件自己的滚动算进来
+      const sentinel = scroller.lastElementChild;
+      const scrolledToNewest = () =>
+        scrollSpy.mock.instances.some((instance) => instance === sentinel);
+
+      Object.defineProperty(scroller, "scrollHeight", { value: 4_000, configurable: true });
+      Object.defineProperty(scroller, "clientHeight", { value: 600, configurable: true });
+      scroller.scrollTop = 400;
+      fireEvent.wheel(scroller, { deltaY: -400 });
+      scrollSpy.mockClear();
+
+      await user.type(screen.getByRole("textbox", { name: "消息输入" }), "下一个问题");
+      await user.click(screen.getByRole("button", { name: "发送消息" }));
+
+      // 用户主动发下一条消息, 恢复默认的跟随最新内容
+      await waitFor(() => expect(scrolledToNewest()).toBe(true));
     } finally {
       scrollSpy.mockRestore();
     }

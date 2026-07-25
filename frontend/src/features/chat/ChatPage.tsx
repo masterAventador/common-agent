@@ -1,4 +1,4 @@
-import { Alert, Button, Empty, Flex, Select, Skeleton, Space, Typography } from "antd";
+import { Alert, Button, Empty, Flex, Select, Skeleton, Space, Tag, Typography } from "antd";
 import { RefreshCw } from "lucide-react";
 
 import { getErrorMessage } from "../../api/errors";
@@ -104,6 +104,7 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
             可直接使用通用 AI，也可选择数字员工并自动检索其绑定的知识库。
           </Typography.Paragraph>
         </div>
+        <Flex align="center" gap={10}>
         <Select
           aria-label="选择数字员工"
           value={selectedEmployee?.id ?? GENERIC_CHAT_VALUE}
@@ -131,6 +132,14 @@ export function ChatPage({ readOnly = false }: { readOnly?: boolean }) {
           onChange={controller.selectEmployee}
           className="chat-employee-select"
         />
+          {controller.activeMessage && <Tag color="processing">正在生成</Tag>}
+          <Button
+            disabled={readOnly}
+            onClick={controller.startNewConversation}
+          >
+            新建会话
+          </Button>
+        </Flex>
       </Flex>
 
       {employees.isError && (

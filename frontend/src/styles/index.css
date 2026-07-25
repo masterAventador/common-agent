@@ -380,7 +380,7 @@ select {
 }
 
 .chat-page-heading {
-  margin-bottom: 18px;
+  margin-bottom: 10px;
 }
 
 .chat-page-heading .ant-typography {
@@ -424,21 +424,9 @@ select {
 .chat-messages-panel {
   display: grid;
   min-width: 0;
-  grid-template-rows: auto minmax(280px, 1fr) auto;
+  grid-template-rows: minmax(280px, 1fr) auto;
 }
 
-.chat-messages-heading {
-  display: flex;
-  min-height: 0;
-  padding: 8px 20px;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-}
-
-.chat-messages-heading .ant-typography {
-  margin: 0;
-}
 
 .chat-message-scroll {
   display: flex;
@@ -1640,8 +1628,8 @@ a,
 
 .app-content {
   min-width: 0;
-  /* 原型的页面留白：上 40、左右 40、下 60（.page） */
-  padding: 40px 40px 60px;
+  /* 原型的页面留白是上 40、左右 40、下 60（.page）；上方收到 22px 提高屏效 */
+  padding: 22px 40px 40px;
 }
 
 .entry-shell,
@@ -1697,6 +1685,11 @@ a,
   margin-bottom: 30px;
   padding-bottom: 0;
   border-bottom: 0;
+}
+
+/* 对话页首屏就是正文, 页头留白比其他页更紧 */
+.chat-page-heading {
+  margin-bottom: 12px;
 }
 
 .employees-page-heading h2,
@@ -1912,7 +1905,6 @@ a,
   box-shadow: none;
 }
 
-.chat-messages-heading,
 .chat-message-scroll {
   background: var(--bg-container);
 }
@@ -2527,11 +2519,6 @@ a,
   margin-bottom: 4px;
 }
 
-/* 对话区按原型：扁平无卡片，正文居中限宽，输入区独立浮起 */
-.chat-messages-heading {
-  border-bottom: 1px solid var(--border);
-  background: transparent;
-}
 
 .chat-message-scroll {
   background: transparent;

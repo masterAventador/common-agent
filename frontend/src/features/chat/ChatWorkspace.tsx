@@ -1,6 +1,6 @@
 import { Alert, Button, Flex, Input, Select, Skeleton, Tag, Typography } from "antd";
 import { Bot, Send, Square } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Employee } from "../../api/employees";
 import { getErrorMessage } from "../../api/errors";
@@ -32,7 +32,6 @@ export function ChatWorkspace({
     sendMutation,
     setDraft,
     setSelectedModelConfigurationId,
-    startNewConversation,
     stopMutation,
     workflowsById,
     hasMoreRuns,
@@ -65,20 +64,30 @@ export function ChatWorkspace({
     ? `${renderedMessages.length}:${renderedMessages.at(-1)?.content.length ?? 0}`
     : "";
   const streaming = Boolean(activeMessage);
+  // 读者在生成过程中往回翻去看前文时, 本轮就不再自动跟随, 免得跟他的滚动打架;
+  // 等他自己发下一条消息, 或者自己滚回底部, 再恢复默认的跟随最新内容。
+  const [autoFollow, setAutoFollow] = useState(true);
+  const noteReaderScroll = () => {
+    const view = scrollViewRef.current;
+    if (view) setAutoFollow(shouldFollowBottom(view));
+  };
+  // 用户主动开启下一轮(发送或重新生成)时回到默认跟随
+  const followFromNextTurn = () => setAutoFollow(true);
+
   useEffect(() => {
-    if (!scrollSignal) return;
+    if (!scrollSignal || !autoFollow) return;
     // 生成中每个增量都会触发一次滚动, 用平滑滚动会不断打断上一次动画, 看上去就是一顿一顿的;
     // 流式期间直接贴底, 只有新消息、切换会话这类跳跃才用平滑滚动。
     scrollBottomRef.current?.scrollIntoView({
       block: "end",
       behavior: streaming ? "auto" : "smooth",
     });
-  }, [scrollSignal, streaming]);
+  }, [scrollSignal, streaming, autoFollow]);
 
   // 文字是按帧逐个吐出来的, 光靠增量事件驱动滚动会跟不上; 生成期间每帧贴一次底,
   // 读者往上翻去看前文时就停止跟随, 不把他拽回来。
   useEffect(() => {
-    if (!streaming) return;
+    if (!streaming || !autoFollow) return;
     let frame = 0;
     const follow = () => {
       const view = scrollViewRef.current;
@@ -87,22 +96,18 @@ export function ChatWorkspace({
     };
     frame = requestAnimationFrame(follow);
     return () => cancelAnimationFrame(frame);
-  }, [streaming]);
+  }, [streaming, autoFollow]);
 
   return (
     <div className="chat-workspace">
       <main className="chat-messages-panel" role="region" aria-label="消息区域">
-        <div className="chat-messages-heading">
-          {/* 会话标题就是用户自己发的第一句话, 页面上方已经有页头, 这里不再重复 */}
-          {employee ? <Text type="secondary">{employee.name}</Text> : <span />}
-          <Flex align="center" gap={8}>
-            {activeMessage && <Tag color="processing">正在生成</Tag>}
-            <Button size="small" disabled={readOnly} onClick={startNewConversation}>
-              新建会话
-            </Button>
-          </Flex>
-        </div>
-        <div className="chat-message-scroll" ref={scrollViewRef} aria-live="polite">
+        <div
+          className="chat-message-scroll"
+          ref={scrollViewRef}
+          aria-live="polite"
+          onWheel={noteReaderScroll}
+          onTouchMove={noteReaderScroll}
+        >
           {!selectedConversation ? (
             <ChatWelcome employee={employee} />
           ) : messages.isPending ? (
@@ -131,7 +136,10 @@ export function ChatWorkspace({
                 retrying={retryMutation.isPending && retryMutation.variables === message.id}
                 readOnly={readOnly}
                 onOpenWorkflowRun={openWorkflowRun}
-                onRetry={(messageId) => retryMutation.mutate(messageId)}
+                onRetry={(messageId) => {
+                  followFromNextTurn();
+                  retryMutation.mutate(messageId);
+                }}
               />
             ))
           )}
@@ -155,6 +163,7 @@ export function ChatWorkspace({
               if (readOnly) return;
               if (event.shiftKey) return;
               event.preventDefault();
+              followFromNextTurn();
               sendDraft();
             }}
           />
@@ -201,7 +210,10 @@ export function ChatWorkspace({
                 loading={sendMutation.isPending}
                 disabled={readOnly || !selectedModelConfigurationId || !draft.trim()}
                 aria-label="发送消息"
-                onClick={sendDraft}
+                onClick={() => {
+                  followFromNextTurn();
+                  sendDraft();
+                }}
               >
                 发送
               </Button>
