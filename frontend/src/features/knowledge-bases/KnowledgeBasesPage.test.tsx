@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { PropsWithChildren } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ToastHost } from "../../components/ToastHost";
 import { KnowledgeBasesPage } from "./KnowledgeBasesPage";
 
 const knowledgeApi = vi.hoisted(() => ({
@@ -66,7 +67,7 @@ function TestProviders({ children }: PropsWithChildren) {
       mutations: { retry: false },
     },
   });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return <QueryClientProvider client={client}>{children}<ToastHost /></QueryClientProvider>;
 }
 
 describe("KnowledgeBasesPage", () => {
@@ -199,7 +200,8 @@ describe("KnowledgeBasesPage", () => {
     await waitFor(() =>
       expect(knowledgeApi.deleteKnowledgeBase).toHaveBeenCalledWith(knowledgeBase.id),
     );
-    expect(await screen.findByText(`知识库“${knowledgeBase.name}”已删除`)).toBeInTheDocument();
+    const removalToast = await screen.findByText(`知识库“${knowledgeBase.name}”已删除`);
+    expect(removalToast.closest(".toast-item")).toHaveAttribute("role", "status");
     expect(await screen.findByText("还没有知识库")).toBeInTheDocument();
   });
 });

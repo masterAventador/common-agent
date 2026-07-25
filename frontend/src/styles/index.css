@@ -1932,3 +1932,65 @@ a,
     animation: none;
   }
 }
+
+/* 全局提示：顶部居中浮出，不占据文档流，避免挤动页面内容 */
+.toast-host {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  z-index: 1010;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(520px, calc(100vw - 48px));
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-container);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-body);
+  font-size: 14px;
+  line-height: 1.5;
+  animation: toast-in 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-item.is-success {
+  color: var(--success);
+}
+
+.toast-item.is-error {
+  color: var(--error);
+}
+
+.toast-item.is-warning {
+  color: var(--warning);
+}
+
+.toast-item.is-info {
+  color: var(--info);
+}
+
+.toast-item span {
+  color: var(--text-body);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

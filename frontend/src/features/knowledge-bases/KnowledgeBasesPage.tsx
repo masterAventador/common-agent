@@ -39,6 +39,7 @@ import {
   ResourceDeleteButton,
 } from "../../components/ResourceDeleteButton";
 import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
+import { toast } from "../../components/toast";
 import { KnowledgeUploadQueue } from "./KnowledgeUploadQueue";
 
 const { Text, Title } = Typography;
@@ -93,7 +94,6 @@ const documentColumns: TableColumnsType<KnowledgeDocument> = [
 export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean }) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
-  const [deleteNotice, setDeleteNotice] = useState<string>();
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>();
   const [uploadBusy, setUploadBusy] = useState(false);
@@ -132,6 +132,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
   const createMutation = useMutation({
     mutationFn: (values: CreateKnowledgeBaseInput) => createKnowledgeBase(values),
     onSuccess: async (created) => {
+      toast.success(`知识库“${created.name}”已创建`);
       setSelectedId(created.id);
       setCreateOpen(false);
       form.resetFields();
@@ -148,10 +149,10 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
 
   const deleteMutation = useMutation({
     mutationFn: async (knowledgeBase: KnowledgeBase) => {
-      setDeleteNotice(undefined);
       await deleteKnowledgeBase(knowledgeBase.id);
       return knowledgeBase;
     },
+    onError: (error) => toast.error(getResourceDeletionErrorMessage(error)),
     onSuccess: async (deleted) => {
       const remaining = items.filter((item) => item.id !== deleted.id);
       queryClient.removeQueries({
@@ -159,7 +160,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
         exact: true,
       });
       setSelectedId(remaining[0]?.id);
-      setDeleteNotice(`知识库“${deleted.name}”已删除`);
+      toast.success(`知识库“${deleted.name}”已删除`);
       await queryClient.resetQueries({ queryKey: ["knowledge-bases"] });
     },
   });
@@ -225,27 +226,7 @@ export function KnowledgeBasesPage({ readOnly = false }: { readOnly?: boolean })
         onChange={(event) => setSearch(event.target.value)}
       />
 
-      {deleteNotice && (
-        <Alert
-          type="success"
-          showIcon
-          closable
-          title={deleteNotice}
-          className="knowledge-inline-alert"
-        />
-      )}
 
-      {deleteMutation.isError && (
-        <Alert
-          type="error"
-          showIcon
-          closable
-          title="知识库删除失败"
-          description={getResourceDeletionErrorMessage(deleteMutation.error)}
-          className="knowledge-inline-alert"
-          onClose={() => deleteMutation.reset()}
-        />
-      )}
 
       {items.length === 0 ? (
         <Card className="knowledge-empty-card">

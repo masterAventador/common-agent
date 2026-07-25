@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClientError } from "../../api/errors";
+import { ToastHost } from "../../components/ToastHost";
 import { EmployeesPage } from "./EmployeesPage";
 
 const employeeApi = vi.hoisted(() => ({
@@ -154,6 +155,7 @@ function renderPage(readOnly = false) {
           <Route path="/chat" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>
+      <ToastHost />
     </QueryClientProvider>,
   );
   return { ...result, client };
@@ -481,7 +483,8 @@ describe("EmployeesPage", () => {
     await user.click(screen.getByRole("button", { name: `确认删除数字员工 ${employee.name}` }));
 
     await waitFor(() => expect(employeeApi.deleteEmployee).toHaveBeenCalledWith(employee.id));
-    expect(await screen.findByText(`数字员工“${employee.name}”已删除`)).toBeInTheDocument();
+    const removalToast = await screen.findByText(`数字员工“${employee.name}”已删除`);
+    expect(removalToast.closest(".toast-item")).toHaveAttribute("role", "status");
     expect(await screen.findByText("还没有数字员工")).toBeInTheDocument();
   });
 });

@@ -2,7 +2,6 @@ import { Alert, Button, Skeleton } from "antd";
 import { RefreshCw } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { getErrorMessage } from "../../api/errors";
-import { getResourceDeletionErrorMessage } from "../../components/resourceDeletion";
 import { WorkflowPageHeader } from "./WorkflowPageHeader";
 import { WorkflowSidebar } from "./WorkflowSidebar";
 import { useWorkflowDesigner } from "./useWorkflowDesigner";
@@ -49,27 +48,7 @@ export function WorkflowsPage({ readOnly = false }: { readOnly?: boolean }) {
     <section className="workflows-page">
       <WorkflowPageHeader controller={controller} readOnly={readOnly} />
 
-      {controller.deleteNotice && (
-        <Alert
-          type="success"
-          showIcon
-          closable
-          title={controller.deleteNotice}
-          className="workflows-alert"
-        />
-      )}
 
-      {controller.deleteMutation.isError && (
-        <Alert
-          type="error"
-          showIcon
-          closable
-          title="工作流删除失败"
-          description={getResourceDeletionErrorMessage(controller.deleteMutation.error)}
-          className="workflows-alert"
-          onClose={() => controller.deleteMutation.reset()}
-        />
-      )}
 
       {(controller.localValidationMessage || controller.saveMutation.isError) && (
         <Alert

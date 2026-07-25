@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ToastHost } from "../../components/ToastHost";
 import { ToolsPage } from "./ToolsPage";
 
 const toolsApi = vi.hoisted(() => ({
@@ -151,6 +152,7 @@ function renderPage(readOnly = false) {
   return render(
     <QueryClientProvider client={queryClient}>
       <ToolsPage readOnly={readOnly} />
+      <ToastHost />
     </QueryClientProvider>,
   );
 }
@@ -265,7 +267,8 @@ describe("ToolsPage", () => {
     expect(screen.queryByText("managed-http-formal-secret")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "发现能力 订单系统" }));
-    expect(await screen.findByText("已通过 MCP 发现 1 项启用能力")).toBeInTheDocument();
+    const discoverToast = await screen.findByText("已通过 MCP 发现 1 项启用能力");
+    expect(discoverToast.closest(".toast-item")).toHaveAttribute("role", "status");
     expect(toolsApi.discoverManagedMcpSource).toHaveBeenCalledWith(source.id);
   });
 
