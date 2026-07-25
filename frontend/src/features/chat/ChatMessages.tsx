@@ -1,4 +1,4 @@
-import { Alert, Button, Collapse, Flex, Progress, Space, Spin, Tag, Typography } from "antd";
+import { Alert, Button, Collapse, Flex, Progress, Spin, Tag, Typography } from "antd";
 import { Bot, Brain, ChevronDown, FileText, RotateCcw } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 
@@ -99,10 +99,9 @@ export function MessageBubble({
             <PlainContent content={shownContent} />
           )
         ) : isActive ? (
-          <Space>
-            <Spin size="small" />
-            <Text type="secondary">正在思考…</Text>
-          </Space>
+          // 只给一个等待指示: 署名行已经写着"生成中", 而且员工可能把深度思考关掉了,
+          // 这里再说"正在思考"就是假的。真在思考时上面的折叠块会自己说。
+          <Spin size="small" aria-label="正在生成回复" />
         ) : (
           <Text type="secondary">本次没有生成可显示的内容</Text>
         )}

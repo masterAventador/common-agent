@@ -332,10 +332,15 @@ export function useChatPageController() {
         }
       },
       onError: () => {
+        // 这条是"正在恢复"的过场提示: 恢复完就该自己消失。断线时如果本轮已经答完,
+        // 后面不会再有事件来清它, 所以必须跟着这次刷新的结果收尾。
         setStreamNotice("会话连接已中断，正在恢复消息历史");
-        void queryClient.invalidateQueries({
-          queryKey: ["conversation-messages", selectedConversationId],
-        });
+        void queryClient
+          .invalidateQueries({
+            queryKey: ["conversation-messages", selectedConversationId],
+          })
+          // 恢复失败不在这里造第二套错误提示: 消息列表本身会显示可重试的加载失败
+          .finally(() => setStreamNotice(undefined));
         void queryClient.invalidateQueries({
           queryKey: ["conversation-workflow-runs", selectedConversationId],
         });

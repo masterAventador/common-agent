@@ -1015,6 +1015,26 @@ describe("ChatPage", () => {
     expect(assistantView.textContent).toContain("验收标记是 COMMON_AGENT_CHAT_OK。");
   });
 
+  it("does not claim the model is thinking while it merely waits for the reply", async () => {
+    const streamingMessage = {
+      ...assistantMessage,
+      content: "",
+      status: "streaming" as const,
+      citations: [],
+    };
+    chatApi.fetchConversationMessages.mockResolvedValue([userMessage, streamingMessage]);
+
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const assistantView = await within(messageRegion).findByRole("article", {
+      name: "助手消息",
+    });
+    // 关掉深度思考的员工也走这条路径, 这里说"正在思考"就是假的
+    expect(within(assistantView).queryByText("正在思考…")).not.toBeInTheDocument();
+    expect(within(assistantView).getByText("生成中…")).toBeInTheDocument();
+  });
+
   it("shows the model thinking block from replayed reasoning events", async () => {
     // 思考发生在回复完成之前，历史里这条回复还处于生成中
     const streamingMessage = {
@@ -1316,7 +1336,8 @@ describe("ChatPage", () => {
         expect.objectContaining({ content: userMessage.content, message_id: expect.any(String) }),
       ),
     );
-    expect(await screen.findByText("正在思考…")).toBeInTheDocument();
+    // 等待中只说"生成中", 不声称在思考: 员工可能把深度思考关掉了
+    expect(await screen.findByText("生成中…")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "停止生成" }));
     expect(chatApi.stopConversationGeneration).toHaveBeenCalledWith(conversation.id);
@@ -1436,16 +1457,51 @@ describe("ChatPage", () => {
 
   it("refreshes authoritative history after an SSE connection error", async () => {
     const refreshed = { ...assistantMessage, content: "刷新恢复后的回答" };
+    // 手动控制恢复何时完成, 这样"恢复中"和"恢复完"两个阶段都能确定地断言
+    let finishRestore: (() => void) | undefined;
+    const restored = new Promise<void>((resolve) => {
+      finishRestore = resolve;
+    });
     chatApi.fetchConversationMessages
       .mockResolvedValueOnce([userMessage])
-      .mockResolvedValue([userMessage, refreshed]);
+      .mockImplementation(async () => {
+        await restored;
+        return [userMessage, refreshed];
+      });
     renderPage();
 
     await screen.findByText("验收标记是什么？");
     act(() => chatApi.streamOptions?.onError(new Error("事件流连接中断")));
 
     expect(await screen.findByText("会话连接已中断，正在恢复消息历史")).toBeInTheDocument();
+    await act(async () => {
+      finishRestore?.();
+      await restored;
+    });
+
     expect(await screen.findByText("刷新恢复后的回答")).toBeInTheDocument();
     expect(chatApi.fetchConversationMessages).toHaveBeenCalledTimes(2);
+    // 历史恢复完这条提示就该自己消失; 断线时若本轮已经答完, 之后不会再有事件来清它
+    await waitFor(() =>
+      expect(
+        screen.queryByText("会话连接已中断，正在恢复消息历史"),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps a retryable error when the history cannot be restored", async () => {
+    chatApi.fetchConversationMessages
+      .mockResolvedValueOnce([userMessage, assistantMessage])
+      .mockRejectedValue(new Error("恢复失败"));
+    renderPage();
+
+    await screen.findByText("验收标记是什么？");
+    act(() => chatApi.streamOptions?.onError(new Error("事件流连接中断")));
+
+    // 恢复失败必须留下可见且可重试的错误, 不能悄悄把提示抹掉当没事
+    expect(await screen.findByText("消息历史加载失败")).toBeInTheDocument();
+    expect(
+      screen.queryByText("会话连接已中断，正在恢复消息历史"),
+    ).not.toBeInTheDocument();
   });
 });
