@@ -438,7 +438,8 @@ export interface paths {
         delete: operations["delete_knowledge_base_api_v1_knowledge_bases__knowledge_base_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Knowledge Base */
+        patch: operations["update_knowledge_base_api_v1_knowledge_bases__knowledge_base_id__patch"];
         trace?: never;
     };
     "/api/v1/knowledge-bases/{knowledge_base_id}/documents": {
@@ -453,6 +454,23 @@ export interface paths {
         put?: never;
         /** Upload Document */
         post: operations["upload_document_api_v1_knowledge_bases__knowledge_base_id__documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Document Chunks */
+        get: operations["list_document_chunks_api_v1_knowledge_bases__knowledge_base_id__documents__document_id__chunks_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1162,7 +1180,7 @@ export interface components {
          * ConversationEventKind
          * @enum {string}
          */
-        ConversationEventKind: "assistant.started" | "assistant.delta" | "assistant.completed" | "assistant.failed" | "assistant.stopped" | "assistant.tool.started" | "assistant.tool.completed" | "assistant.tool.failed";
+        ConversationEventKind: "assistant.started" | "assistant.delta" | "assistant.reasoning" | "assistant.completed" | "assistant.failed" | "assistant.stopped" | "assistant.tool.started" | "assistant.tool.completed" | "assistant.tool.failed";
         /** ConversationEventResponse */
         ConversationEventResponse: {
             /**
@@ -1343,6 +1361,13 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /** CursorPageResponse[DocumentChunkResponse] */
+        CursorPageResponse_DocumentChunkResponse_: {
+            /** Items */
+            items: components["schemas"]["DocumentChunkResponse"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
         /** CursorPageResponse[EmployeeResponse] */
         CursorPageResponse_EmployeeResponse_: {
             /** Items */
@@ -1377,6 +1402,17 @@ export interface components {
             items: components["schemas"]["WorkflowRunResponse"][];
             /** Next Cursor */
             next_cursor: string | null;
+        };
+        /** DocumentChunkResponse */
+        DocumentChunkResponse: {
+            /** Content */
+            content: string;
+            /** Document Id */
+            document_id: string;
+            /** Id */
+            id: string;
+            /** Position */
+            position: number;
         };
         /**
          * DocumentParsingStatus
@@ -2405,6 +2441,16 @@ export interface components {
              */
             turn_id: string;
             user_message: components["schemas"]["MessageResponse"];
+        };
+        /** UpdateKnowledgeBaseBody */
+        UpdateKnowledgeBaseBody: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -5142,6 +5188,90 @@ export interface operations {
             };
         };
     };
+    update_knowledge_base_api_v1_knowledge_bases__knowledge_base_id__patch: {
+        parameters: {
+            query?: {
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                knowledge_base_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateKnowledgeBaseBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBaseResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_documents_api_v1_knowledge_bases__knowledge_base_id__documents_get: {
         parameters: {
             query?: {
@@ -5288,6 +5418,89 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_document_chunks_api_v1_knowledge_bases__knowledge_base_id__documents__document_id__chunks_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                tenant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-ID"?: string | null;
+            };
+            path: {
+                knowledge_base_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CursorPageResponse_DocumentChunkResponse_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

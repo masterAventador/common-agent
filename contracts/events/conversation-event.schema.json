@@ -48,6 +48,7 @@
       "enum": [
         "assistant.started",
         "assistant.delta",
+        "assistant.reasoning",
         "assistant.completed",
         "assistant.failed",
         "assistant.stopped",

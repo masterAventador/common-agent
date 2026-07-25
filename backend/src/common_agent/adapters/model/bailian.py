@@ -22,8 +22,13 @@ from common_agent.models.base import (
     ModelStreamDelta,
     ModelStreamEvent,
     ModelStreamInterrupted,
+    ModelStreamReasoning,
 )
 from common_agent.observability import outbound_trace_headers
+
+# 百炼 compatible-mode 在 delta/message 上放思考内容的字段名, 也是本项目挂回 LangChain
+# additional_kwargs 时使用的键, 两侧保持同一个常量避免拼写漂移。
+REASONING_CONTENT_KEY = "reasoning_content"
 
 
 class BailianChatModelAdapter:
@@ -73,6 +78,9 @@ class BailianChatModelAdapter:
                 extra_headers=outbound_trace_headers(),
                 stream=True,
             ):
+                reasoning = chunk.additional_kwargs.get(REASONING_CONTENT_KEY)
+                if isinstance(reasoning, str) and reasoning:
+                    yield ModelStreamReasoning(text=reasoning)
                 text = _text_content(chunk.content)
                 if text:
                     emitted.append(text)
@@ -98,6 +106,41 @@ class BailianChatModelAdapter:
         if stream_started:
             return ModelStreamInterrupted()
         return _known_model_error(error)
+
+
+def _first_choice_delta(chunk: object) -> object:
+    if not isinstance(chunk, dict):
+        return None
+    choices = chunk.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    return first.get("delta") if isinstance(first, dict) else None
+
+
+def _first_choice_message(response: object) -> object:
+    """从一次性响应里取第一个 choice 的 message。
+
+    响应可能是 dict, 也可能是 OpenAI SDK 的 pydantic 模型, 因此两种访问方式都要支持。
+    """
+    choices = response.get("choices") if isinstance(response, dict) else getattr(
+        response, "choices", None
+    )
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    return first.get("message") if isinstance(first, dict) else getattr(first, "message", None)
+
+
+def _reasoning_text(container: object) -> str:
+    if container is None:
+        return ""
+    raw = (
+        container.get(REASONING_CONTENT_KEY)
+        if isinstance(container, dict)
+        else getattr(container, REASONING_CONTENT_KEY, None)
+    )
+    return raw if isinstance(raw, str) and raw else ""
 
 
 def _text_content(content: object) -> str:
@@ -143,7 +186,15 @@ def _flatten_outbound_content(content: object) -> object:
 
 
 class _BailianChatOpenAI(ChatOpenAI):
-    """百炼 compatible-mode 兼容层。出站消息内容块拍平成纯字符串。"""
+    """百炼 compatible-mode 兼容层。
+
+    出站消息内容块拍平成纯字符串; 入站补回被上游丢弃的思考内容。
+
+    上游 `ChatOpenAI` 只对齐 OpenAI 官方响应规范, 其文档明确写着第三方供应商附加的
+    `reasoning_content` 等字段"不会被提取或保留", 并指引"用供应商专用子类"补齐。百炼
+    compatible-mode 恰好在流式 delta 与非流式 message 里返回 `reasoning_content`,
+    因此在本项目自己的子类里通过公开扩展点取回, 不改动第三方源码。
+    """
 
     def _get_request_payload(
         self, input_: Any, *, stop: Any = None, **kwargs: Any
@@ -155,6 +206,34 @@ class _BailianChatOpenAI(ChatOpenAI):
                 if isinstance(message, dict) and "content" in message:
                     message["content"] = _flatten_outbound_content(message["content"])
         return payload
+
+    def _convert_chunk_to_generation_chunk(
+        self,
+        chunk: dict[str, Any],
+        default_chunk_class: type,
+        base_generation_info: dict[str, Any] | None,
+    ) -> Any:
+        generation = super()._convert_chunk_to_generation_chunk(
+            chunk, default_chunk_class, base_generation_info
+        )
+        if generation is None:
+            return None
+        reasoning = _reasoning_text(_first_choice_delta(chunk))
+        if reasoning:
+            generation.message.additional_kwargs[REASONING_CONTENT_KEY] = reasoning
+        return generation
+
+    def _create_chat_result(self, response: Any, generation_info: Any = None) -> Any:
+        """非流式路径同样补回思考内容。
+
+        绑定工具且标记流式不兼容的模型会走一次性响应, 此时 `reasoning_content` 挂在
+        `choices[].message` 上而不是 delta 上。
+        """
+        result = super()._create_chat_result(response, generation_info)
+        reasoning = _reasoning_text(_first_choice_message(response))
+        if reasoning and result.generations:
+            result.generations[0].message.additional_kwargs[REASONING_CONTENT_KEY] = reasoning
+        return result
 
 
 def _langchain_messages(request: ModelRequest) -> tuple[BaseMessage, ...]:

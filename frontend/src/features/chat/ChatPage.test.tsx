@@ -815,6 +815,104 @@ describe("ChatPage", () => {
     }
   });
 
+  it("shows the model thinking block from replayed reasoning events", async () => {
+    // 思考发生在回复完成之前，历史里这条回复还处于生成中
+    const streamingMessage = {
+      ...assistantMessage,
+      content: "",
+      status: "streaming" as const,
+      citations: [],
+    };
+    chatApi.fetchConversationMessages.mockResolvedValue([userMessage, streamingMessage]);
+    renderPage();
+    await waitFor(() => expect(chatApi.streamOptions).toBeDefined());
+
+    act(() => {
+      chatApi.streamOptions?.onEvent({
+        schema_version: "2",
+        sequence: 1,
+        conversation_id: conversation.id,
+        turn_id: "50000000-0000-4000-8000-000000000005",
+        message_id: assistantMessage.id,
+        type: "assistant.reasoning",
+        delta: "先看知识库有没有原话。",
+        retry: false,
+        tool_call: null,
+        message: streamingMessage,
+        occurred_at: "2026-07-20T02:00:02Z",
+      });
+      chatApi.streamOptions?.onEvent({
+        schema_version: "2",
+        sequence: 2,
+        conversation_id: conversation.id,
+        turn_id: "50000000-0000-4000-8000-000000000005",
+        message_id: assistantMessage.id,
+        type: "assistant.reasoning",
+        delta: "\n再判断要不要补充。",
+        retry: false,
+        tool_call: null,
+        message: streamingMessage,
+        occurred_at: "2026-07-20T02:00:03Z",
+      });
+    });
+
+    // 生成中默认展开，让用户看到它正在想什么
+    const thinking = await screen.findByRole("region", { name: "思考过程" });
+    expect(within(thinking).getByText("正在思考…")).toBeInTheDocument();
+    expect(within(thinking).getByText("先看知识库有没有原话。")).toBeInTheDocument();
+    expect(within(thinking).getByText("再判断要不要补充。")).toBeInTheDocument();
+  });
+
+  it("collapses the thinking block once the reply is finished", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(chatApi.streamOptions).toBeDefined());
+
+    act(() => {
+      chatApi.streamOptions?.onEvent({
+        schema_version: "2",
+        sequence: 1,
+        conversation_id: conversation.id,
+        turn_id: "50000000-0000-4000-8000-000000000005",
+        message_id: assistantMessage.id,
+        type: "assistant.reasoning",
+        delta: "推理内容",
+        retry: false,
+        tool_call: null,
+        message: { ...assistantMessage, content: "", status: "streaming" as const },
+        occurred_at: "2026-07-20T02:00:02Z",
+      });
+      chatApi.streamOptions?.onEvent({
+        schema_version: "2",
+        sequence: 2,
+        conversation_id: conversation.id,
+        turn_id: "50000000-0000-4000-8000-000000000005",
+        message_id: assistantMessage.id,
+        type: "assistant.completed",
+        delta: null,
+        retry: false,
+        tool_call: null,
+        message: assistantMessage,
+        occurred_at: "2026-07-20T02:00:04Z",
+      });
+    });
+
+    const thinking = await screen.findByRole("region", { name: "思考过程" });
+    expect(within(thinking).getByText("已深度思考")).toBeInTheDocument();
+    // 收起后正文不再显示，点开才看得到
+    expect(within(thinking).queryByText("推理内容")).not.toBeInTheDocument();
+    await user.click(within(thinking).getByRole("button", { name: /已深度思考/ }));
+    expect(within(thinking).getByText("推理内容")).toBeInTheDocument();
+  });
+
+  it("shows no thinking block for models that return no reasoning", async () => {
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    await within(messageRegion).findByRole("article", { name: "助手消息" });
+    expect(screen.queryByRole("region", { name: "思考过程" })).not.toBeInTheDocument();
+  });
+
   it("renders replayed tool lifecycle events without arguments or results", async () => {
     renderPage();
     await waitFor(() => expect(chatApi.streamOptions).toBeDefined());

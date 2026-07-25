@@ -45,11 +45,26 @@ class ModelStreamDelta:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelStreamReasoning:
+    """模型的思考内容增量。
+
+    与 ModelStreamDelta 分开, 因为思考过程不是回复正文: 它不参与"是否产出了内容"的判定,
+    在界面上单独折叠展示, 也不写入需要复述给模型的历史。
+    """
+
+    text: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text, str) or not self.text:
+            raise ValueError("模型思考增量不能为空")
+
+
+@dataclass(frozen=True, slots=True)
 class ModelStreamCompleted:
     pass
 
 
-type ModelStreamEvent = ModelStreamDelta | ModelStreamCompleted
+type ModelStreamEvent = ModelStreamDelta | ModelStreamReasoning | ModelStreamCompleted
 
 
 class ModelServiceError(Exception):

@@ -67,6 +67,11 @@ export function useChatPageController() {
     conversationId: string;
     callsByMessageId: Map<string, ChatToolCallLifecycle[]>;
   }>();
+  // 思考内容随事件流累积，不进消息正文；刷新后靠事件回放重建
+  const [reasoningState, setReasoningState] = useState<{
+    conversationId: string;
+    textByMessageId: Map<string, string>;
+  }>();
   const modelContextRef = useRef("");
   const lastEventSequence = useRef(0);
   const requestedEmployeeId = searchParams.get("employee_id");
@@ -225,6 +230,10 @@ export function useChatPageController() {
     toolSelectionOverride?.contextKey === toolSelectionContextKey
       ? toolSelectionOverride.selection
       : persistedToolSelection;
+  const reasoningByMessageId =
+    reasoningState && reasoningState.conversationId === selectedConversationId
+      ? reasoningState.textByMessageId
+      : new Map<string, string>();
   const toolCallsByMessageId =
     toolCallState && toolCallState.conversationId === selectedConversationId
       ? toolCallState.callsByMessageId
@@ -265,6 +274,18 @@ export function useChatPageController() {
       onEvent: (event: ConversationEvent) => {
         if (event.sequence <= lastEventSequence.current) return;
         lastEventSequence.current = event.sequence;
+        if (event.type === "assistant.reasoning" && event.delta) {
+          const delta = event.delta;
+          setReasoningState((current) => {
+            const next = new Map(
+              current?.conversationId === selectedConversationId
+                ? current.textByMessageId
+                : undefined,
+            );
+            next.set(event.message_id, (next.get(event.message_id) ?? "") + delta);
+            return { conversationId: selectedConversationId, textByMessageId: next };
+          });
+        }
         const toolCall = event.tool_call;
         if (toolCall) {
           const status = toolCallStatus(event.type);
@@ -440,6 +461,7 @@ export function useChatPageController() {
     modelConfigurationItems,
     toolCatalog,
     toolSelection,
+    reasoningByMessageId,
     toolCallsByMessageId,
     toolCapabilityNames,
     conversationToolGrants,

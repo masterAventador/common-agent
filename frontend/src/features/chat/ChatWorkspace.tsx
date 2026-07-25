@@ -103,6 +103,7 @@ export function ChatWorkspace({
                 key={message.id}
                 message={message}
                 authorName={authorNameOf(message)}
+                reasoning={controller.reasoningByMessageId.get(message.id)}
                 toolCalls={controller.toolCallsByMessageId.get(message.id) ?? []}
                 toolCapabilityNames={controller.toolCapabilityNames}
                 workflowRuns={runsByMessageId.get(message.id) ?? []}

@@ -89,6 +89,7 @@ const conversationEventSchema = z.strictObject({
   type: z.enum([
     "assistant.started",
     "assistant.delta",
+    "assistant.reasoning",
     "assistant.completed",
     "assistant.failed",
     "assistant.stopped",
@@ -108,6 +109,7 @@ const messagesSchema = z.array(messageSchema);
 const conversationEventTypes = [
   "assistant.started",
   "assistant.delta",
+  "assistant.reasoning",
   "assistant.completed",
   "assistant.failed",
   "assistant.stopped",

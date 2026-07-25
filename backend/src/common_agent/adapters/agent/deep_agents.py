@@ -23,6 +23,7 @@ from common_agent.adapters.agent.tool_metadata import (
     TOOL_METADATA_CAPABILITY_ID,
     TOOL_METADATA_CAPABILITY_NAME,
 )
+from common_agent.adapters.model.bailian import REASONING_CONTENT_KEY
 from common_agent.adapters.model.langchain import (
     LangChainChatModelProvider,
     LangChainChatModelResolver,
@@ -373,6 +374,10 @@ class DeepAgentsEmployeeRuntime:
                                 lifecycle.error_code or ToolCallErrorCode.EXECUTION_FAILED.value
                             ),
                         )
+                # 思考内容与正文分开产出: 它不计入"是否给出了回复", 界面上单独折叠展示
+                reasoning = _agent_reasoning(item)
+                if reasoning:
+                    yield emitter.reasoning(reasoning)
                 pending_text += _agent_text(item)
                 if pending_text.strip():
                     emitted_delta = True
@@ -453,6 +458,21 @@ def _agent_text(item: object) -> str:
     if not isinstance(message, (AIMessage, AIMessageChunk)):
         return ""
     return message.text
+
+
+def _agent_reasoning(item: object) -> str:
+    """取出模型的思考增量。
+
+    百炼 compatible-mode 会返回 reasoning_content, 由本项目的 ChatOpenAI 子类挂到
+    additional_kwargs 上; 不返回思考内容的模型这里自然为空。
+    """
+    if not isinstance(item, tuple) or len(item) != 2:
+        return ""
+    message, _metadata = item
+    if not isinstance(message, (AIMessage, AIMessageChunk)):
+        return ""
+    reasoning = message.additional_kwargs.get(REASONING_CONTENT_KEY)
+    return reasoning if isinstance(reasoning, str) and reasoning else ""
 
 
 def _resolved_tool_metadata(tools: Sequence[BaseTool]) -> dict[str, _ToolMetadata]:

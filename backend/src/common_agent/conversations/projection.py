@@ -89,6 +89,16 @@ class ConversationMessageProjector:
                 )
                 return None
 
+            if event.kind is RuntimeEventKind.REASONING:
+                # 思考不属于回复正文, 只作为会话事件广播并进入事件历史, 不改消息本身
+                await self._events.publish(
+                    turn_id=turn_id,
+                    message=current,
+                    kind=ConversationEventKind.ASSISTANT_REASONING,
+                    delta=event.delta or "",
+                )
+                return None
+
             if event.kind is RuntimeEventKind.DELTA:
                 updated = current.append_delta(event.delta or "")
                 kind = ConversationEventKind.ASSISTANT_DELTA

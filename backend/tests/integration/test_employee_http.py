@@ -38,6 +38,8 @@ def test_employee_persists_an_enabled_tenant_model_reference_through_formal_api(
     employee_id: str | None = None
     model_configuration_id: str | None = None
     model_name = f"员工默认模型-{uuid4().hex}"
+    # 平台会给租户预置真实模型, 测试标识必须唯一, 否则撞上唯一约束
+    model_identifier = f"test-model-{uuid4().hex[:12]}"
     try:
         with (
             running_api(TEST_DATABASE_URL) as api_url,
@@ -47,7 +49,7 @@ def test_employee_persists_an_enabled_tenant_model_reference_through_formal_api(
                 "/api/v1/model-configurations",
                 json={
                     "display_name": model_name,
-                    "model_identifier": "qwen-turbo",
+                    "model_identifier": model_identifier,
                     "enabled": True,
                 },
             )
@@ -61,7 +63,7 @@ def test_employee_persists_an_enabled_tenant_model_reference_through_formal_api(
             assert created.status_code == 201
             employee_id = created.json()["id"]
             assert created.json()["default_model_configuration_id"] == model_configuration_id
-            assert created.json()["default_model_identifier"] == "qwen-turbo"
+            assert created.json()["default_model_identifier"] == model_identifier
 
             restored = client.get(f"/api/v1/employees/{employee_id}")
             assert restored.status_code == 200
@@ -91,6 +93,7 @@ def test_employee_persists_an_enabled_tenant_model_reference_through_formal_api(
 def test_disabled_employee_model_preserves_existing_binding_and_blocks_new_selection() -> None:
     employee_id: str | None = None
     model_name = f"停用员工模型-{uuid4().hex}"
+    model_identifier = f"test-model-{uuid4().hex[:12]}"
     try:
         with (
             running_api(TEST_DATABASE_URL) as api_url,
@@ -100,7 +103,7 @@ def test_disabled_employee_model_preserves_existing_binding_and_blocks_new_selec
                 "/api/v1/model-configurations",
                 json={
                     "display_name": model_name,
-                    "model_identifier": "qwen-turbo",
+                    "model_identifier": model_identifier,
                     "enabled": True,
                 },
             )
@@ -117,7 +120,7 @@ def test_disabled_employee_model_preserves_existing_binding_and_blocks_new_selec
                 f"/api/v1/model-configurations/{model_configuration_id}",
                 json={
                     "display_name": model_name,
-                    "model_identifier": "qwen-turbo",
+                    "model_identifier": model_identifier,
                     "enabled": False,
                 },
             )

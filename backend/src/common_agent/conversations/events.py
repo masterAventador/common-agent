@@ -19,6 +19,7 @@ from common_agent.events import EventAppendRequest, EventJournal, EventStreamKin
 class ConversationEventKind(StrEnum):
     ASSISTANT_STARTED = "assistant.started"
     ASSISTANT_DELTA = "assistant.delta"
+    ASSISTANT_REASONING = "assistant.reasoning"
     ASSISTANT_COMPLETED = "assistant.completed"
     ASSISTANT_FAILED = "assistant.failed"
     ASSISTANT_STOPPED = "assistant.stopped"
@@ -649,12 +650,16 @@ def _validate_event(
         ConversationEventKind.ASSISTANT_TOOL_COMPLETED,
         ConversationEventKind.ASSISTANT_TOOL_FAILED,
     }
-    if kind in tool_kinds:
+    # 思考事件不改消息正文, 因此不能按状态映射校验: 它可以出现在 pending 或 streaming 上
+    if kind in tool_kinds or kind is ConversationEventKind.ASSISTANT_REASONING:
         if message.status not in {MessageStatus.PENDING, MessageStatus.STREAMING}:
-            raise ValueError("tool event requires an active assistant message")
+            raise ValueError("reasoning and tool events require an active assistant message")
     elif message.status is not message_statuses[kind]:
         raise ValueError("event kind does not match persisted message status")
-    if kind is ConversationEventKind.ASSISTANT_DELTA:
+    if kind in {
+        ConversationEventKind.ASSISTANT_DELTA,
+        ConversationEventKind.ASSISTANT_REASONING,
+    }:
         if delta is None or not delta:
             raise ValueError("delta event requires content")
     elif delta is not None:

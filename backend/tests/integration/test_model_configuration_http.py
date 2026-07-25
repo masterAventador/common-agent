@@ -12,15 +12,24 @@ from tests.support.http import assert_error_response, authenticated_client, runn
 from tests.support.settings import TEST_DATABASE_URL
 
 
+def _unique_identifier() -> str:
+    """每次运行取唯一标识。
+
+    平台会给新租户预置一批真实模型(含 qwen-turbo), 测试如果固定用其中一个,
+    创建时会撞上"显示名或模型标识已存在"的唯一约束。测试数据必须与预置目录分离。
+    """
+    return f"test-model-{uuid4().hex[:12]}"
+
+
 def _body(
     *,
-    display_name: str = "Qwen Turbo",
-    model_identifier: str = "qwen-turbo",
+    display_name: str | None = None,
+    model_identifier: str | None = None,
     enabled: bool = True,
 ) -> dict[str, object]:
     return {
-        "display_name": display_name,
-        "model_identifier": model_identifier,
+        "display_name": display_name or f"测试模型-{uuid4().hex[:8]}",
+        "model_identifier": model_identifier or _unique_identifier(),
         "enabled": enabled,
     }
 
@@ -32,15 +41,16 @@ def test_model_configuration_crud_uses_formal_uvicorn_mysql_and_survives_restart
             running_api(TEST_DATABASE_URL) as api_url,
             authenticated_client(base_url=api_url, timeout=5) as client,
         ):
-            created = client.post("/api/v1/model-configurations", json=_body())
+            body = _body()
+            created = client.post("/api/v1/model-configurations", json=body)
             assert created.status_code == 201
             payload = created.json()
             configuration_id = payload["id"]
             assert payload == {
                 "id": configuration_id,
-                "display_name": "Qwen Turbo",
+                "display_name": body["display_name"],
                 "provider": "bailian",
-                "model_identifier": "qwen-turbo",
+                "model_identifier": body["model_identifier"],
                 "enabled": True,
                 "streaming_breaks_tool_calls": False,
                 "created_at": payload["created_at"],
@@ -57,18 +67,33 @@ def test_model_configuration_crud_uses_formal_uvicorn_mysql_and_survives_restart
             )
             assert user_managed_compatibility.status_code == 422
 
+            renamed_identifier = _unique_identifier()
             updated = client.put(
                 f"/api/v1/model-configurations/{configuration_id}",
                 json=_body(
-                    display_name="DeepSeek V4 Pro",
-                    model_identifier="deepseek-v4-pro",
+                    display_name="改名后的模型",
+                    model_identifier=renamed_identifier,
                     enabled=False,
                 ),
             )
             assert updated.status_code == 200
-            assert updated.json()["display_name"] == "DeepSeek V4 Pro"
+            assert updated.json()["display_name"] == "改名后的模型"
             assert updated.json()["enabled"] is False
-            assert updated.json()["streaming_breaks_tool_calls"] is True
+            # 兼容标记由平台的实测表决定, 未记录的标识一律按可流式处理
+            assert updated.json()["streaming_breaks_tool_calls"] is False
+
+            # 预置的 deepseek-v4-pro 在实测表里标记为流式绑定工具会断, 读取时必须反映出来
+            seeded = client.get(
+                "/api/v1/model-configurations",
+                params={"search": "deepseek-v4-pro"},
+            )
+            assert seeded.status_code == 200
+            seeded_pro = [
+                item
+                for item in seeded.json()["items"]
+                if item["model_identifier"] == "deepseek-v4-pro"
+            ]
+            assert seeded_pro and seeded_pro[0]["streaming_breaks_tool_calls"] is True
 
             enabled_only = client.get(
                 "/api/v1/model-configurations",
@@ -96,9 +121,9 @@ def test_model_configuration_crud_uses_formal_uvicorn_mysql_and_survives_restart
         ):
             restored = client.get(f"/api/v1/model-configurations/{configuration_id}")
             assert restored.status_code == 200
-            assert restored.json()["model_identifier"] == "deepseek-v4-pro"
+            assert restored.json()["model_identifier"] == renamed_identifier
             assert restored.json()["enabled"] is False
-            assert restored.json()["streaming_breaks_tool_calls"] is True
+            assert restored.json()["streaming_breaks_tool_calls"] is False
             assert (
                 client.delete(f"/api/v1/model-configurations/{configuration_id}").status_code == 204
             )
@@ -158,6 +183,7 @@ def test_model_configuration_is_tenant_isolated_and_demo_verification_uses_selec
             assert created_tenant.status_code == 201
             tenant_b = created_tenant.json()["id"]
 
+            shared_identifier_b = _unique_identifier()
             created_a = client.post(
                 "/api/v1/model-configurations",
                 headers={"X-Tenant-ID": str(DEFAULT_TENANT_ID)},
@@ -166,7 +192,7 @@ def test_model_configuration_is_tenant_isolated_and_demo_verification_uses_selec
             created_b = client.post(
                 "/api/v1/model-configurations",
                 headers={"X-Tenant-ID": tenant_b},
-                json=_body(display_name="同名模型", model_identifier="qwen-max"),
+                json=_body(display_name="同名模型", model_identifier=shared_identifier_b),
             )
             assert created_a.status_code == created_b.status_code == 201
             configuration_ids.extend([created_a.json()["id"], created_b.json()["id"]])
@@ -184,7 +210,7 @@ def test_model_configuration_is_tenant_isolated_and_demo_verification_uses_selec
             assert verified.status_code == 200
             assert verified.json() == {
                 "status": "available",
-                "model_identifier": "qwen-max",
+                "model_identifier": shared_identifier_b,
                 "response_preview": "演示模式模型连接正常",
             }
     finally:

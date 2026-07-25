@@ -1,6 +1,6 @@
 import { Alert, Button, Collapse, Flex, Progress, Space, Spin, Tag, Typography } from "antd";
-import { Bot, FileText, RotateCcw } from "lucide-react";
-import { lazy, Suspense } from "react";
+import { Bot, Brain, ChevronDown, FileText, RotateCcw } from "lucide-react";
+import { lazy, Suspense, useState } from "react";
 
 import type { ConversationMessage } from "../../api/conversations";
 import type { WorkflowRun } from "../../api/workflowRuns";
@@ -39,6 +39,7 @@ function formatClockTime(timestamp: string): string {
 export function MessageBubble({
   message,
   authorName,
+  reasoning,
   toolCalls,
   toolCapabilityNames,
   workflowRuns,
@@ -50,6 +51,7 @@ export function MessageBubble({
 }: {
   message: ConversationMessage;
   authorName: string;
+  reasoning?: string;
   toolCalls: ChatToolCallLifecycle[];
   toolCapabilityNames: Map<string, string>;
   workflowRuns: WorkflowRun[];
@@ -80,6 +82,9 @@ export function MessageBubble({
         </header>
       )}
       <div className="chat-message-body">
+        {isAssistant && reasoning ? (
+          <ThinkingBlock reasoning={reasoning} thinking={isActive} />
+        ) : null}
         {message.content ? (
           isAssistant ? (
             // 模型按 Markdown 组织回复；用户自己打的字保持原样不做解释
@@ -123,6 +128,42 @@ export function MessageBubble({
         )}
       </div>
     </article>
+  );
+}
+
+/** 思考过程折叠块：生成中自动展开，结束后收起（对应设计稿的 .think）。 */
+function ThinkingBlock({ reasoning, thinking }: { reasoning: string; thinking: boolean }) {
+  const [expandedAfterAnswer, setExpandedAfterAnswer] = useState(false);
+  const open = thinking || expandedAfterAnswer;
+  const lines = reasoning.split("\n").filter((line) => line.trim());
+  return (
+    <section
+      className={`chat-thinking${open ? " is-open" : ""}`}
+      role="region"
+      aria-label="思考过程"
+    >
+      <button
+        type="button"
+        className="chat-thinking-head"
+        aria-expanded={open}
+        onClick={() => setExpandedAfterAnswer((current) => !current)}
+      >
+        <span className={`chat-thinking-icon${thinking ? " is-spinning" : ""}`}>
+          <Brain aria-hidden="true" size={15} />
+        </span>
+        <span className="chat-thinking-label">{thinking ? "正在思考…" : "已深度思考"}</span>
+        <ChevronDown aria-hidden="true" className="chat-thinking-chevron" size={14} />
+      </button>
+      {open ? (
+        <div className="chat-thinking-body">
+          {lines.map((line, index) => (
+            <div key={`${index}-${line.slice(0, 12)}`} className="chat-thinking-line">
+              {line}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

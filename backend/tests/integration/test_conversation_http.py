@@ -232,6 +232,8 @@ def test_first_turn_rejects_unknown_model_without_leaving_partial_conversation()
 def test_employee_first_turn_uses_selected_model_without_mutating_employee_default() -> None:
     conversation_id = uuid4()
     model_name = f"S10-07G 临时模型 {str(uuid4())[:8]}"
+    # 平台会给租户预置真实模型, 测试标识必须唯一, 否则撞上唯一约束
+    model_identifier = f"test-model-{uuid4().hex[:12]}"
     try:
         with (
             running_api(TEST_DATABASE_URL) as api_url,
@@ -241,7 +243,7 @@ def test_employee_first_turn_uses_selected_model_without_mutating_employee_defau
                 "/api/v1/model-configurations",
                 json={
                     "display_name": model_name,
-                    "model_identifier": "qwen-turbo",
+                    "model_identifier": model_identifier,
                     "enabled": True,
                 },
             )
@@ -264,7 +266,10 @@ def test_employee_first_turn_uses_selected_model_without_mutating_employee_defau
         assert accepted.json()["turn"]["assistant_message"]["model_configuration_id"] == (
             selected_model_id
         )
-        assert accepted.json()["turn"]["assistant_message"]["model_identifier"] == "qwen-turbo"
+        assert (
+            accepted.json()["turn"]["assistant_message"]["model_identifier"]
+            == model_identifier
+        )
         assert employee.status_code == 200
         assert employee.json()["default_model_identifier"] == "qwen-plus"
         assert employee.json()["default_model_configuration_id"] != selected_model_id

@@ -167,6 +167,7 @@ class EmployeeRuntimeRequest:
 
 class RuntimeEventKind(StrEnum):
     DELTA = "delta"
+    REASONING = "reasoning"
     TOOL_STARTED = "tool_started"
     TOOL_COMPLETED = "tool_completed"
     TOOL_FAILED = "tool_failed"
@@ -197,7 +198,7 @@ class RuntimeEvent:
         if not isinstance(self.kind, RuntimeEventKind):
             raise RuntimeValidationError("kind", "不是支持的事件类型")
 
-        if self.kind is RuntimeEventKind.DELTA:
+        if self.kind in {RuntimeEventKind.DELTA, RuntimeEventKind.REASONING}:
             if self.delta is None:
                 raise RuntimeValidationError("delta", "增量事件必须包含文本")
             _content("delta", self.delta, MESSAGE_CONTENT_MAX_LENGTH)
@@ -250,6 +251,10 @@ class RuntimeEventEmitter:
 
     def delta(self, content: str) -> RuntimeEvent:
         return self._emit(RuntimeEventKind.DELTA, delta=content)
+
+    def reasoning(self, content: str) -> RuntimeEvent:
+        """思考增量。与正文共用同一条序号轴, 会话侧才能校验连续性。"""
+        return self._emit(RuntimeEventKind.REASONING, delta=content)
 
     def tool_started(
         self,

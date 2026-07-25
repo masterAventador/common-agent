@@ -159,6 +159,117 @@ class _CapturingGraph:
             self.closed = True
 
 
+class _ReasoningGraph:
+    """按真实百炼流式形态产出: 先若干思考增量, 再若干正文增量。"""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def astream(
+        self,
+        input_data: Mapping[str, object],
+        config: Mapping[str, object],
+        *,
+        stream_mode: str,
+    ) -> AsyncIterator[tuple[AIMessageChunk, dict[str, object]]]:
+        assert stream_mode == "messages"
+        metadata = {"langgraph_node": "model"}
+        try:
+            yield (
+                AIMessageChunk(content="", additional_kwargs={"reasoning_content": "先比较"}),
+                metadata,
+            )
+            yield (
+                AIMessageChunk(content="", additional_kwargs={"reasoning_content": "大小"}),
+                metadata,
+            )
+            yield AIMessageChunk(content="7 更大"), metadata
+        finally:
+            self.closed = True
+
+
+def test_runtime_projects_model_reasoning_as_platform_reasoning_events() -> None:
+    """百炼会返回 reasoning_content, 运行时要把它作为独立的思考事件产出。"""
+    graph = _ReasoningGraph()
+    gateway = _Gateway(_ToolBindingFakeChatModel(messages=iter(["unused"])))
+    runtime = DeepAgentsEmployeeRuntime(
+        gateway,
+        tools=DeepAgentToolRegistry({}),
+        agent_builder=lambda **_: graph,
+    )
+
+    async def exercise() -> list[RuntimeEvent]:
+        events = [
+            event
+            async for event in runtime.stream(runtime_request(), stop=RuntimeStopToken())
+        ]
+        await runtime.aclose()
+        return events
+
+    events = asyncio.run(exercise())
+
+    assert [event.kind for event in events] == [
+        RuntimeEventKind.REASONING,
+        RuntimeEventKind.REASONING,
+        RuntimeEventKind.DELTA,
+        RuntimeEventKind.COMPLETED,
+    ]
+    assert [event.sequence for event in events] == [1, 2, 3, 4]
+    reasoning = "".join(
+        event.delta or "" for event in events if event.kind is RuntimeEventKind.REASONING
+    )
+    answer = "".join(
+        event.delta or "" for event in events if event.kind is RuntimeEventKind.DELTA
+    )
+    assert reasoning == "先比较大小"
+    assert answer == "7 更大"
+
+
+def test_reasoning_alone_is_not_a_successful_answer() -> None:
+    """只有思考没有正文时仍按空回复失败, 思考不能顶替回复内容。"""
+
+    class _OnlyReasoningGraph(_ReasoningGraph):
+        async def astream(
+            self,
+            input_data: Mapping[str, object],
+            config: Mapping[str, object],
+            *,
+            stream_mode: str,
+        ) -> AsyncIterator[tuple[AIMessageChunk, dict[str, object]]]:
+            assert stream_mode == "messages"
+            try:
+                yield (
+                    AIMessageChunk(
+                        content="", additional_kwargs={"reasoning_content": "想了很久"}
+                    ),
+                    {"langgraph_node": "model"},
+                )
+            finally:
+                self.closed = True
+
+    gateway = _Gateway(_ToolBindingFakeChatModel(messages=iter(["unused"])))
+    runtime = DeepAgentsEmployeeRuntime(
+        gateway,
+        tools=DeepAgentToolRegistry({}),
+        agent_builder=lambda **_: _OnlyReasoningGraph(),
+    )
+
+    async def exercise() -> list[RuntimeEvent]:
+        events = [
+            event
+            async for event in runtime.stream(runtime_request(), stop=RuntimeStopToken())
+        ]
+        await runtime.aclose()
+        return events
+
+    events = asyncio.run(exercise())
+
+    assert [event.kind for event in events] == [
+        RuntimeEventKind.REASONING,
+        RuntimeEventKind.FAILED,
+    ]
+
+
 @tool
 def allowed_workflow(value: str) -> str:
     """运行已授权的工作流。"""
