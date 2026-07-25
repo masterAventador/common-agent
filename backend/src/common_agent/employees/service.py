@@ -123,6 +123,7 @@ class EmployeeService:
                 default_model_identifier=model_configuration.model_identifier,
                 knowledge_base_id=configuration.knowledge_base_id,
                 allowed_workflow_ids=configuration.allowed_workflow_ids,
+                deep_thinking_enabled=configuration.deep_thinking_enabled,
             )
             async with self._unit_of_work_factory() as unit_of_work:
                 await unit_of_work.employees.add(employee)
@@ -157,6 +158,7 @@ class EmployeeService:
                 default_model_identifier=model_configuration.model_identifier,
                 knowledge_base_id=configuration.knowledge_base_id,
                 allowed_workflow_ids=configuration.allowed_workflow_ids,
+                deep_thinking_enabled=configuration.deep_thinking_enabled,
             )
             try:
                 async with self._unit_of_work_factory() as unit_of_work:
@@ -197,6 +199,7 @@ class EmployeeService:
                     default_model_identifier=model_configuration.model_identifier,
                     knowledge_base_id=configuration.knowledge_base_id,
                     allowed_workflow_ids=configuration.allowed_workflow_ids,
+                    deep_thinking_enabled=configuration.deep_thinking_enabled,
                 )
                 if not await unit_of_work.employees.update(updated):
                     raise EmployeeNotFound

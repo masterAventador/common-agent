@@ -86,14 +86,17 @@ class _ModelResolver:
     def __init__(self, models: Mapping[str, _Gateway]) -> None:
         self.models = dict(models)
         self.requests: list[tuple[str, bool]] = []
+        self.deep_thinking_requests: list[bool | None] = []
 
     async def resolve(
         self,
         model_identifier: str,
         *,
         disable_streaming_for_tool_calls: bool = False,
+        deep_thinking: bool | None = None,
     ) -> _Gateway:
         self.requests.append((model_identifier, disable_streaming_for_tool_calls))
+        self.deep_thinking_requests.append(deep_thinking)
         return self.models[model_identifier]
 
     async def aclose(self) -> None:

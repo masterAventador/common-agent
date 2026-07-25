@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessageChunk, HumanMessage
 
 from common_agent.adapters.model.bailian import BailianChatModelAdapter
 from common_agent.bootstrap.settings import ModelSettings
@@ -107,3 +107,31 @@ def test_usage_only_chunk_stays_untouched() -> None:
 
     assert message is not None
     assert "reasoning_content" not in message.additional_kwargs
+
+
+def _extra_body(deep_thinking: bool | None) -> object:
+    """取实际出站请求里的供应商自定义参数。
+
+    必须断言 extra_body 而不是随便某个键: 供应商自定义参数如果经 model_kwargs 下发,
+    会被当成 OpenAI SDK 的命名参数, SDK 不认识就直接 TypeError, 整轮对话失败。
+    """
+    adapter = BailianChatModelAdapter(_settings(), deep_thinking=deep_thinking)
+    payload = adapter.langchain_chat_model._get_request_payload(  # type: ignore[attr-defined]
+        [HumanMessage(content="你好")]
+    )
+    assert "enable_thinking" not in payload, "供应商自定义参数不能放在顶层"
+    return payload.get("extra_body")
+
+
+def test_deep_thinking_on_asks_the_provider_to_think() -> None:
+    """开关打开时显式要求思考: qwen-plus 这类默认不思考的模型也会给出思考内容。"""
+    assert _extra_body(True) == {"enable_thinking": True}
+
+
+def test_deep_thinking_off_asks_the_provider_to_skip_thinking() -> None:
+    assert _extra_body(False) == {"enable_thinking": False}
+
+
+def test_unset_deep_thinking_leaves_the_provider_default_alone() -> None:
+    """无法确定时不下发该参数, 用模型自身默认行为, 不去撞供应商的参数限制。"""
+    assert _extra_body(None) is None

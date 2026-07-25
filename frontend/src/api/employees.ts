@@ -27,6 +27,7 @@ const employeeSchema = z.strictObject({
     .array(z.uuid())
     .max(100)
     .refine((items) => new Set(items).size === items.length),
+  deep_thinking_enabled: z.boolean(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });

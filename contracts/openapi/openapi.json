@@ -1210,6 +1210,11 @@
             "title": "Allowed Workflow Ids",
             "type": "array"
           },
+          "deep_thinking_enabled": {
+            "default": true,
+            "title": "Deep Thinking Enabled",
+            "type": "boolean"
+          },
           "default_model_configuration_id": {
             "format": "uuid",
             "title": "Default Model Configuration Id",
@@ -1271,6 +1276,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "deep_thinking_enabled": {
+            "title": "Deep Thinking Enabled",
+            "type": "boolean"
+          },
           "default_model_configuration_id": {
             "format": "uuid",
             "title": "Default Model Configuration Id",
@@ -1323,6 +1332,7 @@
           "default_model_identifier",
           "knowledge_base_id",
           "allowed_workflow_ids",
+          "deep_thinking_enabled",
           "created_at",
           "updated_at"
         ],
@@ -2867,6 +2877,10 @@
             "title": "Streaming Breaks Tool Calls",
             "type": "boolean"
           },
+          "thinking_can_be_disabled": {
+            "title": "Thinking Can Be Disabled",
+            "type": "boolean"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -2880,6 +2894,7 @@
           "model_identifier",
           "enabled",
           "streaming_breaks_tool_calls",
+          "thinking_can_be_disabled",
           "created_at",
           "updated_at"
         ],

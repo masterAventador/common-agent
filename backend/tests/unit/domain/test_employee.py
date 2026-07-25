@@ -156,3 +156,53 @@ def test_employee_rejects_non_utc_or_reversed_timestamps() -> None:
             updated_at=created_at - timedelta(microseconds=1),
         )
     assert ordering_error.value.field == "updated_at"
+
+
+def test_employee_keeps_deep_thinking_on_by_default() -> None:
+    """默认开启, 保持现有行为: 会思考的模型继续思考。"""
+    employee = Employee.create(
+        name="默认员工",
+        system_prompt="回答问题。",
+        default_model_configuration_id=MODEL_CONFIGURATION_ID,
+        default_model_identifier=MODEL_IDENTIFIER,
+    )
+
+    assert employee.deep_thinking_enabled is True
+
+
+def test_employee_can_turn_deep_thinking_off_and_back_on() -> None:
+    employee = Employee.create(
+        name="快答员工",
+        system_prompt="回答问题。",
+        default_model_configuration_id=MODEL_CONFIGURATION_ID,
+        default_model_identifier=MODEL_IDENTIFIER,
+        deep_thinking_enabled=False,
+    )
+
+    assert employee.deep_thinking_enabled is False
+
+    reconfigured = employee.reconfigure(
+        name=employee.name,
+        description=employee.description,
+        system_prompt=employee.system_prompt,
+        default_model_configuration_id=employee.default_model_configuration_id,
+        default_model_identifier=employee.default_model_identifier,
+        knowledge_base_id=employee.knowledge_base_id,
+        allowed_workflow_ids=employee.allowed_workflow_ids,
+        deep_thinking_enabled=True,
+    )
+
+    assert reconfigured.deep_thinking_enabled is True
+
+
+def test_employee_rejects_a_non_boolean_deep_thinking_flag() -> None:
+    with pytest.raises(EmployeeValidationError) as error:
+        Employee.create(
+            name="非法开关",
+            system_prompt="回答问题。",
+            default_model_configuration_id=MODEL_CONFIGURATION_ID,
+            default_model_identifier=MODEL_IDENTIFIER,
+            deep_thinking_enabled="yes",  # type: ignore[arg-type]
+        )
+
+    assert error.value.field == "deep_thinking_enabled"

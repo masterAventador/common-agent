@@ -94,6 +94,8 @@ class ConversationExecutionTarget:
     model_configuration_id: UUID
     model_identifier: str
     streaming_breaks_tool_calls: bool
+    # 本轮要下发给模型的 enable_thinking; None 表示不下发, 用模型自身行为
+    deep_thinking: bool | None
     system_instruction: str
     knowledge_base_id: str | None
     allowed_workflow_ids: tuple[UUID, ...]

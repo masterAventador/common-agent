@@ -173,9 +173,11 @@ class _StaticModelResolver:
         model_identifier: str,
         *,
         disable_streaming_for_tool_calls: bool = False,
+        deep_thinking: bool | None = None,
     ) -> LangChainChatModelProvider:
         del model_identifier
         del disable_streaming_for_tool_calls
+        del deep_thinking
         return self._model
 
     async def aclose(self) -> None:
@@ -251,6 +253,7 @@ class DeepAgentsEmployeeRuntime:
                 disable_streaming_for_tool_calls=(
                     request.streaming_breaks_tool_calls and bool(allowed_tools)
                 ),
+                deep_thinking=request.deep_thinking,
             )
             tool_metadata = _resolved_tool_metadata(allowed_tools)
             graph = cast(

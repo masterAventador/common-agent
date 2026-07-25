@@ -17,6 +17,7 @@ import {
   Select,
   Skeleton,
   Space,
+  Switch,
   Tag,
   Typography,
 } from "antd";
@@ -66,6 +67,7 @@ function employeeFormValues(employee: Employee): EmployeeConfigurationInput {
     default_model_configuration_id: employee.default_model_configuration_id,
     knowledge_base_id: employee.knowledge_base_id,
     allowed_workflow_ids: employee.allowed_workflow_ids,
+    deep_thinking_enabled: employee.deep_thinking_enabled,
   };
 }
 
@@ -80,6 +82,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
   const [toolSelectionOverride, setToolSelectionOverride] =
     useState<ToolGrantSelection>();
   const [form] = Form.useForm<EmployeeConfigurationInput>();
+  const selectedModelId = Form.useWatch("default_model_configuration_id", form);
 
   const employees = useInfiniteQuery({
     queryKey: ["employees", employeeSearch],
@@ -154,6 +157,10 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
     () => new Map(modelItems.map((item) => [item.id, item])),
     [modelItems],
   );
+  // 有的模型只能在深度思考下工作(实测 MiniMax-M2.5), 这种情况下开关不能给用户关
+  const selectedModelCanStopThinking =
+    selectedModelId === undefined ||
+    (modelsById.get(selectedModelId)?.thinking_can_be_disabled ?? true);
 
   const toolSelection =
     toolSelectionOverride ??
@@ -216,6 +223,7 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
       default_model_configuration_id: undefined,
       knowledge_base_id: null,
       allowed_workflow_ids: [],
+      deep_thinking_enabled: true,
     });
     setEditor({ mode: "create" });
   };
@@ -543,6 +551,23 @@ export function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
                   void knowledgeBases.fetchNextPage();
                 }
               }}
+            />
+          </Form.Item>
+          <Form.Item
+            label="深度思考"
+            name="deep_thinking_enabled"
+            valuePropName="checked"
+            extra={
+              selectedModelCanStopThinking
+                ? "开启后模型会先展开思考再回答，回复更稳但更慢；关闭则直接作答。"
+                : "该模型只能在深度思考下工作，无法关闭"
+            }
+          >
+            <Switch
+              aria-label="深度思考"
+              disabled={!selectedModelCanStopThinking}
+              checkedChildren="开"
+              unCheckedChildren="关"
             />
           </Form.Item>
           <Form.Item label="允许工作流" name="allowed_workflow_ids">

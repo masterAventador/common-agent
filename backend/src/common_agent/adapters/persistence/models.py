@@ -708,6 +708,41 @@ class ModelConfigurationRow(PersistenceBase):
     updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
 
 
+class ModelThinkingCapabilityRow(PersistenceBase):
+    """按实测记录哪些模型不允许关闭深度思考。没有记录即视为可以关闭。"""
+
+    __tablename__ = "model_thinking_capabilities"
+    __table_args__ = (
+        CheckConstraint(
+            "provider = TRIM(provider) AND CHAR_LENGTH(provider) BETWEEN 1 AND 16",
+            name="ck_model_thinking_capabilities_provider",
+        ),
+        CheckConstraint(
+            "model_identifier = TRIM(model_identifier) "
+            f"AND CHAR_LENGTH(model_identifier) BETWEEN 1 AND {MODEL_IDENTIFIER_MAX_LENGTH}",
+            name="ck_model_thinking_capabilities_identifier",
+        ),
+        CheckConstraint(
+            "evidence_revision = TRIM(evidence_revision) "
+            "AND CHAR_LENGTH(evidence_revision) BETWEEN 1 AND 128",
+            name="ck_model_thinking_capabilities_evidence_revision",
+        ),
+        CheckConstraint(
+            "updated_at >= observed_at",
+            name="ck_model_thinking_capabilities_timestamps",
+        ),
+    )
+
+    provider: Mapped[str] = mapped_column(String(16), primary_key=True)
+    model_identifier: Mapped[str] = mapped_column(
+        String(MODEL_IDENTIFIER_MAX_LENGTH), primary_key=True
+    )
+    thinking_can_be_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    evidence_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
+
+
 class ModelToolStreamingCapabilityRow(PersistenceBase):
     __tablename__ = "model_tool_streaming_capabilities"
     __table_args__ = (
@@ -843,6 +878,7 @@ class EmployeeRow(PersistenceBase):
         String(EMPLOYEE_KNOWLEDGE_BASE_ID_MAX_LENGTH), nullable=True
     )
     allowed_workflow_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    deep_thinking_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     created_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(mysql.DATETIME(fsp=6), nullable=False)
 

@@ -106,6 +106,7 @@ class EmployeeRuntimeRequest:
     knowledge_context: tuple[RuntimeKnowledgeChunk, ...] = field(repr=False)
     allowed_workflow_ids: tuple[UUID, ...]
     streaming_breaks_tool_calls: bool = False
+    deep_thinking: bool | None = None
     allowed_tool_capability_ids: tuple[UUID, ...] = ()
     tool_grant_target: ToolGrantTarget | None = None
     workflow_run_id: UUID | None = None

@@ -29,6 +29,7 @@ const employee = {
   default_model_identifier: "qwen-plus",
   knowledge_base_id: "kb-1",
   allowed_workflow_ids: [],
+  deep_thinking_enabled: true,
   created_at: "2026-07-19T08:00:00Z",
   updated_at: "2026-07-19T08:00:00Z",
 };
@@ -40,6 +41,7 @@ const input = {
   default_model_configuration_id: employee.default_model_configuration_id,
   knowledge_base_id: "kb-1",
   allowed_workflow_ids: [],
+  deep_thinking_enabled: true,
 };
 
 describe("employee API boundary", () => {

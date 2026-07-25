@@ -164,6 +164,7 @@ class ConversationRuntimeCoordinator:
                     assistant_sequence_number=assistant_message.sequence_number,
                     model_identifier=target.model_identifier,
                     streaming_breaks_tool_calls=target.streaming_breaks_tool_calls,
+                    deep_thinking=target.deep_thinking,
                     system_instruction=target.system_instruction,
                     history=_runtime_history(history, assistant_message),
                     knowledge_base_id=resolved.knowledge_base_id,

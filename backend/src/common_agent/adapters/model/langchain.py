@@ -25,6 +25,7 @@ class LangChainChatModelResolver(Protocol):
         model_identifier: str,
         *,
         disable_streaming_for_tool_calls: bool = False,
+        deep_thinking: bool | None = None,
     ) -> LangChainChatModelProvider: ...
 
     async def aclose(self) -> None: ...

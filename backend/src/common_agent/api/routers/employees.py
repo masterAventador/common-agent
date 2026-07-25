@@ -85,6 +85,7 @@ class EmployeeConfigurationBody(BaseModel):
         default_factory=list,
         max_length=EMPLOYEE_ALLOWED_WORKFLOWS_MAX_ITEMS,
     )
+    deep_thinking_enabled: bool = True
 
 
 class EmployeeResponse(BaseModel):
@@ -98,6 +99,7 @@ class EmployeeResponse(BaseModel):
     default_model_identifier: str
     knowledge_base_id: str | None
     allowed_workflow_ids: list[UUID]
+    deep_thinking_enabled: bool
     created_at: datetime
     updated_at: datetime
 
@@ -122,6 +124,7 @@ def _configuration(body: EmployeeConfigurationBody) -> EmployeeConfiguration:
         default_model_configuration_id=body.default_model_configuration_id,
         knowledge_base_id=body.knowledge_base_id,
         allowed_workflow_ids=tuple(body.allowed_workflow_ids),
+        deep_thinking_enabled=body.deep_thinking_enabled,
     )
 
 

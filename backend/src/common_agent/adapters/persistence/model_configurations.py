@@ -18,6 +18,7 @@ from common_agent.adapters.persistence.models import (
     MessageRow,
     ModelConfigurationReferenceRow,
     ModelConfigurationRow,
+    ModelThinkingCapabilityRow,
     ModelToolStreamingCapabilityRow,
 )
 from common_agent.adapters.persistence.timestamps import (
@@ -84,8 +85,12 @@ class SqlAlchemyModelConfigurationRepository:
         )
         return PageSlice(
             items=tuple(
-                _to_domain(row, streaming_breaks_tool_calls=bool(compatibility))
-                for row, compatibility in rows[:limit]
+                _to_domain(
+                    row,
+                    streaming_breaks_tool_calls=bool(streaming),
+                    thinking_can_be_disabled=thinking is None or bool(thinking),
+                )
+                for row, streaming, thinking in rows[:limit]
             ),
             has_more=len(rows) > limit,
         )
@@ -101,8 +106,12 @@ class SqlAlchemyModelConfigurationRepository:
         ).one_or_none()
         if result is None:
             return None
-        row, compatibility = result
-        return _to_domain(row, streaming_breaks_tool_calls=bool(compatibility))
+        row, streaming, thinking = result
+        return _to_domain(
+            row,
+            streaming_breaks_tool_calls=bool(streaming),
+            thinking_can_be_disabled=thinking is None or bool(thinking),
+        )
 
     async def get_by_identifier(self, model_identifier: str) -> ModelConfiguration | None:
         result = (
@@ -115,8 +124,12 @@ class SqlAlchemyModelConfigurationRepository:
         ).one_or_none()
         if result is None:
             return None
-        row, compatibility = result
-        return _to_domain(row, streaming_breaks_tool_calls=bool(compatibility))
+        row, streaming, thinking = result
+        return _to_domain(
+            row,
+            streaming_breaks_tool_calls=bool(streaming),
+            thinking_can_be_disabled=thinking is None or bool(thinking),
+        )
 
     async def streaming_breaks_tool_calls(
         self,
@@ -285,17 +298,29 @@ def _to_values(configuration: ModelConfiguration) -> dict[str, object]:
     }
 
 
-def _select_with_streaming_compatibility() -> Select[tuple[ModelConfigurationRow, bool]]:
-    return select(
-        ModelConfigurationRow,
-        ModelToolStreamingCapabilityRow.streaming_breaks_tool_calls,
-    ).outerjoin(
-        ModelToolStreamingCapabilityRow,
-        and_(
-            ModelToolStreamingCapabilityRow.provider == ModelConfigurationRow.provider,
-            ModelToolStreamingCapabilityRow.model_identifier
-            == ModelConfigurationRow.model_identifier,
-        ),
+def _select_with_streaming_compatibility() -> Select[tuple[ModelConfigurationRow, bool, bool]]:
+    return (
+        select(
+            ModelConfigurationRow,
+            ModelToolStreamingCapabilityRow.streaming_breaks_tool_calls,
+            ModelThinkingCapabilityRow.thinking_can_be_disabled,
+        )
+        .outerjoin(
+            ModelToolStreamingCapabilityRow,
+            and_(
+                ModelToolStreamingCapabilityRow.provider == ModelConfigurationRow.provider,
+                ModelToolStreamingCapabilityRow.model_identifier
+                == ModelConfigurationRow.model_identifier,
+            ),
+        )
+        .outerjoin(
+            ModelThinkingCapabilityRow,
+            and_(
+                ModelThinkingCapabilityRow.provider == ModelConfigurationRow.provider,
+                ModelThinkingCapabilityRow.model_identifier
+                == ModelConfigurationRow.model_identifier,
+            ),
+        )
     )
 
 
@@ -303,6 +328,7 @@ def _to_domain(
     row: ModelConfigurationRow,
     *,
     streaming_breaks_tool_calls: bool = False,
+    thinking_can_be_disabled: bool = True,
 ) -> ModelConfiguration:
     return ModelConfiguration(
         id=UUID(row.id),
@@ -311,6 +337,7 @@ def _to_domain(
         model_identifier=row.model_identifier,
         enabled=row.enabled,
         streaming_breaks_tool_calls=streaming_breaks_tool_calls,
+        thinking_can_be_disabled=thinking_can_be_disabled,
         created_at=from_database_datetime(row.created_at),
         updated_at=from_database_datetime(row.updated_at),
     )

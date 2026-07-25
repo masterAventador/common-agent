@@ -50,9 +50,8 @@ class ConversationExecutionTargetResolver:
             employee=employee,
             requested_id=model_configuration_id,
         )
-        model_identifier, streaming_breaks_tool_calls = await self._model_runtime(
-            selected_id,
-            employee=employee,
+        model_identifier, streaming_breaks_tool_calls, thinking_can_be_disabled = (
+            await self._model_runtime(selected_id, employee=employee)
         )
         grant_target, capability_ids = await self._tool_grants(
             conversation,
@@ -65,6 +64,9 @@ class ConversationExecutionTargetResolver:
             model_configuration_id=selected_id,
             model_identifier=model_identifier,
             streaming_breaks_tool_calls=streaming_breaks_tool_calls,
+            deep_thinking=effective_deep_thinking(
+                employee, thinking_can_be_disabled=thinking_can_be_disabled
+            ),
             tool_grant_target=grant_target,
             allowed_tool_capability_ids=capability_ids,
         )
@@ -82,8 +84,8 @@ class ConversationExecutionTargetResolver:
             employee=employee,
             initial_tool_grants=None,
         )
-        streaming_breaks_tool_calls = await self._streaming_breaks_tool_calls(
-            message.model_configuration_id
+        streaming_breaks_tool_calls, thinking_can_be_disabled = (
+            await self._model_capabilities(message.model_configuration_id)
         )
         return _target(
             conversation,
@@ -91,6 +93,9 @@ class ConversationExecutionTargetResolver:
             model_configuration_id=message.model_configuration_id,
             model_identifier=message.model_identifier,
             streaming_breaks_tool_calls=streaming_breaks_tool_calls,
+            deep_thinking=effective_deep_thinking(
+                employee, thinking_can_be_disabled=thinking_can_be_disabled
+            ),
             tool_grant_target=grant_target,
             allowed_tool_capability_ids=capability_ids,
         )
@@ -143,28 +148,32 @@ class ConversationExecutionTargetResolver:
         model_configuration_id: UUID,
         *,
         employee: Employee | None,
-    ) -> tuple[str, bool]:
+    ) -> tuple[str, bool, bool]:
         if self._model_configurations is None:
             if employee is not None and (
                 model_configuration_id == employee.default_model_configuration_id
             ):
-                return employee.default_model_identifier, False
+                return employee.default_model_identifier, False, True
             raise RuntimeError("model configuration directory is not configured")
         configuration = await self._model_configurations.get(model_configuration_id)
         if not configuration.enabled and (
             employee is None or model_configuration_id != employee.default_model_configuration_id
         ):
             raise ConversationModelDisabled
-        return configuration.model_identifier, configuration.streaming_breaks_tool_calls
+        return (
+            configuration.model_identifier,
+            configuration.streaming_breaks_tool_calls,
+            configuration.thinking_can_be_disabled,
+        )
 
-    async def _streaming_breaks_tool_calls(
+    async def _model_capabilities(
         self,
         model_configuration_id: UUID,
-    ) -> bool:
+    ) -> tuple[bool, bool]:
         if self._model_configurations is None:
-            return False
+            return False, True
         configuration = await self._model_configurations.get(model_configuration_id)
-        return configuration.streaming_breaks_tool_calls
+        return configuration.streaming_breaks_tool_calls, configuration.thinking_can_be_disabled
 
     async def _tool_grants(
         self,
@@ -208,6 +217,24 @@ def _selected_model_id(
     raise RuntimeError("generic conversation is missing model configuration")
 
 
+def effective_deep_thinking(
+    employee: Employee | None,
+    *,
+    thinking_can_be_disabled: bool,
+) -> bool | None:
+    """算出这一轮该给模型下发的 enable_thinking, None 表示不下发。
+
+    员工把开关关掉、而该模型又不接受关闭时(实测 MiniMax-M2.5 传 false 直接 400),
+    不下发该参数让模型按自身行为继续, 而不是让这个员工彻底无法对话; 界面另行明确提示关不掉。
+    通用 AI 没有员工配置, 同样不去改模型自身的思考行为。
+    """
+    if employee is None:
+        return None
+    if employee.deep_thinking_enabled:
+        return True
+    return False if thinking_can_be_disabled else None
+
+
 def _target(
     conversation: Conversation,
     *,
@@ -215,6 +242,7 @@ def _target(
     model_configuration_id: UUID,
     model_identifier: str,
     streaming_breaks_tool_calls: bool,
+    deep_thinking: bool | None,
     tool_grant_target: ToolGrantTarget,
     allowed_tool_capability_ids: tuple[UUID, ...],
 ) -> ConversationExecutionTarget:
@@ -224,6 +252,7 @@ def _target(
             model_configuration_id=model_configuration_id,
             model_identifier=model_identifier,
             streaming_breaks_tool_calls=streaming_breaks_tool_calls,
+            deep_thinking=deep_thinking,
             system_instruction=GENERIC_SYSTEM_INSTRUCTION,
             knowledge_base_id=None,
             allowed_workflow_ids=(),
@@ -235,6 +264,7 @@ def _target(
         model_configuration_id=model_configuration_id,
         model_identifier=model_identifier,
         streaming_breaks_tool_calls=streaming_breaks_tool_calls,
+        deep_thinking=deep_thinking,
         system_instruction=employee.system_prompt,
         knowledge_base_id=employee.knowledge_base_id,
         allowed_workflow_ids=employee.allowed_workflow_ids,

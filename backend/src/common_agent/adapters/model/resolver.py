@@ -16,9 +16,9 @@ class BailianChatModelResolver:
         initial_model: BailianChatModelAdapter | None = None,
     ) -> None:
         self._settings = settings
-        self._models: dict[tuple[str, bool], BailianChatModelAdapter] = {}
+        self._models: dict[tuple[str, bool, bool | None], BailianChatModelAdapter] = {}
         if initial_model is not None:
-            self._models[(settings.model, False)] = initial_model
+            self._models[(settings.model, False, None)] = initial_model
         self._lock = asyncio.Lock()
         self._closed = False
 
@@ -27,17 +27,19 @@ class BailianChatModelResolver:
         model_identifier: str,
         *,
         disable_streaming_for_tool_calls: bool = False,
+        deep_thinking: bool | None = None,
     ) -> LangChainChatModelProvider:
         async with self._lock:
             if self._closed:
                 raise RuntimeError("百炼模型解析器已经关闭")
-            key = (model_identifier, disable_streaming_for_tool_calls)
+            key = (model_identifier, disable_streaming_for_tool_calls, deep_thinking)
             existing = self._models.get(key)
             if existing is not None:
                 return existing
             created = BailianChatModelAdapter(
                 self._settings.model_copy(update={"model": model_identifier}),
                 disable_streaming_for_tool_calls=disable_streaming_for_tool_calls,
+                deep_thinking=deep_thinking,
             )
             self._models[key] = created
             return created

@@ -22,6 +22,7 @@ const modelConfigurationSchema = z.strictObject({
   model_identifier: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
   enabled: z.boolean(),
   streaming_breaks_tool_calls: z.boolean(),
+  thinking_can_be_disabled: z.boolean(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });

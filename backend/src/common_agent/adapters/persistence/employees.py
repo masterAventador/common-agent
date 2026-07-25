@@ -211,6 +211,7 @@ def _to_values(employee: Employee) -> dict[str, object]:
         "default_model_configuration_id": str(employee.default_model_configuration_id),
         "knowledge_base_id": employee.knowledge_base_id,
         "allowed_workflow_ids": [str(workflow_id) for workflow_id in employee.allowed_workflow_ids],
+        "deep_thinking_enabled": employee.deep_thinking_enabled,
         "created_at": to_database_datetime(employee.created_at),
         "updated_at": to_database_datetime(employee.updated_at),
     }
@@ -236,6 +237,7 @@ def _to_domain(row: EmployeeRow, model_identifier: str) -> Employee:
         default_model_identifier=model_identifier,
         knowledge_base_id=row.knowledge_base_id,
         allowed_workflow_ids=tuple(UUID(value) for value in row.allowed_workflow_ids),
+        deep_thinking_enabled=bool(row.deep_thinking_enabled),
         created_at=from_database_datetime(row.created_at),
         updated_at=from_database_datetime(row.updated_at),
     )

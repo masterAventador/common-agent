@@ -1437,6 +1437,11 @@ export interface components {
             /** Allowed Workflow Ids */
             allowed_workflow_ids?: string[];
             /**
+             * Deep Thinking Enabled
+             * @default true
+             */
+            deep_thinking_enabled: boolean;
+            /**
              * Default Model Configuration Id
              * Format: uuid
              */
@@ -1462,6 +1467,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Deep Thinking Enabled */
+            deep_thinking_enabled: boolean;
             /**
              * Default Model Configuration Id
              * Format: uuid
@@ -2112,6 +2119,8 @@ export interface components {
             provider: "bailian";
             /** Streaming Breaks Tool Calls */
             streaming_breaks_tool_calls: boolean;
+            /** Thinking Can Be Disabled */
+            thinking_can_be_disabled: boolean;
             /**
              * Updated At
              * Format: date-time

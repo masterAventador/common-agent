@@ -32,9 +32,12 @@ class EmployeeConfiguration:
     default_model_configuration_id: UUID
     knowledge_base_id: str | None
     allowed_workflow_ids: tuple[UUID, ...] = ()
+    deep_thinking_enabled: bool = True
 
     def __post_init__(self) -> None:
         _uuid("default_model_configuration_id", self.default_model_configuration_id)
+        if not isinstance(self.deep_thinking_enabled, bool):
+            raise EmployeeValidationError("deep_thinking_enabled", "必须是布尔值")
         object.__setattr__(
             self,
             "allowed_workflow_ids",
@@ -54,6 +57,8 @@ class Employee:
     allowed_workflow_ids: tuple[UUID, ...]
     created_at: datetime
     updated_at: datetime
+    # 是否让模型在回答前展开思考。默认开启, 与开关加入之前的行为一致
+    deep_thinking_enabled: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, UUID):
@@ -82,6 +87,8 @@ class Employee:
             EMPLOYEE_KNOWLEDGE_BASE_ID_MAX_LENGTH,
         )
         workflow_ids = _workflow_ids(self.allowed_workflow_ids)
+        if not isinstance(self.deep_thinking_enabled, bool):
+            raise EmployeeValidationError("deep_thinking_enabled", "必须是布尔值")
         _utc_timestamp("created_at", self.created_at)
         _utc_timestamp("updated_at", self.updated_at)
         if self.updated_at < self.created_at:
@@ -110,6 +117,7 @@ class Employee:
         description: str = "",
         knowledge_base_id: str | None = None,
         allowed_workflow_ids: Iterable[UUID] = (),
+        deep_thinking_enabled: bool = True,
         employee_id: UUID | None = None,
         now: datetime | None = None,
     ) -> Employee:
@@ -123,6 +131,7 @@ class Employee:
             default_model_identifier=default_model_identifier,
             knowledge_base_id=knowledge_base_id,
             allowed_workflow_ids=tuple(allowed_workflow_ids),
+            deep_thinking_enabled=deep_thinking_enabled,
             created_at=created_at,
             updated_at=created_at,
         )
@@ -137,6 +146,7 @@ class Employee:
         default_model_identifier: str,
         knowledge_base_id: str | None,
         allowed_workflow_ids: Iterable[UUID],
+        deep_thinking_enabled: bool = True,
         updated_at: datetime | None = None,
     ) -> Employee:
         changed_at = updated_at or datetime.now(UTC)
@@ -149,6 +159,7 @@ class Employee:
             default_model_identifier=default_model_identifier,
             knowledge_base_id=knowledge_base_id,
             allowed_workflow_ids=tuple(allowed_workflow_ids),
+            deep_thinking_enabled=deep_thinking_enabled,
             updated_at=changed_at,
         )
 

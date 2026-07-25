@@ -41,6 +41,7 @@ const modelConfiguration = {
   provider: "bailian",
   model_identifier: "qwen-plus",
   enabled: true,
+  thinking_can_be_disabled: true,
   created_at: "2026-07-22T04:00:00Z",
   updated_at: "2026-07-22T04:00:00Z",
 };
@@ -302,9 +303,62 @@ describe("EmployeesPage", () => {
         default_model_configuration_id: modelConfiguration.id,
         knowledge_base_id: "kb-1",
         allowed_workflow_ids: [workflow.id],
+        deep_thinking_enabled: true,
       }),
     );
     expect(await screen.findByText("制度问答助理")).toBeInTheDocument();
+  });
+
+  it("saves a digital employee with deep thinking turned off", async () => {
+    const created = { ...employee, id: "d2a6ee0b-6a0f-4d0b-9f6f-4e5d2e3f7a90", name: "快答助理" };
+    employeeApi.fetchEmployees
+      .mockResolvedValueOnce({ items: [employee], next_cursor: null })
+      .mockResolvedValue({ items: [employee, created], next_cursor: null });
+    employeeApi.createEmployee.mockResolvedValue(created);
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("知识助理");
+    await user.click(screen.getByRole("button", { name: "创建数字员工" }));
+    await user.type(screen.getByRole("textbox", { name: "名称" }), "快答助理");
+    await user.type(screen.getByRole("textbox", { name: "系统指令" }), "直接回答。");
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "默认模型" }));
+    fireEvent.click(await screen.findByTitle("Qwen Plus · qwen-plus"));
+    await user.click(screen.getByRole("switch", { name: "深度思考" }));
+    await user.click(screen.getByRole("button", { name: "确认创建" }));
+
+    await waitFor(() =>
+      expect(employeeApi.createEmployee).toHaveBeenCalledWith(
+        expect.objectContaining({ deep_thinking_enabled: false }),
+      ),
+    );
+  });
+
+  it("explains that the chosen model cannot stop thinking", async () => {
+    const thinkingOnlyModel = {
+      ...modelConfiguration,
+      id: "8f2a0f7e-1d3c-4a8b-9c1e-2b7d4f6a1c33",
+      display_name: "MiniMax M2.5",
+      model_identifier: "MiniMax-M2.5",
+      thinking_can_be_disabled: false,
+    };
+    modelApi.fetchModelConfigurations.mockResolvedValue({
+      items: [modelConfiguration, thinkingOnlyModel],
+      next_cursor: null,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("知识助理");
+    await user.click(screen.getByRole("button", { name: "创建数字员工" }));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "默认模型" }));
+    fireEvent.click(await screen.findByTitle("MiniMax M2.5 · MiniMax-M2.5"));
+
+    // 关不掉的模型必须当面说清楚, 而不是让用户存下一个不会生效的配置
+    expect(
+      await screen.findByText("该模型只能在深度思考下工作，无法关闭"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "深度思考" })).toBeDisabled();
   });
 
   it("edits an existing employee without losing the knowledge-base binding", async () => {

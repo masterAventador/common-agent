@@ -53,6 +53,7 @@ def test_model_configuration_crud_uses_formal_uvicorn_mysql_and_survives_restart
                 "model_identifier": body["model_identifier"],
                 "enabled": True,
                 "streaming_breaks_tool_calls": False,
+                "thinking_can_be_disabled": True,
                 "created_at": payload["created_at"],
                 "updated_at": payload["updated_at"],
             }

@@ -39,6 +39,7 @@ class BailianChatModelAdapter:
         settings: ModelSettings,
         *,
         disable_streaming_for_tool_calls: bool = False,
+        deep_thinking: bool | None = None,
         http_async_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._owns_async_client = http_async_client is None
@@ -53,6 +54,7 @@ class BailianChatModelAdapter:
         self._chat_model = _create_chat_model(
             settings,
             disable_streaming_for_tool_calls=disable_streaming_for_tool_calls,
+            deep_thinking=deep_thinking,
             http_async_client=active_async_client,
             http_client=httpx.Client(event_hooks={"request": [_inject_trace_context]}),
         )
@@ -252,10 +254,20 @@ def _create_chat_model(
     settings: ModelSettings,
     *,
     disable_streaming_for_tool_calls: bool,
+    deep_thinking: bool | None,
     http_async_client: httpx.AsyncClient,
     http_client: httpx.Client,
 ) -> ChatOpenAI:
+    # 只有明确要求时才下发 enable_thinking。留空表示用模型自身默认行为, 避免撞上
+    # 部分模型的参数限制(例如 MiniMax-M2.5 只接受 True, 传 False 直接 400)。
+    #
+    # 必须走 extra_body: 供应商自定义参数经 model_kwargs 会被当成 OpenAI SDK 的命名参数,
+    # SDK 不认识就直接 TypeError, 整轮对话失败。
+    extra_body: dict[str, Any] | None = (
+        None if deep_thinking is None else {"enable_thinking": deep_thinking}
+    )
     return _BailianChatOpenAI(
+        extra_body=extra_body,
         model=settings.model,
         base_url=settings.base_url,
         api_key=settings.api_key,

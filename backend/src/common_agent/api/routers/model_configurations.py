@@ -73,6 +73,7 @@ class ModelConfigurationResponse(BaseModel):
     model_identifier: str
     enabled: bool
     streaming_breaks_tool_calls: bool
+    thinking_can_be_disabled: bool
     created_at: datetime
     updated_at: datetime
 

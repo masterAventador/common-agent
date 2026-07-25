@@ -51,6 +51,8 @@ class ModelConfiguration:
     created_at: datetime
     updated_at: datetime
     streaming_breaks_tool_calls: bool = False
+    # 供应商是否允许关闭深度思考。实测有模型只接受开启, 关闭会被直接拒绝
+    thinking_can_be_disabled: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, UUID):

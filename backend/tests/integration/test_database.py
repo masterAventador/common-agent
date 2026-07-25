@@ -9,9 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from common_agent.adapters.persistence.database import Database, DatabaseStartupError
+from tests.support.migrations import current_head_revision
 from tests.support.settings import TEST_DATABASE_URL
 
-HEAD_REVISION = "20260723_0027"
+HEAD_REVISION = current_head_revision()
 
 
 def _database_url() -> str:

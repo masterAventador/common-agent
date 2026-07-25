@@ -18,6 +18,7 @@ from sqlalchemy import text
 from common_agent.adapters.persistence.database import Database
 from tests.support.http import available_port, running_api
 from tests.support.ragflow import provision_api_key
+from tests.support.migrations import current_head_revision
 from tests.support.settings import TEST_DATABASE_URL
 
 
@@ -166,7 +167,7 @@ def test_formal_api_migrates_mysql_and_recovers_after_restart() -> None:
         finally:
             await database.stop()
 
-    assert asyncio.run(revision()) == "20260723_0027"
+    assert asyncio.run(revision()) == current_head_revision()
 
 
 def test_health_allows_the_project_frontend_origin_over_real_http() -> None:
