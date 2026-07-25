@@ -666,6 +666,18 @@ describe("ChatPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("greets without a name when no employee is bound", async () => {
+    chatApi.fetchConversationMessages.mockResolvedValue([]);
+    renderGenericPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    // 通用 AI 不是一个有名字的对象，开场只说「你好」
+    expect(
+      await within(messageRegion).findByRole("heading", { name: "你好" }),
+    ).toBeInTheDocument();
+    expect(within(messageRegion).queryByText(/通用 AI/)).not.toBeInTheDocument();
+  });
+
   it("auto-scrolls the message area to the newest content", async () => {
     const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
     try {

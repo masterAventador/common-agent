@@ -57,7 +57,7 @@ export function ChatWorkspace({
         <div className="chat-messages-heading">
           <div>
             <Title level={3}>{selectedConversation?.title ?? "新会话"}</Title>
-            <Text type="secondary">{employee?.name ?? "通用 AI"}</Text>
+            {employee ? <Text type="secondary">{employee.name}</Text> : null}
           </div>
           <Flex align="center" gap={8}>
             {activeMessage && <Tag color="processing">正在生成</Tag>}
@@ -193,8 +193,9 @@ function ChatWelcome({ employee }: { employee?: Employee }) {
       <span className="chat-welcome-mark" aria-hidden="true">
         <Bot size={26} strokeWidth={1.75} />
       </span>
+      {/* 不绑数字员工时不自报名号：通用 AI 是使用方式而不是一个有名字的对象 */}
       <Title level={2} className="chat-welcome-title">
-        你好，我是{employee?.name ?? "通用 AI"}
+        {employee ? `你好，我是${employee.name}` : "你好"}
       </Title>
       <Text type="secondary">
         {employee
