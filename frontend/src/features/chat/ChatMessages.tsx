@@ -1,10 +1,20 @@
 import { Alert, Button, Collapse, Flex, Progress, Space, Spin, Tag, Typography } from "antd";
 import { Bot, FileText, RotateCcw } from "lucide-react";
+import { lazy, Suspense } from "react";
 
 import type { ConversationMessage } from "../../api/conversations";
 import type { WorkflowRun } from "../../api/workflowRuns";
 import type { Workflow } from "../../api/workflows";
 import type { ChatToolCallLifecycle } from "./useChatPageController";
+
+/**
+ * Markdown 渲染器约 163KB，静态引入会让 /chat 首屏图只剩 8KB 门禁余量。
+ * 放到 lazy 边界后面，加载完成前先按纯文本显示同一段内容，读起来不受影响。
+ */
+const MarkdownContent = lazy(async () => {
+  const module = await import("./MarkdownContent");
+  return { default: module.MarkdownContent };
+});
 
 const { Text } = Typography;
 const workflowRunStatus: Record<
@@ -71,9 +81,14 @@ export function MessageBubble({
       )}
       <div className="chat-message-body">
         {message.content ? (
-          <Typography.Paragraph className="chat-message-content">
-            {message.content}
-          </Typography.Paragraph>
+          isAssistant ? (
+            // 模型按 Markdown 组织回复；用户自己打的字保持原样不做解释
+            <Suspense fallback={<PlainContent content={message.content} />}>
+              <MarkdownContent content={message.content} />
+            </Suspense>
+          ) : (
+            <PlainContent content={message.content} />
+          )
         ) : isActive ? (
           <Space>
             <Spin size="small" />
@@ -109,6 +124,10 @@ export function MessageBubble({
       </div>
     </article>
   );
+}
+
+function PlainContent({ content }: { content: string }) {
+  return <Typography.Paragraph className="chat-message-content">{content}</Typography.Paragraph>;
 }
 
 function ToolCallLifecycle({

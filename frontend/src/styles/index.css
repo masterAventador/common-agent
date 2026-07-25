@@ -553,6 +553,137 @@ select {
   line-height: inherit;
 }
 
+/* 模型回复的 Markdown 排版，字号行距沿用原型 .abody（15px / 1.78） */
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body pre,
+.markdown-body table {
+  margin: 0 0 14px;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  margin: 22px 0 10px;
+  color: var(--text-heading);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+.markdown-body h1 {
+  font-size: 21px;
+}
+
+.markdown-body h2 {
+  font-size: 18px;
+}
+
+.markdown-body h3 {
+  font-size: 16px;
+}
+
+.markdown-body h4 {
+  font-size: 15px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 22px;
+}
+
+.markdown-body li {
+  margin-bottom: 4px;
+}
+
+.markdown-body li > p {
+  margin-bottom: 6px;
+}
+
+.markdown-body strong {
+  color: var(--text-heading);
+  font-weight: 600;
+}
+
+.markdown-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--bg-active);
+  color: var(--text-heading);
+  font-family: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+}
+
+.markdown-body pre {
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-container);
+}
+
+.markdown-body pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.markdown-body blockquote {
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.markdown-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.markdown-body th {
+  background: var(--bg-hover);
+  color: var(--text-heading);
+  font-weight: 600;
+}
+
+.markdown-body hr {
+  margin: 20px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* 正文由 Markdown 自己控制换行，不能再叠一层 pre-wrap，否则空行会翻倍 */
+.chat-message.is-assistant .chat-message-body {
+  white-space: normal;
+}
+
 .chat-message-body > .ant-typography:last-child,
 .chat-message-content.ant-typography:last-child {
   margin-bottom: 0;

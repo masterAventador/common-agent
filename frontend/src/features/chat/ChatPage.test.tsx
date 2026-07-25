@@ -655,6 +655,80 @@ describe("ChatPage", () => {
     expect(within(messageRegion).queryByText(/相关度/)).not.toBeInTheDocument();
   });
 
+  it("renders assistant markdown as real formatting instead of raw marks", async () => {
+    chatApi.fetchConversationMessages.mockResolvedValue([
+      userMessage,
+      {
+        ...assistantMessage,
+        citations: [],
+        content: [
+          "## 测量频率",
+          "",
+          "**一般人群**每年至少测一次。",
+          "",
+          "- 有糖尿病史",
+          "- 有心血管病史",
+          "",
+          "```text",
+          "COMMON_AGENT_CHAT_OK",
+          "```",
+        ].join("\n"),
+      },
+    ]);
+
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const assistantView = await within(messageRegion).findByRole("article", {
+      name: "助手消息",
+    });
+    expect(
+      await within(assistantView).findByRole("heading", { name: "测量频率" }),
+    ).toBeInTheDocument();
+    expect(within(assistantView).getByText("一般人群").tagName).toBe("STRONG");
+    expect(within(assistantView).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(assistantView).getByText("COMMON_AGENT_CHAT_OK").tagName).toBe("CODE");
+    // 原始 Markdown 标记不应该出现在页面文字里
+    expect(within(assistantView).queryByText(/\*\*一般人群\*\*/)).not.toBeInTheDocument();
+    expect(within(assistantView).queryByText(/## 测量频率/)).not.toBeInTheDocument();
+  });
+
+  it("never renders raw HTML coming from the model", async () => {
+    chatApi.fetchConversationMessages.mockResolvedValue([
+      userMessage,
+      {
+        ...assistantMessage,
+        citations: [],
+        content: '正常文本 <img src=x onerror="alert(1)"> <script>alert(2)</script> 结束',
+      },
+    ]);
+
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const assistantView = await within(messageRegion).findByRole("article", {
+      name: "助手消息",
+    });
+    // 模型输出是不可信输入：标签只能当纯文本，不能进 DOM
+    expect(assistantView.querySelector("img")).toBeNull();
+    expect(assistantView.querySelector("script")).toBeNull();
+    expect(assistantView.textContent).toContain("<script>alert(2)</script>");
+  });
+
+  it("keeps user messages as plain text", async () => {
+    chatApi.fetchConversationMessages.mockResolvedValue([
+      { ...userMessage, content: "帮我把 **这段** 原样保留" },
+      assistantMessage,
+    ]);
+
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const userView = await within(messageRegion).findByRole("article", { name: "用户消息" });
+    // 用户自己打的字不该被解释成 Markdown
+    expect(within(userView).getByText("帮我把 **这段** 原样保留")).toBeInTheDocument();
+  });
+
   it("signs each assistant reply with an author row instead of a bare avatar", async () => {
     renderPage();
 
