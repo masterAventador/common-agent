@@ -1387,8 +1387,22 @@ a,
 .workflows-page,
 .audit-page {
   width: 100%;
-  max-width: 1440px;
   margin: 0 auto;
+}
+
+/* 阅读型页面按原型收窄到 920px；工作流画布、知识库两栏与对话三栏需要横向空间，保持宽屏 */
+.entry-shell,
+.employees-page,
+.model-configurations-page,
+.audit-page {
+  max-width: 920px;
+}
+
+.tools-page,
+.knowledge-page,
+.chat-page,
+.workflows-page {
+  max-width: 1440px;
 }
 
 .entry-shell,
@@ -1425,9 +1439,9 @@ a,
 .workflows-heading h2,
 .audit-page h2 {
   color: var(--text-heading);
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .employees-page-heading .ant-typography,
