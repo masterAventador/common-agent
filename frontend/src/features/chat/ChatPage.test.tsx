@@ -693,6 +693,47 @@ describe("ChatPage", () => {
     expect(within(assistantView).queryByText(/## 测量频率/)).not.toBeInTheDocument();
   });
 
+  it("still renders a heading when the model omits the space after #", async () => {
+    // 真机实测：MiniMax 等模型常写成「##标题」，CommonMark 要求 # 后必须有空格，
+    // 不补空格就会把整行当正文显示，用户看到的是漏出来的 ##
+    chatApi.fetchConversationMessages.mockResolvedValue([
+      userMessage,
+      { ...assistantMessage, citations: [], content: "##流感预防指南\n\n正文一段" },
+    ]);
+
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const assistantView = await within(messageRegion).findByRole("article", {
+      name: "助手消息",
+    });
+    expect(
+      await within(assistantView).findByRole("heading", { name: "流感预防指南" }),
+    ).toBeInTheDocument();
+    expect(within(assistantView).queryByText(/##/)).not.toBeInTheDocument();
+  });
+
+  it("keeps hash characters that are not headings as plain text", async () => {
+    chatApi.fetchConversationMessages.mockResolvedValue([
+      userMessage,
+      {
+        ...assistantMessage,
+        citations: [],
+        content: "行内 #标签 不是标题\n\n```\n#!/bin/sh\n```",
+      },
+    ]);
+
+    renderPage();
+
+    const messageRegion = await screen.findByRole("region", { name: "消息区域" });
+    const assistantView = await within(messageRegion).findByRole("article", {
+      name: "助手消息",
+    });
+    expect(await within(assistantView).findByText(/#标签 不是标题/)).toBeInTheDocument();
+    expect(within(assistantView).queryByRole("heading")).not.toBeInTheDocument();
+    expect(within(assistantView).getByText(/#!\/bin\/sh/)).toBeInTheDocument();
+  });
+
   it("never renders raw HTML coming from the model", async () => {
     chatApi.fetchConversationMessages.mockResolvedValue([
       userMessage,

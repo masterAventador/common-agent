@@ -180,9 +180,9 @@ workflows / model-configurations / tools / audit-events，均无错误提示、�
 
 | ID | 任务 | 关键点 | 状态 |
 | --- | --- | --- | --- |
-| UI-15 | AI 回复渲染 Markdown | 接 react-markdown + remark-gfm，覆盖标题/列表/强调/行内代码/代码块/表格/引用/链接；用户消息仍是纯文本。模型输出是不可信输入：**不接 rehype-raw**，回复里的 `<script>`/`<img onerror>` 只当纯文本，链接强制新窗口并断开 referrer/opener。渲染器约 163KB，静态引入后 /chat 首屏图只剩 8042 字节门禁余量，因此放到 lazy 边界后面、加载完成前先按纯文本显示同一段内容 | 🔍 待验收 |
-| UI-16 | 后端透传思考内容 | `_BailianChatOpenAI` 取回 `reasoning_content` → `ModelStreamReasoning` / `RuntimeEventKind.REASONING` → `ConversationEventKind.ASSISTANT_REASONING` → SSE。**沿用工具调用那条链路**：思考走会话事件流，刷新后靠 `afterSequence=0` 事件回放重建，因此不新增消息字段、不加数据库迁移。思考不计入"是否给出了回复"，只有思考没有正文仍按空回复失败 | 🔍 待验收 |
-| UI-17 | 思考过程折叠块 | 按原型 `.think / .think-h / .think-b` 实现：生成中自动展开并显示"正在思考…"（脑图标旋转），结束后收起为"已深度思考"，可点开回看。没有思考内容的模型不显示该块 | 🔍 待验收 |
+| UI-15 | AI 回复渲染 Markdown | 接 react-markdown + remark-gfm，覆盖标题/列表/强调/行内代码/代码块/表格/引用/链接；用户消息仍是纯文本。模型输出是不可信输入：**不接 rehype-raw**，回复里的 `<script>`/`<img onerror>` 只当纯文本，链接强制新窗口并断开 referrer/opener。渲染器约 163KB，静态引入后 /chat 首屏图只剩 8042 字节门禁余量，因此放到 lazy 边界后面、加载完成前先按纯文本显示同一段内容 | ✅ 已完成 |
+| UI-16 | 后端透传思考内容 | `_BailianChatOpenAI` 取回 `reasoning_content` → `ModelStreamReasoning` / `RuntimeEventKind.REASONING` → `ConversationEventKind.ASSISTANT_REASONING` → SSE。**沿用工具调用那条链路**：思考走会话事件流，刷新后靠 `afterSequence=0` 事件回放重建，因此不新增消息字段、不加数据库迁移。思考不计入"是否给出了回复"，只有思考没有正文仍按空回复失败 | ✅ 已完成 |
+| UI-17 | 思考过程折叠块 | 按原型 `.think / .think-h / .think-b` 实现：生成中自动展开并显示"正在思考…"（脑图标旋转），结束后收起为"已深度思考"，可点开回看。没有思考内容的模型不显示该块 | ✅ 已完成 |
 
 ### 顺带修好的坏门禁
 
@@ -201,10 +201,20 @@ workflows / model-configurations / tools / audit-events，均无错误提示、�
 - 契约：`generate-contracts.sh` + `check-contracts.sh` 通过；
 - 模型真实链路：直连本项目接入的百炼端点，确认适配层能取回四个模型的思考内容（见上表）。
 
-### 未完成：正式页面的真实用户路径验收
+### 正式页面的真实用户路径验收（已完成）
 
-本机 real 栈的登录会话在开发期间因空闲超时失效，而平台不允许注册第二个 Owner，我没有账号口令，
-因此 **UI-15/16/17 三项都只做到 `🔍 待验收`**：分层测试、契约与模型真实链路都过了，但"在正式
-React 页面发一条消息、看到思考块展开再收起、看到 Markdown 渲染成真实排版"这一步没有走。
-解除条件：用户在浏览器登录一次（或提供本机测试口令），随后按用户路径复跑并补齐截图证据。
-后端与 Worker 已按新代码重启，运行中的实例已经在 OpenAPI 里暴露 `assistant.reasoning`。
+用户提供本机口令后补齐。在正式 React 页面（127.0.0.1:18280 → 18200，后端与 Worker 已按新代码
+重启）登录、选中 MiniMax-M2.5、发送"用一个二级标题和三条要点说明如何预防流感，并给一个表格"：
+
+- 生成中思考块自动展开、脑图标旋转、标签为"正在思考…"，逐条累积出 5 行真实推理；
+- 回复结束后自动收起为"已深度思考"，点击可重新展开回看同样 5 行；
+- 署名行显示"MiniMax-M2.5 · 23:18"；
+- Markdown 渲染出二级标题、有序列表、加粗与七行对比表格，正文里没有残留标记。
+
+**真机暴露并当场修掉的缺陷**：模型写的是 `##流感预防指南`，`#` 后没有空格。CommonMark 要求
+必须有空格才算标题，因此整行被当成正文、把 `##` 原样显示给用户。已在渲染前补空格（只处理行首
+连续 1-6 个 `#` 紧跟非空白的情况，行内 `#标签` 与代码块里的 `#!/bin/sh` 不受影响），并补 RED
+测试锁定两种情形；修完真机复验：`h2 = ["流感预防指南"]`、正文无 `##` 残留、表格 1 个。
+
+验收后已关闭本轮浏览器并确认无 common-agent 浏览器进程残留。本轮在演示工作区留下一条
+"用一个二级标题…"的会话，用户可自行删除。
