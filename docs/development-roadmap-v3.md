@@ -57,6 +57,7 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 | D10 | AI 对话页不随内容长度自动滚动到底部 | 对话区底部哨兵 + 按「消息条数:末条长度」变化触发 `scrollIntoView`，新消息与流式增量都会滚到最新；jsdom 缺 `scrollIntoView`，在 `src/test/setup.ts` 补 polyfill（同 matchMedia/ResizeObserver 既有做法）。RED→GREEN 单测 + 真实页面截图确认停在最新回复 | ✅ 已完成 |
 | D11 | 引用资料只显示引用了哪些文档（名称） | `CitationList` 按 `document_name` 去重，只渲染名称 chip，移除片段正文与「相关度 xx%」标签；样式由片段卡片改为紧凑 chip。RED→GREEN 单测（含同文档多片段只出现一次）+ 真实页面确认只显示 `文明养犬管理规定.docx` / `文明旅游出行提示.pdf` | ✅ 已完成 |
 | D14 | 模型卡片去掉「工具调用流」展示行 | 模型管理卡片不再展示「工具调用流：正常流式/自动非流式」这一行；测试改为断言该文案不存在；真实页面确认 5 张卡片均无此行 | ✅ 已完成 |
+| D16 | 替换将下架的 deepseek-v3/r1，并预置各厂商前沿模型 | 先在真实端点枚举 231 个可用模型，对候选逐个实测三条真实路径（非流式 / 流式 / 流式+工具）并单独验证会输出真正 `content` 而非只有 `reasoning_content`；三条全过且标识合规才预置。新预置 8 个前沿模型：qwen3.7-max/plus/flash、deepseek-v4-pro/flash、glm-5.2、kimi-k2.6、MiniMax-M2.5，保留 qwen-plus/turbo/long，移除 deepseek-v3/r1。全部 11 个经真实「测试调用」接口返回连接成功，8 个新模型再经真实会话 API 走完整数字员工（Deep Agents）链路 `status=completed`。创建表单标识引导同步换为前沿模型 | ✅ 已完成 |
 
 ### 2.2c 🅕 需查证（第二批）
 
@@ -64,8 +65,11 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 | --- | --- | --- | --- |
 | D12 | 模型卡片标出版本号 | 调研结论：qwen-max/plus/turbo/long 是百炼**稳定别名**（背后快照随季度漂移），百炼不提供可稳定展示的版本号字段，别名调用只回显别名；`qwen-max` **不是** `qwen3.7-max`（后者是另一个独立的新代际模型）。故不能给别名硬编码版本号（会错且漂移）。现状卡片已直接展示真实调用标识（别名即稳定版本句柄），这是最准确做法。是否额外标注「底层代际」由用户定夺 | 🔍 待用户确认 |
 
-> 补充：seed 现为 5 个真实可调通模型（qwen-plus/turbo/long、deepseek-v3/r1）。deepseek-v3/r1
-> 百炼文档标注 2026-10-10 下架，届时需替换为 qwen3.7-plus/max 等。
+> 补充（D16 后）：seed 现为 11 个实测可调通模型——qwen3.7-max/plus/flash、qwen-plus/turbo/long、
+> deepseek-v4-pro/flash、glm-5.2、kimi-k2.6、MiniMax-M2.5。**D9 当初排除 GLM/Kimi 的理由已被实测
+> 推翻**：该端点同时提供不含斜杠的合规标识（`glm-5.2`、`kimi-k2.6`），凭平台统一 Key 三条路径直接
+> 调通，无需控制台单独开通，故已收录。旗舰位由 qwen3.7-max 承担（qwen-max 在本端点响应结构损坏）。
+> 库中若有模型被历史消息引用则按平台外键语义停用而非删除，以保住会话记录完整。
 
 ### 2.3 🅒 视觉细节（并入 UI 阶段）
 

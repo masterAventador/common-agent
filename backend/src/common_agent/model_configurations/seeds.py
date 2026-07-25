@@ -7,23 +7,34 @@ from common_agent.domain.model_configuration import ModelConfiguration, ModelCon
 from common_agent.model_configurations.service import ModelConfigurationService
 from common_agent.tenancy import bind_tenant, system_tenant_access
 
-# 默认工作区预置的常用阿里百炼聊天模型。
+# 默认工作区预置的百炼聊天模型, 覆盖各厂商前沿代际。
 #
-# 只收录"百炼平台一方部署, 凭平台统一 API Key 即可直接调用, 无需在控制台单独开通"
-# 的模型标识, 确保 seed 出来的配置都能真实调通:
-# - 通义千问系列 qwen-*: 阿里自研一方模型, 随百炼 API Key 默认可用;
-# - DeepSeek R1/V3 deepseek-*: 由阿里云在百炼上部署, 凭 API Key 直接调用, 无需开通第三方模型。
+# 收录标准是"在当前项目接入的百炼端点上实测可调通", 不以模型广场是否上架为准。每个候选都在
+# 三条真实路径上验证过, 三条全过才预置:
+#   1. 非流式对话: 返回标准 choices/message.content 结构;
+#   2. 流式对话: 返回标准 SSE 且有文本增量;
+#   3. 流式 + 工具: 能返回 tool_calls, 满足数字员工 (Deep Agents) 的调用形态。
+# 另外单独验证过每个模型都会输出真正的 content, 而不是只有 reasoning_content 思考内容,
+# 否则平台会判定为空回复。标识必须不含斜杠, 以通过 model_identifier 校验。
 #
-# 刻意不收录智谱 GLM、月之暗面 Kimi 等第三方直供模型: 它们虽在百炼模型广场上架, 但
-# 1. 必须先在百炼控制台"立即开通"后账号才能调用, 新工作区默认调不通;
-# 2. 其百炼标识形如 ZHIPU/GLM-5.2、kimi/kimi-k3, 含斜杠, 无法通过平台
-#    model_identifier 校验 (仅允许字母、数字、点、下划线、连字符)。
-# 因此按"宁可少预置也不预置调不通的模型"原则排除, 等真实开通与标识校验放开后再单独评估。
+# 不收录 qwen-max: 该端点上 qwen-max 返回的响应不是 OpenAI 标准结构 (仅有 finish_reason/text,
+# 无 choices/message), 平台适配层无法解析, 测试调用与会话都会失败。旗舰位由 qwen3.7-max 承担。
 #
-# 也不收录 qwen-max: 当前项目接入的百炼专属 compatible-mode 端点上, qwen-max 返回的响应
-# 不是 OpenAI 标准结构 (仅有 finish_reason/text, 无 choices/message), 平台适配层无法解析,
-# 测试调用与会话都会失败; 属该端点上真实调不通的模型, 按同一原则排除。
+# 不再收录 deepseek-v3 与 deepseek-r1: 百炼文档标注二者 (含 deepseek-v3.1、deepseek-r1-0528)
+# 于 2026-10-10 下架, 已替换为同厂商前沿代际 deepseek-v4-pro / deepseek-v4-flash。
+#
+# 智谱 GLM 与月之暗面 Kimi 此前因"标识含斜杠、需控制台单独开通"被排除; 实测该端点同时提供
+# 不含斜杠的合规标识 (glm-5.2、kimi-k2.6), 且凭平台统一 API Key 三条路径均直接调通, 故收录。
 COMMON_MODEL_CONFIGURATION_SEEDS: tuple[ModelConfigurationInput, ...] = (
+    ModelConfigurationInput(
+        display_name="通义千问3.7-Max", model_identifier="qwen3.7-max", enabled=True
+    ),
+    ModelConfigurationInput(
+        display_name="通义千问3.7-Plus", model_identifier="qwen3.7-plus", enabled=True
+    ),
+    ModelConfigurationInput(
+        display_name="通义千问3.7-Flash", model_identifier="qwen3.7-flash", enabled=True
+    ),
     ModelConfigurationInput(
         display_name="通义千问-Plus", model_identifier="qwen-plus", enabled=True
     ),
@@ -34,10 +45,15 @@ COMMON_MODEL_CONFIGURATION_SEEDS: tuple[ModelConfigurationInput, ...] = (
         display_name="通义千问-Long", model_identifier="qwen-long", enabled=True
     ),
     ModelConfigurationInput(
-        display_name="DeepSeek-R1", model_identifier="deepseek-r1", enabled=True
+        display_name="DeepSeek-V4-Pro", model_identifier="deepseek-v4-pro", enabled=True
     ),
     ModelConfigurationInput(
-        display_name="DeepSeek-V3", model_identifier="deepseek-v3", enabled=True
+        display_name="DeepSeek-V4-Flash", model_identifier="deepseek-v4-flash", enabled=True
+    ),
+    ModelConfigurationInput(display_name="智谱GLM-5.2", model_identifier="glm-5.2", enabled=True),
+    ModelConfigurationInput(display_name="Kimi-K2.6", model_identifier="kimi-k2.6", enabled=True),
+    ModelConfigurationInput(
+        display_name="MiniMax-M2.5", model_identifier="MiniMax-M2.5", enabled=True
     ),
 )
 

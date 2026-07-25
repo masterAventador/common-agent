@@ -26,11 +26,21 @@ WORKSPACE_B = UUID("30000000-0000-4000-8000-000000000002")
 NEW_WORKSPACE = UUID("30000000-0000-4000-8000-000000000003")
 
 _EXPECTED_IDENTIFIERS = {
+    # 通义千问稳定别名
     "qwen-plus",
     "qwen-turbo",
     "qwen-long",
-    "deepseek-r1",
-    "deepseek-v3",
+    # 通义千问 3.7 前沿代际
+    "qwen3.7-max",
+    "qwen3.7-plus",
+    "qwen3.7-flash",
+    # DeepSeek 前沿代际 (v3/r1 计划 2026-10-10 下架, 已替换)
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+    # 其他厂商前沿模型 (该端点提供不含斜杠的合规标识)
+    "glm-5.2",
+    "kimi-k2.6",
+    "MiniMax-M2.5",
 }
 
 

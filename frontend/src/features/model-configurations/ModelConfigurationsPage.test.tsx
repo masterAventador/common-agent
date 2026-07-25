@@ -71,6 +71,20 @@ describe("ModelConfigurationsPage", () => {
     expect(screen.queryByText("模型目录")).not.toBeInTheDocument();
   });
 
+  it("guides the identifier field with callable frontier models only", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "创建模型" }));
+    const hint = screen.getByText(/常用/);
+    // 引导里不能出现该端点上调不通的 qwen-max，也不能出现已排期下架的 deepseek-v3/r1
+    expect(hint.textContent).not.toMatch(/qwen-max/);
+    expect(hint.textContent).not.toMatch(/deepseek-v3\b/);
+    expect(hint.textContent).not.toMatch(/deepseek-r1/);
+    expect(hint.textContent).toMatch(/qwen3\.7-max/);
+    expect(hint.textContent).toMatch(/deepseek-v4-pro/);
+  });
+
   it("creates and disables a user model through the formal editor", async () => {
     const disabled = { ...modelConfiguration, enabled: false };
     modelApi.createModelConfiguration.mockResolvedValue(modelConfiguration);
@@ -79,14 +93,14 @@ describe("ModelConfigurationsPage", () => {
     renderPage();
 
     await user.click(await screen.findByRole("button", { name: "创建模型" }));
-    await user.type(screen.getByRole("textbox", { name: "显示名称" }), "Qwen Max");
-    await user.type(screen.getByRole("textbox", { name: "模型标识" }), "qwen-max");
+    await user.type(screen.getByRole("textbox", { name: "显示名称" }), "Qwen 3.7 Max");
+    await user.type(screen.getByRole("textbox", { name: "模型标识" }), "qwen3.7-max");
     await user.click(screen.getByRole("button", { name: "确认创建" }));
 
     await waitFor(() =>
       expect(modelApi.createModelConfiguration).toHaveBeenCalledWith({
-        display_name: "Qwen Max",
-        model_identifier: "qwen-max",
+        display_name: "Qwen 3.7 Max",
+        model_identifier: "qwen3.7-max",
         enabled: true,
       }),
     );

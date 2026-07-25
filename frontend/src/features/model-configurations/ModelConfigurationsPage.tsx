@@ -310,7 +310,7 @@ export function ModelConfigurationsPage({ readOnly = false }: { readOnly?: boole
                 message: "只能包含字母、数字、点、下划线和连字符",
               },
             ]}
-            extra="填写平台支持的模型标识，不需要填写 API Key。常用：qwen-plus、qwen-max、qwen-turbo、qwen-long、deepseek-v3、deepseek-r1。"
+            extra="填写平台支持的模型标识，不需要填写 API Key。常用：qwen3.7-max、qwen3.7-plus、qwen3.7-flash、deepseek-v4-pro、deepseek-v4-flash、glm-5.2、kimi-k2.6、qwen-plus、qwen-turbo、qwen-long。"
           >
             <Input placeholder="例如：qwen-plus" />
           </Form.Item>

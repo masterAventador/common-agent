@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 
 from common_agent.model_configurations.seeds import (
+    COMMON_MODEL_CONFIGURATION_SEEDS,
     seed_common_model_configurations_for_tenants,
 )
 from common_agent.tenancy.models import TenantAccess, TenantRole
@@ -20,14 +21,9 @@ USER_ID = UUID("20000000-0000-4000-8000-000000000001")
 TENANT_A = UUID("10000000-0000-4000-8000-000000000001")
 TENANT_B = UUID("10000000-0000-4000-8000-000000000002")
 
-_SEED_IDENTIFIERS = {
-    "qwen-max",
-    "qwen-plus",
-    "qwen-turbo",
-    "qwen-long",
-    "deepseek-r1",
-    "deepseek-v3",
-}
+# 本用例只验证"新工作区拿到完整预置目录", 目录内容由 seeds 单独断言,
+# 因此直接派生, 避免同一份清单在两处硬编码后漂移。
+_SEED_IDENTIFIERS = {seed.model_identifier for seed in COMMON_MODEL_CONFIGURATION_SEEDS}
 
 
 class FakeTenancyStore:
