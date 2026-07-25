@@ -15,7 +15,7 @@ from langchain_core.language_models.fake_chat_models import (
     FakeMessagesListChatModel,
     GenericFakeChatModel,
 )
-from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolMessage
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool, tool
 
@@ -472,6 +472,55 @@ def test_runtime_disables_provider_streaming_only_when_flagged_model_binds_tools
     asyncio.run(exercise())
 
     assert resolver.requests == [("deepseek-v4-pro", expected_disable)]
+
+
+def test_system_prompt_disowns_the_disabled_builtin_capabilities() -> None:
+    """系统消息必须澄清那些被禁用的框架能力。
+
+    Deep Agents 默认注入 write_todos、文件读写、子代理三段英文说明, 而这些工具在本项目
+    一律禁用。模型据此对用户吹嘘过自己能"文件读写、全局搜索、待办事项管理"。待办那段可以
+    用库的公开开关整段排掉; 另两段被库判定为必需骨架不允许排除, 只能在提示词末尾声明不可用。
+    """
+    captured: list[list[BaseMessage]] = []
+
+    class _CapturingModel(_ToolBindingFakeChatModel):
+        def _generate(  # type: ignore[override]
+            self,
+            messages: list[BaseMessage],
+            stop: list[str] | None = None,
+            run_manager: Any = None,
+            **kwargs: Any,
+        ) -> Any:
+            captured.append(messages)
+            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    model = _CapturingModel(messages=iter([AIMessage(content="回答完成")]))
+    runtime = DeepAgentsEmployeeRuntime(
+        _Gateway(model),
+        tools=DeepAgentToolRegistry({}),
+        harness_profile_key="_capturingmodel",
+    )
+
+    async def exercise() -> None:
+        async for _ in runtime.stream(
+            runtime_request(knowledge_base_id=None, knowledge_context=()),
+            stop=RuntimeStopToken(),
+        ):
+            pass
+        await runtime.aclose()
+
+    asyncio.run(exercise())
+
+    assert captured, "没有捕获到发往模型的消息"
+    system_text = "\n".join(
+        str(message.content) for message in captured[0] if message.type == "system"
+    )
+    # 待办清单那段可以整段去掉
+    assert "write_todos" not in system_text
+    # 文件系统与子代理被库判定为必需骨架, 不允许排除, 因此它们的英文说明仍在;
+    # 只能靠末尾的收尾指令声明这些能力不可用, 并要求中文作答
+    assert "不要向用户声称自己具备这些能力" in system_text
+    assert "必须使用简体中文" in system_text
 
 
 def test_official_create_deep_agent_streams_without_shell_or_local_filesystem() -> None:

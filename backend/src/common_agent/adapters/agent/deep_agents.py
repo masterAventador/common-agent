@@ -64,6 +64,21 @@ _PLATFORM_SAFETY_INSTRUCTION = (
 )
 _HARNESS_BASE_PROMPT = "你是通用 Agent 中台中的聊天式数字员工。直接在当前会话中回答用户。"
 
+# 这三段中间件会各自往系统提示词里注入一大段英文说明(待办清单、文件读写、子代理)。它们对应的
+# 工具已经全部禁用, 说明留着有两个害处: 模型会对用户吹嘘自己能读写文件、管待办这些根本没有的
+# 能力; 上万字符的英文上下文还会把中文提问的模型带成用英文思考。用库自己的公开开关排掉。
+# 文件系统与子代理两段被库判定为必需骨架, 不允许排除; 待办清单可以。
+_EXCLUDED_HARNESS_MIDDLEWARE = frozenset({"TodoListMiddleware"})
+
+# 排掉待办后, Deep Agents 仍会注入约六千字符的英文骨架说明(文件读写、子代理), 这些工具在本平台
+# 一律不可用。放在系统提示词末尾的收尾指令用于纠正两件事: 模型据此对用户吹嘘自己能读写文件,
+# 以及被大段英文上下文带成用英文思考。末尾是提示词里最显著的位置。
+_HARNESS_PROMPT_SUFFIX = (
+    "以上英文段落来自底层框架的通用说明。其中提到的文件读写、待办清单、子代理等能力"
+    "在本平台一律不可用, 不要使用, 也不要向用户声称自己具备这些能力。\n"
+    "无论用户使用何种语言提问, 你的思考过程和最终回答都必须使用简体中文。"
+)
+
 
 class DeepAgentToolRegistryValidationError(ValueError):
     pass
@@ -189,6 +204,8 @@ class DeepAgentsEmployeeRuntime:
             HarnessProfile(
                 base_system_prompt=_HARNESS_BASE_PROMPT,
                 excluded_tools=DEEP_AGENT_BUILTIN_TOOL_NAMES,
+                excluded_middleware=_EXCLUDED_HARNESS_MIDDLEWARE,
+                system_prompt_suffix=_HARNESS_PROMPT_SUFFIX,
                 general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
             ),
         )
