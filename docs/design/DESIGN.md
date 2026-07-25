@@ -26,15 +26,20 @@ The look is **paper-calm**: warm off-white planes, warm near-black ink, 1px hair
 Neutral-first. The page is a warm off-white; content sits on pure-white cards; ink is a **warm near-black, never pure `#000`**. The **primary brand color is neutral black `#191919`** — primary buttons are black, not blue.
 
 ### Neutrals & surfaces
+Values are measured from the Atlas prototype (`PowerAI Atlas.html`) so product chrome and
+prototype read as the same paper. They are warmer than a neutral gray ramp on purpose — this is
+the "paper-calm" the theme calls for, not a cool SaaS white.
+
 | Token | Hex | Use |
 |---|---|---|
-| `--bg-app` | `#FAFAFA` | page canvas (warm off-white) |
-| `--bg-container` | `#FFFFFF` | cards, panels, popovers |
-| `--bg-hover` | `#F5F5F2` | row / menu hover (one step darker) |
-| `--bg-active` | `#F1F1EF` | selected fill |
-| `--border` | `#EDEDE9` | default hairline |
-| `--border-strong` | `#E0E0DB` | emphasis hairline |
-| `--border-focus` | `#B8B8B2` | input focus (no glow ring) |
+| `--bg-app` | `#F5F2EB` | page canvas (warm paper off-white) |
+| `--bg-container` | `#FBFAF5` | cards, panels, popovers |
+| `--bg-sidebar` | `#EFEBE1` | left navigation rail (one step deeper than canvas) |
+| `--bg-hover` | `#F0ECE1` | row / menu hover (one step darker) |
+| `--bg-active` | `#E9E4D6` | selected fill |
+| `--border` | `#E2DCCD` | default hairline |
+| `--border-strong` | `#D5CDB8` | emphasis hairline |
+| `--border-focus` | `#B5AB92` | input focus (no glow ring) |
 
 ### Ink (text)
 | Token | Hex | Use |
@@ -90,7 +95,10 @@ Casing: Chinese needs none. The one Latin convention is short **uppercase eyebro
 
 - **4px-based scale:** 4 / 8 / 12 / 16 / 20 / 24 / 32.
 - Page padding **24px**; default card padding **20px**.
-- **Sidebar fixed 220px**; header / footer rows **64px**.
+- **Sidebar fixed 232px** — a wide rail keeping a text label beside every icon. The Atlas
+  prototype collapses this to a 64px icon-only rail; the product deliberately does not, because
+  seven top-level sections are far easier to scan with labels than with hover tooltips.
+- Header / footer rows **64px**.
 - Reading & chat content capped at a centered **56rem (896px)** column.
 - Lists use a responsive card grid: `repeat(auto-fill, minmax(280px, 1fr))`, 16px gap.
 
@@ -153,12 +161,12 @@ White fill · 1px `--border` hairline · **12px radius** · 20px padding · **no
 ```
 brand/ink   #191919  (primary, never pure black)
 body        #37352F   secondary #787774   tertiary #A8A8A5
-canvas      #FAFAFA   card #FFFFFF   hover #F5F5F2   active #F1F1EF
-border      #EDEDE9  (1px hairline — the primary boundary)
+canvas      #F5F2EB   card #FBFAF5   sidebar #EFEBE1   hover #F0ECE1   active #E9E4D6
+border      #E2DCCD  (1px hairline — the primary boundary)
 accent      #4DA3FF electric blue · #0EA5A4 electric teal (state only)
 type        Inter (UI) · Geist Mono (code/IDs)   base 14px/1.57
 radius      cards 12 · controls 10 · buttons 8 · tags 4 · avatars full
 shadow      xs 0 1px 2px rgba(0,0,0,.04) · sm 0 4px 12px rgba(0,0,0,.06)
-spacing     4 / 8 / 12 / 16 / 20 / 24 / 32   sidebar 220 · rows 64 · reading 896
+spacing     4 / 8 / 12 / 16 / 20 / 24 / 32   sidebar 232 · rows 64 · reading 896
 motion      0.15–0.2s cubic-bezier(0.4,0,0.2,1) · functional only, no bounce
 ```
