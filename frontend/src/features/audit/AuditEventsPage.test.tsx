@@ -89,6 +89,21 @@ describe("AuditEventsPage", () => {
     });
   });
 
+  it("keeps a cross-page duplicate listed once", async () => {
+    // 追加写入的审计流在翻页期间可能把同一条事件同时带进两页，列表必须按 event_id 去重
+    const older = { ...event, sequence: 1, event_id: "60000000-0000-4000-8000-000000000006" };
+    auditApi.fetchAuditEvents
+      .mockResolvedValueOnce({ items: [event], next_cursor: "2" })
+      .mockResolvedValueOnce({ items: [event, older], next_cursor: null });
+    const user = userEvent.setup();
+    render(<AuditEventsPage />, { wrapper: Providers });
+
+    await user.click(await screen.findByRole("button", { name: "加载更早事件" }));
+
+    expect(await screen.findByText("#1")).toBeInTheDocument();
+    expect(screen.getAllByText(`#${event.sequence}`)).toHaveLength(1);
+  });
+
   it("labels an unmatched durable intent for operator reconciliation", async () => {
     auditApi.fetchAuditEvents.mockResolvedValue({
       items: [{ ...event, outcome: "started" }],

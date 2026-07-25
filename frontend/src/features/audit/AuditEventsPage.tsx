@@ -26,6 +26,7 @@ import {
   type AuditScope,
 } from "../../api/audit";
 import { getErrorMessage } from "../../api/errors";
+import { flattenCursorPages, nextPageCursor } from "../../api/pagination";
 
 const { Text, Title } = Typography;
 
@@ -74,7 +75,7 @@ export function AuditEventsPage() {
     queryFn: ({ pageParam }) =>
       fetchAuditEvents({ ...filters, cursor: pageParam, limit: 50 }),
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    getNextPageParam: nextPageCursor,
     placeholderData: keepPreviousData,
   });
   const integrity = useQuery({
@@ -83,7 +84,7 @@ export function AuditEventsPage() {
   });
   const policy = useQuery({ queryKey: ["audit-policy"], queryFn: fetchAuditPolicy });
   const items = useMemo(
-    () => events.data?.pages.flatMap((page) => page.items) ?? [],
+    () => flattenCursorPages(events.data, (event) => event.event_id),
     [events.data],
   );
 
