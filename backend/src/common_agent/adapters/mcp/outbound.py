@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from common_agent.adapters.security import OutboundSecurityError
 from common_agent.ports.mcp import McpToolCallError
 from common_agent.tools.credentials import McpCredential, McpCredentialKind
+from common_agent.tools.models import ToolCallErrorCode
 
 
 def credential_headers(
@@ -16,7 +17,7 @@ def credential_headers(
         return headers
     if credential.kind is McpCredentialKind.BEARER:
         if credential.bearer_token is None:
-            raise McpToolCallError("tool_source_unavailable")
+            raise McpToolCallError(ToolCallErrorCode.SOURCE_UNAVAILABLE.value)
         _replace_header(headers, "Authorization", f"Bearer {credential.bearer_token}")
         return headers
     for name, value in credential.headers.items():
@@ -26,10 +27,10 @@ def credential_headers(
 
 def egress_error_code(error: OutboundSecurityError) -> str:
     if error.code == "tool_egress_timeout":
-        return "tool_timeout"
+        return ToolCallErrorCode.TIMEOUT.value
     if error.code == "tool_egress_response_too_large":
-        return "tool_response_too_large"
-    return "tool_source_unavailable"
+        return ToolCallErrorCode.RESPONSE_TOO_LARGE.value
+    return ToolCallErrorCode.SOURCE_UNAVAILABLE.value
 
 
 def _replace_header(headers: dict[str, str], name: str, value: str) -> None:

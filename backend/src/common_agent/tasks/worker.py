@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
@@ -9,6 +10,8 @@ from uuid import UUID
 from common_agent.concurrency import CoordinatedLockPool
 from common_agent.tasks.models import DurableTask, TaskKind
 from common_agent.tasks.ports import TaskQueue
+
+_LOGGER = logging.getLogger("common_agent.tasks.worker")
 
 
 class TaskRetryableError(RuntimeError):
@@ -149,6 +152,10 @@ class TaskWorker:
         except TaskRetryableError as error:
             await self._retry_or_fail(task, lease_token, error.code)
         except Exception:
+            _LOGGER.exception(
+                "任务执行失败",
+                extra={"task_id": str(task.request.task_id), "task_kind": task.request.kind.value},
+            )
             await self._retry_or_fail(task, lease_token, "task_execution_failed")
         else:
             await self._queue.complete(
@@ -249,6 +256,7 @@ class TaskWorker:
         except asyncio.CancelledError:
             raise
         except Exception:
+            _LOGGER.exception("任务租约续期失败。主动放弃租约")
             context._mark_lease_lost()
             handler_task.cancel()
 

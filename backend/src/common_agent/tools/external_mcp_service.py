@@ -23,7 +23,7 @@ from common_agent.tools.external_mcp import (
     ExternalMcpValidationError,
     reconcile_external_capabilities,
 )
-from common_agent.tools.models import McpSourceStatus, ToolCapabilityStatus
+from common_agent.tools.models import McpSourceStatus, ToolCallErrorCode, ToolCapabilityStatus
 
 
 class ExternalMcpServiceError(Exception):
@@ -144,7 +144,7 @@ class ExternalMcpService:
         except Exception:
             await self._mark_failed(before)
             raise ExternalMcpSyncFailed(
-                "tool_source_unavailable",
+                ToolCallErrorCode.SOURCE_UNAVAILABLE.value,
                 retryable=True,
             ) from None
 
@@ -187,14 +187,14 @@ class ExternalMcpService:
             snapshot.source.status is not McpSourceStatus.READY
             or capability.status is not ToolCapabilityStatus.ACTIVE
         ):
-            raise McpToolCallError("tool_capability_unavailable")
+            raise McpToolCallError(ToolCallErrorCode.CAPABILITY_UNAVAILABLE.value)
         try:
             if any(Draft202012Validator(capability.input_schema).iter_errors(arguments)):
-                raise McpToolCallError("tool_invalid_arguments")
+                raise McpToolCallError(ToolCallErrorCode.INVALID_ARGUMENTS.value)
         except McpToolCallError:
             raise
         except Exception:
-            raise McpToolCallError("tool_protocol_error") from None
+            raise McpToolCallError(ToolCallErrorCode.PROTOCOL_ERROR.value) from None
         return await self._client.call_tool(
             snapshot.source,
             capability.remote_name,

@@ -14,6 +14,7 @@ from common_agent.ports.mcp import (
     McpToolCallResponse,
     McpToolDescriptor,
 )
+from common_agent.tools.models import ToolCallErrorCode
 from common_agent.tools.platform import (
     CURRENT_TIME_DESCRIPTION,
     CURRENT_TIME_DISPLAY_NAME,
@@ -25,10 +26,10 @@ from common_agent.tools.platform import (
 _OFFSET_PATTERN = re.compile(r"^(?P<sign>[+-])(?P<hours>\d{2}):(?P<minutes>\d{2})$")
 _KNOWN_ERROR_CODES = frozenset(
     {
-        "tool_capability_unavailable",
-        "tool_execution_failed",
-        "tool_invalid_arguments",
-        "tool_protocol_error",
+        ToolCallErrorCode.CAPABILITY_UNAVAILABLE.value,
+        ToolCallErrorCode.EXECUTION_FAILED.value,
+        ToolCallErrorCode.INVALID_ARGUMENTS.value,
+        ToolCallErrorCode.PROTOCOL_ERROR.value,
     }
 )
 
@@ -65,7 +66,7 @@ class PlatformMcpRuntime:
             code = _error_code(result.content)
             raise McpToolCallError(code)
         if not isinstance(result.structuredContent, dict):
-            raise McpToolCallError("tool_protocol_error")
+            raise McpToolCallError(ToolCallErrorCode.PROTOCOL_ERROR.value)
         return McpToolCallResponse(output=cast(dict[str, object], result.structuredContent))
 
     def _register_handlers(self) -> None:
@@ -85,13 +86,13 @@ class PlatformMcpRuntime:
         @self._server.call_tool(validate_input=False)  # type: ignore[untyped-decorator]
         async def call_tool(name: str, arguments: dict[str, object]) -> types.CallToolResult:
             if name != CURRENT_TIME_TOOL_NAME:
-                return _error_result("tool_capability_unavailable")
+                return _error_result(ToolCallErrorCode.CAPABILITY_UNAVAILABLE.value)
             try:
                 output = self._current_time(arguments)
             except ValueError:
-                return _error_result("tool_invalid_arguments")
+                return _error_result(ToolCallErrorCode.INVALID_ARGUMENTS.value)
             except Exception:
-                return _error_result("tool_execution_failed")
+                return _error_result(ToolCallErrorCode.EXECUTION_FAILED.value)
             return types.CallToolResult(
                 content=[
                     types.TextContent(
@@ -147,7 +148,7 @@ def _error_code(content: Sequence[types.ContentBlock]) -> str:
         candidate = content[0].text
         if candidate in _KNOWN_ERROR_CODES:
             return candidate
-    return "tool_protocol_error"
+    return ToolCallErrorCode.PROTOCOL_ERROR.value
 
 
 __all__ = [

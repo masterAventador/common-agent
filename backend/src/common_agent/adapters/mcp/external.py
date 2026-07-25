@@ -24,7 +24,7 @@ from common_agent.ports.mcp import (
 )
 from common_agent.tools.credentials import McpCredential
 from common_agent.tools.external_mcp import EXTERNAL_MCP_MAX_TOOLS
-from common_agent.tools.models import McpSource, McpSourceStatus, McpSourceType
+from common_agent.tools.models import McpSource, McpSourceStatus, McpSourceType, ToolCallErrorCode
 
 from .outbound import credential_headers, egress_error_code
 
@@ -101,15 +101,15 @@ class ExternalMcpRuntime:
                     result = await session.list_tools(cursor=cursor)
                     descriptors.extend(_descriptor(tool) for tool in result.tools)
                     if len(descriptors) > EXTERNAL_MCP_MAX_TOOLS:
-                        raise McpToolCallError("tool_protocol_error")
+                        raise McpToolCallError(ToolCallErrorCode.PROTOCOL_ERROR.value)
                     cursor = result.nextCursor
                     if cursor is None:
                         break
                     if cursor in cursors:
-                        raise McpToolCallError("tool_protocol_error")
+                        raise McpToolCallError(ToolCallErrorCode.PROTOCOL_ERROR.value)
                     cursors.add(cursor)
                 else:
-                    raise McpToolCallError("tool_protocol_error")
+                    raise McpToolCallError(ToolCallErrorCode.PROTOCOL_ERROR.value)
         except McpToolCallError:
             raise
         except OutboundSecurityError as error:
@@ -118,9 +118,11 @@ class ExternalMcpRuntime:
                 retryable=error.retryable,
             ) from None
         except Exception:
-            raise McpToolCallError("tool_source_unavailable", retryable=True) from None
+            raise McpToolCallError(
+                ToolCallErrorCode.SOURCE_UNAVAILABLE.value, retryable=True
+            ) from None
         if len({item.name for item in descriptors}) != len(descriptors):
-            raise McpToolCallError("tool_protocol_error")
+            raise McpToolCallError(ToolCallErrorCode.PROTOCOL_ERROR.value)
         return tuple(descriptors)
 
     async def call_tool(
@@ -130,7 +132,7 @@ class ExternalMcpRuntime:
         arguments: Mapping[str, object],
     ) -> McpToolCallResponse:
         if source.status is not McpSourceStatus.READY:
-            raise McpToolCallError("tool_source_unavailable")
+            raise McpToolCallError(ToolCallErrorCode.SOURCE_UNAVAILABLE.value)
         dispatched = False
         try:
             async with self._session(source) as session:
@@ -140,30 +142,32 @@ class ExternalMcpRuntime:
             raise
         except OutboundSecurityError as error:
             if dispatched:
-                raise McpToolCallError("tool_result_unknown") from None
+                raise McpToolCallError(ToolCallErrorCode.RESULT_UNKNOWN.value) from None
             raise McpToolCallError(
                 egress_error_code(error),
                 retryable=error.retryable,
             ) from None
         except Exception:
             if dispatched:
-                raise McpToolCallError("tool_result_unknown") from None
-            raise McpToolCallError("tool_source_unavailable", retryable=True) from None
+                raise McpToolCallError(ToolCallErrorCode.RESULT_UNKNOWN.value) from None
+            raise McpToolCallError(
+                ToolCallErrorCode.SOURCE_UNAVAILABLE.value, retryable=True
+            ) from None
         if result.isError:
-            raise McpToolCallError("tool_execution_failed")
+            raise McpToolCallError(ToolCallErrorCode.EXECUTION_FAILED.value)
         try:
             return McpToolCallResponse(output=_result_output(result))
         except (McpToolCallError, TypeError, ValueError):
-            raise McpToolCallError("tool_result_unknown") from None
+            raise McpToolCallError(ToolCallErrorCode.RESULT_UNKNOWN.value) from None
 
     @asynccontextmanager
     async def _session(self, source: McpSource) -> AsyncIterator[ClientSession]:
         if source.source_type is not McpSourceType.EXTERNAL or source.endpoint_url is None:
-            raise McpToolCallError("tool_source_unavailable")
+            raise McpToolCallError(ToolCallErrorCode.SOURCE_UNAVAILABLE.value)
         try:
             credential = await self._credentials.resolve(source.id)
         except Exception:
-            raise McpToolCallError("tool_source_unavailable") from None
+            raise McpToolCallError(ToolCallErrorCode.SOURCE_UNAVAILABLE.value) from None
         headers = credential_headers({}, credential)
         client = self._clients.create(source.endpoint_url)
         try:
@@ -190,7 +194,7 @@ def _descriptor(tool: types.Tool) -> McpToolDescriptor:
             input_schema=cast(dict[str, object], tool.inputSchema),
         )
     except (TypeError, ValueError):
-        raise McpToolCallError("tool_protocol_error") from None
+        raise McpToolCallError(ToolCallErrorCode.PROTOCOL_ERROR.value) from None
 
 
 def _result_output(result: types.CallToolResult) -> dict[str, object]:
@@ -206,7 +210,7 @@ def _result_output(result: types.CallToolResult) -> dict[str, object]:
             return cast(dict[str, object], parsed)
     if texts and len(texts) == len(result.content):
         return {"content": "\n".join(texts)}
-    raise McpToolCallError("tool_protocol_error")
+    raise McpToolCallError(ToolCallErrorCode.PROTOCOL_ERROR.value)
 
 
 __all__ = [

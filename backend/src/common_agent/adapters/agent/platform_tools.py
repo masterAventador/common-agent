@@ -36,6 +36,7 @@ from common_agent.ports.mcp import (
 from common_agent.tenancy import current_tenant
 from common_agent.tools.models import (
     McpSourceType,
+    ToolCallErrorCode,
     ToolGrantTarget,
     ToolRuntimeCapability,
     normalize_input_schema,
@@ -178,7 +179,7 @@ class PlatformMcpToolRegistry:
                 await self._record(
                     capability.id,
                     AuditOutcome.DENIED,
-                    error_code="tool_unauthorized",
+                    error_code=ToolCallErrorCode.UNAUTHORIZED.value,
                 )
                 raise ToolException("工具调用失败,错误码:tool_unauthorized") from None
             except McpToolCallError as error:
@@ -192,7 +193,7 @@ class PlatformMcpToolRegistry:
                 await self._record(
                     capability.id,
                     AuditOutcome.FAILED,
-                    error_code="tool_execution_failed",
+                    error_code=ToolCallErrorCode.EXECUTION_FAILED.value,
                 )
                 raise ToolException("工具调用失败,错误码:tool_execution_failed") from None
             await self._record(capability.id, AuditOutcome.SUCCEEDED)
@@ -229,7 +230,7 @@ class PlatformMcpToolRegistry:
                     await self._record(
                         capability.id,
                         AuditOutcome.FAILED,
-                        error_code="tool_result_unknown",
+                        error_code=ToolCallErrorCode.RESULT_UNKNOWN.value,
                     )
                     raise ToolException(
                         "工具调用失败,错误码:tool_result_unknown"
@@ -269,11 +270,11 @@ class PlatformMcpToolRegistry:
                     await self._record(
                         capability.id,
                         AuditOutcome.DENIED,
-                        error_code="tool_unauthorized",
+                        error_code=ToolCallErrorCode.UNAUTHORIZED.value,
                     )
                     raise ToolException("工具调用失败,错误码:tool_unauthorized") from None
                 except McpToolCallError as error:
-                    if error.code == "tool_result_unknown":
+                    if error.code == ToolCallErrorCode.RESULT_UNKNOWN.value:
                         result_unknown = True
                     await self._record(
                         capability.id,
@@ -285,7 +286,7 @@ class PlatformMcpToolRegistry:
                     await self._record(
                         capability.id,
                         AuditOutcome.FAILED,
-                        error_code="tool_execution_failed",
+                        error_code=ToolCallErrorCode.EXECUTION_FAILED.value,
                     )
                     raise ToolException(
                         "工具调用失败,错误码:tool_execution_failed"
@@ -307,7 +308,7 @@ class PlatformMcpToolRegistry:
                         await self._record(
                             capability.id,
                             AuditOutcome.FAILED,
-                            error_code="tool_result_unknown",
+                            error_code=ToolCallErrorCode.RESULT_UNKNOWN.value,
                         )
                     raise ToolException(
                         "工具调用失败,错误码:tool_result_unknown"

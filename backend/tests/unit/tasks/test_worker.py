@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -137,6 +140,27 @@ class QueueProbe:
         raise AssertionError("not expected")
 
 
+
+@contextmanager
+def caplog_at_error() -> Iterator[list[logging.LogRecord]]:
+    """采集 worker 日志器在 ERROR 级别输出的记录。"""
+    logger = logging.getLogger("common_agent.tasks.worker")
+    records: list[logging.LogRecord] = []
+
+    class Collector(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = Collector(level=logging.ERROR)
+    logger.addHandler(handler)
+    previous = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield records
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous)
+
 def _task(*, attempts: int = 1, max_attempts: int = 3) -> DurableTask:
     conversation_id = uuid4()
     request = TaskRequest(
@@ -260,6 +284,38 @@ def test_worker_retries_with_bounded_exponential_backoff() -> None:
         assert queue.retried == [
             (task.request.task_id, "model_temporarily_unavailable", NOW + timedelta(seconds=10))
         ]
+
+    asyncio.run(scenario())
+
+
+def test_worker_logs_unexpected_handler_failure_before_retrying() -> None:
+    """未预期异常必须留下堆栈，否则任务失败后无从排查根因。"""
+
+    async def scenario() -> None:
+        task = _task(attempts=1, max_attempts=3)
+        queue = QueueProbe(task)
+
+        async def handle(claimed: DurableTask, context: TaskExecutionContext) -> None:
+            raise RuntimeError("下游依赖返回了非预期结构")
+
+        worker = TaskWorker(
+            queue,
+            handlers={TaskKind.CONVERSATION_REPLY: handle},
+            worker_id="worker-a",
+            lease_for=timedelta(seconds=30),
+            base_retry_delay=timedelta(seconds=5),
+            maximum_retry_delay=timedelta(seconds=60),
+            clock=lambda: NOW,
+        )
+        with caplog_at_error() as records:
+            assert await worker.run_once() is True
+
+        assert queue.retried and queue.retried[0][1] == "task_execution_failed"
+        assert any(
+            "下游依赖返回了非预期结构" in (record.exc_text or "")
+            or record.exc_info is not None
+            for record in records
+        ), "未预期异常必须带堆栈写入日志"
 
     asyncio.run(scenario())
 

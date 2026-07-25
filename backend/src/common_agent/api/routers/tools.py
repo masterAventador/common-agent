@@ -73,7 +73,7 @@ from common_agent.tools.managed_http_service import (
     ManagedHttpServiceError,
     ManagedHttpSourceNotFound,
 )
-from common_agent.tools.models import ToolValidationError, normalize_input_schema
+from common_agent.tools.models import ToolCallErrorCode, ToolValidationError, normalize_input_schema
 from common_agent.tools.openapi_import import (
     OPENAPI_MAX_FILE_BYTES,
     OpenApiDocumentError,
@@ -151,7 +151,7 @@ def _error(error: Exception) -> AppError:
     ):
         return AppError(error.code, error.message, 404, error.retryable)
     if isinstance(error, ExternalMcpSyncFailed):
-        status_code = 504 if error.code == "tool_timeout" else 502
+        status_code = 504 if error.code == ToolCallErrorCode.TIMEOUT.value else 502
         return AppError(error.code, error.message, status_code, error.retryable)
     if isinstance(error, (ExternalMcpConflict, ToolCollectionConflict)):
         return AppError(error.code, error.message, 409, error.retryable)
@@ -210,17 +210,17 @@ async def _read_openapi_upload(file: UploadFile) -> bytes:
 
 def _mcp_error(error: McpToolCallError) -> AppError:
     statuses = {
-        "tool_invalid_arguments": 422,
-        "tool_source_unavailable": 409,
-        "tool_capability_unavailable": 409,
-        "tool_timeout": 504,
-        "tool_response_too_large": 502,
-        "tool_protocol_error": 502,
-        "tool_result_unknown": 502,
-        "tool_execution_failed": 502,
+        ToolCallErrorCode.INVALID_ARGUMENTS.value: 422,
+        ToolCallErrorCode.SOURCE_UNAVAILABLE.value: 409,
+        ToolCallErrorCode.CAPABILITY_UNAVAILABLE.value: 409,
+        ToolCallErrorCode.TIMEOUT.value: 504,
+        ToolCallErrorCode.RESPONSE_TOO_LARGE.value: 502,
+        ToolCallErrorCode.PROTOCOL_ERROR.value: 502,
+        ToolCallErrorCode.RESULT_UNKNOWN.value: 502,
+        ToolCallErrorCode.EXECUTION_FAILED.value: 502,
     }
     return AppError(
-        error.code if error.code in statuses else "tool_execution_failed",
+        error.code if error.code in statuses else ToolCallErrorCode.EXECUTION_FAILED.value,
         "工具调用失败",
         statuses.get(error.code, 502),
         error.retryable,
@@ -666,10 +666,10 @@ async def discover_managed_mcp_source(
     for descriptor in descriptors:
         capability = by_name.get(descriptor.name)
         if capability is None:
-            raise AppError("tool_protocol_error", "工具发现结果不一致", 502, False)
+            raise AppError(ToolCallErrorCode.PROTOCOL_ERROR.value, "工具发现结果不一致", 502, False)
         _, fingerprint = normalize_input_schema(descriptor.input_schema)
         if fingerprint != capability.schema_fingerprint:
-            raise AppError("tool_protocol_error", "工具发现结果不一致", 502, False)
+            raise AppError(ToolCallErrorCode.PROTOCOL_ERROR.value, "工具发现结果不一致", 502, False)
         tools.append(
             ManagedHttpDiscoveredToolResponse(
                 capability_id=capability.id,

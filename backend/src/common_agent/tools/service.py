@@ -11,6 +11,7 @@ from common_agent.ports.tools import (
     ToolUnitOfWorkFactory,
 )
 from common_agent.tools.models import (
+    ToolCallErrorCode,
     ToolCatalog,
     ToolCollection,
     ToolGrantSelection,
@@ -57,7 +58,7 @@ class ToolCollectionSourceUnavailable(ToolServiceError):
 
 
 class ToolCapabilityUnavailable(ToolServiceError):
-    code = "tool_capability_unavailable"
+    code = ToolCallErrorCode.CAPABILITY_UNAVAILABLE.value
     message = "所选工具能力不存在、已停用或来源不可用"
 
 

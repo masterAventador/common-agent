@@ -25,6 +25,7 @@ from common_agent.tasks import (
     TaskRequest,
     TaskRetryableError,
 )
+from common_agent.tools.models import ToolCallErrorCode
 
 
 class ConversationTaskCoordinator:
@@ -134,7 +135,7 @@ class ConversationTaskCoordinator:
             payload.turn_id,
             assistant_message,
         ):
-            raise TaskFatalError("tool_result_unknown")
+            raise TaskFatalError(ToolCallErrorCode.RESULT_UNKNOWN.value)
         try:
             if task.attempts > 1:
                 assistant_message = await self._projector.restart_execution(assistant_message.id)

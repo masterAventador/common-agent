@@ -19,18 +19,23 @@ from common_agent.tools.managed_http import (
     ManagedHttpCapability,
     ManagedHttpRuntimeSnapshot,
 )
-from common_agent.tools.models import McpSource, McpSourceStatus, ToolCapabilityStatus
+from common_agent.tools.models import (
+    McpSource,
+    McpSourceStatus,
+    ToolCallErrorCode,
+    ToolCapabilityStatus,
+)
 
 _KNOWN_ERROR_CODES = frozenset(
     {
-        "tool_capability_unavailable",
-        "tool_execution_failed",
-        "tool_invalid_arguments",
-        "tool_protocol_error",
-        "tool_result_unknown",
-        "tool_response_too_large",
-        "tool_source_unavailable",
-        "tool_timeout",
+        ToolCallErrorCode.CAPABILITY_UNAVAILABLE.value,
+        ToolCallErrorCode.EXECUTION_FAILED.value,
+        ToolCallErrorCode.INVALID_ARGUMENTS.value,
+        ToolCallErrorCode.PROTOCOL_ERROR.value,
+        ToolCallErrorCode.RESULT_UNKNOWN.value,
+        ToolCallErrorCode.RESPONSE_TOO_LARGE.value,
+        ToolCallErrorCode.SOURCE_UNAVAILABLE.value,
+        ToolCallErrorCode.TIMEOUT.value,
     }
 )
 
@@ -87,7 +92,7 @@ class ManagedHttpMcpRuntime:
         if result.isError:
             raise McpToolCallError(_error_code(result.content))
         if not isinstance(result.structuredContent, dict):
-            raise McpToolCallError("tool_protocol_error")
+            raise McpToolCallError(ToolCallErrorCode.PROTOCOL_ERROR.value)
         return McpToolCallResponse(output=cast(dict[str, object], result.structuredContent))
 
     async def _ready_snapshot(self, source_id: UUID) -> ManagedHttpRuntimeSnapshot:
@@ -96,9 +101,9 @@ class ManagedHttpMcpRuntime:
         except McpToolCallError:
             raise
         except Exception:
-            raise McpToolCallError("tool_source_unavailable") from None
+            raise McpToolCallError(ToolCallErrorCode.SOURCE_UNAVAILABLE.value) from None
         if snapshot.source.status is not McpSourceStatus.READY:
-            raise McpToolCallError("tool_source_unavailable")
+            raise McpToolCallError(ToolCallErrorCode.SOURCE_UNAVAILABLE.value)
         return snapshot
 
     def _server(self, snapshot: ManagedHttpRuntimeSnapshot) -> Server[object]:
@@ -126,9 +131,9 @@ class ManagedHttpMcpRuntime:
         async def call_tool(name: str, arguments: dict[str, object]) -> types.CallToolResult:
             capability = active.get(name)
             if capability is None:
-                return _error_result("tool_capability_unavailable")
+                return _error_result(ToolCallErrorCode.CAPABILITY_UNAVAILABLE.value)
             if not _valid_arguments(capability, arguments):
-                return _error_result("tool_invalid_arguments")
+                return _error_result(ToolCallErrorCode.INVALID_ARGUMENTS.value)
             try:
                 output = await self._executor.execute(
                     snapshot.source,
@@ -137,12 +142,14 @@ class ManagedHttpMcpRuntime:
                 )
             except McpToolCallError as error:
                 return _error_result(
-                    error.code if error.code in _KNOWN_ERROR_CODES else "tool_execution_failed"
+                    error.code
+                    if error.code in _KNOWN_ERROR_CODES
+                    else ToolCallErrorCode.EXECUTION_FAILED.value
                 )
             except Exception:
-                return _error_result("tool_execution_failed")
+                return _error_result(ToolCallErrorCode.EXECUTION_FAILED.value)
             if not isinstance(output, dict):
-                return _error_result("tool_protocol_error")
+                return _error_result(ToolCallErrorCode.PROTOCOL_ERROR.value)
             try:
                 text = json.dumps(
                     output,
@@ -151,7 +158,7 @@ class ManagedHttpMcpRuntime:
                     separators=(",", ":"),
                 )
             except (TypeError, ValueError):
-                return _error_result("tool_protocol_error")
+                return _error_result(ToolCallErrorCode.PROTOCOL_ERROR.value)
             return types.CallToolResult(
                 content=[types.TextContent(type="text", text=text)],
                 structuredContent=output,
@@ -185,7 +192,7 @@ def _error_code(content: Sequence[types.ContentBlock]) -> str:
         candidate = content[0].text
         if candidate in _KNOWN_ERROR_CODES:
             return candidate
-    return "tool_protocol_error"
+    return ToolCallErrorCode.PROTOCOL_ERROR.value
 
 
 __all__ = [

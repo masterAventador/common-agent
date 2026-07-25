@@ -20,7 +20,7 @@ from common_agent.tools.managed_http import (
     ManagedHttpValidationError,
     build_managed_http_request,
 )
-from common_agent.tools.models import McpSource
+from common_agent.tools.models import McpSource, ToolCallErrorCode
 
 from .outbound import credential_headers, egress_error_code
 
@@ -101,15 +101,15 @@ class ManagedHttpRequestExecutor:
     ) -> dict[str, object]:
         endpoint_url = source.endpoint_url
         if endpoint_url is None:
-            raise McpToolCallError("tool_source_unavailable")
+            raise McpToolCallError(ToolCallErrorCode.SOURCE_UNAVAILABLE.value)
         try:
             outbound = build_managed_http_request(endpoint_url, capability, arguments)
         except ManagedHttpValidationError:
-            raise McpToolCallError("tool_invalid_arguments") from None
+            raise McpToolCallError(ToolCallErrorCode.INVALID_ARGUMENTS.value) from None
         try:
             credential = await self._credentials.resolve(source.id)
         except Exception:
-            raise McpToolCallError("tool_source_unavailable") from None
+            raise McpToolCallError(ToolCallErrorCode.SOURCE_UNAVAILABLE.value) from None
         headers = credential_headers(outbound.headers, credential)
         client = self._clients.create(endpoint_url, capability.timeout_seconds)
         try:
@@ -121,25 +121,25 @@ class ManagedHttpRequestExecutor:
             )
         except OutboundSecurityError as error:
             if error.request_may_have_been_sent:
-                raise McpToolCallError("tool_result_unknown") from None
+                raise McpToolCallError(ToolCallErrorCode.RESULT_UNKNOWN.value) from None
             raise McpToolCallError(egress_error_code(error), retryable=error.retryable) from None
         except Exception:
-            raise McpToolCallError("tool_result_unknown") from None
+            raise McpToolCallError(ToolCallErrorCode.RESULT_UNKNOWN.value) from None
         finally:
             try:
                 await client.aclose()
             except Exception:
-                raise McpToolCallError("tool_result_unknown") from None
+                raise McpToolCallError(ToolCallErrorCode.RESULT_UNKNOWN.value) from None
         if not 200 <= response.status_code < 300:
-            raise McpToolCallError("tool_execution_failed")
+            raise McpToolCallError(ToolCallErrorCode.EXECUTION_FAILED.value)
         try:
             payload = json.loads(response.body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            raise McpToolCallError("tool_result_unknown") from None
+            raise McpToolCallError(ToolCallErrorCode.RESULT_UNKNOWN.value) from None
         try:
             selected = _json_pointer(payload, capability.response_json_pointer)
         except (KeyError, IndexError, TypeError, ValueError):
-            raise McpToolCallError("tool_result_unknown") from None
+            raise McpToolCallError(ToolCallErrorCode.RESULT_UNKNOWN.value) from None
         if isinstance(selected, dict):
             return cast(dict[str, object], selected)
         return {"result": selected}

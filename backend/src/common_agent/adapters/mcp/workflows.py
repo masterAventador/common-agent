@@ -40,6 +40,7 @@ from common_agent.ports.mcp import (
     McpToolDescriptor,
 )
 from common_agent.tenancy import current_tenant
+from common_agent.tools.models import ToolCallErrorCode
 
 _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]{1,127}$")
 _CALL_TOKEN_ARGUMENT = "_common_agent_call_token"
@@ -121,7 +122,7 @@ class WorkflowMcpRuntime:
         arguments: Mapping[str, object],
     ) -> McpToolCallResponse:
         if _CALL_TOKEN_ARGUMENT in arguments:
-            raise McpToolCallError("tool_invalid_arguments")
+            raise McpToolCallError(ToolCallErrorCode.INVALID_ARGUMENTS.value)
         call_token = uuid4().hex
         try:
             async with create_connected_server_and_client_session(self._server) as session:
@@ -136,7 +137,7 @@ class WorkflowMcpRuntime:
         if result.isError:
             raise McpToolCallError(_error_code(result.content))
         if not isinstance(result.structuredContent, dict):
-            raise McpToolCallError("tool_protocol_error")
+            raise McpToolCallError(ToolCallErrorCode.PROTOCOL_ERROR.value)
         return McpToolCallResponse(output=cast(dict[str, object], result.structuredContent))
 
     def _register_handlers(self) -> None:
@@ -162,9 +163,9 @@ class WorkflowMcpRuntime:
         async def call_tool(name: str, arguments: dict[str, object]) -> types.CallToolResult:
             definition = self._definitions.get(name)
             if definition is None:
-                return _error_result("tool_capability_unavailable")
+                return _error_result(ToolCallErrorCode.CAPABILITY_UNAVAILABLE.value)
             if set(arguments) != {"input"}:
-                return _error_result("tool_invalid_arguments")
+                return _error_result(ToolCallErrorCode.INVALID_ARGUMENTS.value)
             input_value = arguments.get("input")
             call_token = _request_call_token(self._server)
             if (
@@ -174,7 +175,7 @@ class WorkflowMcpRuntime:
                 or not isinstance(call_token, str)
                 or len(call_token) != 32
             ):
-                return _error_result("tool_invalid_arguments")
+                return _error_result(ToolCallErrorCode.INVALID_ARGUMENTS.value)
             try:
                 run = await self._run(definition, input_value, call_token=call_token)
             except asyncio.CancelledError:
@@ -182,7 +183,7 @@ class WorkflowMcpRuntime:
             except WorkflowServiceError as error:
                 return _error_result(_stable_error_code(error.code))
             except Exception:
-                return _error_result("tool_execution_failed")
+                return _error_result(ToolCallErrorCode.EXECUTION_FAILED.value)
             output = _run_output(definition, run)
             return types.CallToolResult(
                 content=[
@@ -297,11 +298,13 @@ def _error_result(code: str) -> types.CallToolResult:
 def _error_code(content: Sequence[types.ContentBlock]) -> str:
     if len(content) == 1 and isinstance(content[0], types.TextContent):
         return _stable_error_code(content[0].text)
-    return "tool_protocol_error"
+    return ToolCallErrorCode.PROTOCOL_ERROR.value
 
 
 def _stable_error_code(value: str) -> str:
-    return value if _ERROR_CODE_PATTERN.fullmatch(value) else "tool_execution_failed"
+    if _ERROR_CODE_PATTERN.fullmatch(value):
+        return value
+    return ToolCallErrorCode.EXECUTION_FAILED.value
 
 
 def _request_id(value: str | None) -> UUID:

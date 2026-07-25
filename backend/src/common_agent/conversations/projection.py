@@ -11,6 +11,7 @@ from common_agent.conversations.events import (
 from common_agent.domain.conversation import MESSAGE_ERROR_CODE_MAX_LENGTH, Citation, Message
 from common_agent.ports.conversations import ConversationUnitOfWorkFactory
 from common_agent.runtimes.base import RuntimeEvent, RuntimeEventKind
+from common_agent.tools.models import ToolCallErrorCode
 
 
 class ConversationMessageProjector:
@@ -140,10 +141,12 @@ class ConversationMessageProjector:
                     tool_call_id=tool_call.tool_call_id,
                     capability_id=tool_call.capability_id,
                     capability_name=tool_call.capability_name,
-                    error_code="tool_result_unknown",
+                    error_code=ToolCallErrorCode.RESULT_UNKNOWN.value,
                 ),
             )
-        return await self.persist_failure(turn_id, message.id, "tool_result_unknown")
+        return await self.persist_failure(
+            turn_id, message.id, ToolCallErrorCode.RESULT_UNKNOWN.value
+        )
 
     async def republish_terminal(self, turn_id: UUID, message: Message) -> None:
         kind = {
