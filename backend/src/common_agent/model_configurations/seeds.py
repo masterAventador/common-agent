@@ -19,8 +19,11 @@ from common_agent.tenancy import bind_tenant, system_tenant_access
 # 2. 其百炼标识形如 ZHIPU/GLM-5.2、kimi/kimi-k3, 含斜杠, 无法通过平台
 #    model_identifier 校验 (仅允许字母、数字、点、下划线、连字符)。
 # 因此按"宁可少预置也不预置调不通的模型"原则排除, 等真实开通与标识校验放开后再单独评估。
+#
+# 也不收录 qwen-max: 当前项目接入的百炼专属 compatible-mode 端点上, qwen-max 返回的响应
+# 不是 OpenAI 标准结构 (仅有 finish_reason/text, 无 choices/message), 平台适配层无法解析,
+# 测试调用与会话都会失败; 属该端点上真实调不通的模型, 按同一原则排除。
 COMMON_MODEL_CONFIGURATION_SEEDS: tuple[ModelConfigurationInput, ...] = (
-    ModelConfigurationInput(display_name="通义千问-Max", model_identifier="qwen-max", enabled=True),
     ModelConfigurationInput(
         display_name="通义千问-Plus", model_identifier="qwen-plus", enabled=True
     ),

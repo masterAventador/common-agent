@@ -26,7 +26,6 @@ WORKSPACE_B = UUID("30000000-0000-4000-8000-000000000002")
 NEW_WORKSPACE = UUID("30000000-0000-4000-8000-000000000003")
 
 _EXPECTED_IDENTIFIERS = {
-    "qwen-max",
     "qwen-plus",
     "qwen-turbo",
     "qwen-long",

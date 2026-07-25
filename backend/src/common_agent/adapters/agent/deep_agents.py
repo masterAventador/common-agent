@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
@@ -55,6 +56,7 @@ DEEP_AGENT_BUILTIN_TOOL_NAMES = frozenset(
         "task",
     }
 )
+_LOGGER = logging.getLogger("common_agent.adapters.agent.deep_agents")
 _DEEP_AGENT_EXECUTION_FAILED = "deep_agent_execution_failed"
 _PLATFORM_SAFETY_INSTRUCTION = (
     "只能使用当前请求明确提供的工具;不得尝试访问本机文件、执行 Shell、创建子代理或修改待办。"
@@ -256,6 +258,7 @@ class DeepAgentsEmployeeRuntime:
             yield emitter.fail(error.code)
             return
         except Exception:
+            _LOGGER.exception("数字员工运行时装配失败")
             yield emitter.fail(_DEEP_AGENT_EXECUTION_FAILED)
             return
 
@@ -389,6 +392,7 @@ class DeepAgentsEmployeeRuntime:
                     capability_name=lifecycle.metadata.capability_name,
                     error_code=lifecycle.error_code or ToolCallErrorCode.RESULT_UNKNOWN.value,
                 )
+            _LOGGER.exception("数字员工运行时执行失败")
             if model is None:
                 yield emitter.fail(_DEEP_AGENT_EXECUTION_FAILED)
             else:

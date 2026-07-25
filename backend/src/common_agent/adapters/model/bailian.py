@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 import openai
@@ -116,6 +117,46 @@ def _text_content(content: object) -> str:
     return "".join(text_parts)
 
 
+def _flatten_outbound_content(content: object) -> object:
+    """把出站消息里的文本内容块拍平成纯字符串。
+
+    百炼 compatible-mode 对 qwen-long 等模型要求 messages[].content 必须是纯字符串。
+    它拒收 OpenAI 标准的数组内容块并报 Input should be a valid string。Deep Agents
+    中间件会把系统消息组装成数组。因此在出站前统一拍平。平台不使用多模态输入且全部为文本。
+    该规范化无损。仅含文本块时返回拼接字符串。出现非文本块则原样保留以免误伤未知场景。
+    """
+    if not isinstance(content, list):
+        return content
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict) and block.get("type") in {"text", "text_delta"}:
+            text = block.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+            else:
+                return content
+        else:
+            return content
+    return "\n\n".join(parts)
+
+
+class _BailianChatOpenAI(ChatOpenAI):
+    """百炼 compatible-mode 兼容层。出站消息内容块拍平成纯字符串。"""
+
+    def _get_request_payload(
+        self, input_: Any, *, stop: Any = None, **kwargs: Any
+    ) -> dict[str, Any]:
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        messages = payload.get("messages")
+        if isinstance(messages, list):
+            for message in messages:
+                if isinstance(message, dict) and "content" in message:
+                    message["content"] = _flatten_outbound_content(message["content"])
+        return payload
+
+
 def _langchain_messages(request: ModelRequest) -> tuple[BaseMessage, ...]:
     messages: list[BaseMessage] = []
     for message in request.messages:
@@ -135,7 +176,7 @@ def _create_chat_model(
     http_async_client: httpx.AsyncClient,
     http_client: httpx.Client,
 ) -> ChatOpenAI:
-    return ChatOpenAI(
+    return _BailianChatOpenAI(
         model=settings.model,
         base_url=settings.base_url,
         api_key=settings.api_key,
