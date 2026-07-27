@@ -75,4 +75,14 @@ grep -Fq 'up -d --no-deps --force-recreate edge' "${PRODUCTION_MANAGER}" || \
 [[ -f "${SCRIPT_DIR}/certbot-renew.timer" ]] || fail "缺少续期定时器"
 [[ -f "${SCRIPT_DIR}/certbot-renew.service" ]] || fail "缺少续期服务单元"
 
+# Edge 与 RAGFlow Edge 容器都以非 root(101) 运行, 读不到 0600 的私钥, nginx 会因
+# Permission denied 反复重启。私钥放宽到 0644 的前提是父目录必须为 0700 —— 实测其他
+# 系统用户会被目录拦住, 暴露面不变。两者必须同时成立, 缺一即为真实的密钥暴露。
+grep -Fq 'chmod 700 "${TLS_ROOT}"' "${CERTS}" || \
+  fail "certs.sh 未将 TLS 目录设为 0700, 放宽私钥权限会真正暴露密钥"
+grep -Fq '"${TLS_ROOT}"/*.key' "${CERTS}" || fail "certs.sh 未显式设置私钥权限"
+if grep -Fq 'chmod 600 "${TLS_ROOT}"/*.key' "${CERTS}"; then
+  fail "私钥为 0600 时容器内 nginx(101) 无法读取, Edge 将无法加载证书"
+fi
+
 echo "单机部署配置契约通过"

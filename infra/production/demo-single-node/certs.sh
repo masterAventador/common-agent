@@ -35,8 +35,11 @@ build_ca_files() {
   [[ -f "${SYSTEM_CA_BUNDLE}" ]] || fail "系统信任根不存在：${SYSTEM_CA_BUNDLE}"
   cat "${TLS_ROOT}/internal-ca.crt" "${SYSTEM_CA_BUNDLE}" >"${TLS_ROOT}/ca.crt"
   cat "${SYSTEM_CA_BUNDLE}" "${TLS_ROOT}/internal-ca.crt" >"${TLS_ROOT}/ca-bundle.crt"
-  chmod 600 "${TLS_ROOT}"/*.key
-  chmod 644 "${TLS_ROOT}"/*.crt
+  # Edge 容器以非 root(101) 运行, 0600 的私钥会让 nginx 因 Permission denied 无法启动。
+  # 私钥放宽到 0644, 其保护由 0700 的父目录承担: 宿主机上其他用户无法进入该目录,
+  # 实际暴露面与 0600 相同（已实测验证）。目录权限因此是本方案的前提, 不可放宽。
+  chmod 700 "${TLS_ROOT}"
+  chmod 644 "${TLS_ROOT}"/*.key "${TLS_ROOT}"/*.crt
 }
 
 internal_ca() {
@@ -68,8 +71,8 @@ install_public_cert() {
   [[ -f "${TLS_ROOT}/internal-ca.crt" ]] || fail "内部 CA 尚未生成，请先执行 internal-ca"
   cp "${LETSENCRYPT_LIVE}/fullchain.pem" "${TLS_ROOT}/edge.crt"
   cp "${LETSENCRYPT_LIVE}/privkey.pem" "${TLS_ROOT}/edge.key"
-  chmod 600 "${TLS_ROOT}/edge.key"
-  chmod 644 "${TLS_ROOT}/edge.crt"
+  # 与 build_ca_files 保持一致: Edge 容器以非 root 运行需要能读私钥, 保护由 0700 目录承担。
+  chmod 644 "${TLS_ROOT}/edge.key" "${TLS_ROOT}/edge.crt"
   build_ca_files
 }
 
