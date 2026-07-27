@@ -159,6 +159,9 @@ export RAGFLOW_COMPOSE_OVERRIDE=/opt/common-agent/infra/production/demo-single-n
 # 部署机不安装后端开发依赖, 因此显式提供百炼原生地址（在开发机执行
 # `uv run python -m common_agent.adapters.knowledge.ragflow_models native-base-url` 取得）。
 export RAGFLOW_DASHSCOPE_HTTP_BASE_URL=<百炼原生地址, 形如 https://ws-xxxx.cn-beijing.maas.aliyuncs.com/api/v1>
+# 默认门槛 24 GiB 是为本机 Colima 开发环境设的（那里还要同时跑业务栈与其他项目）。
+# 单机 demo 的真实下限按实测计算: RAGFlow 峰值 7.23 GiB + 业务侧约 3 GiB + 系统 1.5 GiB。
+export RAGFLOW_MIN_DOCKER_MEMORY_GIB=12
 ```
 
 再按 `config.env.example` 建 `/etc/common-agent/config.env`。
