@@ -188,8 +188,8 @@ API，该开销不再存在，因此单机 16 GiB 可行。
 | --- | --- |
 | `manage.sh` `rollout()` | 删除 blue↔green 轮换（第 433 行），固定 `blue`；改为先停后起；验证失败分支改为报错并提示 `rollback`，不再执行切回 |
 | `manage.sh` `rollback()` | 同样固定 `blue`，用 `previous_release` 镜像重跑一次单槽发布 |
-| `manage.sh` `write_state()` | `previous_slot` 恒等于 `active_slot`；`previous_release` 保留，作为回滚依据 |
-| `manage.sh` rollout 尾部 | **新增**：起完新容器后强制 reload edge，即使配置内容未变 |
+| `manage.sh` `write_state()` | 无需改代码：调用方固定传 `blue`，函数自带的槽白名单校验照常通过；`previous_release` 保留作为回滚依据 |
+| `manage.sh` rollout 尾部 | 保留对 `switch_edge()` 的调用即可，它内部已有 `nginx -s reload`；**删除该调用会导致发布后全站 502** |
 | `edge.conf.template` | **新增** 80 端口 server 块：`/.well-known/acme-challenge/` 指向 webroot，其余 301 跳转 443。当前模板只有 443（容器内 9443）server 块 |
 | `compose.yaml` | edge 服务**新增** 80 端口映射与 ACME webroot 只读挂载。当前只映射 443 |
 | `test-manage.sh` | 现有断言围绕蓝绿切换编写，需改为单槽断言（先改测试确认失败，再改实现） |
@@ -204,8 +204,12 @@ API，该开销不再存在，因此单机 16 GiB 可行。
 edge 配置内容不变，但 api 容器重启后 Docker 分配的 IP 可能变化，nginx 会继续指向已销毁的
 IP 并返回 502。
 
-因此单槽 rollout 必须在起完新容器后强制 reload edge。缺少这一步的表现是"部署完成后页面
-全部 502，手工重启 edge 即恢复"。
+因此单槽 rollout 必须在起完新容器后 reload edge。现有 `switch_edge()`（`manage.sh:413-422`）
+内部已执行 `nginx -s reload`，reload 会重新解析 upstream 容器名，**不需要新增函数**，只要
+单槽 rollout 继续调用它即可。缺少这一步的表现是"部署完成后页面全部 502，手工重启 edge 即恢复"。
+
+同理，`drill.sh` 无需改动：其槽断言（`drill.sh:204`、`drill.sh:440`）只校验 `active_slot`
+合法而不校验槽发生变化，单槽下取 `blue` 同样通过。
 
 ## 6. TLS 与证书
 
