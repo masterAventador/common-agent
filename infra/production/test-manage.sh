@@ -67,6 +67,16 @@ grep -Fq 'app-private' "${SCRIPT_DIR}/ragflow-node.local.compose.yaml" || \
   fail "生产 API 与 Worker 没有独立出站网络"
 grep -Fq '  app-egress:' "${COMPOSE_FILE}" || fail "生产 Compose 缺少出站网络定义"
 
+grep -Fq 'listen 9080;' "${SCRIPT_DIR}/edge.conf.template" || \
+  fail "Edge 模板缺少 ACME 与跳转用的 HTTP 监听"
+grep -Fq '/.well-known/acme-challenge/' "${SCRIPT_DIR}/edge.conf.template" || \
+  fail "Edge 模板缺少 ACME 挑战路径"
+grep -Fq 'return 301 https://$host$request_uri;' "${SCRIPT_DIR}/edge.conf.template" || \
+  fail "Edge 模板缺少 HTTP 到 HTTPS 跳转"
+grep -Fq ':9080' "${COMPOSE_FILE}" || fail "Edge 容器没有发布 HTTP 端口"
+grep -Fq 'COMMON_AGENT_ACME_ROOT' "${COMPOSE_FILE}" || fail "Edge 容器没有挂载 ACME webroot"
+grep -Fq 'COMMON_AGENT_ACME_ROOT' "${MANAGER}" || fail "发布入口没有传递 ACME webroot"
+
 for expected in \
   'read_only: true' \
   'no-new-privileges:true' \

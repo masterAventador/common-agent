@@ -17,6 +17,9 @@ WEB_CONFIG="${STATE_ROOT}/common-agent-web.conf"
 DOCKER_CONTEXT_NAME="${COMMON_AGENT_PRODUCTION_DOCKER_CONTEXT:-colima-common-agent-dev}"
 HTTPS_BIND="${COMMON_AGENT_HTTPS_BIND:-127.0.0.1}"
 HTTPS_PORT="${COMMON_AGENT_HTTPS_PORT:-18443}"
+HTTP_BIND="${COMMON_AGENT_HTTP_BIND:-127.0.0.1}"
+HTTP_PORT="${COMMON_AGENT_HTTP_PORT:-18080}"
+ACME_ROOT="${STATE_ROOT}/acme"
 PUBLIC_DOMAIN="${COMMON_AGENT_PUBLIC_DOMAIN:-common-agent.test}"
 PUBLIC_BASE_URL="${COMMON_AGENT_PUBLIC_BASE_URL:-https://${PUBLIC_DOMAIN}:${HTTPS_PORT}}"
 RAGFLOW_NETWORK="${COMMON_AGENT_RAGFLOW_NETWORK:-common-agent-dev_ragflow}"
@@ -70,8 +73,10 @@ guard_docker_context() {
 }
 
 prepare_state_root() {
-  mkdir -p "${RELEASE_ROOT}" "${TLS_ROOT}"
+  mkdir -p "${RELEASE_ROOT}" "${TLS_ROOT}" "${ACME_ROOT}/.well-known/acme-challenge"
   chmod 700 "${STATE_ROOT}" "${RELEASE_ROOT}" "${TLS_ROOT}"
+  # webroot 需要被容器内 nginx（uid 101）读取，因此不能沿用 0700。
+  chmod 755 "${ACME_ROOT}" "${ACME_ROOT}/.well-known" "${ACME_ROOT}/.well-known/acme-challenge"
 }
 
 file_mode() {
@@ -191,6 +196,9 @@ compose_loaded_release() {
   COMMON_AGENT_EDGE_KEY="${TLS_ROOT}/edge.key" \
   COMMON_AGENT_HTTPS_BIND="${HTTPS_BIND}" \
   COMMON_AGENT_HTTPS_PORT="${HTTPS_PORT}" \
+  COMMON_AGENT_HTTP_BIND="${HTTP_BIND}" \
+  COMMON_AGENT_HTTP_PORT="${HTTP_PORT}" \
+  COMMON_AGENT_ACME_ROOT="${ACME_ROOT}" \
   COMMON_AGENT_PUBLIC_DOMAIN="${PUBLIC_DOMAIN}" \
     docker_cli compose --project-name common-agent-production -f "${COMPOSE_FILE}" "$@"
 }

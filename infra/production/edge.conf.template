@@ -25,6 +25,22 @@ http {
   }
 
   server {
+    listen 9080;
+    server_name {{PUBLIC_DOMAIN}};
+    if ($host != "{{PUBLIC_DOMAIN}}") { return 421; }
+
+    # 仅供 Let's Encrypt HTTP-01 验证；挑战文件由宿主机 certbot 写入 webroot。
+    location ^~ /.well-known/acme-challenge/ {
+      root /run/common-agent/acme;
+      default_type text/plain;
+    }
+
+    location / {
+      return 301 https://$host$request_uri;
+    }
+  }
+
+  server {
     listen 9443 ssl;
     server_name {{PUBLIC_DOMAIN}};
     if ($host != "{{PUBLIC_DOMAIN}}") { return 421; }
