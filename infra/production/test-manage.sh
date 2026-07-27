@@ -77,6 +77,15 @@ grep -Fq ':9080' "${COMPOSE_FILE}" || fail "Edge 容器没有发布 HTTP 端口"
 grep -Fq 'COMMON_AGENT_ACME_ROOT' "${COMPOSE_FILE}" || fail "Edge 容器没有挂载 ACME webroot"
 grep -Fq 'COMMON_AGENT_ACME_ROOT' "${MANAGER}" || fail "发布入口没有传递 ACME webroot"
 
+grep -Fq 'DEPLOY_SLOT="blue"' "${MANAGER}" || fail "发布入口没有固定单槽"
+if grep -Eq 'target_slot="(blue|green)"' "${MANAGER}"; then
+  fail "单槽发布不得保留蓝绿轮换"
+fi
+grep -Fq '请执行 rollback 恢复上一 release' "${MANAGER}" || \
+  fail "单槽发布验证失败后没有提示回滚路径"
+grep -Fq 'switch_edge "${DEPLOY_SLOT}"' "${MANAGER}" || \
+  fail "单槽发布没有重载 Edge，容器重建后会指向失效 IP"
+
 for expected in \
   'read_only: true' \
   'no-new-privileges:true' \

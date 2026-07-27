@@ -25,6 +25,8 @@ PUBLIC_BASE_URL="${COMMON_AGENT_PUBLIC_BASE_URL:-https://${PUBLIC_DOMAIN}:${HTTP
 RAGFLOW_NETWORK="${COMMON_AGENT_RAGFLOW_NETWORK:-common-agent-dev_ragflow}"
 RAGFLOW_EDGE_MODE="${COMMON_AGENT_RAGFLOW_EDGE_MODE:-external}"
 LOCAL_CONTEXT_CONFIRMATION="deploy-common-agent-to-approved-remote"
+# 单机 demo 固定使用 blue 槽停机发布；green 的 compose 定义保留但不再启动。
+DEPLOY_SLOT="blue"
 
 usage() {
   echo "用法: $0 {build|init-tls|preflight|migrate|rollout|verify|rollback|status|down|drill}" >&2
@@ -430,41 +432,36 @@ switch_edge() {
 }
 
 rollout() {
-  local release_id target_slot old_slot old_release
+  local release_id old_release
   preflight
   release_id="$(candidate_release_id)"
   [[ -f "${STATE_ROOT}/migrated-${release_id}" ]] || fail "候选 release 尚未执行 migrate"
   load_release "${release_id}"
   load_state
-  old_slot="${active_slot}"
   old_release="${active_release}"
-  if [[ "${old_slot}" == "blue" ]]; then target_slot="green"; else target_slot="blue"; fi
 
   if [[ "${RAGFLOW_EDGE_MODE}" == "local-shared-network" ]]; then
     ragflow_compose up -d
     wait_for_ragflow_edge
   fi
-  compose_loaded_release --profile "${target_slot}" up -d --no-deps \
-    "api-${target_slot}" "web-${target_slot}"
-  wait_for_service "api-${target_slot}" 240
-  wait_for_service "web-${target_slot}" 60
-  switch_edge "${target_slot}"
+
+  # 单槽发布：先停旧容器再用新镜像重建同一槽，发布窗口内服务不可用。
+  compose_loaded_release stop \
+    "worker-${DEPLOY_SLOT}" "api-${DEPLOY_SLOT}" "web-${DEPLOY_SLOT}" || true
+  compose_loaded_release --profile "${DEPLOY_SLOT}" up -d --no-deps --force-recreate \
+    "api-${DEPLOY_SLOT}" "web-${DEPLOY_SLOT}"
+  wait_for_service "api-${DEPLOY_SLOT}" 240
+  wait_for_service "web-${DEPLOY_SLOT}" 60
+  # 容器重建后 IP 变化，switch_edge 内的 nginx -s reload 会重新解析 upstream。
+  switch_edge "${DEPLOY_SLOT}"
   if ! verify_edge; then
-    if [[ -n "${old_slot}" ]]; then
-      switch_edge "${old_slot}"
-    else
-      compose_loaded_release stop edge || true
-    fi
-    compose_loaded_release stop "api-${target_slot}" "web-${target_slot}" || true
-    fail "候选 release 验证失败，流量已恢复旧槽"
+    fail "候选 release 验证失败；服务当前不可用，请执行 rollback 恢复上一 release"
   fi
-  compose_loaded_release --profile "${target_slot}" up -d --no-deps "worker-${target_slot}"
-  wait_for_service "worker-${target_slot}" 90
-  write_state "${target_slot}" "${release_id}" "${old_slot}" "${old_release}"
-  if [[ -n "${old_slot}" ]]; then
-    compose_loaded_release stop "worker-${old_slot}" "api-${old_slot}" "web-${old_slot}"
-  fi
-  echo "release 已切换：${release_id} (${target_slot})"
+  compose_loaded_release --profile "${DEPLOY_SLOT}" up -d --no-deps --force-recreate \
+    "worker-${DEPLOY_SLOT}"
+  wait_for_service "worker-${DEPLOY_SLOT}" 90
+  write_state "${DEPLOY_SLOT}" "${release_id}" "${DEPLOY_SLOT}" "${old_release}"
+  echo "release 已发布：${release_id} (${DEPLOY_SLOT})"
 }
 
 verify() {
