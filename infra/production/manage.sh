@@ -31,7 +31,7 @@ LOCAL_CONTEXT_CONFIRMATION="deploy-common-agent-to-approved-remote"
 DEPLOY_SLOT="blue"
 
 usage() {
-  echo "用法: $0 {build|init-tls|preflight|migrate|rollout|verify|rollback|status|down|drill}" >&2
+  echo "用法: $0 {build|init-tls|edge-recreate|preflight|migrate|rollout|verify|rollback|status|down|drill}" >&2
 }
 
 fail() {
@@ -439,6 +439,18 @@ switch_edge() {
   fi
 }
 
+# 证书续期后重建 Edge：docker secret 只在容器启动时拷贝，nginx reload 不会加载新证书。
+edge_recreate() {
+  guard_docker_context
+  load_state
+  [[ -n "${active_release}" ]] || fail "当前没有 active release"
+  load_release "${active_release}"
+  render_edge_config "${DEPLOY_SLOT}"
+  compose_loaded_release up -d --no-deps --force-recreate edge
+  wait_for_service edge 60
+  echo "Edge 已使用当前证书重建"
+}
+
 rollout() {
   local release_id old_release
   preflight
@@ -551,6 +563,7 @@ down() {
 case "${1:-}" in
   build) build_release ;;
   init-tls) init_tls ;;
+  edge-recreate) edge_recreate ;;
   preflight) preflight ;;
   migrate) migrate ;;
   rollout) rollout ;;

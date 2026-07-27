@@ -56,4 +56,23 @@ grep -Fq 'MACOS: "${RAGFLOW_MACOS:-}"' "${RAGFLOW_OVERRIDE}" || \
 grep -Fq 'uname -s' "${RAGFLOW_MANAGER}" || \
   fail "RAGFlow 入口没有按宿主机系统判定 MACOS"
 
+CERTS="${SCRIPT_DIR}/certs.sh"
+[[ -x "${CERTS}" ]] || fail "缺少可执行的证书脚本"
+for action in internal-ca issue renew; do
+  grep -Fq "${action})" "${CERTS}" || fail "证书脚本缺少 ${action} 动作"
+done
+# 内部 CA 必须长效，否则一个月后 RAGFlow 调用全部失败。
+grep -Fq 'INTERNAL_CA_DAYS=3650' "${CERTS}" || fail "内部 CA 有效期过短"
+grep -Fq 'common-agent-production-ragflow-edge' "${CERTS}" || \
+  fail "内部证书 SAN 没有使用 RAGFlow Edge 容器名"
+# preflight 用 ca.crt 校验 edge.crt，而后者由 Let's Encrypt 签发，
+# 因此 ca.crt 必须同时包含内部 CA 与系统信任根。
+grep -Fq 'SYSTEM_CA_BUNDLE' "${CERTS}" || fail "ca.crt 没有并入系统信任根，preflight 会校验失败"
+# docker secret 只在容器启动时拷贝，续期后必须重建 edge 才生效。
+grep -Fq 'edge-recreate' "${CERTS}" || fail "续期后没有调用 Edge 重建入口"
+grep -Fq 'up -d --no-deps --force-recreate edge' "${PRODUCTION_MANAGER}" || \
+  fail "发布入口缺少 Edge 重建实现，续期后新证书不会生效"
+[[ -f "${SCRIPT_DIR}/certbot-renew.timer" ]] || fail "缺少续期定时器"
+[[ -f "${SCRIPT_DIR}/certbot-renew.service" ]] || fail "缺少续期服务单元"
+
 echo "单机部署配置契约通过"
