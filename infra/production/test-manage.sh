@@ -258,4 +258,7 @@ grep -Fq 'X-Forwarded-For: 203.0.113.${attempt}' "${DRILL}" || \
 grep -Fq '[[ "${status}" == "429" ]]' "${DRILL}" || \
   fail "生产演练没有验证 Edge 后真实来源限流"
 
+"${SCRIPT_DIR}/demo-single-node/test-demo-single-node.sh" >/dev/null || \
+  fail "单机部署配置契约未通过"
+
 echo "生产构建与回滚契约通过"

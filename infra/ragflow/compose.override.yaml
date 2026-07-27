@@ -7,7 +7,8 @@ services:
       COMPOSE_PROFILES: ${COMPOSE_PROFILES}
       DASHSCOPE_HTTP_BASE_URL: ${RAGFLOW_DASHSCOPE_HTTP_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}
       DOC_BULK_SIZE: "32"
-      MACOS: "1"
+      # 仅 macOS 开发机置 1；Linux 部署留空以保留 update_progress 的分布式锁。
+      MACOS: "${RAGFLOW_MACOS:-}"
       MAX_CONCURRENT_CHUNK_BUILDERS: "1"
       MAX_CONCURRENT_EMBEDDINGS: "8"
       MAX_CONCURRENT_TASKS: "5"

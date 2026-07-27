@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/compose.yaml"
+# 可选的资源覆盖片段，供单机 demo 等部署形态叠加；不改变任何依赖解析路径。
+COMPOSE_OVERRIDE_FILE="${COMMON_AGENT_COMPOSE_OVERRIDE:-}"
 RAGFLOW_COMPOSE_FILE="${SCRIPT_DIR}/ragflow-node.compose.yaml"
 STATE_ROOT="${COMMON_AGENT_PRODUCTION_STATE_ROOT:-${REPOSITORY_ROOT}/.local/production}"
 RELEASE_ROOT="${STATE_ROOT}/releases"
@@ -186,6 +188,12 @@ write_state() {
 }
 
 compose_loaded_release() {
+  local -a compose_files=(-f "${COMPOSE_FILE}")
+  if [[ -n "${COMPOSE_OVERRIDE_FILE}" ]]; then
+    [[ -f "${COMPOSE_OVERRIDE_FILE}" && ! -L "${COMPOSE_OVERRIDE_FILE}" ]] || \
+      fail "compose 覆盖文件不存在或是符号链接：${COMPOSE_OVERRIDE_FILE}"
+    compose_files+=(-f "${COMPOSE_OVERRIDE_FILE}")
+  fi
   COMMON_AGENT_RUNTIME_ENV=production \
   COMMON_AGENT_API_IMAGE="${COMMON_AGENT_API_IMAGE}" \
   COMMON_AGENT_WEB_IMAGE="${COMMON_AGENT_WEB_IMAGE}" \
@@ -202,7 +210,7 @@ compose_loaded_release() {
   COMMON_AGENT_HTTP_PORT="${HTTP_PORT}" \
   COMMON_AGENT_ACME_ROOT="${ACME_ROOT}" \
   COMMON_AGENT_PUBLIC_DOMAIN="${PUBLIC_DOMAIN}" \
-    docker_cli compose --project-name common-agent-production -f "${COMPOSE_FILE}" "$@"
+    docker_cli compose --project-name common-agent-production "${compose_files[@]}" "$@"
 }
 
 ragflow_compose() {

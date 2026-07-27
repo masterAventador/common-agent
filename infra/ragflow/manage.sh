@@ -139,8 +139,19 @@ prepare() {
 }
 
 compose() {
-  local dashscope_http_base_url
+  local dashscope_http_base_url macos_flag=""
+  local -a compose_files=()
   prepare
+  # RAGFlow 的 MACOS 开关会跳过 update_progress 的分布式锁（upstream
+  # api/db/services/task_service.py）。它只适用于 macOS 开发机，Linux 部署必须留空，
+  # 否则并发任务进度更新失去互斥。
+  [[ "$(uname -s)" != "Darwin" ]] || macos_flag=1
+  compose_files=(-f "${RUNTIME_ROOT}/docker/docker-compose.yml" -f "${SCRIPT_DIR}/compose.override.yaml")
+  if [[ -n "${RAGFLOW_COMPOSE_OVERRIDE:-}" ]]; then
+    [[ -f "${RAGFLOW_COMPOSE_OVERRIDE}" && ! -L "${RAGFLOW_COMPOSE_OVERRIDE}" ]] || \
+      fail "RAGFlow compose 覆盖文件不存在或是符号链接：${RAGFLOW_COMPOSE_OVERRIDE}"
+    compose_files+=(-f "${RAGFLOW_COMPOSE_OVERRIDE}")
+  fi
   if [[ -n "${RAGFLOW_DASHSCOPE_HTTP_BASE_URL:-}" ]]; then
     dashscope_http_base_url="${RAGFLOW_DASHSCOPE_HTTP_BASE_URL}"
   elif ! dashscope_http_base_url="$(bailian_native_base_url 2>/dev/null)"; then
@@ -166,12 +177,11 @@ compose() {
   GO_ADMIN_PORT="127.0.0.1:$(port_value go_admin)" \
   GO_HTTP_PORT="127.0.0.1:$(port_value go_http)" \
   COMPOSE_PROFILES="${RAGFLOW_COMPOSE_PROFILES:-elasticsearch,cpu}" \
-  MACOS=1 \
+  RAGFLOW_MACOS="${macos_flag}" \
     docker_cli compose \
       --project-name "${PROJECT_NAME}" \
       --project-directory "${RUNTIME_ROOT}/docker" \
-      -f "${RUNTIME_ROOT}/docker/docker-compose.yml" \
-      -f "${SCRIPT_DIR}/compose.override.yaml" \
+      "${compose_files[@]}" \
       "$@"
 }
 

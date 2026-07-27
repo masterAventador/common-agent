@@ -1,0 +1,24 @@
+# 单台 4C16G 服务器的业务侧资源上限，叠加在 infra/production/compose.yaml 之上。
+#
+# api 与 worker 是估算值，必须由目标机 30 分钟 soak 实测修正
+# （见 docs/superpowers/specs/2026-07-27-single-node-demo-deployment-design.md 第 4.2 节）。
+# 其余数值来自本机实测或组件性质（nginx 静态服务、demo 数据量下的 MySQL）。
+#
+# mem_limit 是护栏而非预留：Docker 不预占内存，作用是让失控容器被单独终止，
+# 而不是把整机拖进 swap。
+services:
+  api-blue:
+    mem_limit: 2g
+    cpus: 2.0
+  worker-blue:
+    mem_limit: 1536m
+    cpus: 1.5
+  platform-mysql:
+    mem_limit: 1g
+    cpus: 0.5
+  web-blue:
+    mem_limit: 64m
+    cpus: 0.25
+  edge:
+    mem_limit: 64m
+    cpus: 0.25

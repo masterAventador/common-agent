@@ -1,0 +1,26 @@
+# 单台 4C16G 服务器的 RAGFlow 侧资源上限与解析并发，叠加在 infra/ragflow 的
+# compose.override.yaml 之上。
+#
+# 内存值以 30 分钟真实链路 soak 实测为准：相关容器合计峰值 7.23 GiB，
+# RAGFlow API 单项峰值 4.53 GiB，因此 API 不得低于 5g。
+services:
+  ragflow-cpu:
+    mem_limit: 5g
+    # 单机上业务与 RAGFlow 共享 4 核。不限制 CPU 时文档解析会吃满整机，
+    # 导致同一时刻的聊天与 SSE 明显卡顿——这是单机合并特有的风险，
+    # 两台机器时不存在。
+    cpus: 2.0
+    environment:
+      MAX_CONCURRENT_TASKS: "2"
+      MAX_CONCURRENT_EMBEDDINGS: "4"
+      DOC_BULK_SIZE: "16"
+  es01:
+    mem_limit: 2g
+    environment:
+      ES_JAVA_OPTS: -Xms768m -Xmx768m
+  mysql:
+    mem_limit: 1g
+  minio:
+    mem_limit: 512m
+  redis:
+    mem_limit: 256m
