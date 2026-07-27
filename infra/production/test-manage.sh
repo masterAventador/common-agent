@@ -91,6 +91,19 @@ if grep -Fq 'rollback_slot' "${MANAGER}"; then
 fi
 grep -Fq '代码与流量已回滚' "${MANAGER}" || fail "回滚没有输出结果说明"
 
+# 应用在 production 下强制要求这四个加密密钥，缺任一项容器会在启动时崩溃。
+# preflight 必须提前拦截，演练必须真实生成，否则 rollout 到一半才失败、单槽下服务直接不可用。
+for credential_key in \
+  'COMMON_AGENT_TOOL_CREDENTIAL_KEYS' \
+  'COMMON_AGENT_TOOL_CREDENTIAL_ACTIVE_KEY_ID' \
+  'COMMON_AGENT_RAGFLOW_IDENTITY_KEYS' \
+  'COMMON_AGENT_RAGFLOW_IDENTITY_ACTIVE_KEY_ID'; do
+  grep -Fq "${credential_key}" "${MANAGER}" || \
+    fail "preflight 没有检查生产必需的加密密钥：${credential_key}"
+  grep -Fq "${credential_key}" "${DRILL}" || \
+    fail "演练没有生成生产必需的加密密钥：${credential_key}"
+done
+
 for expected in \
   'read_only: true' \
   'no-new-privileges:true' \

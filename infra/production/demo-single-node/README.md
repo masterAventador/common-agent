@@ -158,8 +158,42 @@ export RAGFLOW_DOCKER_CONTEXT=default
 export RAGFLOW_COMPOSE_OVERRIDE=/opt/common-agent/infra/production/demo-single-node/ragflow-resources.compose.yaml
 ```
 
-再按 `config.env.example` 建 `/etc/common-agent/config.env`，按 `../env.example` 末尾的键名清单
-建 `/etc/common-agent/secrets.env` 并 `chmod 600`。数据库密码进 URL 前必须 URL encode。
+再按 `config.env.example` 建 `/etc/common-agent/config.env`。
+
+`secrets.env` 需要 12 个键，其中 4 个是应用在 production 下**强制要求的加密主密钥**，
+缺任一项容器会在启动时崩溃。它们必须是 **URL-safe base64 的 32 字节**
+（`settings.py` 用 `altchars=b"-_"` 且 `validate=True`，标准 base64 的 `+` `/` 会被拒绝）：
+
+```bash
+DB_PASSWORD="$(openssl rand -hex 24)"
+DB_ROOT_PASSWORD="$(openssl rand -hex 24)"
+TOOL_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
+IDENTITY_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
+
+umask 077
+cat > /etc/common-agent/secrets.env <<EOF
+MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+MYSQL_DATABASE=common_agent
+MYSQL_USER=common_agent
+MYSQL_PASSWORD=${DB_PASSWORD}
+COMMON_AGENT_DATABASE_URL=mysql+aiomysql://common_agent:${DB_PASSWORD}@platform-mysql:3306/common_agent?charset=utf8mb4
+COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
+RAGFLOW_API_KEY=<RAGFlow 令牌，首次安装后从其界面获取>
+BAILIAN_API_KEY=<百炼 API Key>
+COMMON_AGENT_TOOL_CREDENTIAL_KEYS=v1:${TOOL_KEY}
+COMMON_AGENT_TOOL_CREDENTIAL_ACTIVE_KEY_ID=v1
+COMMON_AGENT_RAGFLOW_IDENTITY_KEYS=v1:${IDENTITY_KEY}
+COMMON_AGENT_RAGFLOW_IDENTITY_ACTIVE_KEY_ID=v1
+EOF
+chmod 600 /etc/common-agent/secrets.env
+```
+
+数据库密码若含特殊字符，进 `COMMON_AGENT_DATABASE_URL` 前必须 URL encode（上面用 hex
+随机串可回避该问题）。
+
+> **加密密钥一旦丢失，已落库的 MCP 凭据与 RAGFlow 身份将无法解密。** 本 demo 不做备份，
+> 若重建服务器需重新录入这些凭据。`preflight` 会检查这 12 个键是否齐全，但**不会**校验密钥
+> 是否与库中密文匹配。
 
 ## 5. 首次部署
 
