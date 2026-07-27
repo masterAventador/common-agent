@@ -88,9 +88,55 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 > 全部完成并逐页真实页面验收，已在 `ui-align-demo` 分支六次提交后按 `--no-ff` 合并回 main。
 > 期间用户否决了原型的 64px 窄侧栏方案（改为保留现有宽侧栏），UI-01a/UI-01c 随之作废。
 
+### 2.5 🅖 单机 demo 部署（客户试用环境）
+
+目标：把已验收的 `local-shared-network` 单机模式落到一台 4C16G 公网服务器，提供
+`https://kb.xuanbai.tech` 的客户试用环境。设计与计划见
+`docs/superpowers/specs/2026-07-27-single-node-demo-deployment-design.md` 与
+`docs/superpowers/plans/2026-07-27-single-node-demo-deployment.md`。
+
+| ID | 任务 | 验收标准 | 状态 |
+| --- | --- | --- | --- |
+| G1 | Edge 增加 HTTP 监听承载 ACME 与跳转 | `edge.conf.template` 新增容器内 9080 server 块（ACME 挑战路径 + 301 跳转），compose 映射 80、挂载 webroot，`manage.sh` 传递 `COMMON_AGENT_ACME_ROOT`；契约断言先失败后通过，compose config 生成 18443/18080 两端口 | ✅ 已完成 |
+| G2 | 发布改为固定单槽停机模式 | 去掉 blue↔green 轮换，固定 `blue` 先停后建；验证失败不再自动切回旧槽而是提示 `rollback`；保留 `switch_edge` 调用以规避 nginx DNS 缓存 502 | ✅ 已完成 |
+| G3 | 回滚改为单槽重建上一 release | 用 `previous_release` 镜像在同一槽重跑停机发布；回滚同样失败时要求人工介入；schema 不自动降级 | ✅ 已完成 |
+| G4 | 单机资源覆盖与配置模板 | 按 soak 实测分配 4C16G 内存上限，RAGFlow API 加 2.0 CPU 配额并下调解析并发；实测 compose 叠加后各服务 mem_limit 真实生效 | ✅ 已完成 |
+| G5 | 证书签发与自动续期 | 内部 CA 10 年有效期、SAN 为容器名；`ca.crt` 并入系统信任根以通过 preflight 对 Let's Encrypt 证书的校验（已实测 `openssl verify` 返回 OK）；新增 `edge-recreate` 供续期后重建容器 | ✅ 已完成 |
+| G6 | 服务器基础环境准备 | Docker 29.6.2 + Compose v5.3.1、镜像加速、swap 4GiB、ufw 22/80/443、certbot 2.9.0、目录就位；7 个镜像中 6 个按 digest 拉取成功 | ✅ 已完成 |
+| G7 | 本机完整 drill 验证单槽改造 | 单槽 rollout/rollback/故障注入回滚在真实容器上跑通 | 🚧 进行中 |
+| G8 | 服务器真实链路验收 | 正式页面走完整链路、30 分钟 soak 修正估算值、真实 rollout/rollback、证书签发与续期 | ⬜ 未开始 |
+
+**G4/G5 期间发现并修复的两个计划外缺陷：**
+
+- 业务与 RAGFlow 的 compose 调用都写死了 `-f` 文件列表，资源覆盖片段**根本无法叠加**，
+  配置文件形同摆设。已改为支持 `COMMON_AGENT_COMPOSE_OVERRIDE` / `RAGFLOW_COMPOSE_OVERRIDE`，
+  只追加文件，不改变依赖解析路径。
+- RAGFlow 的 `MACOS` 开关被硬编码为 1。该开关会跳过 `update_progress` 的分布式锁
+  （upstream `api/db/services/task_service.py:398`），只适用于 macOS 开发机，**Linux 部署会让
+  并发任务进度更新失去互斥**。已改为按 `uname` 判定；另删除 `manage.sh` 中一处不起作用的
+  `MACOS=1`（官方 compose 并未引用该变量）。
+
+**待解除的外部风险：**
+
+- **Docker Hub 上锁定的 RAGFlow 基础镜像 digest 已失效。** `infiniflow/ragflow:v0.26.4` 是可变
+  tag，被上游重新推送，`image.env` 锁定的 `sha256:e0048bb5…` 在 Docker Hub 返回 404
+  `MANIFEST_UNKNOWN`（已用 `docker manifest inspect` 独立复核）。**华为云 SWR 上同一 digest 仍
+  可用**，内容一致，故锁定值无需修改，服务器按 runbook §3 从该源拉取即可。后续可考虑给
+  `image.sh` 增加显式备用源支持，避免依赖"华为云路径恰好包含原仓库名"这一字符串匹配巧合。
+- **Docker 发布端口绕过 ufw**（走自己的 iptables 链）。本部署只有 Edge 有意绑 `0.0.0.0:80/443`，
+  RAGFlow 全部端口须保持 `127.0.0.1`；runbook §9.2 提供了核查命令。
+
+**本轮明确降低的门禁（经使用方决定）：**
+
+- 使用方选择不在服务器上补做本机 drill 中的压测门禁（k6 读容量、SSE 128 路、Worker 崩溃接管、
+  攻击矩阵）。按 1-3 人试用规模判断可接受；并发规模上升时需补做。
+
 ## 3. 当前下一步
 
-本路线图的 D1~D16 与 U1 全部完成并推送。剩余待用户定夺 / 跟进的只有两项：
+D1~D16 与 U1 全部完成并推送。当前推进中的是 §2.5 的单机 demo 部署：G1~G6 已完成，
+G7（本机 drill）进行中，G8（服务器真实链路验收）待服务器代码就位后执行。
+
+剩余待用户定夺 / 跟进的两项：
 
 - **D12 模型版本号展示**：调研结论是百炼不提供可稳定展示的版本号（别名调用只回显别名，
   背后快照随季度漂移），当前卡片直接展示真实调用标识已是最准确做法。是否额外标注「底层
