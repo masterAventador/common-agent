@@ -1,4 +1,7 @@
-FROM ghcr.io/astral-sh/uv:0.11.16@sha256:440fd6477af86a2f1b38080c539f1672cd22acb1b1a47e321dba5158ab08864d AS uv
+# 默认锁定官方 digest。ghcr.io 在部分网络不可达（例如国内云主机）时,
+# 可用 COMMON_AGENT_UV_IMAGE 指向预先载入本地的同一镜像, 内容仍由 digest 保证一致。
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.16@sha256:440fd6477af86a2f1b38080c539f1672cd22acb1b1a47e321dba5158ab08864d
+FROM ${UV_IMAGE} AS uv
 
 FROM python:3.12.13-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b AS builder
 

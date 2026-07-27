@@ -331,8 +331,12 @@ build_release() {
   release_id="${revision}-${timestamp}"
   api_tag="common-agent-api:${release_id}"
   web_tag="common-agent-web:${release_id}"
+  # ghcr.io 不可达的网络需要改用预先载入本地的同一 uv 镜像; 默认仍走 Dockerfile 锁定的 digest。
+  local -a api_build_args=()
+  [[ -z "${COMMON_AGENT_UV_IMAGE:-}" ]] || \
+    api_build_args+=(--build-arg "UV_IMAGE=${COMMON_AGENT_UV_IMAGE}")
   docker_cli build --pull=false --build-arg "SOURCE_REVISION=${revision}" \
-    --tag "${api_tag}" "${REPOSITORY_ROOT}/backend"
+    "${api_build_args[@]}" --tag "${api_tag}" "${REPOSITORY_ROOT}/backend"
   docker_cli build --pull=false --build-arg "SOURCE_REVISION=${revision}" \
     --build-arg VITE_API_BASE_URL=/api/v1 --tag "${web_tag}" "${REPOSITORY_ROOT}/frontend"
   api_image="$(docker_cli image inspect "${api_tag}" --format '{{.Id}}')"

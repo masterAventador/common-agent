@@ -112,6 +112,16 @@ fi
 grep -Fq 'grep -Eq "^RAGFLOW_API_KEY=" "${SECRETS_FILE}"' "${MANAGER}" || \
   fail "preflight 没有单独校验 RAGFLOW_API_KEY 的存在性"
 
+# 后端构建的第一层来自 ghcr.io, 在部分网络下不可达（例如国内云主机）。
+# 必须允许改用已预置到本地的同一镜像, 且默认值仍锁定官方 digest。
+grep -Fq 'ARG UV_IMAGE=' "${REPOSITORY_ROOT}/backend/Dockerfile" || \
+  fail "后端 Dockerfile 未允许覆盖 uv 构建镜像, ghcr.io 不可达的网络无法构建"
+grep -Eq '^ARG UV_IMAGE=ghcr\.io/astral-sh/uv:[^@]+@sha256:[0-9a-f]{64}$' \
+  "${REPOSITORY_ROOT}/backend/Dockerfile" || \
+  fail "uv 构建镜像的默认值必须仍锁定官方 digest"
+grep -Fq 'COMMON_AGENT_UV_IMAGE' "${MANAGER}" || \
+  fail "build 没有把 COMMON_AGENT_UV_IMAGE 传给构建"
+
 for expected in \
   'read_only: true' \
   'no-new-privileges:true' \
