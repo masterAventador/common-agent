@@ -103,7 +103,7 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 | G4 | 单机资源覆盖与配置模板 | 按 soak 实测分配 4C16G 内存上限，RAGFlow API 加 2.0 CPU 配额并下调解析并发；实测 compose 叠加后各服务 mem_limit 真实生效 | ✅ 已完成 |
 | G5 | 证书签发与自动续期 | 内部 CA 10 年有效期、SAN 为容器名；`ca.crt` 并入系统信任根以通过 preflight 对 Let's Encrypt 证书的校验（已实测 `openssl verify` 返回 OK）；新增 `edge-recreate` 供续期后重建容器 | ✅ 已完成 |
 | G6 | 服务器基础环境准备 | Docker 29.6.2 + Compose v5.3.1、镜像加速、swap 4GiB、ufw 22/80/443、certbot 2.9.0、目录就位；7 个镜像中 6 个按 digest 拉取成功 | ✅ 已完成 |
-| G7 | 本机完整 drill 验证单槽改造 | 单槽 rollout/rollback/故障注入回滚在真实容器上跑通 | 🚧 进行中 |
+| G7 | 本机真实容器验证单槽改造 | 单槽 rollout 在真实容器上多次跑通；身份初始化在"空 legacy token + 无历史账号"下 status=active，等价复现全新服务器场景 | 🔍 待验收 |
 | G8 | 服务器真实链路验收 | 正式页面走完整链路、30 分钟 soak 修正估算值、真实 rollout/rollback、证书签发与续期 | ⬜ 未开始 |
 
 **G4/G5 期间发现并修复的两个计划外缺陷：**
@@ -125,6 +125,27 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
   `image.sh` 增加显式备用源支持，避免依赖"华为云路径恰好包含原仓库名"这一字符串匹配巧合。
 - **Docker 发布端口绕过 ufw**（走自己的 iptables 链）。本部署只有 Edge 有意绑 `0.0.0.0:80/443`，
   RAGFlow 全部端口须保持 `127.0.0.1`；runbook §9.2 提供了核查命令。
+
+**排查中确认的两个既有缺陷（已在 G7 期间修复）：**
+
+1. `preflight` 的 secrets 必填清单漏了四个加密主密钥, 导致检查通过、迁移完成、直到 rollout
+   拉起容器才崩溃。单槽停机发布下这意味着旧容器已停、新容器起不来, 服务直接不可用。
+2. 六处日志用 `logger.xxx(msg, extra={...})` 传结构化字段, 而 JsonLogFormatter 只读
+   `record.structured_fields`, 这些字段全部被静默丢弃。表现是日志看似记录了 exception_type,
+   实际只有一个光秃秃的事件名, 排查只能靠读源码倒推; 审计追加失败那处连操作类型和阶段都丢。
+   已全部改用 `log_event()` 并新增契约测试锁死。
+
+**drill 在本机不可重复运行（已知限制, 未修）：**
+
+平台用 `COMMON_AGENT_RAGFLOW_IDENTITY_KEYS` 派生每个工作区在 RAGFlow 侧的账号密码, 而 drill
+每次生成随机密钥、又与开发环境共用同一个 RAGFlow 实例。第二次起, 新密钥派生的密码与 RAGFlow
+里已存的账号对不上, 身份初始化必然失败, 表现为知识库页"服务暂时不可用"。
+
+本轮通过清理 RAGFlow 侧的冲突技术账号后重新部署验证: 身份记录 `status=active`、
+`ragflow_tenant_id` 已绑定、凭据加密落库, 全程无告警。该轮使用空 legacy token 且 RAGFlow 侧
+无历史账号, **等价于全新服务器的首次部署场景**。
+
+若要让 drill 可重复, 需让其使用固定测试密钥或在退出时清理自建的 RAGFlow 账号, 属独立任务。
 
 **本轮明确降低的门禁（经使用方决定）：**
 
