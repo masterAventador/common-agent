@@ -331,14 +331,20 @@ build_release() {
   release_id="${revision}-${timestamp}"
   api_tag="common-agent-api:${release_id}"
   web_tag="common-agent-web:${release_id}"
-  # ghcr.io 不可达的网络需要改用预先载入本地的同一 uv 镜像; 默认仍走 Dockerfile 锁定的 digest。
-  local -a api_build_args=()
+  # 以下三项默认都不传, 构建走 Dockerfile 里锁定的官方镜像与官方包源。
+  # 仅在 ghcr.io / pypi.org / registry.npmjs.org 不可达的网络显式覆盖。
+  local -a api_build_args=() web_build_args=()
   [[ -z "${COMMON_AGENT_UV_IMAGE:-}" ]] || \
     api_build_args+=(--build-arg "UV_IMAGE=${COMMON_AGENT_UV_IMAGE}")
+  [[ -z "${COMMON_AGENT_UV_INDEX:-}" ]] || \
+    api_build_args+=(--build-arg "UV_DEFAULT_INDEX=${COMMON_AGENT_UV_INDEX}")
+  [[ -z "${COMMON_AGENT_NPM_REGISTRY:-}" ]] || \
+    web_build_args+=(--build-arg "NPM_REGISTRY=${COMMON_AGENT_NPM_REGISTRY}")
   docker_cli build --pull=false --build-arg "SOURCE_REVISION=${revision}" \
     "${api_build_args[@]}" --tag "${api_tag}" "${REPOSITORY_ROOT}/backend"
   docker_cli build --pull=false --build-arg "SOURCE_REVISION=${revision}" \
-    --build-arg VITE_API_BASE_URL=/api/v1 --tag "${web_tag}" "${REPOSITORY_ROOT}/frontend"
+    --build-arg VITE_API_BASE_URL=/api/v1 "${web_build_args[@]}" \
+    --tag "${web_tag}" "${REPOSITORY_ROOT}/frontend"
   api_image="$(docker_cli image inspect "${api_tag}" --format '{{.Id}}')"
   web_image="$(docker_cli image inspect "${web_tag}" --format '{{.Id}}')"
   [[ "${api_image}" == sha256:* && "${web_image}" == sha256:* ]] || fail "镜像 ID 不是 sha256:"

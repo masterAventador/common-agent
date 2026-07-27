@@ -7,8 +7,11 @@ FROM python:3.12.13-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983
 
 COPY --from=uv /uv /uvx /bin/
 WORKDIR /app
+# 默认官方 PyPI。pypi.org 不可达的网络可指向镜像源; 包内容仍由 uv.lock 的哈希逐个校验。
+ARG UV_DEFAULT_INDEX=https://pypi.org/simple
 ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX}
 
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project

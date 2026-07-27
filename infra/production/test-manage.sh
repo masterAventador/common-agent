@@ -122,6 +122,18 @@ grep -Eq '^ARG UV_IMAGE=ghcr\.io/astral-sh/uv:[^@]+@sha256:[0-9a-f]{64}$' \
 grep -Fq 'COMMON_AGENT_UV_IMAGE' "${MANAGER}" || \
   fail "build 没有把 COMMON_AGENT_UV_IMAGE 传给构建"
 
+# pypi.org 与 registry.npmjs.org 在部分网络不可达。必须允许切换到镜像源;
+# 包内容仍由 uv.lock / pnpm-lock.yaml 的哈希逐个校验, 不因换源而失去完整性保证。
+# 默认值必须保持官方源, 避免把第三方源固化进产品构建。
+grep -Eq '^ARG UV_DEFAULT_INDEX=https://pypi\.org/simple/?$' \
+  "${REPOSITORY_ROOT}/backend/Dockerfile" || \
+  fail "后端 Dockerfile 缺少可覆盖的包索引, 或默认值不是官方 PyPI"
+grep -Eq '^ARG NPM_REGISTRY=https://registry\.npmjs\.org/?$' \
+  "${REPOSITORY_ROOT}/frontend/Dockerfile" || \
+  fail "前端 Dockerfile 缺少可覆盖的包源, 或默认值不是官方 npm registry"
+grep -Fq 'COMMON_AGENT_UV_INDEX' "${MANAGER}" || fail "build 没有传递后端包索引"
+grep -Fq 'COMMON_AGENT_NPM_REGISTRY' "${MANAGER}" || fail "build 没有传递前端包源"
+
 for expected in \
   'read_only: true' \
   'no-new-privileges:true' \

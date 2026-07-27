@@ -1,9 +1,13 @@
 FROM node:22.17.1-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d039504a56c04ea59 AS builder
 
 WORKDIR /app
+# 默认官方 registry。registry.npmjs.org 不可达的网络可指向镜像源;
+# 包内容仍由 pnpm-lock.yaml 的 integrity 逐个校验。corepack 取 pnpm 也走同一源。
+ARG NPM_REGISTRY=https://registry.npmjs.org
+ENV COREPACK_NPM_REGISTRY=${NPM_REGISTRY}
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm config set registry "${NPM_REGISTRY}" && pnpm install --frozen-lockfile
 
 COPY . ./
 ARG VITE_API_BASE_URL=/api/v1
