@@ -269,4 +269,17 @@ if ! awk '/^  up\)/,/^    ;;/' "${MANAGER}" | grep -Fq 'RAGFLOW_DASHSCOPE_HTTP_B
   fail "up 未允许通过 RAGFLOW_DASHSCOPE_HTTP_BASE_URL 覆盖百炼地址, 生产机将被迫安装后端开发环境"
 fi
 
+# 数据卷声明为 external, compose 不会自动创建。全新机器上若 up 不先确保卷存在,
+# 会直接失败在 "external volume not found"; 开发机因卷早已存在而不会暴露。
+if ! awk '/^  up\)/,/^    ;;/' "${MANAGER}" | grep -Fq 'native_volumes_ready'; then
+  fail "up 没有确保原生数据卷存在, 全新机器首次部署会失败"
+fi
+
+# 全新机器上数据卷走"新建"分支而非"迁移"分支。若新建时不按 owner 设属主, 卷归 root,
+# 而 ES(1000:0)、Valkey(999:999) 以非 root 运行, 会因 AccessDenied 反复重启。
+# 开发机的卷当年由迁移分支创建(带 chown), 因此永远不会暴露这个缺陷。
+if (($(awk '/^migrate_native_volume\(\)/,/^}/' "${MANAGER}" | grep -c 'chown') < 2)); then
+  fail "新建数据卷时未按 owner 设置属主, 全新机器上 ES/Valkey 会因权限被拒而无法启动"
+fi
+
 echo "RAGFlow 固定版本、隔离、资源与端口冲突门禁通过"

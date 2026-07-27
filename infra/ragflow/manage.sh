@@ -239,11 +239,15 @@ migrate_native_volume() {
 
   docker_cli volume create "${native_volume}" > /dev/null
   if ! volume_exists "${legacy_volume}" || ! volume_has_entries "${legacy_volume}"; then
+    # 新建的卷默认归 root, 而 ES(1000:0)、Valkey(999:999) 以非 root 运行,
+    # 不设属主会让它们在数据目录写锁文件时被拒, 表现为容器反复重启。
     docker_cli run --rm \
+      --user 0 \
       --entrypoint sh \
       -v "${native_volume}:/target" \
       "${VOLUME_MIGRATION_IMAGE}" \
-      -c "touch /target/${VOLUME_MARKER}"
+      -c 'touch "/target/$1"; chown -R "$2" /target' \
+      sh "${VOLUME_MARKER}" "${owner}"
     echo "创建 RAGFlow 原生数据卷：${native_volume}"
     return
   fi
@@ -445,6 +449,9 @@ case "${1:-}" in
     health_timeout_seconds="$(health_timeout)"
     check_resources
     pull_image
+    # 数据卷是 external 声明, compose 不会自动创建。全新机器上必须先建好,
+    # 否则直接失败在 "external volume not found"。已就绪时该调用是幂等的。
+    native_volumes_ready || migrate_native_volumes
     if ! stack_has_containers; then
       check_ports
     fi

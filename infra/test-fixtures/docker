@@ -28,6 +28,13 @@ if [[ "${COMMON_AGENT_TEST_DOCKER_SCENARIO:-}" == "platform-unhealthy" ]]; then
 fi
 
 if [[ "${COMMON_AGENT_TEST_DOCKER_SCENARIO:-}" == "ragflow-unhealthy" ]]; then
+  # up 会先确认原生数据卷就绪; 本场景只关心健康检查失败, 因此让卷检查直接通过。
+  if [[ " $* " == *" volume inspect "* ]]; then
+    exit 0
+  fi
+  if [[ " $* " == *" run --rm "* && " $* " == *"test -f /volume/"* ]]; then
+    exit 0
+  fi
   if [[ " $* " == *" compose "* && " $* " == *" ps -aq "* ]]; then
     printf '%s\n' "fake-ragflow-container"
     exit 0
