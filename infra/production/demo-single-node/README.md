@@ -9,7 +9,27 @@
 `COMMON_AGENT_RAGFLOW_EDGE_MODE=local-shared-network` 让 RAGFlow Edge 同时挂进业务私网与
 RAGFlow 私网，业务侧通过 Docker 网络访问它，不需要跨主机私网。
 
-## 0. 本部署的固定事实
+## 0. 首次真机部署实测记录（2026-07-27）
+
+已在腾讯云轻量应用服务器（北京, 4C16G, Ubuntu 24.04）完成首次部署, 服务在
+`https://kb.xuanbai.tech` 正常运行, Let's Encrypt 证书生效、无浏览器告警。
+
+部署过程暴露了 10 个本机演练无法发现的缺陷, 均已修复并加回归断言（详见 V3 路线图
+§2.5）。下面这些是**环境层面**的坑, 不属于代码缺陷, 但每次新机器部署都会遇到:
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| HTTPS 完全连不上, 但 HTTP 正常; 抓包发现网卡上零个 443 包 | 云厂商控制台防火墙未放行 443（与服务器内的 ufw 是两层, 都要开） | 控制台加 TCP 443 规则, 秒级生效 |
+| `rollout` 卡住二十多分钟不返回 | `verify_edge` 访问公网域名, 而云服务器访问不了自己的公网 IP（无 NAT 回环）; 且其 curl 未设超时 | **不要设置 `COMMON_AGENT_PUBLIC_BASE_URL`**, 留空才会走 `--resolve` 回环验证 |
+| 构建拉不到 ghcr.io / pypi.org / npmjs.org | 该实例境外出网被完全阻断（同机房另一台却正常, 与地域无关） | 见 §3 与 §4 的镜像与源预置 |
+| certbot 在服务器上报 `Network is unreachable` | 同上, 服务器访问不了 Let's Encrypt API | 见 §8: 在能访问 LE 的机器上用 DNS-01 签发 |
+| Let's Encrypt HTTP-01 验证超时 | LE 验证节点在境外, 回连不了该实例的 80 端口 | 必须用 DNS-01, HTTP-01 在此网络不可用 |
+
+> **判断这类问题的通用手法**: 先区分"请求有没有到达服务器"。看 Edge 容器的 access log,
+> 或直接 `tcpdump -i eth0 port 443`。日志里没有记录、网卡上没有包, 就说明问题在服务器
+> 之外（防火墙/网络策略), 再怎么查容器和配置都是徒劳。
+
+## 0.1 本部署的固定事实
 
 | 项 | 值 |
 | --- | --- |
@@ -77,7 +97,15 @@ sudo ufw --force enable
 ```
 
 **启用前必须先放行 22，否则会把自己锁在外面。** 启用后立刻另开一个终端验证 SSH 仍可连接。
-云厂商安全组需要同步放行这三个端口。
+
+> **⚠️ 云厂商控制台的防火墙是独立的另一层，必须单独放行 443。**
+>
+> 轻量应用服务器的默认规则模板通常只有 22 / 80 / Ping，**不含 443**，且每个实例各自独立。
+> 实测踩过：服务器内一切正常、容器全健康、日志干净，但公网 HTTPS 完全连不上——抓包发现
+> 网卡上一个 443 包都没有，流量在到达服务器之前就被挡掉了，查服务器内部永远查不出来。
+>
+> 控制台 → 实例 → 防火墙 → 添加规则：应用类型选 `HTTPS(443)`，或选「自定义」填 TCP / 443，
+> 来源留空即对全部 IPv4 生效。规则秒级生效，无需重启任何服务。
 
 > **⚠️ Docker 会绕过 ufw。** Docker 通过自己的 iptables 链发布端口，任何 `-p` 映射到
 > `0.0.0.0` 的端口都会直接暴露到公网，**ufw 规则拦不住**。本部署只有 Edge 有意绑
@@ -147,7 +175,9 @@ export COMMON_AGENT_PRODUCTION_SECRETS_FILE=/etc/common-agent/secrets.env
 export COMMON_AGENT_RAGFLOW_EDGE_MODE=local-shared-network
 export COMMON_AGENT_RAGFLOW_NETWORK=common-agent-dev_ragflow
 export COMMON_AGENT_PUBLIC_DOMAIN=kb.xuanbai.tech
-export COMMON_AGENT_PUBLIC_BASE_URL=https://kb.xuanbai.tech
+# 刻意不设 COMMON_AGENT_PUBLIC_BASE_URL: 设了之后 verify_edge 会去访问公网域名,
+# 而云服务器访问不了自己的公网 IP（无 NAT 回环), 会让 rollout 长时间挂起。
+# 留空时它使用 --resolve 走回环验证, 这在单机部署下才是正确语义。
 export COMMON_AGENT_HTTPS_BIND=0.0.0.0
 export COMMON_AGENT_HTTPS_PORT=443
 export COMMON_AGENT_HTTP_BIND=0.0.0.0
@@ -217,18 +247,40 @@ chmod 600 /etc/common-agent/secrets.env
 
 ## 5. 首次部署
 
+> **顺序很重要。** 签发公网证书必须排在 `rollout` **之后**——ACME 验证需要 80 端口已有
+> 服务应答, 而那时 Edge 容器才存在。因此先用内部 CA 签一张临时证书把服务跑起来,
+> 再签正式证书并重建 Edge。
+
 ```bash
 source /etc/common-agent/deploy.env
 cd /opt/common-agent
 
-infra/ragflow/manage.sh up                                    # 起 RAGFlow 栈
-infra/production/demo-single-node/certs.sh internal-ca        # 内部 CA + RAGFlow 证书（10 年）
+# 1. RAGFlow 栈（首次会自动创建数据卷）
+infra/ragflow/manage.sh up
+
+# 2. 内部 CA + RAGFlow Edge 证书（10 年）
+infra/production/demo-single-node/certs.sh internal-ca
+
+# 3. 临时 edge 证书, 仅用于把服务先跑起来, 稍后由正式证书覆盖
+TLS=/var/lib/common-agent/production/tls
+openssl req -new -newkey rsa:3072 -sha256 -nodes \
+  -subj "/CN=${COMMON_AGENT_PUBLIC_DOMAIN}" \
+  -addext "subjectAltName=DNS:${COMMON_AGENT_PUBLIC_DOMAIN}" \
+  -keyout "${TLS}/edge.key" -out "${TLS}/edge.csr"
+openssl x509 -req -sha256 -days 30 -copy_extensions copyall \
+  -CA "${TLS}/internal-ca.crt" -CAkey "${TLS}/internal-ca.key" -CAcreateserial \
+  -in "${TLS}/edge.csr" -out "${TLS}/edge.crt"
+rm -f "${TLS}/edge.csr"
+chmod 644 "${TLS}/edge.crt" "${TLS}/edge.key"
+
+# 4. 构建、迁移、发布
 infra/production/manage.sh build
-infra/production/manage.sh preflight                          # 会创建 ACME webroot
-infra/production/demo-single-node/certs.sh issue              # 签发公网证书
+infra/production/manage.sh preflight     # 同时创建 ACME webroot
 infra/production/manage.sh migrate
 infra/production/manage.sh rollout
 infra/production/manage.sh verify
+
+# 5. 服务此时已可用（自签证书, 浏览器会告警）。再按 §8 签发正式证书并重建 Edge。
 ```
 
 > **🚫 禁止在服务器上执行 `manage.sh init-tls`。** 它会用 30 天自签材料覆盖 `tls/` 下全部证书，
@@ -273,9 +325,92 @@ infra/production/manage.sh verify
 **不要让多家客户共用同一账号**——这是知识库产品，客户会上传自己的真实资料，共用账号会导致
 互相看见对方文档。
 
-## 8. 证书维护
+## 8. 证书签发与维护
 
-安装续期定时器（先按实际值改 `certbot-renew.service` 里的域名与邮箱）：
+### 8.1 网络前提决定签发方式
+
+先判断部署机能否访问 Let's Encrypt：
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" --max-time 10 https://acme-v02.api.letsencrypt.org/directory
+```
+
+- **返回 200**：可用 `certs.sh issue`（webroot + HTTP-01），并按 §8.4 装 systemd 定时器自动续期。
+- **超时**：说明该实例境外出网被阻断（实测发生过）。此时 **HTTP-01 也不可用**——Let's Encrypt
+  的验证节点同样回连不了这台机器。必须改用 §8.2 的 DNS-01，在**另一台能访问 LE 的机器**上签发。
+
+### 8.2 DNS-01 签发（境外出网受限时使用）
+
+在能访问 Let's Encrypt 的机器（开发机或另一台服务器）上执行。LE 全程只查 DNS TXT 记录，
+不接触部署机，因此完全绕开出网限制。
+
+```bash
+CERT_ROOT=~/.common-agent-certbot
+mkdir -p "${CERT_ROOT}"/{config,work,logs}
+
+# 该 hook 会写出挑战值, 并轮询三个公共 DNS 直到记录真正生效才返回,
+# 避免 certbot 在 DNS 传播完成前就请求验证（否则必然 unauthorized）。
+cat > "${CERT_ROOT}/dns-auth-hook.sh" <<'HOOK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "${CERTBOT_VALIDATION}" > "${DNS_CHALLENGE_FILE}"
+RECORD="_acme-challenge.${CERTBOT_DOMAIN}"
+for _ in $(seq 1 150); do
+  hit=0
+  for dns in 223.5.5.5 119.29.29.29 1.1.1.1; do
+    dig +short TXT "${RECORD}" "@${dns}" 2>/dev/null \
+      | tr -d '"' | grep -qxF "${CERTBOT_VALIDATION}" && hit=$((hit + 1))
+  done
+  if ((hit >= 3)); then sleep 10; exit 0; fi
+  sleep 5
+done
+echo "TXT 记录未在 12 分钟内生效: ${RECORD}" >&2
+exit 1
+HOOK
+chmod +x "${CERT_ROOT}/dns-auth-hook.sh"
+
+DNS_CHALLENGE_FILE="${CERT_ROOT}/dns-challenge.txt" \
+certbot certonly --manual --preferred-challenges dns \
+  --manual-auth-hook "${CERT_ROOT}/dns-auth-hook.sh" \
+  -d <域名> --email <邮箱> --agree-tos --no-eff-email --non-interactive \
+  --config-dir "${CERT_ROOT}/config" --work-dir "${CERT_ROOT}/work" \
+  --logs-dir "${CERT_ROOT}/logs" &
+
+# 稍等后取出挑战值, 到 DNS 服务商添加 TXT 记录:
+#   主机记录 _acme-challenge.<子域>   类型 TXT   记录值 <挑战值>
+# 添加后 hook 会自动检测到并继续, 无需人工干预。
+sleep 15 && cat "${CERT_ROOT}/dns-challenge.txt"
+```
+
+签发完成后把证书装到部署机：
+
+```bash
+scp "${CERT_ROOT}/config/live/<域名>/fullchain.pem" ubuntu@<服务器>:/tmp/edge.crt
+scp "${CERT_ROOT}/config/live/<域名>/privkey.pem"  ubuntu@<服务器>:/tmp/edge.key
+ssh ubuntu@<服务器> '
+  TLS=/var/lib/common-agent/production/tls
+  cp /tmp/edge.crt "${TLS}/edge.crt"; cp /tmp/edge.key "${TLS}/edge.key"
+  rm -f /tmp/edge.crt /tmp/edge.key
+  chmod 644 "${TLS}/edge.crt" "${TLS}/edge.key"; chmod 700 "${TLS}"
+  cd /opt/common-agent && source /etc/common-agent/deploy.env
+  infra/production/manage.sh edge-recreate'
+```
+
+### 8.3 续期（DNS-01 路径）
+
+**该路径无法在部署机上自动续期**（服务器访问不了 LE）。有两个选择：
+
+1. **每 90 天在签发机上重复 §8.2**——挑战值每次不同, 需要更新一次 TXT 记录；
+2. **配置 DNS 服务商 API 实现全自动**——为 certbot 装对应的 DNS 插件（DNSPod、阿里云等均有），
+   用 `--dns-<provider>` 替代 `--manual`, 再配 `--deploy-hook` 自动推送证书并重建 Edge。
+   代价是需要保管一份有 DNS 修改权限的密钥。
+
+若长期运行, 也可考虑云厂商的免费 DV 证书（通常 1 年有效期, 同厂商 DNS 可自动验证），
+续期频率比 90 天低得多。
+
+### 8.4 续期定时器（仅 HTTP-01 路径可用）
+
+**前提是 §8.1 检测到部署机能访问 Let's Encrypt。** 否则该定时器每次都会失败。
 
 ```bash
 sudo cp /opt/common-agent/infra/production/demo-single-node/certbot-renew.{service,timer} \
