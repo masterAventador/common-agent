@@ -128,6 +128,15 @@ grep -Fq 'COMMON_AGENT_UV_IMAGE' "${MANAGER}" || \
 grep -Eq '^ARG UV_DEFAULT_INDEX=https://pypi\.org/simple/?$' \
   "${REPOSITORY_ROOT}/backend/Dockerfile" || \
   fail "后端 Dockerfile 缺少可覆盖的包索引, 或默认值不是官方 PyPI"
+# uv.lock 硬编码 files.pythonhosted.org 的绝对下载地址, 换索引源不影响它。
+# 因此还需允许替换下载主机; 内容一致性由 uv.lock 的哈希在 --frozen 下逐包校验。
+grep -Eq '^ARG UV_PACKAGE_BASE_URL=https://files\.pythonhosted\.org/?$' \
+  "${REPOSITORY_ROOT}/backend/Dockerfile" || \
+  fail "后端 Dockerfile 缺少可覆盖的包下载主机, 或默认值不是官方地址"
+grep -Fq 'uv sync --frozen' "${REPOSITORY_ROOT}/backend/Dockerfile" || \
+  fail "后端构建必须保持 --frozen, 否则替换下载主机后将失去哈希校验"
+grep -Fq 'COMMON_AGENT_UV_PACKAGE_BASE_URL' "${MANAGER}" || \
+  fail "build 没有传递后端包下载主机"
 grep -Eq '^ARG NPM_REGISTRY=https://registry\.npmjs\.org/?$' \
   "${REPOSITORY_ROOT}/frontend/Dockerfile" || \
   fail "前端 Dockerfile 缺少可覆盖的包源, 或默认值不是官方 npm registry"

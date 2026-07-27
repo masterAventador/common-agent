@@ -338,6 +338,8 @@ build_release() {
     api_build_args+=(--build-arg "UV_IMAGE=${COMMON_AGENT_UV_IMAGE}")
   [[ -z "${COMMON_AGENT_UV_INDEX:-}" ]] || \
     api_build_args+=(--build-arg "UV_DEFAULT_INDEX=${COMMON_AGENT_UV_INDEX}")
+  [[ -z "${COMMON_AGENT_UV_PACKAGE_BASE_URL:-}" ]] || \
+    api_build_args+=(--build-arg "UV_PACKAGE_BASE_URL=${COMMON_AGENT_UV_PACKAGE_BASE_URL}")
   [[ -z "${COMMON_AGENT_NPM_REGISTRY:-}" ]] || \
     web_build_args+=(--build-arg "NPM_REGISTRY=${COMMON_AGENT_NPM_REGISTRY}")
   docker_cli build --pull=false --build-arg "SOURCE_REVISION=${revision}" \

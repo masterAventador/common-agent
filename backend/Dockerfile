@@ -13,8 +13,15 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX}
 
+# uv.lock 里是 files.pythonhosted.org 的绝对地址, 换索引源不改变它。官方地址不可达的
+# 网络可改指镜像站（路径结构相同）。--frozen 仍按 uv.lock 的哈希逐包校验, 内容对不上即失败,
+# 因此换主机不降低完整性保证。
+ARG UV_PACKAGE_BASE_URL=https://files.pythonhosted.org
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN if [ "${UV_PACKAGE_BASE_URL}" != "https://files.pythonhosted.org" ]; then \
+      sed -i "s|https://files\.pythonhosted\.org|${UV_PACKAGE_BASE_URL}|g" uv.lock; \
+    fi && \
+    uv sync --frozen --no-dev --no-install-project
 
 COPY src ./src
 COPY migrations ./migrations
