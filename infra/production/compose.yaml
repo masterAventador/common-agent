@@ -200,6 +200,7 @@ services:
     restart: unless-stopped
     ports:
       - ${COMMON_AGENT_HTTPS_BIND:-127.0.0.1}:${COMMON_AGENT_HTTPS_PORT:-18443}:9443
+      - ${COMMON_AGENT_HTTP_BIND:-127.0.0.1}:${COMMON_AGENT_HTTP_PORT:-18080}:9080
     networks:
       - edge-public
       - app-private
@@ -211,6 +212,10 @@ services:
       - type: bind
         source: ${COMMON_AGENT_WEB_CONFIG:?COMMON_AGENT_WEB_CONFIG is required}
         target: /etc/nginx/conf.d/common-agent-web.conf
+        read_only: true
+      - type: bind
+        source: ${COMMON_AGENT_ACME_ROOT:?COMMON_AGENT_ACME_ROOT is required}
+        target: /run/common-agent/acme
         read_only: true
     secrets:
       - edge-cert

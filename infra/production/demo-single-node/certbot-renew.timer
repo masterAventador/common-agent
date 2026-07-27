@@ -1,0 +1,11 @@
+[Unit]
+Description=每周检查 common-agent demo 证书续期
+
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=3600
+# 服务器关机期间错过的执行，开机后补跑。
+Persistent=true
+
+[Install]
+WantedBy=timers.target

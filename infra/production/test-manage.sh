@@ -67,6 +67,89 @@ grep -Fq 'app-private' "${SCRIPT_DIR}/ragflow-node.local.compose.yaml" || \
   fail "生产 API 与 Worker 没有独立出站网络"
 grep -Fq '  app-egress:' "${COMPOSE_FILE}" || fail "生产 Compose 缺少出站网络定义"
 
+grep -Fq 'listen 9080;' "${SCRIPT_DIR}/edge.conf.template" || \
+  fail "Edge 模板缺少 ACME 与跳转用的 HTTP 监听"
+grep -Fq '/.well-known/acme-challenge/' "${SCRIPT_DIR}/edge.conf.template" || \
+  fail "Edge 模板缺少 ACME 挑战路径"
+grep -Fq 'return 301 https://$host$request_uri;' "${SCRIPT_DIR}/edge.conf.template" || \
+  fail "Edge 模板缺少 HTTP 到 HTTPS 跳转"
+grep -Fq ':9080' "${COMPOSE_FILE}" || fail "Edge 容器没有发布 HTTP 端口"
+grep -Fq 'COMMON_AGENT_ACME_ROOT' "${COMPOSE_FILE}" || fail "Edge 容器没有挂载 ACME webroot"
+grep -Fq 'COMMON_AGENT_ACME_ROOT' "${MANAGER}" || fail "发布入口没有传递 ACME webroot"
+
+grep -Fq 'DEPLOY_SLOT="blue"' "${MANAGER}" || fail "发布入口没有固定单槽"
+if grep -Eq 'target_slot="(blue|green)"' "${MANAGER}"; then
+  fail "单槽发布不得保留蓝绿轮换"
+fi
+grep -Fq '请执行 rollback 恢复上一 release' "${MANAGER}" || \
+  fail "单槽发布验证失败后没有提示回滚路径"
+grep -Fq 'switch_edge "${DEPLOY_SLOT}"' "${MANAGER}" || \
+  fail "单槽发布没有重载 Edge，容器重建后会指向失效 IP"
+
+if grep -Fq 'rollback_slot' "${MANAGER}"; then
+  fail "单槽回滚不得保留槽切换变量"
+fi
+grep -Fq '代码与流量已回滚' "${MANAGER}" || fail "回滚没有输出结果说明"
+
+# 应用在 production 下强制要求这四个加密密钥，缺任一项容器会在启动时崩溃。
+# preflight 必须提前拦截，演练必须真实生成，否则 rollout 到一半才失败、单槽下服务直接不可用。
+for credential_key in \
+  'COMMON_AGENT_TOOL_CREDENTIAL_KEYS' \
+  'COMMON_AGENT_TOOL_CREDENTIAL_ACTIVE_KEY_ID' \
+  'COMMON_AGENT_RAGFLOW_IDENTITY_KEYS' \
+  'COMMON_AGENT_RAGFLOW_IDENTITY_ACTIVE_KEY_ID'; do
+  grep -Fq "${credential_key}" "${MANAGER}" || \
+    fail "preflight 没有检查生产必需的加密密钥：${credential_key}"
+  grep -Fq "${credential_key}" "${DRILL}" || \
+    fail "演练没有生成生产必需的加密密钥：${credential_key}"
+done
+
+# RAGFlow 全新安装后没有 legacy token（见 env.example 注释），平台会自行创建租户账号。
+# 因此该键必须存在但允许为空；要求非空会让全新服务器的首次 preflight 直接失败。
+if grep -A6 'for key in MYSQL_ROOT_PASSWORD' "${MANAGER}" | grep -Fq 'RAGFLOW_API_KEY'; then
+  fail "RAGFLOW_API_KEY 不得与其他凭据一样要求非空：全新安装时它本就是空的"
+fi
+grep -Fq 'grep -Eq "^RAGFLOW_API_KEY=" "${SECRETS_FILE}"' "${MANAGER}" || \
+  fail "preflight 没有单独校验 RAGFLOW_API_KEY 的存在性"
+
+# 后端构建的第一层来自 ghcr.io, 在部分网络下不可达（例如国内云主机）。
+# 必须允许改用已预置到本地的同一镜像, 且默认值仍锁定官方 digest。
+grep -Fq 'ARG UV_IMAGE=' "${REPOSITORY_ROOT}/backend/Dockerfile" || \
+  fail "后端 Dockerfile 未允许覆盖 uv 构建镜像, ghcr.io 不可达的网络无法构建"
+grep -Eq '^ARG UV_IMAGE=ghcr\.io/astral-sh/uv:[^@]+@sha256:[0-9a-f]{64}$' \
+  "${REPOSITORY_ROOT}/backend/Dockerfile" || \
+  fail "uv 构建镜像的默认值必须仍锁定官方 digest"
+grep -Fq 'COMMON_AGENT_UV_IMAGE' "${MANAGER}" || \
+  fail "build 没有把 COMMON_AGENT_UV_IMAGE 传给构建"
+
+# pypi.org 与 registry.npmjs.org 在部分网络不可达。必须允许切换到镜像源;
+# 包内容仍由 uv.lock / pnpm-lock.yaml 的哈希逐个校验, 不因换源而失去完整性保证。
+# 默认值必须保持官方源, 避免把第三方源固化进产品构建。
+grep -Eq '^ARG UV_DEFAULT_INDEX=https://pypi\.org/simple/?$' \
+  "${REPOSITORY_ROOT}/backend/Dockerfile" || \
+  fail "后端 Dockerfile 缺少可覆盖的包索引, 或默认值不是官方 PyPI"
+# uv.lock 硬编码 files.pythonhosted.org 的绝对下载地址, 换索引源不影响它。
+# 因此还需允许替换下载主机; 内容一致性由 uv.lock 的哈希在 --frozen 下逐包校验。
+grep -Eq '^ARG UV_PACKAGE_BASE_URL=https://files\.pythonhosted\.org/?$' \
+  "${REPOSITORY_ROOT}/backend/Dockerfile" || \
+  fail "后端 Dockerfile 缺少可覆盖的包下载主机, 或默认值不是官方地址"
+grep -Fq 'uv sync --frozen' "${REPOSITORY_ROOT}/backend/Dockerfile" || \
+  fail "后端构建必须保持 --frozen, 否则替换下载主机后将失去哈希校验"
+grep -Fq 'COMMON_AGENT_UV_PACKAGE_BASE_URL' "${MANAGER}" || \
+  fail "build 没有传递后端包下载主机"
+
+# GNU stat 的 -f 是"显示文件系统信息"且退出码为 0, 把它放在前面会让回退分支永不触发,
+# 使 Linux 上的凭据权限检查始终拿到错误的值（既可能误拦部署, 也可能放过 0644 的密钥文件）。
+FIRST_STAT_FLAG="$(awk '/^file_mode\(\)/,/^}/' "${MANAGER}" | grep -o 'stat -[a-zA-Z]' | head -1)"
+if [[ "${FIRST_STAT_FLAG}" != "stat -c" ]]; then
+  fail "file_mode 必须先尝试 GNU stat -c（当前先用 ${FIRST_STAT_FLAG}）, 否则 Linux 上文件权限检查形同虚设"
+fi
+grep -Eq '^ARG NPM_REGISTRY=https://registry\.npmjs\.org/?$' \
+  "${REPOSITORY_ROOT}/frontend/Dockerfile" || \
+  fail "前端 Dockerfile 缺少可覆盖的包源, 或默认值不是官方 npm registry"
+grep -Fq 'COMMON_AGENT_UV_INDEX' "${MANAGER}" || fail "build 没有传递后端包索引"
+grep -Fq 'COMMON_AGENT_NPM_REGISTRY' "${MANAGER}" || fail "build 没有传递前端包源"
+
 for expected in \
   'read_only: true' \
   'no-new-privileges:true' \
@@ -233,5 +316,8 @@ grep -Fq 'X-Forwarded-For: 203.0.113.${attempt}' "${DRILL}" || \
   fail "生产演练没有轮换伪造来源地址"
 grep -Fq '[[ "${status}" == "429" ]]' "${DRILL}" || \
   fail "生产演练没有验证 Edge 后真实来源限流"
+
+"${SCRIPT_DIR}/demo-single-node/test-demo-single-node.sh" >/dev/null || \
+  fail "单机部署配置契约未通过"
 
 echo "生产构建与回滚契约通过"

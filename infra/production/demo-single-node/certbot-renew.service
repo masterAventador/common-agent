@@ -1,0 +1,13 @@
+[Unit]
+Description=common-agent demo 证书续期
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# 部署时按实际值替换：域名、邮箱、仓库位置。
+Environment=COMMON_AGENT_PUBLIC_DOMAIN=kb.xuanbai.tech
+Environment=COMMON_AGENT_CERTBOT_EMAIL=REPLACE_WITH_YOUR_EMAIL
+Environment=COMMON_AGENT_PRODUCTION_STATE_ROOT=/var/lib/common-agent/production
+Environment=COMMON_AGENT_PRODUCTION_DOCKER_CONTEXT=default
+ExecStart=/opt/common-agent/infra/production/demo-single-node/certs.sh renew

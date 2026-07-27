@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 from uuid import uuid4
@@ -64,6 +65,55 @@ def test_invalid_traceparent_is_replaced_with_a_safe_local_trace() -> None:
         assert len(context.span_id) == 16
         assert context.parent_span_id is None
         assert context.traceparent == f"00-{context.trace_id}-{context.span_id}-01"
+
+
+def test_extra_fields_are_silently_dropped_so_production_must_use_log_event() -> None:
+    """JsonLogFormatter 只读 structured_fields, 直接用 extra= 传的字段会被静默丢弃。
+
+    这类误用在故障排查时代价极高: 日志看起来记录了 exception_type, 实际输出里没有,
+    排查者只能看到一个没有任何上下文的事件名。因此生产代码必须统一走 log_event()。
+    """
+    output = StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(JsonLogFormatter())
+    logger = logging.getLogger(f"common_agent.test.{uuid4().hex}")
+    logger.handlers = [handler]
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+
+    logger.warning("some.event", extra={"exception_type": "ValueError"})
+    dropped = json.loads(output.getvalue())
+    assert "exception_type" not in dropped
+
+    output.truncate(0)
+    output.seek(0)
+    log_event(logger, "some.event", level=logging.WARNING, exception_type="ValueError")
+    kept = json.loads(output.getvalue())
+    assert kept["exception_type"] == "ValueError"
+
+    # 未预期异常改用 log_event 后必须仍能带上堆栈, 否则排查会退化成只有一个事件名。
+    output.truncate(0)
+    output.seek(0)
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        log_event(logger, "some.failure", level=logging.ERROR, exc_info=True)
+    record_with_stack = json.loads(output.getvalue())
+    assert record_with_stack["exception_type"] == "ValueError"
+
+    source_root = Path(__file__).resolve().parents[3] / "src" / "common_agent"
+    formatter_module = source_root / "observability" / "logging.py"
+    offenders: list[str] = []
+    for path in sorted(source_root.rglob("*.py")):
+        if path == formatter_module:
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "extra={" in line:
+                offenders.append(f"{path.relative_to(source_root)}:{lineno}")
+    assert offenders == [], (
+        "这些日志调用用 extra= 传结构化字段, JsonLogFormatter 不会输出它们, "
+        f"请改用 log_event(): {offenders}"
+    )
 
 
 def test_json_logging_contains_correlation_and_redacts_sensitive_fields() -> None:

@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from common_agent.concurrency import CoordinatedLockPool
+from common_agent.observability import log_event
 from common_agent.tasks.models import DurableTask, TaskKind
 from common_agent.tasks.ports import TaskQueue
 
@@ -151,10 +152,15 @@ class TaskWorker:
             )
         except TaskRetryableError as error:
             await self._retry_or_fail(task, lease_token, error.code)
-        except Exception:
-            _LOGGER.exception(
-                "任务执行失败",
-                extra={"task_id": str(task.request.task_id), "task_kind": task.request.kind.value},
+        except Exception as error:
+            log_event(
+                _LOGGER,
+                "task.execution_failed",
+                level=logging.ERROR,
+                exc_info=True,
+                task_id=str(task.request.task_id),
+                task_kind=task.request.kind.value,
+                exception_type=type(error).__name__,
             )
             await self._retry_or_fail(task, lease_token, "task_execution_failed")
         else:

@@ -90,7 +90,7 @@ from common_agent.model_configurations import (
     ModelConfigurationVerifier,
 )
 from common_agent.models.base import TextStreamingModel
-from common_agent.observability import configure_json_logging
+from common_agent.observability import configure_json_logging, log_event
 from common_agent.tasks import TaskKind, TaskWorker, TaskWorkerPool
 from common_agent.tenancy import TenantAccess, TenantRole, bind_tenant, current_tenant
 from common_agent.tools.credential_service import ToolCredentialService
@@ -180,9 +180,11 @@ async def run_worker(stop: asyncio.Event) -> None:
             except LegacyRagFlowIdentityMigrationRequired:
                 raise
             except Exception as error:
-                _LOGGER.warning(
+                log_event(
+                    _LOGGER,
                     "ragflow.identity_bootstrap_deferred",
-                    extra={"exception_type": type(error).__name__},
+                    level=logging.WARNING,
+                    exception_type=type(error).__name__,
                 )
 
             async def ragflow_api_key_provider() -> str:

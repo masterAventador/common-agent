@@ -68,6 +68,7 @@ read_demo_value() {
 write_runtime_configuration() {
   local ragflow_token auth_token database_password database_root_password
   local bailian_api_key bailian_base_url bailian_model
+  local tool_credential_key ragflow_identity_key
   [[ -f "${RAGFLOW_TOKEN_FILE}" && ! -L "${RAGFLOW_TOKEN_FILE}" ]] || fail "RAGFlow token 不存在"
   [[ -f "${AUTH_TOKEN_FILE}" && ! -L "${AUTH_TOKEN_FILE}" ]] || fail "管理员引导 token 不存在"
   IFS= read -r ragflow_token <"${RAGFLOW_TOKEN_FILE}"
@@ -79,6 +80,10 @@ write_runtime_configuration() {
     fail "正式依赖凭据不完整"
   database_password="$(openssl rand -hex 24)"
   database_root_password="$(openssl rand -hex 24)"
+  # 应用要求 URL-safe base64 的 32 字节密钥（settings.py 用 altchars=b"-_" 且 validate=True），
+  # 标准 base64 的 + 与 / 会被拒绝。
+  tool_credential_key="$(openssl rand -base64 32 | tr '+/' '-_')"
+  ragflow_identity_key="$(openssl rand -base64 32 | tr '+/' '-_')"
 
   mkdir -p "${STATE_ROOT}"
   chmod 700 "${STATE_ROOT}"
@@ -107,6 +112,10 @@ write_runtime_configuration() {
     printf 'COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN=%s\n' "${auth_token}"
     printf 'RAGFLOW_API_KEY=%s\n' "${ragflow_token}"
     printf 'BAILIAN_API_KEY=%s\n' "${bailian_api_key}"
+    printf 'COMMON_AGENT_TOOL_CREDENTIAL_KEYS=v1:%s\n' "${tool_credential_key}"
+    echo 'COMMON_AGENT_TOOL_CREDENTIAL_ACTIVE_KEY_ID=v1'
+    printf 'COMMON_AGENT_RAGFLOW_IDENTITY_KEYS=v1:%s\n' "${ragflow_identity_key}"
+    echo 'COMMON_AGENT_RAGFLOW_IDENTITY_ACTIVE_KEY_ID=v1'
   } >"${STATE_ROOT}/secrets.env"
   chmod 600 "${STATE_ROOT}/config.env" "${STATE_ROOT}/secrets.env"
 }

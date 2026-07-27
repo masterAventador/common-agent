@@ -139,8 +139,19 @@ prepare() {
 }
 
 compose() {
-  local dashscope_http_base_url
+  local dashscope_http_base_url macos_flag=""
+  local -a compose_files=()
   prepare
+  # RAGFlow 的 MACOS 开关会跳过 update_progress 的分布式锁（upstream
+  # api/db/services/task_service.py）。它只适用于 macOS 开发机，Linux 部署必须留空，
+  # 否则并发任务进度更新失去互斥。
+  [[ "$(uname -s)" != "Darwin" ]] || macos_flag=1
+  compose_files=(-f "${RUNTIME_ROOT}/docker/docker-compose.yml" -f "${SCRIPT_DIR}/compose.override.yaml")
+  if [[ -n "${RAGFLOW_COMPOSE_OVERRIDE:-}" ]]; then
+    [[ -f "${RAGFLOW_COMPOSE_OVERRIDE}" && ! -L "${RAGFLOW_COMPOSE_OVERRIDE}" ]] || \
+      fail "RAGFlow compose 覆盖文件不存在或是符号链接：${RAGFLOW_COMPOSE_OVERRIDE}"
+    compose_files+=(-f "${RAGFLOW_COMPOSE_OVERRIDE}")
+  fi
   if [[ -n "${RAGFLOW_DASHSCOPE_HTTP_BASE_URL:-}" ]]; then
     dashscope_http_base_url="${RAGFLOW_DASHSCOPE_HTTP_BASE_URL}"
   elif ! dashscope_http_base_url="$(bailian_native_base_url 2>/dev/null)"; then
@@ -166,12 +177,11 @@ compose() {
   GO_ADMIN_PORT="127.0.0.1:$(port_value go_admin)" \
   GO_HTTP_PORT="127.0.0.1:$(port_value go_http)" \
   COMPOSE_PROFILES="${RAGFLOW_COMPOSE_PROFILES:-elasticsearch,cpu}" \
-  MACOS=1 \
+  RAGFLOW_MACOS="${macos_flag}" \
     docker_cli compose \
       --project-name "${PROJECT_NAME}" \
       --project-directory "${RUNTIME_ROOT}/docker" \
-      -f "${RUNTIME_ROOT}/docker/docker-compose.yml" \
-      -f "${SCRIPT_DIR}/compose.override.yaml" \
+      "${compose_files[@]}" \
       "$@"
 }
 
@@ -229,11 +239,15 @@ migrate_native_volume() {
 
   docker_cli volume create "${native_volume}" > /dev/null
   if ! volume_exists "${legacy_volume}" || ! volume_has_entries "${legacy_volume}"; then
+    # 新建的卷默认归 root, 而 ES(1000:0)、Valkey(999:999) 以非 root 运行,
+    # 不设属主会让它们在数据目录写锁文件时被拒, 表现为容器反复重启。
     docker_cli run --rm \
+      --user 0 \
       --entrypoint sh \
       -v "${native_volume}:/target" \
       "${VOLUME_MIGRATION_IMAGE}" \
-      -c "touch /target/${VOLUME_MARKER}"
+      -c 'touch "/target/$1"; chown -R "$2" /target' \
+      sh "${VOLUME_MARKER}" "${owner}"
     echo "创建 RAGFlow 原生数据卷：${native_volume}"
     return
   fi
@@ -421,13 +435,23 @@ case "${1:-}" in
   plan-bailian-migration) configure_bailian_models plan-migration ;;
   migrate-bailian) configure_bailian_models migrate ;;
   up)
-    bailian_base_url="$(bailian_native_base_url)" || {
-      echo "缺少有效的百炼配置或后端冻结环境；请先在 backend/ 执行 uv sync --frozen" >&2
-      exit 1
-    }
+    # 生产机只部署运行时, 没有 backend/.venv。允许显式提供百炼地址,
+    # 否则会为了读取一个 URL 被迫在部署机安装整套后端开发依赖。
+    if [[ -n "${RAGFLOW_DASHSCOPE_HTTP_BASE_URL:-}" ]]; then
+      bailian_base_url="${RAGFLOW_DASHSCOPE_HTTP_BASE_URL}"
+    else
+      bailian_base_url="$(bailian_native_base_url)" || {
+        echo "缺少有效的百炼配置或后端冻结环境；请先在 backend/ 执行 uv sync --frozen，" \
+          "或显式设置 RAGFLOW_DASHSCOPE_HTTP_BASE_URL" >&2
+        exit 1
+      }
+    fi
     health_timeout_seconds="$(health_timeout)"
     check_resources
     pull_image
+    # 数据卷是 external 声明, compose 不会自动创建。全新机器上必须先建好,
+    # 否则直接失败在 "external volume not found"。已就绪时该调用是幂等的。
+    native_volumes_ready || migrate_native_volumes
     if ! stack_has_containers; then
       check_ports
     fi

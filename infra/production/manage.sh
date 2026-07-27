@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/compose.yaml"
+# 可选的资源覆盖片段，供单机 demo 等部署形态叠加；不改变任何依赖解析路径。
+COMPOSE_OVERRIDE_FILE="${COMMON_AGENT_COMPOSE_OVERRIDE:-}"
 RAGFLOW_COMPOSE_FILE="${SCRIPT_DIR}/ragflow-node.compose.yaml"
 STATE_ROOT="${COMMON_AGENT_PRODUCTION_STATE_ROOT:-${REPOSITORY_ROOT}/.local/production}"
 RELEASE_ROOT="${STATE_ROOT}/releases"
@@ -17,14 +19,19 @@ WEB_CONFIG="${STATE_ROOT}/common-agent-web.conf"
 DOCKER_CONTEXT_NAME="${COMMON_AGENT_PRODUCTION_DOCKER_CONTEXT:-colima-common-agent-dev}"
 HTTPS_BIND="${COMMON_AGENT_HTTPS_BIND:-127.0.0.1}"
 HTTPS_PORT="${COMMON_AGENT_HTTPS_PORT:-18443}"
+HTTP_BIND="${COMMON_AGENT_HTTP_BIND:-127.0.0.1}"
+HTTP_PORT="${COMMON_AGENT_HTTP_PORT:-18080}"
+ACME_ROOT="${STATE_ROOT}/acme"
 PUBLIC_DOMAIN="${COMMON_AGENT_PUBLIC_DOMAIN:-common-agent.test}"
 PUBLIC_BASE_URL="${COMMON_AGENT_PUBLIC_BASE_URL:-https://${PUBLIC_DOMAIN}:${HTTPS_PORT}}"
 RAGFLOW_NETWORK="${COMMON_AGENT_RAGFLOW_NETWORK:-common-agent-dev_ragflow}"
 RAGFLOW_EDGE_MODE="${COMMON_AGENT_RAGFLOW_EDGE_MODE:-external}"
 LOCAL_CONTEXT_CONFIRMATION="deploy-common-agent-to-approved-remote"
+# 单机 demo 固定使用 blue 槽停机发布；green 的 compose 定义保留但不再启动。
+DEPLOY_SLOT="blue"
 
 usage() {
-  echo "用法: $0 {build|init-tls|preflight|migrate|rollout|verify|rollback|status|down|drill}" >&2
+  echo "用法: $0 {build|init-tls|edge-recreate|preflight|migrate|rollout|verify|rollback|status|down|drill}" >&2
 }
 
 fail() {
@@ -70,12 +77,17 @@ guard_docker_context() {
 }
 
 prepare_state_root() {
-  mkdir -p "${RELEASE_ROOT}" "${TLS_ROOT}"
+  mkdir -p "${RELEASE_ROOT}" "${TLS_ROOT}" "${ACME_ROOT}/.well-known/acme-challenge"
   chmod 700 "${STATE_ROOT}" "${RELEASE_ROOT}" "${TLS_ROOT}"
+  # webroot 需要被容器内 nginx（uid 101）读取，因此不能沿用 0700。
+  chmod 755 "${ACME_ROOT}" "${ACME_ROOT}/.well-known" "${ACME_ROOT}/.well-known/acme-challenge"
 }
 
 file_mode() {
-  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+  # 必须先试 GNU 语法: BSD/macOS 的 stat -c 会以非零退出而正常回退, 但 GNU 的 stat -f
+  # 是"显示文件系统信息"且退出码为 0, 放在前面会让回退分支永不触发, 使 Linux 上拿到的
+  # 根本不是权限位。
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
 }
 
 require_secret_file() {
@@ -84,10 +96,17 @@ require_secret_file() {
   [[ "$(file_mode "${SECRETS_FILE}")" == "600" ]] || \
     fail "生产凭据文件权限必须为 0600：${SECRETS_FILE}"
   local key
+  # 后四项是应用在 production 下强制要求的加密主密钥；缺任一项容器会在启动时崩溃，
+  # 必须在 preflight 拦截，不能等到 rollout 停机后才发现。
   for key in MYSQL_ROOT_PASSWORD MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD \
-    COMMON_AGENT_DATABASE_URL COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN RAGFLOW_API_KEY BAILIAN_API_KEY; do
+    COMMON_AGENT_DATABASE_URL COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN BAILIAN_API_KEY \
+    COMMON_AGENT_TOOL_CREDENTIAL_KEYS COMMON_AGENT_TOOL_CREDENTIAL_ACTIVE_KEY_ID \
+    COMMON_AGENT_RAGFLOW_IDENTITY_KEYS COMMON_AGENT_RAGFLOW_IDENTITY_ACTIVE_KEY_ID; do
     grep -Eq "^${key}=.+" "${SECRETS_FILE}" || fail "生产凭据缺少：${key}"
   done
+  # RAGFlow 全新安装后没有可继承的 legacy token，平台会自行创建租户账号并签发凭据。
+  # 该键必须显式声明以免配置遗漏，但允许留空，否则全新服务器的首次部署会被挡在这里。
+  grep -Eq "^RAGFLOW_API_KEY=" "${SECRETS_FILE}" || fail "生产凭据缺少：RAGFLOW_API_KEY"
 }
 
 require_config_file() {
@@ -179,6 +198,12 @@ write_state() {
 }
 
 compose_loaded_release() {
+  local -a compose_files=(-f "${COMPOSE_FILE}")
+  if [[ -n "${COMPOSE_OVERRIDE_FILE}" ]]; then
+    [[ -f "${COMPOSE_OVERRIDE_FILE}" && ! -L "${COMPOSE_OVERRIDE_FILE}" ]] || \
+      fail "compose 覆盖文件不存在或是符号链接：${COMPOSE_OVERRIDE_FILE}"
+    compose_files+=(-f "${COMPOSE_OVERRIDE_FILE}")
+  fi
   COMMON_AGENT_RUNTIME_ENV=production \
   COMMON_AGENT_API_IMAGE="${COMMON_AGENT_API_IMAGE}" \
   COMMON_AGENT_WEB_IMAGE="${COMMON_AGENT_WEB_IMAGE}" \
@@ -191,8 +216,11 @@ compose_loaded_release() {
   COMMON_AGENT_EDGE_KEY="${TLS_ROOT}/edge.key" \
   COMMON_AGENT_HTTPS_BIND="${HTTPS_BIND}" \
   COMMON_AGENT_HTTPS_PORT="${HTTPS_PORT}" \
+  COMMON_AGENT_HTTP_BIND="${HTTP_BIND}" \
+  COMMON_AGENT_HTTP_PORT="${HTTP_PORT}" \
+  COMMON_AGENT_ACME_ROOT="${ACME_ROOT}" \
   COMMON_AGENT_PUBLIC_DOMAIN="${PUBLIC_DOMAIN}" \
-    docker_cli compose --project-name common-agent-production -f "${COMPOSE_FILE}" "$@"
+    docker_cli compose --project-name common-agent-production "${compose_files[@]}" "$@"
 }
 
 ragflow_compose() {
@@ -306,10 +334,22 @@ build_release() {
   release_id="${revision}-${timestamp}"
   api_tag="common-agent-api:${release_id}"
   web_tag="common-agent-web:${release_id}"
+  # 以下三项默认都不传, 构建走 Dockerfile 里锁定的官方镜像与官方包源。
+  # 仅在 ghcr.io / pypi.org / registry.npmjs.org 不可达的网络显式覆盖。
+  local -a api_build_args=() web_build_args=()
+  [[ -z "${COMMON_AGENT_UV_IMAGE:-}" ]] || \
+    api_build_args+=(--build-arg "UV_IMAGE=${COMMON_AGENT_UV_IMAGE}")
+  [[ -z "${COMMON_AGENT_UV_INDEX:-}" ]] || \
+    api_build_args+=(--build-arg "UV_DEFAULT_INDEX=${COMMON_AGENT_UV_INDEX}")
+  [[ -z "${COMMON_AGENT_UV_PACKAGE_BASE_URL:-}" ]] || \
+    api_build_args+=(--build-arg "UV_PACKAGE_BASE_URL=${COMMON_AGENT_UV_PACKAGE_BASE_URL}")
+  [[ -z "${COMMON_AGENT_NPM_REGISTRY:-}" ]] || \
+    web_build_args+=(--build-arg "NPM_REGISTRY=${COMMON_AGENT_NPM_REGISTRY}")
   docker_cli build --pull=false --build-arg "SOURCE_REVISION=${revision}" \
-    --tag "${api_tag}" "${REPOSITORY_ROOT}/backend"
+    "${api_build_args[@]}" --tag "${api_tag}" "${REPOSITORY_ROOT}/backend"
   docker_cli build --pull=false --build-arg "SOURCE_REVISION=${revision}" \
-    --build-arg VITE_API_BASE_URL=/api/v1 --tag "${web_tag}" "${REPOSITORY_ROOT}/frontend"
+    --build-arg VITE_API_BASE_URL=/api/v1 "${web_build_args[@]}" \
+    --tag "${web_tag}" "${REPOSITORY_ROOT}/frontend"
   api_image="$(docker_cli image inspect "${api_tag}" --format '{{.Id}}')"
   web_image="$(docker_cli image inspect "${web_tag}" --format '{{.Id}}')"
   [[ "${api_image}" == sha256:* && "${web_image}" == sha256:* ]] || fail "镜像 ID 不是 sha256:"
@@ -421,42 +461,49 @@ switch_edge() {
   fi
 }
 
+# 证书续期后重建 Edge：docker secret 只在容器启动时拷贝，nginx reload 不会加载新证书。
+edge_recreate() {
+  guard_docker_context
+  load_state
+  [[ -n "${active_release}" ]] || fail "当前没有 active release"
+  load_release "${active_release}"
+  render_edge_config "${DEPLOY_SLOT}"
+  compose_loaded_release up -d --no-deps --force-recreate edge
+  wait_for_service edge 60
+  echo "Edge 已使用当前证书重建"
+}
+
 rollout() {
-  local release_id target_slot old_slot old_release
+  local release_id old_release
   preflight
   release_id="$(candidate_release_id)"
   [[ -f "${STATE_ROOT}/migrated-${release_id}" ]] || fail "候选 release 尚未执行 migrate"
   load_release "${release_id}"
   load_state
-  old_slot="${active_slot}"
   old_release="${active_release}"
-  if [[ "${old_slot}" == "blue" ]]; then target_slot="green"; else target_slot="blue"; fi
 
   if [[ "${RAGFLOW_EDGE_MODE}" == "local-shared-network" ]]; then
     ragflow_compose up -d
     wait_for_ragflow_edge
   fi
-  compose_loaded_release --profile "${target_slot}" up -d --no-deps \
-    "api-${target_slot}" "web-${target_slot}"
-  wait_for_service "api-${target_slot}" 240
-  wait_for_service "web-${target_slot}" 60
-  switch_edge "${target_slot}"
+
+  # 单槽发布：先停旧容器再用新镜像重建同一槽，发布窗口内服务不可用。
+  compose_loaded_release stop \
+    "worker-${DEPLOY_SLOT}" "api-${DEPLOY_SLOT}" "web-${DEPLOY_SLOT}" || true
+  compose_loaded_release --profile "${DEPLOY_SLOT}" up -d --no-deps --force-recreate \
+    "api-${DEPLOY_SLOT}" "web-${DEPLOY_SLOT}"
+  wait_for_service "api-${DEPLOY_SLOT}" 240
+  wait_for_service "web-${DEPLOY_SLOT}" 60
+  # 容器重建后 IP 变化，switch_edge 内的 nginx -s reload 会重新解析 upstream。
+  switch_edge "${DEPLOY_SLOT}"
   if ! verify_edge; then
-    if [[ -n "${old_slot}" ]]; then
-      switch_edge "${old_slot}"
-    else
-      compose_loaded_release stop edge || true
-    fi
-    compose_loaded_release stop "api-${target_slot}" "web-${target_slot}" || true
-    fail "候选 release 验证失败，流量已恢复旧槽"
+    fail "候选 release 验证失败；服务当前不可用，请执行 rollback 恢复上一 release"
   fi
-  compose_loaded_release --profile "${target_slot}" up -d --no-deps "worker-${target_slot}"
-  wait_for_service "worker-${target_slot}" 90
-  write_state "${target_slot}" "${release_id}" "${old_slot}" "${old_release}"
-  if [[ -n "${old_slot}" ]]; then
-    compose_loaded_release stop "worker-${old_slot}" "api-${old_slot}" "web-${old_slot}"
-  fi
-  echo "release 已切换：${release_id} (${target_slot})"
+  compose_loaded_release --profile "${DEPLOY_SLOT}" up -d --no-deps --force-recreate \
+    "worker-${DEPLOY_SLOT}"
+  wait_for_service "worker-${DEPLOY_SLOT}" 90
+  write_state "${DEPLOY_SLOT}" "${release_id}" "${DEPLOY_SLOT}" "${old_release}"
+  echo "release 已发布：${release_id} (${DEPLOY_SLOT})"
 }
 
 verify() {
@@ -473,29 +520,29 @@ verify() {
 }
 
 rollback() {
-  local rollback_release rollback_slot current_release current_slot
+  local rollback_release current_release
   guard_docker_context
   load_state
-  [[ -n "${active_release}" && -n "${previous_release}" ]] || fail "没有可回滚的 previous release"
+  [[ -n "${previous_release}" ]] || fail "没有可回滚的 previous release"
   current_release="${active_release}"
-  current_slot="${active_slot}"
   rollback_release="${previous_release}"
-  rollback_slot="${previous_slot}"
   load_release "${rollback_release}"
-  compose_loaded_release --profile "${rollback_slot}" up -d --no-deps \
-    "api-${rollback_slot}" "web-${rollback_slot}"
-  wait_for_service "api-${rollback_slot}" 240
-  wait_for_service "web-${rollback_slot}" 60
-  switch_edge "${rollback_slot}"
+
+  # 单槽回滚：用上一 release 的镜像重建同一槽，与发布同样存在停机窗口。
+  compose_loaded_release stop \
+    "worker-${DEPLOY_SLOT}" "api-${DEPLOY_SLOT}" "web-${DEPLOY_SLOT}" || true
+  compose_loaded_release --profile "${DEPLOY_SLOT}" up -d --no-deps --force-recreate \
+    "api-${DEPLOY_SLOT}" "web-${DEPLOY_SLOT}"
+  wait_for_service "api-${DEPLOY_SLOT}" 240
+  wait_for_service "web-${DEPLOY_SLOT}" 60
+  switch_edge "${DEPLOY_SLOT}"
   if ! verify_edge; then
-    load_release "${current_release}"
-    switch_edge "${current_slot}"
-    fail "previous release 验证失败，流量保持当前 release"
+    fail "previous release 验证同样失败；服务仍不可用，请人工介入"
   fi
-  compose_loaded_release --profile "${rollback_slot}" up -d --no-deps "worker-${rollback_slot}"
-  wait_for_service "worker-${rollback_slot}" 90
-  write_state "${rollback_slot}" "${rollback_release}" "${current_slot}" "${current_release}"
-  compose_loaded_release stop "worker-${current_slot}" "api-${current_slot}" "web-${current_slot}"
+  compose_loaded_release --profile "${DEPLOY_SLOT}" up -d --no-deps --force-recreate \
+    "worker-${DEPLOY_SLOT}"
+  wait_for_service "worker-${DEPLOY_SLOT}" 90
+  write_state "${DEPLOY_SLOT}" "${rollback_release}" "${DEPLOY_SLOT}" "${current_release}"
   echo "代码与流量已回滚；数据库 schema 保持向前版本：${rollback_release}"
 }
 
@@ -538,6 +585,7 @@ down() {
 case "${1:-}" in
   build) build_release ;;
   init-tls) init_tls ;;
+  edge-recreate) edge_recreate ;;
   preflight) preflight ;;
   migrate) migrate ;;
   rollout) rollout ;;

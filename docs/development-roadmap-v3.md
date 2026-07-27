@@ -88,9 +88,113 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 > 全部完成并逐页真实页面验收，已在 `ui-align-demo` 分支六次提交后按 `--no-ff` 合并回 main。
 > 期间用户否决了原型的 64px 窄侧栏方案（改为保留现有宽侧栏），UI-01a/UI-01c 随之作废。
 
+### 2.5 🅖 单机 demo 部署（客户试用环境）
+
+目标：把已验收的 `local-shared-network` 单机模式落到一台 4C16G 公网服务器，提供
+`https://kb.xuanbai.tech` 的客户试用环境。设计与计划见
+`docs/superpowers/specs/2026-07-27-single-node-demo-deployment-design.md` 与
+`docs/superpowers/plans/2026-07-27-single-node-demo-deployment.md`。
+
+| ID | 任务 | 验收标准 | 状态 |
+| --- | --- | --- | --- |
+| G1 | Edge 增加 HTTP 监听承载 ACME 与跳转 | `edge.conf.template` 新增容器内 9080 server 块（ACME 挑战路径 + 301 跳转），compose 映射 80、挂载 webroot，`manage.sh` 传递 `COMMON_AGENT_ACME_ROOT`；契约断言先失败后通过，compose config 生成 18443/18080 两端口 | ✅ 已完成 |
+| G2 | 发布改为固定单槽停机模式 | 去掉 blue↔green 轮换，固定 `blue` 先停后建；验证失败不再自动切回旧槽而是提示 `rollback`；保留 `switch_edge` 调用以规避 nginx DNS 缓存 502 | ✅ 已完成 |
+| G3 | 回滚改为单槽重建上一 release | 用 `previous_release` 镜像在同一槽重跑停机发布；回滚同样失败时要求人工介入；schema 不自动降级 | ✅ 已完成 |
+| G4 | 单机资源覆盖与配置模板 | 按 soak 实测分配 4C16G 内存上限，RAGFlow API 加 2.0 CPU 配额并下调解析并发；实测 compose 叠加后各服务 mem_limit 真实生效 | ✅ 已完成 |
+| G5 | 证书签发与自动续期 | 内部 CA 10 年有效期、SAN 为容器名；`ca.crt` 并入系统信任根以通过 preflight 对 Let's Encrypt 证书的校验（已实测 `openssl verify` 返回 OK）；新增 `edge-recreate` 供续期后重建容器 | ✅ 已完成 |
+| G6 | 服务器基础环境准备 | Docker 29.6.2 + Compose v5.3.1、镜像加速、swap 4GiB、ufw 22/80/443、certbot 2.9.0、目录就位；7 个镜像中 6 个按 digest 拉取成功 | ✅ 已完成 |
+| G7 | 本机真实容器验证单槽改造 | 单槽 rollout 在真实容器上多次跑通；身份初始化在"空 legacy token + 无历史账号"下 status=active，等价复现全新服务器场景 | ✅ 已完成 |
+| G8 | 服务器首次部署上线 | 腾讯云轻量 4C16G/北京/Ubuntu 24.04 全栈部署完成：RAGFlow 五容器 + 业务六容器全部 healthy，Let's Encrypt 证书生效，`https://kb.xuanbai.tech` 公网可访问且无浏览器告警，HTTP 自动跳转 HTTPS | ✅ 已完成 |
+| G9 | 服务器功能验收与资源实测 | 正式页面走完整用户链路（建知识库→传文档→解析→数字员工→带引用对话→工作流）、30 分钟 soak 修正 api/worker 估算值、真实 rollout/rollback 停机时长 | ⬜ 未开始 |
+| G10 | 证书自动续期 | 当前证书由 DNS-01 手动签发，90 天后需人工重签。需接入 DNS 服务商 API 实现自动续期，或改用云厂商 1 年期免费证书 | ⬜ 未开始 |
+
+**G8 期间发现并修复的缺陷（均为本机演练无法暴露、全部已加回归断言）：**
+
+| # | 缺陷 | 本机不暴露的原因 |
+| --- | --- | --- |
+| 1 | `preflight` 漏检四个加密主密钥，容器启动才崩 | 本机 drill 的 secrets 恰好齐全 |
+| 2 | 六处日志用 `extra=` 传字段被静默丢弃 | 本机排查可直接读源码倒推 |
+| 3 | RAGFlow `up` 强制要求 `backend/.venv` | 开发机本来就有 |
+| 4 | 内存门槛按 32 GiB 开发机硬编码为 24 GiB | 本机满足该门槛 |
+| 5 | 数据卷声明为 external 却无人创建 | 本机卷是历史遗留 |
+| 6 | 新建数据卷不设属主，ES/Valkey 因权限反复重启 | 本机卷当年走的是带 chown 的迁移分支 |
+| 7 | 构建依赖 ghcr.io | 本机网络可达 |
+| 8 | 构建依赖 pypi.org / registry.npmjs.org | 同上 |
+| 9 | **`file_mode` 在 Linux 上完全失效**：GNU `stat -f` 是"显示文件系统信息"且退出码为 0，回退分支永不触发 | macOS 上该语法恰好正确 |
+| 10 | 私钥 0600 导致以非 root 运行的 Edge 无法加载证书 | Colima 挂载语义宽松 |
+
+其中第 9 项性质最严重：它是**双向失效**的安全检查——这次表现为误拦部署，反过来一个真正
+0644、所有人可读的密钥文件同样会被判为合规。
+
+**G8 期间确认的环境约束（非代码缺陷，已写入 runbook §0）：**
+
+- 云厂商控制台防火墙与服务器内 ufw 是独立两层，轻量实例默认模板不含 443；
+- 该实例境外出网被完全阻断（同机房另一台实例却正常，与地域无关），导致 ghcr.io/PyPI/npm/
+  Let's Encrypt API 全部不可达，且 LE 验证节点也回连不了它的 80 端口，HTTP-01 无法使用；
+- 云服务器访问不了自己的公网 IP（无 NAT 回环），因此 `verify_edge` 必须走回环，
+  部署时不得设置 `COMMON_AGENT_PUBLIC_BASE_URL`；
+- 证书签发顺序必须是"临时证书 → rollout → 正式证书 → 重建 Edge"，因为 ACME 验证要求
+  80 端口已有服务应答。
+
+**G4/G5 期间发现并修复的两个计划外缺陷：**
+
+- 业务与 RAGFlow 的 compose 调用都写死了 `-f` 文件列表，资源覆盖片段**根本无法叠加**，
+  配置文件形同摆设。已改为支持 `COMMON_AGENT_COMPOSE_OVERRIDE` / `RAGFLOW_COMPOSE_OVERRIDE`，
+  只追加文件，不改变依赖解析路径。
+- RAGFlow 的 `MACOS` 开关被硬编码为 1。该开关会跳过 `update_progress` 的分布式锁
+  （upstream `api/db/services/task_service.py:398`），只适用于 macOS 开发机，**Linux 部署会让
+  并发任务进度更新失去互斥**。已改为按 `uname` 判定；另删除 `manage.sh` 中一处不起作用的
+  `MACOS=1`（官方 compose 并未引用该变量）。
+
+**待解除的外部风险：**
+
+- **Docker Hub 上锁定的 RAGFlow 基础镜像 digest 已失效。** `infiniflow/ragflow:v0.26.4` 是可变
+  tag，被上游重新推送，`image.env` 锁定的 `sha256:e0048bb5…` 在 Docker Hub 返回 404
+  `MANIFEST_UNKNOWN`（已用 `docker manifest inspect` 独立复核）。**华为云 SWR 上同一 digest 仍
+  可用**，内容一致，故锁定值无需修改，服务器按 runbook §3 从该源拉取即可。后续可考虑给
+  `image.sh` 增加显式备用源支持，避免依赖"华为云路径恰好包含原仓库名"这一字符串匹配巧合。
+- **Docker 发布端口绕过 ufw**（走自己的 iptables 链）。本部署只有 Edge 有意绑 `0.0.0.0:80/443`，
+  RAGFlow 全部端口须保持 `127.0.0.1`；runbook §9.2 提供了核查命令。
+
+**排查中确认的两个既有缺陷（已在 G7 期间修复）：**
+
+1. `preflight` 的 secrets 必填清单漏了四个加密主密钥, 导致检查通过、迁移完成、直到 rollout
+   拉起容器才崩溃。单槽停机发布下这意味着旧容器已停、新容器起不来, 服务直接不可用。
+2. 六处日志用 `logger.xxx(msg, extra={...})` 传结构化字段, 而 JsonLogFormatter 只读
+   `record.structured_fields`, 这些字段全部被静默丢弃。表现是日志看似记录了 exception_type,
+   实际只有一个光秃秃的事件名, 排查只能靠读源码倒推; 审计追加失败那处连操作类型和阶段都丢。
+   已全部改用 `log_event()` 并新增契约测试锁死。
+
+**drill 在本机不可重复运行（已知限制, 未修）：**
+
+平台用 `COMMON_AGENT_RAGFLOW_IDENTITY_KEYS` 派生每个工作区在 RAGFlow 侧的账号密码, 而 drill
+每次生成随机密钥、又与开发环境共用同一个 RAGFlow 实例。第二次起, 新密钥派生的密码与 RAGFlow
+里已存的账号对不上, 身份初始化必然失败, 表现为知识库页"服务暂时不可用"。
+
+本轮通过清理 RAGFlow 侧的冲突技术账号后重新部署验证: 身份记录 `status=active`、
+`ragflow_tenant_id` 已绑定、凭据加密落库, 全程无告警。该轮使用空 legacy token 且 RAGFlow 侧
+无历史账号, **等价于全新服务器的首次部署场景**。
+
+若要让 drill 可重复, 需让其使用固定测试密钥或在退出时清理自建的 RAGFlow 账号, 属独立任务。
+
+**本轮明确降低的门禁（经使用方决定）：**
+
+- 使用方选择不在服务器上补做本机 drill 中的压测门禁（k6 读容量、SSE 128 路、Worker 崩溃接管、
+  攻击矩阵）。按 1-3 人试用规模判断可接受；并发规模上升时需补做。
+
 ## 3. 当前下一步
 
-本路线图的 D1~D16 与 U1 全部完成并推送。剩余待用户定夺 / 跟进的只有两项：
+D1~D16 与 U1 全部完成并推送。§2.5 的单机 demo 部署 G1~G8 已完成，
+`https://kb.xuanbai.tech` 已上线可访问。
+
+接下来两项：
+
+- **G9 服务器功能验收**：在正式页面走完整用户链路，并跑 30 分钟 soak 把 `resources.compose.yaml`
+  中 api/worker 的估算值替换为实测值；
+- **G10 证书自动续期**：当前证书 2026-10-25 到期，届时需人工重签，应在此之前接入 DNS API
+  自动化或改用 1 年期证书。
+
+剩余待用户定夺 / 跟进的两项：
 
 - **D12 模型版本号展示**：调研结论是百炼不提供可稳定展示的版本号（别名调用只回显别名，
   背后快照随季度漂移），当前卡片直接展示真实调用标识已是最准确做法。是否额外标注「底层

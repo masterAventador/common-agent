@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from common_agent.adapters.persistence.database import Database
 from common_agent.concurrency import DistributedLockUnavailable
+from common_agent.observability import log_event
 
 _LOGGER = logging.getLogger("common_agent.persistence.locks")
 
@@ -58,9 +59,12 @@ class MySqlNamedLockProvider:
                         release_failed = release_failed or released != 1
                     except Exception as error:
                         release_failed = True
-                        _LOGGER.exception(
+                        log_event(
+                            _LOGGER,
                             "distributed_lock.release_failed",
-                            extra={"exception_type": type(error).__name__},
+                            level=logging.ERROR,
+                            exc_info=True,
+                            exception_type=type(error).__name__,
                         )
                 if release_failed:
                     await connection.invalidate()

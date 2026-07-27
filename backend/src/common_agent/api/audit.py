@@ -18,6 +18,7 @@ from common_agent.audit import (
     AuditService,
 )
 from common_agent.auth import AuthenticatedSession
+from common_agent.observability import log_event
 from common_agent.tenancy import TenantAccess
 
 RequestHandler = Callable[[Request], Awaitable[Response]]
@@ -113,13 +114,14 @@ def _entry(
 
 
 def _log_append_failure(action: AuditAction, error: Exception, *, phase: str) -> None:
-    _LOGGER.exception(
+    log_event(
+        _LOGGER,
         "audit.event.append_failed",
-        extra={
-            "audit_action": action.value,
-            "audit_phase": phase,
-            "exception_type": type(error).__name__,
-        },
+        level=logging.ERROR,
+        exc_info=True,
+        audit_action=action.value,
+        audit_phase=phase,
+        exception_type=type(error).__name__,
     )
 
 
