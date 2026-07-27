@@ -104,6 +104,14 @@ for credential_key in \
     fail "演练没有生成生产必需的加密密钥：${credential_key}"
 done
 
+# RAGFlow 全新安装后没有 legacy token（见 env.example 注释），平台会自行创建租户账号。
+# 因此该键必须存在但允许为空；要求非空会让全新服务器的首次 preflight 直接失败。
+if grep -A6 'for key in MYSQL_ROOT_PASSWORD' "${MANAGER}" | grep -Fq 'RAGFLOW_API_KEY'; then
+  fail "RAGFLOW_API_KEY 不得与其他凭据一样要求非空：全新安装时它本就是空的"
+fi
+grep -Fq 'grep -Eq "^RAGFLOW_API_KEY=" "${SECRETS_FILE}"' "${MANAGER}" || \
+  fail "preflight 没有单独校验 RAGFLOW_API_KEY 的存在性"
+
 for expected in \
   'read_only: true' \
   'no-new-privileges:true' \

@@ -96,11 +96,14 @@ require_secret_file() {
   # 后四项是应用在 production 下强制要求的加密主密钥；缺任一项容器会在启动时崩溃，
   # 必须在 preflight 拦截，不能等到 rollout 停机后才发现。
   for key in MYSQL_ROOT_PASSWORD MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD \
-    COMMON_AGENT_DATABASE_URL COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN RAGFLOW_API_KEY BAILIAN_API_KEY \
+    COMMON_AGENT_DATABASE_URL COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN BAILIAN_API_KEY \
     COMMON_AGENT_TOOL_CREDENTIAL_KEYS COMMON_AGENT_TOOL_CREDENTIAL_ACTIVE_KEY_ID \
     COMMON_AGENT_RAGFLOW_IDENTITY_KEYS COMMON_AGENT_RAGFLOW_IDENTITY_ACTIVE_KEY_ID; do
     grep -Eq "^${key}=.+" "${SECRETS_FILE}" || fail "生产凭据缺少：${key}"
   done
+  # RAGFlow 全新安装后没有可继承的 legacy token，平台会自行创建租户账号并签发凭据。
+  # 该键必须显式声明以免配置遗漏，但允许留空，否则全新服务器的首次部署会被挡在这里。
+  grep -Eq "^RAGFLOW_API_KEY=" "${SECRETS_FILE}" || fail "生产凭据缺少：RAGFLOW_API_KEY"
 }
 
 require_config_file() {

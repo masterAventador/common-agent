@@ -178,7 +178,7 @@ MYSQL_USER=common_agent
 MYSQL_PASSWORD=${DB_PASSWORD}
 COMMON_AGENT_DATABASE_URL=mysql+aiomysql://common_agent:${DB_PASSWORD}@platform-mysql:3306/common_agent?charset=utf8mb4
 COMMON_AGENT_AUTH_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
-RAGFLOW_API_KEY=<RAGFlow 令牌，首次安装后从其界面获取>
+RAGFLOW_API_KEY=
 BAILIAN_API_KEY=<百炼 API Key>
 COMMON_AGENT_TOOL_CREDENTIAL_KEYS=v1:${TOOL_KEY}
 COMMON_AGENT_TOOL_CREDENTIAL_ACTIVE_KEY_ID=v1
@@ -191,9 +191,23 @@ chmod 600 /etc/common-agent/secrets.env
 数据库密码若含特殊字符，进 `COMMON_AGENT_DATABASE_URL` 前必须 URL encode（上面用 hex
 随机串可回避该问题）。
 
-> **加密密钥一旦丢失，已落库的 MCP 凭据与 RAGFlow 身份将无法解密。** 本 demo 不做备份，
-> 若重建服务器需重新录入这些凭据。`preflight` 会检查这 12 个键是否齐全，但**不会**校验密钥
-> 是否与库中密文匹配。
+> **`RAGFLOW_API_KEY` 在全新部署时应当留空**，键必须存在但值为空。它只用于接管某个**已存在**
+> 的 RAGFlow 账号（历史遗留场景）。全新安装的 RAGFlow 没有任何账号，平台会自行为每个工作区
+> 创建独立的 RAGFlow 技术租户并签发凭据。若在这里填了无效值，接管流程会失败，表现为知识库页
+> 显示"知识库服务暂时不可用"。
+
+> **⚠️ `COMMON_AGENT_RAGFLOW_IDENTITY_KEYS` 生成后不可更换。**
+>
+> 平台用它派生每个工作区在 RAGFlow 侧的账号密码。一旦更换或丢失，已创建的 RAGFlow 账号
+> **再也登不进去**——平台会用新密钥派生出不同的密码，而 RAGFlow 里存的还是旧密码，表现为
+> 知识库页持续显示"知识库服务暂时不可用"，且无法自动恢复。
+>
+> 这一点已在本机实测复现：同一个工作区反复用不同密钥部署后，其 RAGFlow 账号就永久失联，
+> 只能手工到 RAGFlow 侧重置账号才能恢复。
+>
+> 因此这两份密钥必须妥善留存（至少抄一份到密码管理器）。同理，`COMMON_AGENT_TOOL_CREDENTIAL_KEYS`
+> 丢失会导致已落库的 MCP 凭据无法解密。`preflight` 只检查这 12 个键是否齐全，**不会**校验
+> 密钥与库中密文、RAGFlow 账号是否匹配。
 
 ## 5. 首次部署
 
