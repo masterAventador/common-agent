@@ -156,6 +156,9 @@ export COMMON_AGENT_CERTBOT_EMAIL=<你的邮箱>
 export COMMON_AGENT_COMPOSE_OVERRIDE=/opt/common-agent/infra/production/demo-single-node/resources.compose.yaml
 export RAGFLOW_DOCKER_CONTEXT=default
 export RAGFLOW_COMPOSE_OVERRIDE=/opt/common-agent/infra/production/demo-single-node/ragflow-resources.compose.yaml
+# 部署机不安装后端开发依赖, 因此显式提供百炼原生地址（在开发机执行
+# `uv run python -m common_agent.adapters.knowledge.ragflow_models native-base-url` 取得）。
+export RAGFLOW_DASHSCOPE_HTTP_BASE_URL=<百炼原生地址, 形如 https://ws-xxxx.cn-beijing.maas.aliyuncs.com/api/v1>
 ```
 
 再按 `config.env.example` 建 `/etc/common-agent/config.env`。

@@ -431,10 +431,17 @@ case "${1:-}" in
   plan-bailian-migration) configure_bailian_models plan-migration ;;
   migrate-bailian) configure_bailian_models migrate ;;
   up)
-    bailian_base_url="$(bailian_native_base_url)" || {
-      echo "缺少有效的百炼配置或后端冻结环境；请先在 backend/ 执行 uv sync --frozen" >&2
-      exit 1
-    }
+    # 生产机只部署运行时, 没有 backend/.venv。允许显式提供百炼地址,
+    # 否则会为了读取一个 URL 被迫在部署机安装整套后端开发依赖。
+    if [[ -n "${RAGFLOW_DASHSCOPE_HTTP_BASE_URL:-}" ]]; then
+      bailian_base_url="${RAGFLOW_DASHSCOPE_HTTP_BASE_URL}"
+    else
+      bailian_base_url="$(bailian_native_base_url)" || {
+        echo "缺少有效的百炼配置或后端冻结环境；请先在 backend/ 执行 uv sync --frozen，" \
+          "或显式设置 RAGFLOW_DASHSCOPE_HTTP_BASE_URL" >&2
+        exit 1
+      }
+    fi
     health_timeout_seconds="$(health_timeout)"
     check_resources
     pull_image

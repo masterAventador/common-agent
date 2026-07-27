@@ -263,4 +263,10 @@ if RAGFLOW_ES_PORT=29200 \
 fi
 rg --color=never --quiet '29380' "${PORT_TEST_OUTPUT}"
 
+# 生产机只部署运行时, 不安装后端开发依赖。up 只为读一个百炼地址就强制要求
+# backend/.venv 会让部署无法进行, 必须允许显式提供该地址。
+if ! awk '/^  up\)/,/^    ;;/' "${MANAGER}" | grep -Fq 'RAGFLOW_DASHSCOPE_HTTP_BASE_URL:-'; then
+  fail "up 未允许通过 RAGFLOW_DASHSCOPE_HTTP_BASE_URL 覆盖百炼地址, 生产机将被迫安装后端开发环境"
+fi
+
 echo "RAGFlow 固定版本、隔离、资源与端口冲突门禁通过"
