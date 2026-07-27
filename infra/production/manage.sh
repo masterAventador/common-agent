@@ -478,29 +478,29 @@ verify() {
 }
 
 rollback() {
-  local rollback_release rollback_slot current_release current_slot
+  local rollback_release current_release
   guard_docker_context
   load_state
-  [[ -n "${active_release}" && -n "${previous_release}" ]] || fail "没有可回滚的 previous release"
+  [[ -n "${previous_release}" ]] || fail "没有可回滚的 previous release"
   current_release="${active_release}"
-  current_slot="${active_slot}"
   rollback_release="${previous_release}"
-  rollback_slot="${previous_slot}"
   load_release "${rollback_release}"
-  compose_loaded_release --profile "${rollback_slot}" up -d --no-deps \
-    "api-${rollback_slot}" "web-${rollback_slot}"
-  wait_for_service "api-${rollback_slot}" 240
-  wait_for_service "web-${rollback_slot}" 60
-  switch_edge "${rollback_slot}"
+
+  # 单槽回滚：用上一 release 的镜像重建同一槽，与发布同样存在停机窗口。
+  compose_loaded_release stop \
+    "worker-${DEPLOY_SLOT}" "api-${DEPLOY_SLOT}" "web-${DEPLOY_SLOT}" || true
+  compose_loaded_release --profile "${DEPLOY_SLOT}" up -d --no-deps --force-recreate \
+    "api-${DEPLOY_SLOT}" "web-${DEPLOY_SLOT}"
+  wait_for_service "api-${DEPLOY_SLOT}" 240
+  wait_for_service "web-${DEPLOY_SLOT}" 60
+  switch_edge "${DEPLOY_SLOT}"
   if ! verify_edge; then
-    load_release "${current_release}"
-    switch_edge "${current_slot}"
-    fail "previous release 验证失败，流量保持当前 release"
+    fail "previous release 验证同样失败；服务仍不可用，请人工介入"
   fi
-  compose_loaded_release --profile "${rollback_slot}" up -d --no-deps "worker-${rollback_slot}"
-  wait_for_service "worker-${rollback_slot}" 90
-  write_state "${rollback_slot}" "${rollback_release}" "${current_slot}" "${current_release}"
-  compose_loaded_release stop "worker-${current_slot}" "api-${current_slot}" "web-${current_slot}"
+  compose_loaded_release --profile "${DEPLOY_SLOT}" up -d --no-deps --force-recreate \
+    "worker-${DEPLOY_SLOT}"
+  wait_for_service "worker-${DEPLOY_SLOT}" 90
+  write_state "${DEPLOY_SLOT}" "${rollback_release}" "${DEPLOY_SLOT}" "${current_release}"
   echo "代码与流量已回滚；数据库 schema 保持向前版本：${rollback_release}"
 }
 

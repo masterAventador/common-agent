@@ -86,6 +86,11 @@ grep -Fq '请执行 rollback 恢复上一 release' "${MANAGER}" || \
 grep -Fq 'switch_edge "${DEPLOY_SLOT}"' "${MANAGER}" || \
   fail "单槽发布没有重载 Edge，容器重建后会指向失效 IP"
 
+if grep -Fq 'rollback_slot' "${MANAGER}"; then
+  fail "单槽回滚不得保留槽切换变量"
+fi
+grep -Fq '代码与流量已回滚' "${MANAGER}" || fail "回滚没有输出结果说明"
+
 for expected in \
   'read_only: true' \
   'no-new-privileges:true' \
