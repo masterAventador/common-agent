@@ -137,6 +137,13 @@ grep -Fq 'uv sync --frozen' "${REPOSITORY_ROOT}/backend/Dockerfile" || \
   fail "后端构建必须保持 --frozen, 否则替换下载主机后将失去哈希校验"
 grep -Fq 'COMMON_AGENT_UV_PACKAGE_BASE_URL' "${MANAGER}" || \
   fail "build 没有传递后端包下载主机"
+
+# GNU stat 的 -f 是"显示文件系统信息"且退出码为 0, 把它放在前面会让回退分支永不触发,
+# 使 Linux 上的凭据权限检查始终拿到错误的值（既可能误拦部署, 也可能放过 0644 的密钥文件）。
+FIRST_STAT_FLAG="$(awk '/^file_mode\(\)/,/^}/' "${MANAGER}" | grep -o 'stat -[a-zA-Z]' | head -1)"
+if [[ "${FIRST_STAT_FLAG}" != "stat -c" ]]; then
+  fail "file_mode 必须先尝试 GNU stat -c（当前先用 ${FIRST_STAT_FLAG}）, 否则 Linux 上文件权限检查形同虚设"
+fi
 grep -Eq '^ARG NPM_REGISTRY=https://registry\.npmjs\.org/?$' \
   "${REPOSITORY_ROOT}/frontend/Dockerfile" || \
   fail "前端 Dockerfile 缺少可覆盖的包源, 或默认值不是官方 npm registry"

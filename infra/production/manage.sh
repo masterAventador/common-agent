@@ -84,7 +84,10 @@ prepare_state_root() {
 }
 
 file_mode() {
-  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+  # 必须先试 GNU 语法: BSD/macOS 的 stat -c 会以非零退出而正常回退, 但 GNU 的 stat -f
+  # 是"显示文件系统信息"且退出码为 0, 放在前面会让回退分支永不触发, 使 Linux 上拿到的
+  # 根本不是权限位。
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
 }
 
 require_secret_file() {
