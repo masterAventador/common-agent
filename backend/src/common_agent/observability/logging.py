@@ -69,7 +69,7 @@ class JsonLogFormatter(logging.Formatter):
             message, inferred_exception_type = _sanitize_log_message(record.getMessage())
             payload["message"] = message
 
-        if record.exc_info is not None and record.exc_info[0] is not None:
+        if record.exc_info and record.exc_info[0] is not None:
             payload["exception_type"] = record.exc_info[0].__name__
         elif inferred_exception_type is not None:
             payload["exception_type"] = inferred_exception_type
@@ -92,14 +92,23 @@ def log_event(
     event: str,
     *,
     level: int = logging.INFO,
+    exc_info: bool = False,
     **fields: object,
 ) -> None:
+    """记录结构化事件。
+
+    未预期异常请传 exc_info=True 以保留堆栈: JSON 输出本身不含 traceback,
+    但 record.exc_info 仍是排查未预期失败的关键依据。
+    """
     normalized_event = event.strip()
     if not normalized_event or len(normalized_event) > 128:
         raise ValueError("log event must be a non-empty stable name")
     logger.log(
         level,
         normalized_event,
+        # 必须传 None 而非 False: logging 会把 False 原样写进 record.exc_info,
+        # 使格式化器的 record.exc_info[0] 取下标失败。
+        exc_info=exc_info or None,
         extra={
             "event_name": normalized_event,
             "structured_fields": fields,

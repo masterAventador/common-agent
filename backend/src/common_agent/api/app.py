@@ -132,7 +132,7 @@ from common_agent.model_configurations.seeds import (
     seed_common_model_configurations_for_tenants,
 )
 from common_agent.models.base import TextStreamingModel
-from common_agent.observability import MetricsRegistry, configure_json_logging
+from common_agent.observability import MetricsRegistry, configure_json_logging, log_event
 from common_agent.tenancy import (
     TenancyService,
     bind_tenant,
@@ -292,9 +292,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except LegacyRagFlowIdentityMigrationRequired:
                 raise
             except Exception as error:
-                _LOGGER.warning(
+                log_event(
+                    _LOGGER,
                     "ragflow.identity_bootstrap_deferred",
-                    extra={"exception_type": type(error).__name__},
+                    level=logging.WARNING,
+                    exception_type=type(error).__name__,
                 )
             app.state.ragflow_identities = ragflow_identities
 
@@ -309,12 +311,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 try:
                     await ragflow_identities.ensure(tenant_id)
                 except Exception as error:
-                    _LOGGER.warning(
+                    log_event(
+                        _LOGGER,
                         "ragflow.tenant_identity_provisioning_deferred",
-                        extra={
-                            "tenant_id": str(tenant_id),
-                            "exception_type": type(error).__name__,
-                        },
+                        level=logging.WARNING,
+                        tenant_id=str(tenant_id),
+                        exception_type=type(error).__name__,
                     )
 
             knowledge_adapter = RagFlowKnowledgeService(
