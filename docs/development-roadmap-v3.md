@@ -221,7 +221,7 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 | --- | --- | --- | --- |
 | M1 | 内嵌媒体提取模块（可验证落点） | 新建 `rag/app/embedded_media.py`：PDF 覆盖 `/Names/EmbeddedFiles`、`/Screen` Rendition、`/RichMedia`；Office 覆盖 `word\|xl\|ppt/media/` 直存；视频 magic 嗅探（mp4/mov/mkv 等）；只挖一层、按内容去重、非媒体条目不返回。逐条 RED→GREEN | ✅ 已完成 |
 | M1b | Office OLE 包装内嵌媒体解包 | `word/embeddings/*.bin` 的 Ole10Native 解包（`_extract_ole10native_payload` 已存在但只用于 OLE 容器分支）。**当前受阻**：本机无可写 OLE 复合文件的库（olefile 0.47 只读、oletools 无样本），LibreOffice 也造不出，写不出失败测试就不能写实现。解除条件：拿到一份真实 Word/Excel 内嵌视频样本 | ⛔ 受阻 |
-| M2 | 上提到 task_executor 并从 naive 摘除 | `task_executor.py` 加 hook 按类型分发到对应切片器；`naive.py` 移除旧提取逻辑但保留 `is_root` 供 `analyze_hyperlink` 使用；内嵌 chunk 追加到尾部不破坏 `cks[0].__outline__`；递归深度锁定一层并有测试守；`from_page/to_page` 不透传；进度回调区间重排 | ⬜ 未开始 |
+| M2 | 接入 task_executor | `task_executor.py` 加 hook，内嵌媒体对所有切片器一视同仁；chunk 归属父文档（`docnm_kwd` 用父文档名 + `【内嵌视频 xxx】`前缀 + 重新分词）；追加到尾部不破坏 `cks[0].__outline__`；默认关闭；单个媒体失败不阻断父文档且必须 callback 可见 | ✅ 已完成 |
 | M3 | 闸门与失败可见性 | 单个视频大小上限、单文档视频数量上限、解析开关（默认关）；失败不阻塞主文档解析，但必须 callback 出用户可见提示，不再静默丢弃 | ⬜ 未开始 |
 | M4 | 平台侧上传边界调整 | 上传白名单增加 pptx（及决定是否含 xlsx）、`MAX_DOCUMENT_SIZE_BYTES` 上调；前后端契约、错误文案与测试同步 | ⬜ 未开始 |
 | M5 | 引用类型贯穿到前端标记 | `doc_type` 从 RAGFlow 检索结果贯穿到引用 chip：`adapters/knowledge/ragflow.py` 取值 → `RetrievedChunk` / `Citation` / `RuntimeKnowledgeChunk` 加字段 → `message_citations` 加列 + Alembic 迁移 → 重新生成 OpenAPI 与前端 DTO → `conversations.ts` Zod schema → `ChatMessages.tsx` 渲染视频标记 | ⬜ 未开始 |
@@ -247,6 +247,35 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
   全部取出，图片与 XML 部件正确排除；
 - 门禁：`infra/ragflow/verify-patchset.sh` 通过，`head=0457b8f104d6e22e9875698427ce430e22e608dc`；
 - 遗留：本任务只交付提取模块，尚未接入任何解析链路，用户侧无可见变化——接入在 M2。
+
+**M2 执行记录（2026-07-28）**
+
+- **原计划的「从 naive.py 摘除旧逻辑」被证明不需要做**：核对后确认两个提取器覆盖范围完全不
+  重叠——上游 `extract_embed_file` 只看 `word/embeddings/`、`word/objects/`、`word/activex/`、
+  `xl/embeddings/`、`ppt/embeddings/`，本模块只看 `*/media/`，PDF 上游本就返回空。不存在重复
+  提取，因此 `naive.py` 一行未改；
+- RED：`chunk_embedded_media` 9 个用例 + `append_embedded_media_chunks` 4 个用例分两轮各自先
+  失败（`ImportError`），再实现转 GREEN；
+- GREEN：`test/unit_test/rag/app/` 42 passed；
+- **上游改动量：`rag/svr/task_executor.py` 净增 12 行、删 0 行**（1 行 import + 1 处调用），
+  全部逻辑在新文件 `rag/app/embedded_media.py` 内，把跟上游的冲突面压到最小；
+- 默认关闭：`parser_config["parse_embedded_media"]` 为真才执行。整段视频要送多模态模型，
+  不允许存在「合并后即产生非预期计费」的中间态；
+- Ruff：`task_executor.py` 改动前后均 153 条（上游既有），无新增；`embedded_media.py` 16 条，
+  类别与周边代码一致（BLE001/LOG015/S112），均不在项目 select 内；
+- 回归口径：`test/unit_test/rag/svr` 与 `rag/app` 共 19 个测试文件**逐文件加 60s 超时**跑，
+  干净树与改动树逐项对照完全一致。整目录一次性跑会被下面第一条上游缺陷拖住不出结果；
+- **已知上游缺陷（非本次引入，干净树复现）**：
+  1. `test/unit_test/rag/svr/task_executor_refactor/test_chunk_builder.py` **挂起**（主线程
+     阻塞在 `_pthread_cond_wait`，60s 不结束）；
+  2. `test/unit_test/rag/svr/task_executor_refactor/test_dataflow_service.py` 存在
+     `SyntaxError: invalid escape sequence '\d'`，整文件收集失败；
+  两条均已在未改动的干净树上复现，其余 13 个 svr 文件与 4 个 app 文件全部通过；
+- 环境注意：`rag/app/picture.py` 模块级构造 `OCR()`，导入即触发 HuggingFace 模型下载（实测
+  >120s、约 47MB 落到 gitignore 的 `rag/res/deepdoc`）。因此本模块对真实切片器采用延迟导入，
+  测试通过注入替身切片器隔离；
+- 遗留：真实链路仍未打通——闸门（M3）、平台上传边界（M4）、引用标记（M5）、镜像重建（M6）
+  完成后才能由 M7 做端到端验收。用户侧目前仍无可见变化。
 | M7 | 真实链路验收 | 正式 React 页面上传含内嵌视频的真实文档 → 真实 FastAPI → 私有补丁 RAGFlow → 百炼视频理解 → 知识库中检索得到该视频内容的片段，引用 chip 带视频标记；Playwright 用例入回归集 | ⬜ 未开始 |
 
 **已决：引用呈现方案（用户 2026-07-28 确认）**
