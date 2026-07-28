@@ -14,7 +14,7 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
   确实做过 UI 改造，但只落地了 DESIGN.md 的颜色 token、logo 和基础类，**各功能页面的布局
   与交互结构没有对齐 `docs/design/PowerAI Atlas.html` demo**。用户反馈属实。
 - **内置工具数量核实**：后端 `tools/platform.py` 只种了 1 个内置能力"当前时间"，符合
-  `docs/product-scope.md` 4.11（首个内置工具只有零费用的当前时间）。不是 2 个。
+  `docs/product-boundary.md` 3.11（唯一内置工具是零费用的当前时间）。不是 2 个。
 - **产品边界（对齐 demo 时必须守）**：只复用 demo 的**布局骨架、交互结构、视觉语言**；
   **不照搬** PowerAI 名称、电力行业定位、示例账号/数据，也不引入 demo 里的"团队空间/技能库"
   等超出当前产品范围的能力。业务文案与功能范围继续以本项目产品范围为准。
@@ -190,10 +190,55 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 - 使用方选择不在服务器上补做本机 drill 中的压测门禁（k6 读容量、SSE 128 路、Worker 崩溃接管、
   攻击矩阵）。按 1-3 人试用规模判断可接受；并发规模上升时需补做。
 
+### 2.6 🅜 文档内嵌多媒体解析
+
+> 分支：`embedded-media-parsing`。
+> 目标：知识库上传的文档里内嵌的音视频，其内容能被解析成可检索文本，而不是像现在这样被静默丢弃。
+> 产品边界依据：`docs/product-boundary.md` 3.3 知识库。
+
+**调研已确认的事实（2026-07-28 实测，避免重复验证）：**
+
+| # | 事实 | 证据 |
+| --- | --- | --- |
+| 1 | RAGFlow 的 `extract_embed_file` 对 PDF 直接返回空，只处理 ZIP(OOXML) 与 OLE 容器 | `rag/utils/file_utils.py:92-150`；对构造的内嵌视频 PDF 实测返回 `[]` |
+| 2 | PPTX 视频以原始文件直存 `ppt/media/`，无 OLE 包装，关系类型 `relationships/media` + `relationships/video` | 用户真实 WPS 演示产出（含 1 个 `.mov` + 2 个 `.mp4`）与 python-pptx `add_movie` 产出结构一致 |
+| 3 | 现有 `embed_dirs` 缺 `ppt/media/`、`word/media/`、`xl/media/`，真实 PPT 三个视频一个都捞不到 | 对该真实 PPT 跑 `extract_embed_file` 返回 `[]` |
+| 4 | `word/embeddings/*.bin` 能捞到但递归时死在 `.bin`，ZIP 分支不做 Ole10Native 解包 | 构造样本实测；`_extract_ole10native_payload` 只在 OLE 容器分支使用 |
+| 5 | `_guess_ext` 不认视频 magic，mp4 返回 `.bin` | 实测 |
+| 6 | `extract_embed_file` 全仓库唯一调用点是 `rag/app/naive.py:932`；PPTX 默认走 `presentation.py`，naive 也无 pptx 分支 | grep 全仓库 + 读 `presentation.py:244` |
+| 7 | 视频理解能力已具备且正是百炼：`QWenCV._process_video` 走 DashScope `MultiModalConversation`（fps=2），`dashscope==1.25.11` 已 pin | `rag/llm/cv_model.py:328-437` |
+| 8 | 视频切片器已存在：`rag/app/picture.py:51` 的 `VIDEO_EXTS` 分支 | 读码 |
+| 9 | 内嵌文件解析失败当前被静默吞掉，只 log 不提示用户 | `rag/app/naive.py:932-944` |
+| 10 | 平台侧当前传不进 pptx：白名单只有 docx/md/markdown/pdf/txt，且 `MAX_DOCUMENT_SIZE_BYTES = 20MB` | `backend/src/common_agent/knowledge/service.py:40-48` |
+| 11 | 单个内嵌视频可达 42MB（真实 PPT 中的 `.mov`） | 同上真实样本 |
+| 12 | LibreOffice 不能用于造 Office 内嵌视频样本，其 OOXML 导出会丢弃媒体字节 | 实测：转出的 docx/xlsx 无任何 media 部件 |
+
+**已决架构方向：** 提取逻辑从 `naive.py` 上提到 `task_executor` 层，让所有切片器共享；
+但**逻辑放新文件** `rag/app/embedded_media.py`，`task_executor.py` 只留 import + 3~5 行 hook，
+以控制与上游的冲突面（当前补丁集对 `task_executor.py` 是零改动）。
+
+| ID | 任务 | 验收标准 | 状态 |
+| --- | --- | --- | --- |
+| M1 | 内嵌媒体提取模块（PDF + Office 全落点） | 新建 `rag/app/embedded_media.py`：PDF 覆盖 `/Names/EmbeddedFiles`、`/Screen` Rendition、`/RichMedia`；Office 覆盖 `word|xl|ppt/media/` 直存与 `word/embeddings/*.bin` 的 Ole10Native 解包；视频 magic 嗅探（mp4/mov/mkv 等）。逐条 RED→GREEN，样本含用户那份真实 WPS PPT | ⬜ 未开始 |
+| M2 | 上提到 task_executor 并从 naive 摘除 | `task_executor.py` 加 hook 按类型分发到对应切片器；`naive.py` 移除旧提取逻辑但保留 `is_root` 供 `analyze_hyperlink` 使用；内嵌 chunk 追加到尾部不破坏 `cks[0].__outline__`；递归深度锁定一层并有测试守；`from_page/to_page` 不透传；进度回调区间重排 | ⬜ 未开始 |
+| M3 | 闸门与失败可见性 | 单个视频大小上限、单文档视频数量上限、解析开关（默认关）；失败不阻塞主文档解析，但必须 callback 出用户可见提示，不再静默丢弃 | ⬜ 未开始 |
+| M4 | 平台侧上传边界调整 | 上传白名单增加 pptx（及决定是否含 xlsx）、`MAX_DOCUMENT_SIZE_BYTES` 上调；前后端契约、错误文案与测试同步 | ⬜ 未开始 |
+| M5 | 补丁集与镜像更新 | `patchset.env` 的 `RAGFLOW_PATCH_PRODUCTION_FILES` 增列新文件、`verify-patchset.sh` 通过、fork 分支推送、镜像重建并更新 `image.env` 标签与安全基线 | ⬜ 未开始 |
+| M6 | 真实链路验收 | 正式 React 页面上传含内嵌视频的真实文档 → 真实 FastAPI → 私有补丁 RAGFlow → 百炼视频理解 → 知识库中检索得到该视频内容的片段；Playwright 用例入回归集 | ⬜ 未开始 |
+
+**待定项（动手前需确认）：**
+
+- 真实 Word / Excel 插入视频的落点未能验证（LibreOffice 不可用作代理，用户无法产出样本）。
+  M1 采取「两种落点都覆盖」的方案规避，不赌单一结构；
+- DashScope `MultiModalConversation` 对本地视频文件的大小/时长硬限制需查明，直接决定 M3 闸门取值；
+- 视频摘要作为独立 chunk 入库（`picture.chunk` 现有行为），还是需与其在原文档中的位置绑定 —— 后者改动显著更大。
+
 ## 3. 当前下一步
 
 D1~D16 与 U1 全部完成并推送。§2.5 的单机 demo 部署 G1~G9 已完成，
 `https://kb.xuanbai.tech` 已上线可访问，功能链路已由用户在正式页面手工验收。
+
+当前推进 §2.6 🅜 文档内嵌多媒体解析（分支 `embedded-media-parsing`），下一个任务为 M1。
 
 V3 原定范围内已无待启动任务。当前挂起两项：
 
