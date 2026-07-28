@@ -219,12 +219,46 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 
 | ID | 任务 | 验收标准 | 状态 |
 | --- | --- | --- | --- |
-| M1 | 内嵌媒体提取模块（PDF + Office 全落点） | 新建 `rag/app/embedded_media.py`：PDF 覆盖 `/Names/EmbeddedFiles`、`/Screen` Rendition、`/RichMedia`；Office 覆盖 `word|xl|ppt/media/` 直存与 `word/embeddings/*.bin` 的 Ole10Native 解包；视频 magic 嗅探（mp4/mov/mkv 等）。逐条 RED→GREEN，样本含用户那份真实 WPS PPT | ⬜ 未开始 |
+| M1 | 内嵌媒体提取模块（可验证落点） | 新建 `rag/app/embedded_media.py`：PDF 覆盖 `/Names/EmbeddedFiles`、`/Screen` Rendition、`/RichMedia`；Office 覆盖 `word\|xl\|ppt/media/` 直存；视频 magic 嗅探（mp4/mov/mkv 等）；只挖一层、按内容去重、非媒体条目不返回。逐条 RED→GREEN | ✅ 已完成 |
+| M1b | Office OLE 包装内嵌媒体解包 | `word/embeddings/*.bin` 的 Ole10Native 解包（`_extract_ole10native_payload` 已存在但只用于 OLE 容器分支）。**当前受阻**：本机无可写 OLE 复合文件的库（olefile 0.47 只读、oletools 无样本），LibreOffice 也造不出，写不出失败测试就不能写实现。解除条件：拿到一份真实 Word/Excel 内嵌视频样本 | ⛔ 受阻 |
 | M2 | 上提到 task_executor 并从 naive 摘除 | `task_executor.py` 加 hook 按类型分发到对应切片器；`naive.py` 移除旧提取逻辑但保留 `is_root` 供 `analyze_hyperlink` 使用；内嵌 chunk 追加到尾部不破坏 `cks[0].__outline__`；递归深度锁定一层并有测试守；`from_page/to_page` 不透传；进度回调区间重排 | ⬜ 未开始 |
 | M3 | 闸门与失败可见性 | 单个视频大小上限、单文档视频数量上限、解析开关（默认关）；失败不阻塞主文档解析，但必须 callback 出用户可见提示，不再静默丢弃 | ⬜ 未开始 |
 | M4 | 平台侧上传边界调整 | 上传白名单增加 pptx（及决定是否含 xlsx）、`MAX_DOCUMENT_SIZE_BYTES` 上调；前后端契约、错误文案与测试同步 | ⬜ 未开始 |
-| M5 | 补丁集与镜像更新 | `patchset.env` 的 `RAGFLOW_PATCH_PRODUCTION_FILES` 增列新文件、`verify-patchset.sh` 通过、fork 分支推送、镜像重建并更新 `image.env` 标签与安全基线 | ⬜ 未开始 |
-| M6 | 真实链路验收 | 正式 React 页面上传含内嵌视频的真实文档 → 真实 FastAPI → 私有补丁 RAGFlow → 百炼视频理解 → 知识库中检索得到该视频内容的片段；Playwright 用例入回归集 | ⬜ 未开始 |
+| M5 | 引用类型贯穿到前端标记 | `doc_type` 从 RAGFlow 检索结果贯穿到引用 chip：`adapters/knowledge/ragflow.py` 取值 → `RetrievedChunk` / `Citation` / `RuntimeKnowledgeChunk` 加字段 → `message_citations` 加列 + Alembic 迁移 → 重新生成 OpenAPI 与前端 DTO → `conversations.ts` Zod schema → `ChatMessages.tsx` 渲染视频标记 | ⬜ 未开始 |
+| M6 | 镜像重建与安全基线 | 基于最终补丁 HEAD 重建 fork 镜像，更新 `image.env` 的标签、revision 与安全扫描基线 | ⬜ 未开始 |
+
+> **补丁集同步不是独立任务。** `verify-patchset.sh` 要求 `PATCH_HEAD`/`PATCH_COMMITS` 精确匹配、
+> 非测试文件必须登记进 `PRODUCTION_FILES`、远端分支锁到同一 HEAD，因此每次向 fork 提交都必须
+> 在同一任务内更新 `infra/ragflow/patchset.env` 并跑通门禁，不能推迟。原 M6 中的这部分已并入各任务。
+>
+> **两个 RAGFlow 工作区的分工（易踩）**：`third_party/ragflow` 是 submodule，用于开发与提交；
+> `.local/ragflow-fork` 是 fork 工具链的校验工作区，`fork.sh prepare` 只 fetch 远端追踪引用、
+> **不会**快进本地分支。跑 `verify-patchset.sh` 前需先在该工作区 `merge --ff-only`。
+
+**M1 执行记录（2026-07-28）**
+
+- RED：`test/unit_test/rag/app/test_embedded_media.py` 15 个用例全部因 `ModuleNotFoundError:
+  No module named 'rag.app.embedded_media'` 失败；
+- GREEN：新增 `rag/app/embedded_media.py` 后 15 passed；`test/unit_test/rag/app/` 全包 29 passed；
+- REFACTOR：`picture.py` 的 `VIDEO_EXTS` 改为引用共享常量，消除两处重复定义；改动前后 Ruff
+  告警数完全一致（12 条，均为上游既有），无新增；
+- 真实边界：用户提供的真实 WPS 演示 pptx（`media1.mov` 41.9MB + `media2.mp4` 4.4MB +
+  `media3.mp4` 1.6MB，共 47MB）实测，改前 `extract_embed_file` 返回空，改后三个视频按原字节
+  全部取出，图片与 XML 部件正确排除；
+- 门禁：`infra/ragflow/verify-patchset.sh` 通过，`head=0457b8f104d6e22e9875698427ce430e22e608dc`；
+- 遗留：本任务只交付提取模块，尚未接入任何解析链路，用户侧无可见变化——接入在 M2。
+| M7 | 真实链路验收 | 正式 React 页面上传含内嵌视频的真实文档 → 真实 FastAPI → 私有补丁 RAGFlow → 百炼视频理解 → 知识库中检索得到该视频内容的片段，引用 chip 带视频标记；Playwright 用例入回归集 | ⬜ 未开始 |
+
+**已决：引用呈现方案（用户 2026-07-28 确认）**
+
+内嵌视频产出的 chunk 必须能看出出自哪份文档，并在引用上标出它来自视频：
+
+- `docnm_kwd` 覆盖为**父文档名**，不用内嵌文件名。`doc_id` 在 `task_executor.py:375` 本就已是
+  父文档 ID，无需改动；
+- chunk 内容加前缀 `【内嵌视频 <文件名>】`，让用户展开片段时知道来源；
+- chunk 保留 `doc_type_kwd="video"`（`picture.chunk` 现有行为），并贯穿到前端；
+- `ChatMessages.tsx:216` 现按 `document_name` 去重渲染 chip。**同一文档只要有任一片段来自视频，
+  该 chip 就带视频标记**，不因去重丢失信息，也不把一份文档拆成两个 chip。
 
 **待定项（动手前需确认）：**
 
