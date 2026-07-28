@@ -190,11 +190,17 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 - 使用方选择不在服务器上补做本机 drill 中的压测门禁（k6 读容量、SSE 128 路、Worker 崩溃接管、
   攻击矩阵）。按 1-3 人试用规模判断可接受；并发规模上升时需补做。
 
-### 2.6 🅜 文档内嵌多媒体解析
+### 2.6 🅜 文档内嵌多媒体解析（⏸ 已暂停）
 
-> 分支：`embedded-media-parsing`。
+> 分支：`embedded-media-parsing`（已推送，未合并 main）。fork 分支
+> `common-agent/v0.26.4-minimal` 已推送到 `fb05f438a`。
 > 目标：知识库上传的文档里内嵌的音视频，其内容能被解析成可检索文本，而不是像现在这样被静默丢弃。
 > 产品边界依据：`docs/product-boundary.md` 3.3 知识库。
+>
+> **2026-07-28 暂停，由用户决定。** 代码与台账保持现状推送到远端，不删除也不合并。
+> **恢复开发前必须先读本节末尾的《代码审查发现的缺陷》**——M1/M2 已交付的代码存在
+> 4 个经核实的严重缺陷（重复计费、错误内容入库、文档被误标失败、取消失效），
+> **当前状态下不得开启开关、不得合并 main、不得重建镜像**。
 
 **调研已确认的事实（2026-07-28 实测，避免重复验证）：**
 
@@ -219,9 +225,9 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 
 | ID | 任务 | 验收标准 | 状态 |
 | --- | --- | --- | --- |
-| M1 | 内嵌媒体提取模块（可验证落点） | 新建 `rag/app/embedded_media.py`：PDF 覆盖 `/Names/EmbeddedFiles`、`/Screen` Rendition、`/RichMedia`；Office 覆盖 `word\|xl\|ppt/media/` 直存；视频 magic 嗅探（mp4/mov/mkv 等）；只挖一层、按内容去重、非媒体条目不返回。逐条 RED→GREEN | ✅ 已完成 |
+| M1 | 内嵌媒体提取模块（可验证落点） | 新建 `rag/app/embedded_media.py`：PDF 覆盖 `/Names/EmbeddedFiles`、`/Screen` Rendition、`/RichMedia`；Office 覆盖 `word\|xl\|ppt/media/` 直存；视频 magic 嗅探（mp4/mov/mkv 等）；只挖一层、按内容去重、非媒体条目不返回。逐条 RED→GREEN | 🔍 待验收 |
 | M1b | Office OLE 包装内嵌媒体解包 | `word/embeddings/*.bin` 的 Ole10Native 解包（`_extract_ole10native_payload` 已存在但只用于 OLE 容器分支）。**当前受阻**：本机无可写 OLE 复合文件的库（olefile 0.47 只读、oletools 无样本），LibreOffice 也造不出，写不出失败测试就不能写实现。解除条件：拿到一份真实 Word/Excel 内嵌视频样本 | ⛔ 受阻 |
-| M2 | 接入 task_executor | `task_executor.py` 加 hook，内嵌媒体对所有切片器一视同仁；chunk 归属父文档（`docnm_kwd` 用父文档名 + `【内嵌视频 xxx】`前缀 + 重新分词）；追加到尾部不破坏 `cks[0].__outline__`；默认关闭；单个媒体失败不阻断父文档且必须 callback 可见 | ✅ 已完成 |
+| M2 | 接入 task_executor | `task_executor.py` 加 hook，内嵌媒体对所有切片器一视同仁；chunk 归属父文档（`docnm_kwd` 用父文档名 + `【内嵌视频 xxx】`前缀 + 重新分词）；追加到尾部不破坏 `cks[0].__outline__`；默认关闭；单个媒体失败不阻断父文档且必须 callback 可见 | 🔍 待验收 |
 | M3 | 闸门与失败可见性 | 单个视频大小上限、单文档视频数量上限、解析开关（默认关）；失败不阻塞主文档解析，但必须 callback 出用户可见提示，不再静默丢弃 | ⬜ 未开始 |
 | M4 | 平台侧上传边界调整 | 上传白名单增加 pptx（及决定是否含 xlsx）、`MAX_DOCUMENT_SIZE_BYTES` 上调；前后端契约、错误文案与测试同步 | ⬜ 未开始 |
 | M5 | 引用类型贯穿到前端标记 | `doc_type` 从 RAGFlow 检索结果贯穿到引用 chip：`adapters/knowledge/ragflow.py` 取值 → `RetrievedChunk` / `Citation` / `RuntimeKnowledgeChunk` 加字段 → `message_citations` 加列 + Alembic 迁移 → 重新生成 OpenAPI 与前端 DTO → `conversations.ts` Zod schema → `ChatMessages.tsx` 渲染视频标记 | ⬜ 未开始 |
@@ -289,6 +295,65 @@ V2（工具/MCP + 私有补丁 RAGFlow + 生产化门禁）已完成，见 `docs
 - `ChatMessages.tsx:216` 现按 `document_name` 去重渲染 chip。**同一文档只要有任一片段来自视频，
   该 chip 就带视频标记**，不因去重丢失信息，也不把一份文档拆成两个 chip。
 
+**代码审查发现的缺陷（2026-07-28，恢复开发前必读）**
+
+M1/M2 的 unit 测试全绿（`test/unit_test/rag/app/` 42 passed），但两个专项审查子代理
+（`pr-review-toolkit:code-reviewer` 与 `silent-failure-hunter`）共报出 10 类缺陷，
+**下表每一条都由我逐一读源码核实过，不是推测**。这也是 M1/M2 从 ✅ 降回 🔍 的原因。
+
+| ID | 缺陷 | 核实依据 | 后果 |
+| --- | --- | --- | --- |
+| R1 | **分页任务重复提取，同一视频重复计费** | `api/db/services/task_service.py:464-483` 按 12 页切 task（paper 22 页，`table` 按 3000 行）；`rag/svr/task_executor.py:294` 每个 task 拿到的 `binary` 是 `get_storage_binary()` 的**完整文件**而非分页切片 | 48 页 PDF = 4 个 task = 同一段视频送百炼 4 次。chunk id 相同会在 ES 侧覆盖，**只体现在账单上，看结果发现不了** |
+| R2 | **模型错误串被当作视频内容写入知识库** | `rag/llm/chat_model.py:770-777` 失败时 `return e, 0` 而非 raise；`QWenCV.async_chat` 直接 `return "**ERROR**: "+str(e), 0`；`rag/app/picture.py:60-63` 拿到后走成功路径 `callback(0.8,...)` → `tokenize` → `return [doc]` | 配额超限时 `**ERROR**: RATE_LIMIT - 429...` 入库、被 embedding、被检索、被当知识喂给回答模型。**比它要修的上游 bug 更糟：上游是少内容，这个是多假内容** |
+| R3 | **一段视频失败导致整份文档被标解析失败** | `picture.py:64-65` 吞异常后 `callback(prog=-1, msg=...)`；`api/db/services/task_service.py:418-421` 见 `progress==-1` 直接 `DocumentService.update_by_id(doc_id, {"run": FAIL})` | 100 页报告正文全部解析成功，只因一段内嵌视频超时，界面显示「解析失败」 |
+| R4 | **`except Exception` 吞掉 `TaskCanceledException`，取消失效** | `common/exceptions.py:17` 它是 `Exception` 子类；`task_executor.py:189-192` 取消时抛出；`task_executor.py:363-364` 上游特意 `except TaskCanceledException: raise` 证明取消必须穿透。`embedded_media.py:214,262` 两处吞掉 | 用户点取消后继续解析剩余视频，继续计费。且该异常 `__init__` 未调 `super().__init__(msg)`，`str(e)` 为空串，提示显示成「解析失败，已跳过：」后面空白 |
+| R5 | **解压无大小上限，可被压缩炸弹打爆内存** | `embedded_media.py:120` `archive.read(entry)`、`:184` `get_data()` 均一次性全量解压攻击者可控数据 | 违反 CLAUDE.md 第 9 节。**关键：闸门必须前置到解压之前**（用 `zipfile.infolist()` 的声明大小），后置检查时 OOM 已经发生 |
+| R6 | **HEIC/AVIF 被判成 `.mp4`；且条目已带扩展名仍继续嗅探** | `_sniff_media_ext:53-59` 对 `ftyp` 只排除 `qt`/`M4A` 两个 brand，ISO-BMFF 静态图同样以 `ftyp` 开头；`_media_name:85-87` 扩展名不匹配就继续嗅探。审查方实测复现 `image3.heic` → `image3.heic.mp4` | 静态图被当视频上传百炼，供应商报错后触发 R3 |
+| R7 | **音频路由给了图片解析器，且 `.m4a` 不在 `AUDIO_EXTS`** | `_resolve_media_chunker` 无条件返回 `picture.chunk`，而 `picture.py:49` 只判 `VIDEO_EXTS`，音频落进 `:67` 的 `Image.open()`（该行不在任何 try 内）。仓库已有 `rag/app/audio.py:27` 走 SPEECH2TEXT，签名完全兼容且 `task_executor.py:85` 早已导入 | PowerPoint「录制旁白」产出 `ppt/media/mediaN.m4a`，必然报「cannot identify image file」。**净效果是把安静的丢弃变成了必然的报错，比不做更差**。违反「写代码前必须先查现有可复用资源」 |
+| R8 | 容器打不开/条目读不出时只 log 不 callback | `embedded_media.py:121-124,145-147,151-152,185-186` | 用户看到「解析成功」，合理推断「这文档没有内嵌视频」，实际是解析器读不了它——与上游老 bug 同性质 |
+| R9 | **不可信条目名直接进日志与 RAG 上下文** | `_media_name:84` 只做 `strip()` 和取 basename，无长度上限、无控制字符过滤；流向 `_notify` → `progress_msg` → 前端，以及 `content_with_weight` → ES → 大模型上下文 | 日志注入（含 `\n` 可伪造多行）+ **提示词注入通道**（文件名写「忽略以上指令」原样进 RAG 上下文）。`_notify` 里的 `{e}` 还会透传第三方响应体，违反 CLAUDE.md 第 9 节 |
+| R10 | PDF 对象图遍历无节点上限 | `embedded_media.py:155-175`。`visited` 用 `(idnum, generation)` 去重**足以防环**（此点审查确认无误），但无节点数上限 | 恶意 PDF 声明数百万间接对象造成内存放大；且开关打开后每份 PDF（含 99% 无内嵌文件的）都要全图遍历一遍 |
+
+**测试本身的缺陷（同样必须先修）**
+
+- **替身与生产语义不一致**：`_fake_media_chunker` 用 `raise` 表达失败，真实 `picture.chunk`
+  用 `callback(prog=-1)` + `return []` 表达失败。因此
+  `test_media_failure_is_reported_instead_of_silently_dropped` **是绿的，但它验证的
+  `except` 分支在生产里从不执行**——R2/R3 正是这样溜过 383 行测试的。直接违反 CLAUDE.md
+  第 8 节「Mock 必须与真实实现语义一致，必须有契约测试」；
+- `_record(*args, **kwargs)` 是全宽容替身，任何签名都能通过，**证明不了 `callback(msg=...)`
+  对真实 `set_progress` 有效**（本次靠人工核对 `task_executor.py:168/1418` 才确认签名无误）；
+- 零覆盖分支：损坏 zip、损坏 PDF、pypdf 缺失、`ftyp` 非视频 brand、`.m4a`、超大媒体、
+  条目名含控制字符、参数透传契约。
+
+**恢复开发时的建议顺序**（TDD，每条先写会红的测试）
+
+1. 先重写契约测试：替身改为模拟真实失败语义（吞异常 + `callback(prog=-1)` + 返回 `[]`），
+   这会让 R2/R3 变红；
+2. R2 + R3 + R4 一起修：给每个媒体包隔离 callback（只透传 msg、吞掉 `prog`，但
+   `TaskCanceledException` 必须原样抛出），并按「返回空列表 = 失败」自行判定，识别
+   `rag/llm/chat_model.py:63` 的 `ERROR_PREFIX` 哨兵拒绝入库；
+3. R1：只在文档首个 task 提取。**边界**：用户在 `parser_config["pages"]` 限定页范围时没有
+   任何 task 的 `from_page == 0`，内嵌媒体会被整体跳过——这个取舍可接受但必须写进注释和台账，
+   不能变成又一个静默丢弃；
+4. R5 + R10：前置大小闸门 + 节点上限，两者都要在超限时通知用户，不得静默截断。
+   **原 M3 的验收标准需改写为「闸门前置到读取/解压之前」**，否则 M3 做完 OOM 仍在；
+5. R6 + R7：一次把类型判定与路由处理干净（`ftyp` brand 改白名单、条目带扩展名则不再嗅探、
+   音频路由到 `rag.app.audio.chunk`、补 `.m4a`）；
+6. R8 + R9：失败可见 + 文件名净化（长度上限 + 不可打印字符过滤 + 异常信息截断）。
+
+**未决的取舍（恢复开发时需用户拍板）**
+
+`rag/app/picture.py` 当前 `from rag.app.embedded_media import VIDEO_EXTS`，是**上游文件依赖
+补丁文件**，方向反了，上游每次动 import 区都会冲突。三个选项：① 保持现状；② 改回零改动但
+复制一份 `VIDEO_EXTS`（违反值复用——仓库里已有三份互不一致的音频扩展名清单，R7 的 `.m4a`
+缺失就是这么来的）；③ 收敛到 `common/constants.py` 等中立位置，方向正确但多碰一个上游文件。
+
+**其它次要项**：`title_tks` 仍是媒体文件名与已覆盖的 `docnm_kwd` 不一致（按父文档名搜反而
+命中不到）；`_sha10` 与 `_ZIP_MAGIC`/`_PDF_MAGIC` 重复了 `rag/utils/file_utils.py:29-41`
+的实现且已开始漂移（上游判 `%PDF-`，新代码判 `%PDF`）；`chunk_embedded_media(callback=None)`
+的默认值是假承诺（真实 `picture.chunk` 无条件调用 callback）。
+
 **待定项（动手前需确认）：**
 
 - 真实 Word / Excel 插入视频的落点未能验证（LibreOffice 不可用作代理，用户无法产出样本）。
@@ -303,7 +368,12 @@ D1~D16 与 U1 全部完成并推送。§2.5 的单机 demo 部署 G1~G9 已完�
 
 当前推进 §2.6 🅜 文档内嵌多媒体解析（分支 `embedded-media-parsing`），下一个任务为 M1。
 
-V3 原定范围内已无待启动任务。当前挂起两项：
+§2.6 文档内嵌多媒体解析 **已于 2026-07-28 由用户决定暂停**，分支 `embedded-media-parsing`
+与 fork 分支均已推送，不删除也不合并。M1/M2 已交付代码存在 10 类经核实的缺陷（见 §2.6 末尾
+《代码审查发现的缺陷》），**当前状态下不得开启 `parse_embedded_media` 开关、不得合并 main、
+不得重建镜像**。恢复开发从该节的「建议顺序」第 1 步开始。
+
+V3 原定范围内已无其它待启动任务。当前挂起两项：
 
 - **G10 证书自动续期（⛔ 受阻）**：用户确认暂时无法推进，解除条件待补充。证书 2026-10-25
   到期，在此之前必须人工重签或解除阻塞，不能漏。
